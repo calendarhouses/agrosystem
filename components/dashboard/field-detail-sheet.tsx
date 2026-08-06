@@ -29,14 +29,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   FIELD_ANALYTICS,
   type Field,
+  type FieldAnalytics,
   type TimelineIcon,
 } from "@/lib/dashboard-data";
 import { cn } from "@/lib/utils";
 
 type FieldDetailSheetProps = {
   field: Field | null;
+  analytics?: FieldAnalytics | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onPlanWork?: () => void;
 };
 
 const timelineIconMap: Record<
@@ -66,11 +69,14 @@ function formatUsd(value: number) {
 /** Широка панель глибокої аналітики поля */
 export function FieldDetailSheet({
   field,
+  analytics: analyticsProp,
   open,
   onOpenChange,
+  onPlanWork,
 }: FieldDetailSheetProps) {
   const [period, setPeriod] = useState<Date | undefined>(new Date(2026, 4, 1));
-  const analytics = field ? FIELD_ANALYTICS[field.id] : null;
+  const analytics =
+    analyticsProp ?? (field ? FIELD_ANALYTICS[field.id] : null);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -312,6 +318,7 @@ export function FieldDetailSheet({
             <SheetFooter className="border-t border-[#E5DFD3] px-6 py-5">
               <button
                 type="button"
+                onClick={() => onPlanWork?.()}
                 className="w-full rounded-xl bg-[#276749] px-5 py-3.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-[#276749]/90"
               >
                 Запланувати роботи

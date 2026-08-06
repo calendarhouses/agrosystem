@@ -105,3 +105,9 @@ body {
     @apply h-full overflow-hidden bg-background text-foreground;
   }
 }
+
+/* Ховаємо порожні нативні контролі Mapbox Draw */
+.mapboxgl-ctrl-top-right .mapboxgl-ctrl-group:empty,
+.mapbox-gl-draw_controls {
+  display: none !important;
+}
