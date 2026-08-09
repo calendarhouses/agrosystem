@@ -10,14 +10,15 @@ import {
   type ReactNode,
 } from "react";
 import MapboxDraw from "@mapbox/mapbox-gl-draw";
-import type { Feature, FeatureCollection, Geometry } from "geojson";
+import type {
+  Feature,
+  FeatureCollection,
+  Geometry,
+  Polygon,
+} from "geojson";
 import {
   CloudRain,
-  Clock,
   Focus,
-  Fuel,
-  Gauge,
-  ListTodo,
   Loader2,
   MousePointer2,
   Pause,
@@ -28,6 +29,7 @@ import {
   Wind,
   X,
 } from "lucide-react";
+import { bbox, center as turfCenter } from "@turf/turf";
 import Map, { Layer, Marker, Source } from "react-map-gl/mapbox";
 import type {
   MapMouseEvent,
@@ -37,12 +39,11 @@ import type {
 import "mapbox-gl/dist/mapbox-gl.css";
 import "@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css";
 
-import { FieldMicroclimate } from "@/components/dashboard/field-microclimate";
+import { VehicleMapPopup } from "@/components/dashboard/vehicle-map-popup";
 import { Input } from "@/components/ui/input";
 import {
   FIELDS_GEOJSON,
   FIELDS_MAP_INITIAL_VIEW,
-  TRACTOR_GPS,
   UKRAINE_MAX_BOUNDS,
 } from "@/lib/fields-geojson";
 import { searchPlaces, type GeoSearchResult } from "@/lib/geocode";
@@ -51,23 +52,26 @@ import {
   mergeBounds,
   type LngLatBoundsTuple,
 } from "@/lib/geo-area";
+import type {
+  WialonGeofenceProperties,
+  WialonUnit,
+} from "@/lib/wialon";
 import {
   fetchRainViewerFrames,
-  fetchRegionalWindField,
+  fetchRegionalWeatherField,
   formatHourLabel,
   formatUnixLabel,
+  hourTimeAtProgress,
   indexClosestRainFrame,
   indexClosestToNow,
   rainTileUrl,
   rainTimeAtProgress,
-  timelineFromRegionalWind,
+  timelineFromRegionalWeather,
   windAtLocation,
-  windTimeAtProgress,
   type RainViewerFrame,
+  type RegionalWeatherField,
   type WeatherHourPoint,
-  type WindRegionalField,
 } from "@/lib/weather-layers";
-import { fetchWeather, type WeatherSnapshot } from "@/lib/weather";
 import { cn } from "@/lib/utils";
 
 const RAIN_OPACITY = 0.62;
@@ -80,14 +84,24 @@ const EMPTY_COLLECTION: FeatureCollection = {
   features: [],
 };
 
-const TRACTOR_TELEMATICS = {
-  name: "John Deere 8R",
-  status: "В роботі",
-  fuelPercent: 45,
-  task: "Дискування",
-  timeOnField: "4 год 12 хв",
-  speedKmh: 12,
-} as const;
+const EMPTY_GEOFENCES: FeatureCollection<Polygon, WialonGeofenceProperties> = {
+  type: "FeatureCollection",
+  features: [],
+};
+
+/** Відсіює відсутні / нульові / відʼємні координати */
+function hasValidWialonPosition(
+  unit: WialonUnit
+): unit is WialonUnit & { pos: NonNullable<WialonUnit["pos"]> } {
+  const pos = unit.pos;
+  if (!pos) return false;
+  return (
+    Number.isFinite(pos.x) &&
+    Number.isFinite(pos.y) &&
+    pos.x > 0 &&
+    pos.y > 0
+  );
+}
 
 export type FieldHoverInfo = {
   id: string;
@@ -99,13 +113,22 @@ export type FieldHoverInfo = {
   y: number;
 };
 
+type FitPadding =
+  | number
+  | { top: number; bottom: number; left: number; right: number };
+
 export type FieldsMapHandle = {
   getDrawnFeatures: () => FeatureCollection;
   getFeatureForSave: () => Feature<Geometry> | null;
   removeDrawFeature: (featureId: string | number) => void;
   clearDraw: () => void;
-  focusBounds: (bounds: LngLatBoundsTuple, options?: { padding?: number }) => void;
+  focusBounds: (
+    bounds: LngLatBoundsTuple,
+    options?: { padding?: FitPadding; maxZoom?: number; duration?: number }
+  ) => void;
   focusGeometry: (geometry: Geometry) => void;
+  /** Фокус для інспектора: поле правіше, менше зум, місце під popup зліва */
+  focusFieldForInspector: (geometry: Geometry) => void;
   fitAllFields: () => void;
   flyTo: (longitude: number, latitude: number, zoom?: number) => void;
   loadPolygonIntoDraw: (feature: Feature<Geometry>) => string | null;
@@ -113,11 +136,21 @@ export type FieldsMapHandle = {
   startEditMode: () => void;
 };
 
+type MapBootView = {
+  longitude: number;
+  latitude: number;
+  zoom: number;
+};
+
 type FieldsMapProps = {
   className?: string;
   onFieldClick?: (fieldId: string) => void;
   onDrawnFeaturesChange?: (features: FeatureCollection) => void;
   savedFieldsGeoJson?: FeatureCollection;
+  wialonUnits?: WialonUnit[];
+  wialonGeofences?: FeatureCollection<Polygon, WialonGeofenceProperties>;
+  /** Поки true — карта не монтується (чекаємо Wialon) */
+  wialonLoading?: boolean;
   /** id поля, яке зараз редагується в Draw — ховаємо зі saved шару */
   editingFieldId?: string | null;
   selectedFieldId?: string | null;
@@ -132,6 +165,41 @@ type FieldsMapProps = {
   onRequestDeleteSelection?: () => void;
   onEscape?: () => void;
 };
+
+/** Стартовий кадр над усіма геозонами без анімації flyTo */
+function bootViewFromGeofences(
+  geofences: FeatureCollection<Polygon, WialonGeofenceProperties>
+): MapBootView {
+  if (!geofences.features.length) {
+    return { ...FIELDS_MAP_INITIAL_VIEW };
+  }
+
+  try {
+    const point = turfCenter(geofences);
+    const [longitude, latitude] = point.geometry.coordinates;
+    const [minX, minY, maxX, maxY] = bbox(geofences);
+    const span = Math.max(maxX - minX, maxY - minY);
+    let zoom = 12;
+    if (span > 0.8) zoom = 8.5;
+    else if (span > 0.4) zoom = 9.5;
+    else if (span > 0.2) zoom = 10.5;
+    else if (span > 0.08) zoom = 11.5;
+    else if (span > 0.03) zoom = 12.5;
+    else zoom = 13.5;
+
+    if (
+      !Number.isFinite(longitude) ||
+      !Number.isFinite(latitude) ||
+      !Number.isFinite(minX)
+    ) {
+      return { ...FIELDS_MAP_INITIAL_VIEW };
+    }
+
+    return { longitude, latitude, zoom };
+  } catch {
+    return { ...FIELDS_MAP_INITIAL_VIEW };
+  }
+}
 
 function tractorScaleFromZoom(zoom: number) {
   return Math.max(0.2, zoom / 14);
@@ -148,12 +216,12 @@ function isDrawAlive(draw: MapboxDraw | null): draw is MapboxDraw {
 }
 
 function paintFillOpacity(selectedId: string | null) {
-  if (!selectedId) return 0.32;
+  if (!selectedId) return 0.4;
   return [
     "case",
     ["==", ["get", "id"], selectedId],
-    0.55,
-    0.22,
+    0.62,
+    0.07,
   ] as unknown as number;
 }
 
@@ -163,7 +231,17 @@ function paintLineWidth(selectedId: string | null) {
     "case",
     ["==", ["get", "id"], selectedId],
     4.5,
-    2,
+    1,
+  ] as unknown as number;
+}
+
+function paintLineOpacity(selectedId: string | null) {
+  if (!selectedId) return 0.95;
+  return [
+    "case",
+    ["==", ["get", "id"], selectedId],
+    1,
+    0.2,
   ] as unknown as number;
 }
 
@@ -175,6 +253,9 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       onFieldClick,
       onDrawnFeaturesChange,
       savedFieldsGeoJson,
+      wialonUnits = [],
+      wialonGeofences = EMPTY_GEOFENCES,
+      wialonLoading = true,
       editingFieldId = null,
       selectedFieldId = null,
       geometryEditMode = false,
@@ -189,11 +270,19 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
   ) {
     const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
     const mapRef = useRef<MapRef | null>(null);
+    const mapContainerRef = useRef<HTMLDivElement | null>(null);
     const drawRef = useRef<MapboxDraw | null>(null);
 
+    const [isLoading, setIsLoading] = useState(true);
+    const [bootView, setBootView] = useState<MapBootView>({
+      ...FIELDS_MAP_INITIAL_VIEW,
+    });
     const [mapReady, setMapReady] = useState(false);
     const [drawReady, setDrawReady] = useState(false);
-    const [selectedTractor, setSelectedTractor] = useState(false);
+    const [selectedTractor, setSelectedTractor] = useState<WialonUnit | null>(
+      null
+    );
+    const hasWialonGeofences = wialonGeofences.features.length > 0;
     const [activeTool, setActiveTool] = useState<DrawTool>("edit");
     const [hasSelection, setHasSelection] = useState(false);
     const [zoom, setZoom] = useState<number>(FIELDS_MAP_INITIAL_VIEW.zoom);
@@ -203,24 +292,16 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
     const [searchLoading, setSearchLoading] = useState(false);
     const [searchError, setSearchError] = useState<string | null>(null);
     const [searchResults, setSearchResults] = useState<GeoSearchResult[]>([]);
-    const [tractorWeather, setTractorWeather] = useState<WeatherSnapshot | null>(
-      null
-    );
-    const [tractorWeatherLoading, setTractorWeatherLoading] = useState(false);
-    const [tractorWeatherError, setTractorWeatherError] = useState<string | null>(
-      null
-    );
     const [weatherMode, setWeatherMode] = useState<WeatherMode>(null);
     const [weatherHours, setWeatherHours] = useState<WeatherHourPoint[]>([]);
-    /** Безперервна позиція шкали 0…length-1 */
     const [playbackT, setPlaybackT] = useState(0);
     const [weatherPlaying, setWeatherPlaying] = useState(true);
     const [weatherLoading, setWeatherLoading] = useState(false);
     const [weatherError, setWeatherError] = useState<string | null>(null);
+    const [weatherField, setWeatherField] =
+      useState<RegionalWeatherField | null>(null);
     const [rainHost, setRainHost] = useState("https://tilecache.rainviewer.com");
     const [rainFrames, setRainFrames] = useState<RainViewerFrame[]>([]);
-    const [windField, setWindField] = useState<WindRegionalField | null>(null);
-    /** Double-buffer радару: видимий шар ніколи не міняє tiles під час fade */
     const [rainSlotA, setRainSlotA] = useState<RainViewerFrame | null>(null);
     const [rainSlotB, setRainSlotB] = useState<RainViewerFrame | null>(null);
     const [rainFront, setRainFront] = useState<"a" | "b">("a");
@@ -274,7 +355,10 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
     }, []);
 
     const focusBounds = useCallback(
-      (bounds: LngLatBoundsTuple, options?: { padding?: number }) => {
+      (
+        bounds: LngLatBoundsTuple,
+        options?: { padding?: FitPadding; maxZoom?: number; duration?: number }
+      ) => {
         const mapRefCurrent = mapRef.current;
         if (!mapRefCurrent) return;
 
@@ -293,8 +377,8 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
 
         const camera = {
           padding: options?.padding ?? 80,
-          duration: 850,
-          maxZoom: 16,
+          duration: options?.duration ?? 850,
+          maxZoom: options?.maxZoom ?? 16,
           essential: true as const,
         };
 
@@ -310,8 +394,8 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
           const map = mapRefCurrent.getMap();
           map.easeTo({
             center: [(west + east) / 2, (south + north) / 2],
-            zoom: Math.min(14, map.getZoom()),
-            duration: 700,
+            zoom: Math.min(options?.maxZoom ?? 14, map.getZoom()),
+            duration: options?.duration ?? 700,
             essential: true,
           });
         }
@@ -327,10 +411,24 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       [focusBounds]
     );
 
+    const focusFieldForInspector = useCallback(
+      (geometry: Geometry) => {
+        const bounds = boundsFromGeometry(geometry);
+        if (!bounds) return;
+        // Padding під повновисотний попап зліва
+        focusBounds(bounds, {
+          padding: { top: 48, bottom: 48, left: 440, right: 56 },
+          maxZoom: 13.4,
+          duration: 1400,
+        });
+      },
+      [focusBounds]
+    );
+
     const startDraw = useCallback(() => {
       const draw = drawRef.current;
       if (!isDrawAlive(draw)) return;
-      setSelectedTractor(false);
+      setSelectedTractor(null);
       setHover(null);
       draw.changeMode("draw_polygon");
       setActiveTool("draw");
@@ -358,72 +456,56 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
     }, [syncDrawnFeatures]);
 
     const fitAllFields = useCallback(() => {
-      const demoBounds = FIELDS_GEOJSON.features.map((feature) =>
+      const wialonBounds = wialonGeofences.features.map((feature) =>
         boundsFromGeometry(feature.geometry)
       );
+      const demoBounds = hasWialonGeofences
+        ? []
+        : FIELDS_GEOJSON.features.map((feature) =>
+            boundsFromGeometry(feature.geometry)
+          );
       const savedBounds = (savedFieldsGeoJson?.features ?? []).map((feature) =>
         boundsFromGeometry(feature.geometry)
       );
-      const merged = mergeBounds([...demoBounds, ...savedBounds]);
+      const merged = mergeBounds([
+        ...wialonBounds,
+        ...demoBounds,
+        ...savedBounds,
+      ]);
       if (merged) focusBounds(merged, { padding: 64 });
-    }, [focusBounds, savedFieldsGeoJson?.features]);
+    }, [
+      focusBounds,
+      hasWialonGeofences,
+      savedFieldsGeoJson?.features,
+      wialonGeofences.features,
+    ]);
 
     const flyTo = useCallback(
-      (longitude: number, latitude: number, nextZoom = 13.5) => {
+      (longitude: number, latitude: number, nextZoom = 14) => {
         const map = mapRef.current;
         if (!map) return;
         map.flyTo({
           center: [longitude, latitude],
           zoom: nextZoom,
-          duration: 1200,
+          duration: 1500,
           essential: true,
         });
       },
       []
     );
 
-    // При відкритті — одразу «Усі поля»
+    // Не монтуємо Map, поки Wialon не відповів; стартуємо вже над полями
     useEffect(() => {
-      if (!mapReady) return;
-      const timer = window.setTimeout(() => fitAllFields(), 180);
-      return () => window.clearTimeout(timer);
-    }, [mapReady, fitAllFields]);
-
-    // Після підвантаження збережених полів — підлаштувати кадр ще раз
-    useEffect(() => {
-      if (!mapReady) return;
-      if (!(savedFieldsGeoJson?.features.length)) return;
-      const timer = window.setTimeout(() => fitAllFields(), 220);
-      return () => window.clearTimeout(timer);
-    }, [mapReady, savedFieldsGeoJson?.features.length, fitAllFields]);
-
-    useEffect(() => {
-      if (!selectedTractor) {
-        setTractorWeather(null);
-        setTractorWeatherError(null);
+      if (wialonLoading) {
+        setIsLoading(true);
         return;
       }
 
-      const controller = new AbortController();
-      setTractorWeatherLoading(true);
-      setTractorWeatherError(null);
-
-      fetchWeather(TRACTOR_GPS.latitude, TRACTOR_GPS.longitude, controller.signal)
-        .then((data) => {
-          setTractorWeather(data);
-          setTractorWeatherLoading(false);
-        })
-        .catch((error: unknown) => {
-          if (controller.signal.aborted) return;
-          setTractorWeather(null);
-          setTractorWeatherLoading(false);
-          setTractorWeatherError(
-            error instanceof Error ? error.message : "Помилка погоди"
-          );
-        });
-
-      return () => controller.abort();
-    }, [selectedTractor]);
+      const nextView = bootViewFromGeofences(wialonGeofences);
+      setBootView(nextView);
+      setZoom(nextView.zoom);
+      setIsLoading(false);
+    }, [wialonLoading, wialonGeofences]);
 
     useEffect(() => {
       if (!searchOpen) return;
@@ -504,6 +586,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         },
         focusBounds,
         focusGeometry,
+        focusFieldForInspector,
         fitAllFields,
         flyTo,
         loadPolygonIntoDraw(feature: Feature<Geometry>) {
@@ -531,6 +614,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         fitAllFields,
         flyTo,
         focusBounds,
+        focusFieldForInspector,
         focusGeometry,
         startDraw,
         startEdit,
@@ -539,8 +623,32 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
     );
 
     useEffect(() => {
-      if (passportPanel || inspectorPanel) setSelectedTractor(false);
+      if (passportPanel || inspectorPanel) setSelectedTractor(null);
     }, [passportPanel, inspectorPanel]);
+
+    // Підлаштувати Mapbox під зміну ширини (згортання сайдбару тощо)
+    useEffect(() => {
+      if (!mapReady) return;
+      const el = mapContainerRef.current;
+      const map = mapRef.current?.getMap();
+      if (!el || !map) return;
+
+      const resizeMap = () => {
+        map.resize();
+      };
+
+      const ro = new ResizeObserver(() => {
+        resizeMap();
+      });
+      ro.observe(el);
+      window.addEventListener("resize", resizeMap);
+      resizeMap();
+
+      return () => {
+        ro.disconnect();
+        window.removeEventListener("resize", resizeMap);
+      };
+    }, [mapReady]);
 
     useEffect(() => {
       if (!mapReady) return;
@@ -632,7 +740,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
             event.preventDefault();
             return;
           }
-          setSelectedTractor(false);
+          setSelectedTractor(null);
           setHover(null);
           onEscapeRef.current?.();
           return;
@@ -687,8 +795,8 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
 
         const feature = event.features?.[0];
         const fieldId = feature?.properties?.id;
-        if (typeof fieldId === "string" && onFieldClick) {
-          onFieldClick(fieldId);
+        if (fieldId != null && onFieldClick) {
+          onFieldClick(String(fieldId));
         }
       },
       [isDrawing, onFieldClick, searchOpen, selectedTractor]
@@ -752,7 +860,6 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       weatherMode === "rain"
         ? Math.max(0, rainFrames.length - 1)
         : Math.max(0, weatherHours.length - 1);
-
     const weatherIndex = Math.min(
       weatherLen,
       Math.max(0, Math.floor(playbackT))
@@ -786,7 +893,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
             );
           }
         } catch {
-          // шар ще не змонтований
+          // ignore
         }
       },
       []
@@ -801,20 +908,14 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         const fade = p - idx;
 
         if (idx !== rainCommittedRef.current) {
-          // Кадр змінився: колишній back стає front (вже завантажений) —
-          // видимий шар НЕ міняє URL → без блимання
           const newFront: "a" | "b" =
             rainFrontRef.current === "a" ? "b" : "a";
           rainFrontRef.current = newFront;
           rainCommittedRef.current = idx;
           setRainFront(newFront);
-
           const nextFrame = frames[Math.min(max, idx + 1)]!;
-          if (newFront === "a") {
-            setRainSlotB(nextFrame);
-          } else {
-            setRainSlotA(nextFrame);
-          }
+          if (newFront === "a") setRainSlotB(nextFrame);
+          else setRainSlotA(nextFrame);
         }
 
         weatherIndexRef.current = idx;
@@ -825,29 +926,27 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
     );
 
     const seekPlayback = useCallback(
-      (next: number, framesOverride?: RainViewerFrame[]) => {
-        const frames = framesOverride ?? rainFramesRef.current;
+      (next: number) => {
         const length =
           weatherMode === "rain"
-            ? Math.max(0, frames.length - 1)
+            ? Math.max(0, rainFramesRef.current.length - 1)
             : Math.max(0, weatherHours.length - 1);
         const clamped = Math.max(0, Math.min(length, next));
         weatherProgressRef.current = clamped;
         setPlaybackT(clamped);
 
-        if (weatherMode === "rain" && frames.length) {
+        if (weatherMode === "rain") {
+          const frames = rainFramesRef.current;
+          if (!frames.length) return;
           const idx = Math.floor(clamped);
           const fade = clamped - idx;
-          const frontFrame = frames[idx]!;
-          const backFrame = frames[Math.min(frames.length - 1, idx + 1)]!;
           rainFrontRef.current = "a";
           rainCommittedRef.current = idx;
           setRainFront("a");
-          setRainSlotA(frontFrame);
-          setRainSlotB(backFrame);
+          setRainSlotA(frames[idx]!);
+          setRainSlotB(frames[Math.min(frames.length - 1, idx + 1)]!);
           weatherIndexRef.current = idx;
           weatherBlendRef.current = fade;
-          // opacities після mount
           requestAnimationFrame(() => applyRainOpacities("a", fade));
         } else {
           weatherIndexRef.current = Math.floor(clamped);
@@ -857,13 +956,13 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       [weatherMode, weatherHours.length, applyRainOpacities]
     );
 
-    // Завантаження радару / регіонального вітру
+    // Live-радар (RainViewer past+nowcast) або регіональний вітер
     useEffect(() => {
       if (!weatherMode) {
         setWeatherHours([]);
+        setWeatherField(null);
         setRainFrames([]);
         rainFramesRef.current = [];
-        setWindField(null);
         setRainSlotA(null);
         setRainSlotB(null);
         setWeatherError(null);
@@ -874,19 +973,18 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       const controller = new AbortController();
       setWeatherLoading(true);
       setWeatherError(null);
-
       const { lat, lng } = mapCenterRef.current;
 
       const load = async () => {
         if (weatherMode === "rain") {
-          setWindField(null);
+          setWeatherField(null);
+          setWeatherHours([]);
           const { host, frames } = await fetchRainViewerFrames(
             controller.signal
           );
           setRainHost(host);
           setRainFrames(frames);
           rainFramesRef.current = frames;
-          setWeatherHours([]);
           const start = indexClosestRainFrame(frames);
           weatherProgressRef.current = start;
           setPlaybackT(start);
@@ -905,9 +1003,9 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
           rainFramesRef.current = [];
           setRainSlotA(null);
           setRainSlotB(null);
-          const field = await fetchRegionalWindField(controller.signal);
-          setWindField(field);
-          const hours = timelineFromRegionalWind(field, lat, lng);
+          const field = await fetchRegionalWeatherField(controller.signal);
+          setWeatherField(field);
+          const hours = timelineFromRegionalWeather(field, lat, lng);
           setWeatherHours(hours);
           const start = indexClosestToNow(hours);
           weatherProgressRef.current = start;
@@ -929,7 +1027,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       return () => controller.abort();
     }, [weatherMode, applyRainOpacities]);
 
-    // Плавне програвання шкали
+    // Плавне програвання
     useEffect(() => {
       if (!weatherMode || !weatherPlaying) return;
       const length =
@@ -938,8 +1036,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
           : Math.max(0, weatherHours.length - 1);
       if (length < 0.01) return;
 
-      // Повний прохід шкали (мс)
-      const fullMs = weatherMode === "rain" ? 18_000 : 26_000;
+      const fullMs = weatherMode === "rain" ? 16_000 : 26_000;
       const speed = length / fullMs;
       let frameId = 0;
       let last = performance.now();
@@ -977,7 +1074,6 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
           uiAcc = 0;
           setPlaybackT(next);
         }
-
         frameId = window.requestAnimationFrame(tick);
       };
 
@@ -992,15 +1088,14 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       applyRainOpacities,
     ]);
 
-    // Підтримка opacity після зміни слотів
     useEffect(() => {
       if (weatherMode !== "rain") return;
       applyRainOpacities(rainFront, weatherBlendRef.current);
     }, [weatherMode, rainSlotA, rainSlotB, rainFront, applyRainOpacities]);
 
-    // Canvas-частинки вітру з напрямком по найближчій області
+    // Canvas тільки для вітру
     useEffect(() => {
-      if (weatherMode !== "wind" || !windField) return;
+      if (weatherMode !== "wind" || !weatherField) return;
       const canvas = weatherCanvasRef.current;
       if (!canvas) return;
       const parent = canvas.parentElement;
@@ -1019,12 +1114,12 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
 
       const pickStation = (x: number, y: number) => {
         const map = mapRef.current?.getMap();
-        if (!map || !windField.stations.length) return 0;
+        if (!map || !weatherField.stations.length) return 0;
         try {
           const ll = map.unproject([x, y]);
           let best = 0;
           let bestDist = Infinity;
-          windField.stations.forEach((station, index) => {
+          weatherField.stations.forEach((station, index) => {
             const d =
               (station.lat - ll.lat) ** 2 + (station.lng - ll.lng) ** 2;
             if (d < bestDist) {
@@ -1040,8 +1135,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
 
       const w = parent.clientWidth;
       const h = parent.clientHeight;
-      const count = 340;
-      weatherParticlesRef.current = Array.from({ length: count }, () => {
+      weatherParticlesRef.current = Array.from({ length: 340 }, () => {
         const x = Math.random() * w;
         const y = Math.random() * h;
         return {
@@ -1062,31 +1156,27 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
           return;
         }
         ctx.clearRect(0, 0, w, h);
-
         const idx = weatherIndexRef.current;
         const blend = weatherBlendRef.current;
-        const i0 = Math.max(0, Math.min(windField.times.length - 1, idx));
-        const i1 = Math.min(windField.times.length - 1, i0 + 1);
+        const i0 = Math.max(0, Math.min(weatherField.times.length - 1, idx));
+        const i1 = Math.min(weatherField.times.length - 1, i0 + 1);
 
         for (const p of weatherParticlesRef.current) {
           const station =
-            windField.stations[p.stationIdx] ?? windField.stations[0]!;
+            weatherField.stations[p.stationIdx] ?? weatherField.stations[0]!;
           const speed0 = station.speed[i0] ?? 0;
           const speed1 = station.speed[i1] ?? speed0;
           const dir0 = station.dir[i0] ?? 0;
           const dir1 = station.dir[i1] ?? dir0;
           const speed = speed0 + (speed1 - speed0) * blend;
-          let diff = ((dir1 - dir0 + 540) % 360) - 180;
+          const diff = ((dir1 - dir0 + 540) % 360) - 180;
           const dir = (dir0 + diff * blend + 360) % 360;
-
           const rad = ((dir + 180) * Math.PI) / 180;
           const vx = Math.cos(rad) * (1.0 + speed * 0.5) * p.speed;
           const vy = Math.sin(rad) * (1.0 + speed * 0.5) * p.speed;
-
           p.x += vx;
           p.y += vy;
           p.age += 1;
-
           if (
             p.x < -40 ||
             p.y < -40 ||
@@ -1099,7 +1189,6 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
             p.age = 0;
             p.stationIdx = pickStation(p.x, p.y);
           }
-
           const alpha = 0.3 + (1 - p.age / 130) * 0.5;
           ctx.strokeStyle = `rgba(244, 241, 234, ${alpha})`;
           ctx.lineWidth = 1.7;
@@ -1108,7 +1197,6 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
           ctx.lineTo(p.x - vx * (p.len / 4), p.y - vy * (p.len / 4));
           ctx.stroke();
         }
-
         frameId = window.requestAnimationFrame(draw);
       };
 
@@ -1119,7 +1207,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         window.removeEventListener("resize", resize);
         weatherParticlesRef.current = [];
       };
-    }, [weatherMode, windField]);
+    }, [weatherMode, weatherField]);
 
     if (!token) {
       return (
@@ -1134,11 +1222,30 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       );
     }
 
+    if (isLoading) {
+      return (
+        <div
+          className={cn(
+            "flex h-full min-h-[320px] w-full animate-pulse items-center justify-center rounded-xl bg-[#EBE5D9]",
+            className
+          )}
+        >
+          <div className="flex flex-col items-center gap-2 px-4 text-center">
+            <Loader2 className="h-5 w-5 animate-spin text-[#C05621]" />
+            <p className="text-sm font-medium text-zinc-600">
+              Синхронізація з геозонами…
+            </p>
+          </div>
+        </div>
+      );
+    }
+
     const showTractor = zoom >= 7;
     const tractorScale = tractorScaleFromZoom(zoom);
 
     return (
       <div
+        ref={mapContainerRef}
         className={cn(
           "relative h-full min-h-[320px] w-full rounded-xl",
           className
@@ -1149,7 +1256,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
             ref={mapRef}
             mapboxAccessToken={token}
             mapStyle="mapbox://styles/mapbox/satellite-streets-v12"
-            initialViewState={FIELDS_MAP_INITIAL_VIEW}
+            initialViewState={bootView}
             maxBounds={UKRAINE_MAX_BOUNDS}
             dragRotate={false}
             pitchWithRotate={false}
@@ -1158,7 +1265,11 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
             interactiveLayerIds={
               isDrawing
                 ? undefined
-                : ["fields-fill", "saved-fields-fill"]
+                : [
+                    "wialon-geofences-fill",
+                    "fields-fill",
+                    "saved-fields-fill",
+                  ]
             }
             onClick={handleMapClick}
             onMouseMove={handleMouseMove}
@@ -1178,7 +1289,11 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
                     : undefined
             }
           >
-            <Source id="fields" type="geojson" data={FIELDS_GEOJSON}>
+            <Source
+              id="fields"
+              type="geojson"
+              data={hasWialonGeofences ? EMPTY_COLLECTION : FIELDS_GEOJSON}
+            >
               <Layer
                 id="fields-fill"
                 type="fill"
@@ -1216,6 +1331,75 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
               />
             </Source>
 
+            {/* Затемнення карти при вибраному полі — поле залишається зверху */}
+            {selectedFieldId ? (
+              <Source
+                id="field-focus-dim"
+                type="geojson"
+                data={{
+                  type: "Feature",
+                  properties: {},
+                  geometry: {
+                    type: "Polygon",
+                    coordinates: [
+                      [
+                        [-180, -85],
+                        [180, -85],
+                        [180, 85],
+                        [-180, 85],
+                        [-180, -85],
+                      ],
+                    ],
+                  },
+                }}
+              >
+                <Layer
+                  id="field-focus-dim-fill"
+                  type="fill"
+                  beforeId="fields-fill"
+                  paint={{
+                    "fill-color": "#0a0f14",
+                    "fill-opacity": 0.42,
+                  }}
+                />
+              </Source>
+            ) : null}
+
+            {/* Wialon geofences — під погодою і під маркерами техніки */}
+            <Source
+              id="wialon-geofences"
+              type="geojson"
+              data={wialonGeofences}
+            >
+              <Layer
+                id="wialon-geofences-fill"
+                type="fill"
+                beforeId="fields-fill"
+                paint={{
+                  "fill-color": [
+                    "coalesce",
+                    ["get", "color"],
+                    "#276749",
+                  ],
+                  "fill-opacity": paintFillOpacity(selectedFieldId),
+                }}
+              />
+              <Layer
+                id="wialon-geofences-outline"
+                type="line"
+                beforeId="fields-fill"
+                paint={{
+                  "line-color": [
+                    "coalesce",
+                    ["get", "color"],
+                    "#276749",
+                  ],
+                  "line-width": paintLineWidth(selectedFieldId),
+                  "line-opacity": paintLineOpacity(selectedFieldId),
+                }}
+              />
+            </Source>
+
             {weatherMode === "rain" || weatherMode === "wind" ? (
               <Source
                 id="weather-dim"
@@ -1249,7 +1433,6 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
               </Source>
             ) : null}
 
-            {/* Double-buffer радару: міняємо лише прихований слот */}
             {weatherMode === "rain" && rainSlotA ? (
               <Source
                 id="rainviewer-a"
@@ -1294,45 +1477,69 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
               </Source>
             ) : null}
 
-            {showTractor ? (
-              <Marker
-                longitude={TRACTOR_GPS.longitude}
-                latitude={TRACTOR_GPS.latitude}
-                anchor="center"
-                style={{ cursor: "pointer", zIndex: 2 }}
-                onClick={(event) => {
-                  event.originalEvent.stopPropagation();
-                  setSelectedTractor(true);
-                  setHover(null);
-                }}
-              >
-                <div
-                  className="relative h-12 w-12 origin-center transition-transform duration-150"
-                  style={{
-                    transform: `scale(${tractorScale})`,
-                    opacity: zoom < 8 ? Math.max(0.35, zoom - 7) : 1,
-                  }}
-                  title="GPS · John Deere 8R"
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      setSelectedTractor(true);
-                    }
-                  }}
-                >
-                  <span className="absolute inset-0 animate-ping rounded-full bg-emerald-500/50" />
-                  <div className="relative z-10 flex h-full w-full items-center justify-center rounded-full border border-[#E5DFD3] bg-white shadow-md">
-                    <Tractor
-                      className="h-5 w-5 text-[#276749]"
-                      strokeWidth={2.25}
-                    />
-                  </div>
-                  <span className="absolute top-0.5 right-0.5 z-20 h-2.5 w-2.5 rounded-full border-2 border-white bg-[#276749]" />
-                </div>
-              </Marker>
-            ) : null}
+            {showTractor
+              ? wialonUnits.filter(hasValidWialonPosition).map((unit) => {
+                  const moving = (unit.pos.s ?? 0) > 0;
+                  const selected = selectedTractor?.id === unit.id;
+                  return (
+                    <Marker
+                      key={unit.id}
+                      longitude={unit.pos.x}
+                      latitude={unit.pos.y}
+                      anchor="center"
+                      style={{ cursor: "pointer", zIndex: selected ? 3 : 2 }}
+                      onClick={(event) => {
+                        event.originalEvent.stopPropagation();
+                        setSelectedTractor(unit);
+                        setHover(null);
+                      }}
+                    >
+                      <div
+                        className="relative h-12 w-12 origin-center transition-transform duration-150"
+                        style={{
+                          transform: `scale(${tractorScale * (selected ? 1.12 : 1)})`,
+                          opacity: zoom < 8 ? Math.max(0.35, zoom - 7) : 1,
+                        }}
+                        title={`GPS · ${unit.nm}`}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setSelectedTractor(unit);
+                          }
+                        }}
+                      >
+                        <span
+                          className={cn(
+                            "absolute inset-0 animate-ping rounded-full",
+                            moving ? "bg-emerald-500/50" : "bg-zinc-400/40"
+                          )}
+                        />
+                        <div
+                          className={cn(
+                            "relative z-10 flex h-full w-full items-center justify-center rounded-full border bg-white shadow-md",
+                            selected
+                              ? "border-[#276749] ring-2 ring-[#276749]/30"
+                              : "border-[#E5DFD3]"
+                          )}
+                        >
+                          <Tractor
+                            className="h-5 w-5 text-[#276749]"
+                            strokeWidth={2.25}
+                          />
+                        </div>
+                        <span
+                          className={cn(
+                            "absolute top-0.5 right-0.5 z-20 h-2.5 w-2.5 rounded-full border-2 border-white",
+                            moving ? "bg-[#276749]" : "bg-zinc-400"
+                          )}
+                        />
+                      </div>
+                    </Marker>
+                  );
+                })
+              : null}
           </Map>
         </div>
 
@@ -1347,7 +1554,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
           <button
             type="button"
             onClick={() => toggleWeatherMode("rain")}
-            title="Карта опадів"
+            title="Live-радар опадів"
             className={cn(
               "inline-flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-semibold shadow-md backdrop-blur-sm transition-all",
               weatherMode === "rain"
@@ -1356,7 +1563,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
             )}
           >
             <CloudRain className="h-4 w-4" />
-            Опади
+            Live-Радар
           </button>
           <button
             type="button"
@@ -1389,13 +1596,13 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
                       <p className="text-xs font-bold text-zinc-900">
-                        Радар опадів ·{" "}
+                        Live-Радар ·{" "}
                         {formatUnixLabel(
                           rainTimeAtProgress(rainFrames, playbackT)
                         )}
                       </p>
                       <p className="mt-0.5 truncate text-[11px] text-zinc-600">
-                        Плавна шкала · тягни по хвилинах
+                        Фактичний рух фронту · past + nowcast
                       </p>
                     </div>
                     <button
@@ -1411,7 +1618,6 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
                       )}
                     </button>
                   </div>
-
                   <input
                     type="range"
                     min={0}
@@ -1423,7 +1629,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
                       seekPlayback(Number(event.target.value));
                     }}
                     className="mt-2 h-1.5 w-full cursor-pointer appearance-none rounded-full bg-[#E5DFD3] accent-[#276749]"
-                    aria-label="Шкала радару опадів"
+                    aria-label="Шкала Live-радару"
                   />
                   <div className="mt-1 flex justify-between text-[10px] tabular-nums text-zinc-500">
                     <span>
@@ -1431,7 +1637,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
                         ? formatUnixLabel(rainFrames[0].time)
                         : "—"}
                     </span>
-                    <span className="text-zinc-400">RainViewer · радар</span>
+                    <span className="text-zinc-400">RainViewer · live</span>
                     <span>
                       {rainFrames[rainFrames.length - 1]
                         ? formatUnixLabel(
@@ -1441,14 +1647,16 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
                     </span>
                   </div>
                 </>
-              ) : weatherMode === "wind" && windField && weatherHours.length ? (
+              ) : weatherMode === "wind" &&
+                weatherField &&
+                weatherHours.length ? (
                 <>
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
                       <p className="text-xs font-bold text-zinc-900">
                         Вітер ·{" "}
                         {formatHourLabel(
-                          windTimeAtProgress(
+                          hourTimeAtProgress(
                             weatherHours.map((h) => h.time),
                             playbackT
                           )
@@ -1457,7 +1665,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
                       <p className="mt-0.5 truncate text-[11px] text-zinc-600">
                         {(() => {
                           const local = windAtLocation(
-                            windField,
+                            weatherField,
                             mapCenterRef.current.lat,
                             mapCenterRef.current.lng,
                             weatherIndex,
@@ -1480,7 +1688,6 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
                       )}
                     </button>
                   </div>
-
                   <input
                     type="range"
                     min={0}
@@ -1662,83 +1869,10 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         ) : null}
 
         {selectedTractor && !blockingOverlay ? (
-          <div className="absolute bottom-4 left-4 z-50 w-[min(100%-2rem,320px)] rounded-xl border border-[#E5DFD3] bg-[#F4F1EA] p-5 text-zinc-900 shadow-lg">
-            <div className="mb-3 flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="truncate text-base font-extrabold tracking-tight text-zinc-900">
-                  {TRACTOR_TELEMATICS.name}
-                </p>
-                <span className="mt-1.5 inline-flex items-center rounded-full border border-[#276749]/30 bg-[#276749]/10 px-2.5 py-0.5 text-[11px] font-semibold text-[#276749]">
-                  {TRACTOR_TELEMATICS.status}
-                </span>
-              </div>
-              <button
-                type="button"
-                aria-label="Закрити"
-                onClick={() => setSelectedTractor(false)}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-[#E5DFD3]/60 hover:text-zinc-900"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <FieldMicroclimate
-              className="mb-3"
-              weather={tractorWeather}
-              loading={tractorWeatherLoading}
-              error={tractorWeatherError}
-            />
-
-            <ul className="space-y-3 text-sm">
-              <li className="rounded-xl border border-[#E5DFD3] bg-zinc-100/80 px-3 py-2.5">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <span className="inline-flex items-center gap-2 font-medium text-zinc-500">
-                    <Fuel className="h-3.5 w-3.5 text-[#C05621]" />
-                    Паливо
-                  </span>
-                  <span className="font-bold tabular-nums text-zinc-900">
-                    {TRACTOR_TELEMATICS.fuelPercent}%
-                  </span>
-                </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-[#E5DFD3]">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-[#C05621] to-[#D69E2E]"
-                    style={{ width: `${TRACTOR_TELEMATICS.fuelPercent}%` }}
-                  />
-                </div>
-              </li>
-
-              <li className="flex items-center justify-between gap-2 rounded-xl border border-[#E5DFD3] bg-zinc-100/80 px-3 py-2.5">
-                <span className="inline-flex items-center gap-2 font-medium text-zinc-500">
-                  <ListTodo className="h-3.5 w-3.5 text-[#276749]" />
-                  Завдання
-                </span>
-                <span className="font-semibold text-zinc-900">
-                  {TRACTOR_TELEMATICS.task}
-                </span>
-              </li>
-
-              <li className="flex items-center justify-between gap-2 rounded-xl border border-[#E5DFD3] bg-zinc-100/80 px-3 py-2.5">
-                <span className="inline-flex items-center gap-2 font-medium text-zinc-500">
-                  <Clock className="h-3.5 w-3.5 text-zinc-500" />
-                  Час на полі
-                </span>
-                <span className="font-semibold tabular-nums text-zinc-900">
-                  {TRACTOR_TELEMATICS.timeOnField}
-                </span>
-              </li>
-
-              <li className="flex items-center justify-between gap-2 rounded-xl border border-[#E5DFD3] bg-zinc-100/80 px-3 py-2.5">
-                <span className="inline-flex items-center gap-2 font-medium text-zinc-500">
-                  <Gauge className="h-3.5 w-3.5 text-[#D69E2E]" />
-                  Швидкість
-                </span>
-                <span className="font-semibold tabular-nums text-zinc-900">
-                  {TRACTOR_TELEMATICS.speedKmh} км/год
-                </span>
-              </li>
-            </ul>
-          </div>
+          <VehicleMapPopup
+            unit={selectedTractor}
+            onClose={() => setSelectedTractor(null)}
+          />
         ) : null}
 
         {/* Панелі поверх карти — без обрізання */}

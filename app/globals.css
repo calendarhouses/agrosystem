@@ -111,3 +111,132 @@ body {
 .mapbox-gl-draw_controls {
   display: none !important;
 }
+
+@utility no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@utility custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(16, 20, 12, 0.22) transparent;
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+  &::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(16, 20, 12, 0.22);
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+/* Тултипи згорнутого сайдбару (стиль azhunebi) */
+.sidebar-nav-tip {
+  position: fixed;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  padding: 9px 13px;
+  border-radius: 12px;
+  pointer-events: none;
+  user-select: none;
+  background: rgba(255, 255, 255, 0.97);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(192, 86, 33, 0.22);
+  box-shadow:
+    0 16px 36px rgba(16, 20, 12, 0.16),
+    0 4px 12px rgba(16, 20, 12, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  transform: translateY(-50%);
+  animation: sidebar-nav-tip-in 0.22s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.sidebar-nav-tip::before {
+  content: "";
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 7px solid transparent;
+  border-right-color: rgba(255, 255, 255, 0.97);
+  filter: drop-shadow(-1px 0 0 rgba(192, 86, 33, 0.16));
+}
+
+@keyframes sidebar-nav-tip-in {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) translateX(-8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0) scale(1);
+  }
+}
+
+/* Жива рідина в цистернах палива — легке «дихання» хвилі */
+@keyframes fuel-liquid-breathe {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes fuel-liquid-surface {
+  0%,
+  100% {
+    transform: translateX(-6%) scaleY(1);
+  }
+  50% {
+    transform: translateX(4%) scaleY(1.15);
+  }
+}
+
+.fuel-liquid {
+  animation: fuel-liquid-breathe 3.2s ease-in-out infinite;
+  will-change: transform;
+}
+
+.fuel-liquid-surface {
+  position: absolute;
+  top: -5px;
+  left: -12%;
+  width: 124%;
+  height: 12px;
+  border-radius: 50%;
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.55),
+    rgba(252, 211, 77, 0.85)
+  );
+  box-shadow: 0 2px 6px rgba(245, 158, 11, 0.25);
+  animation: fuel-liquid-surface 2.6s ease-in-out infinite;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fuel-liquid,
+  .fuel-liquid-surface {
+    animation: none;
+  }
+}
+
+/* Друк денного звіту техніки (вікно printDayJournalReport) */
+@media print {
+  @page {
+    margin: 16mm;
+  }
+
+  body {
+    background: white !important;
+    color: #18181b !important;
+  }
+}

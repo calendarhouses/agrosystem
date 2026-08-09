@@ -16,6 +16,7 @@ import { FuelWriteoffDialog } from "@/components/dashboard/fuel-writeoff-dialog"
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -52,31 +53,33 @@ export function TopBar() {
                 align="end"
                 className="min-w-52 rounded-xl border-[#E5DFD3] bg-[#F4F1EA] p-1.5 text-zinc-900 shadow-lg"
               >
-                <DropdownMenuLabel className="px-2.5 text-zinc-500">
-                  Швидкі операції
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator className="bg-[#E5DFD3]" />
-                <DropdownMenuItem
-                  className="cursor-pointer gap-2 rounded-lg px-2.5 py-2 focus:bg-[#E5DFD3] focus:text-zinc-900"
-                  onClick={() => setFuelDialogOpen(true)}
-                >
-                  <Droplets className="h-4 w-4 text-[#C05621]" />
-                  Списати паливо
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="cursor-pointer gap-2 rounded-lg px-2.5 py-2 focus:bg-[#E5DFD3] focus:text-zinc-900"
-                  onClick={() => router.push("/reports")}
-                >
-                  <Wallet className="h-4 w-4 text-[#C05621]" />
-                  Додати витрату
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="cursor-pointer gap-2 rounded-lg px-2.5 py-2 focus:bg-[#E5DFD3] focus:text-zinc-900"
-                  onClick={() => setActivityOpen(true)}
-                >
-                  <ClipboardList className="h-4 w-4 text-[#276749]" />
-                  Нова задача
-                </DropdownMenuItem>
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel className="px-2.5 text-zinc-500">
+                    Швидкі операції
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator className="bg-[#E5DFD3]" />
+                  <DropdownMenuItem
+                    className="cursor-pointer gap-2 rounded-lg px-2.5 py-2 focus:bg-[#E5DFD3] focus:text-zinc-900"
+                    onClick={() => setFuelDialogOpen(true)}
+                  >
+                    <Droplets className="h-4 w-4 text-[#C05621]" />
+                    Списати паливо
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="cursor-pointer gap-2 rounded-lg px-2.5 py-2 focus:bg-[#E5DFD3] focus:text-zinc-900"
+                    onClick={() => router.push("/reports")}
+                  >
+                    <Wallet className="h-4 w-4 text-[#C05621]" />
+                    Додати витрату
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="cursor-pointer gap-2 rounded-lg px-2.5 py-2 focus:bg-[#E5DFD3] focus:text-zinc-900"
+                    onClick={() => setActivityOpen(true)}
+                  >
+                    <ClipboardList className="h-4 w-4 text-[#276749]" />
+                    Нова задача
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
               </DropdownMenuContent>
             </DropdownMenu>
 

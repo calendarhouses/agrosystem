@@ -1,4 +1,6 @@
-/** Радар опадів (RainViewer) + вітер по областях (Open-Meteo) */
+/** Регіональний вітер (Open-Meteo) + Live-радар опадів (RainViewer) */
+
+import type { FeatureCollection, Point } from "geojson";
 
 export type WeatherHourPoint = {
   time: string;
@@ -13,25 +15,24 @@ export type RainViewerFrame = {
   path: string;
 };
 
-export type WindStation = {
+export type WeatherStation = {
   id: string;
   name: string;
   lat: number;
   lng: number;
 };
 
-export type WindStationSeries = WindStation & {
+export type RegionalStationSeries = WeatherStation & {
   speed: number[];
   dir: number[];
 };
 
-export type WindRegionalField = {
+export type RegionalWeatherField = {
   times: string[];
-  stations: WindStationSeries[];
+  stations: RegionalStationSeries[];
 };
 
-/** Центри областей / ключових міст України — окремий вітер на регіон */
-export const UA_WIND_STATIONS: WindStation[] = [
+export const UA_WEATHER_STATIONS: WeatherStation[] = [
   { id: "kyiv-city", name: "Київ", lat: 50.45, lng: 30.52 },
   { id: "kyiv-obl", name: "Київська", lat: 50.0, lng: 30.2 },
   { id: "lviv", name: "Львівська", lat: 49.84, lng: 24.03 },
@@ -73,7 +74,6 @@ export function formatUnixLabel(unixSec: number): string {
   });
 }
 
-/** Плавний час між кадрами радару (unix sec) */
 export function rainTimeAtProgress(
   frames: RainViewerFrame[],
   progress: number
@@ -88,11 +88,7 @@ export function rainTimeAtProgress(
   return Math.round(lerp(frames[i0]!.time, frames[i1]!.time, t));
 }
 
-/** Плавний ISO-час між годинами вітру */
-export function windTimeAtProgress(
-  times: string[],
-  progress: number
-): string {
+export function hourTimeAtProgress(times: string[], progress: number): string {
   if (!times.length) return "";
   if (times.length === 1) return times[0]!;
   const max = times.length - 1;
@@ -139,12 +135,12 @@ export function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
 }
 
-/** Плавна інтерполяція кутів 0–360 */
 export function lerpAngleDeg(a: number, b: number, t: number): number {
-  let diff = ((b - a + 540) % 360) - 180;
+  const diff = ((b - a + 540) % 360) - 180;
   return (a + diff * t + 360) % 360;
 }
 
+/** Live-радар: лише fact past + nowcast (без 12-год екстраполяції) */
 export async function fetchRainViewerFrames(
   signal?: AbortSignal
 ): Promise<{ host: string; frames: RainViewerFrame[] }> {
@@ -175,16 +171,13 @@ export async function fetchRainViewerFrames(
   );
 
   if (!frames.length) {
-    throw new Error("Немає кадрів радару RainViewer");
+    throw new Error("Немає кадрів Live-радару");
   }
 
   return { host, frames };
 }
 
-/**
- * Тайли 256×256 + tileSize=256 у Mapbox (512+256 дає криві запити / Load failed).
- * path — токен кадру з API (unix у URL → 410).
- */
+/** tileSize у Source має бути 256 */
 export function rainTileUrl(host: string, path: string): string {
   const base = host.replace(/\/$/, "");
   const tilePath = path.startsWith("/") ? path : `/${path}`;
@@ -209,19 +202,19 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-let windCache: { at: number; field: WindRegionalField } | null = null;
+let windCache: { at: number; field: RegionalWeatherField } | null = null;
 const WIND_CACHE_MS = 15 * 60 * 1000;
 
-/** Вітер −2…+10 год по кожній області (1 запит ~25 точок) */
-export async function fetchRegionalWindField(
+/** Вітер −2…+10 год по областях України */
+export async function fetchRegionalWeatherField(
   signal?: AbortSignal
-): Promise<WindRegionalField> {
+): Promise<RegionalWeatherField> {
   const now = Date.now();
   if (windCache && now - windCache.at < WIND_CACHE_MS) {
     return windCache.field;
   }
 
-  const stations = UA_WIND_STATIONS;
+  const stations = UA_WEATHER_STATIONS;
   const url = new URL("https://api.open-meteo.com/v1/forecast");
   url.searchParams.set("latitude", stations.map((s) => s.lat).join(","));
   url.searchParams.set("longitude", stations.map((s) => s.lng).join(","));
@@ -246,8 +239,6 @@ export async function fetchRegionalWindField(
 
     const data = (await response.json()) as
       | Array<{
-          latitude: number;
-          longitude: number;
           hourly?: {
             time?: string[];
             wind_speed_10m?: number[];
@@ -255,8 +246,6 @@ export async function fetchRegionalWindField(
           };
         }>
       | {
-          latitude: number;
-          longitude: number;
           hourly?: {
             time?: string[];
             wind_speed_10m?: number[];
@@ -266,7 +255,7 @@ export async function fetchRegionalWindField(
 
     const rows = Array.isArray(data) ? data : [data];
     const times = (rows[0]?.hourly?.time ?? []).slice(0, 12);
-    const series: WindStationSeries[] = stations.map((station, index) => {
+    const series: RegionalStationSeries[] = stations.map((station, index) => {
       const row = rows[index];
       return {
         ...station,
@@ -279,7 +268,7 @@ export async function fetchRegionalWindField(
       };
     });
 
-    const field: WindRegionalField = { times, stations: series };
+    const field: RegionalWeatherField = { times, stations: series };
     windCache = { at: now, field };
     return field;
   }
@@ -291,11 +280,11 @@ export async function fetchRegionalWindField(
   );
 }
 
-export function nearestWindStation(
-  field: WindRegionalField,
+export function nearestStation(
+  field: RegionalWeatherField,
   lat: number,
   lng: number
-): WindStationSeries {
+): RegionalStationSeries {
   let best = field.stations[0]!;
   let bestDist = Infinity;
   for (const station of field.stations) {
@@ -308,15 +297,14 @@ export function nearestWindStation(
   return best;
 }
 
-/** Вітер у точці з плавним blend між годинами */
 export function windAtLocation(
-  field: WindRegionalField,
+  field: RegionalWeatherField,
   lat: number,
   lng: number,
   index: number,
   blend = 0
 ): { speed: number; dir: number } {
-  const station = nearestWindStation(field, lat, lng);
+  const station = nearestStation(field, lat, lng);
   const i0 = Math.max(0, Math.min(field.times.length - 1, index));
   const i1 = Math.min(field.times.length - 1, i0 + 1);
   const t = Math.max(0, Math.min(1, blend));
@@ -326,12 +314,12 @@ export function windAtLocation(
   };
 }
 
-export function timelineFromRegionalWind(
-  field: WindRegionalField,
+export function timelineFromRegionalWeather(
+  field: RegionalWeatherField,
   lat: number,
   lng: number
 ): WeatherHourPoint[] {
-  const station = nearestWindStation(field, lat, lng);
+  const station = nearestStation(field, lat, lng);
   return field.times.map((time, index) => ({
     time,
     precipitationMm: 0,
@@ -339,4 +327,13 @@ export function timelineFromRegionalWind(
     windSpeedMs: station.speed[index] ?? 0,
     windDirectionDeg: station.dir[index] ?? 0,
   }));
+}
+
+/** @deprecated — опади на карті тепер лише Live-радар */
+export function precipFieldToGeoJSON(
+  _field: RegionalWeatherField,
+  _index: number,
+  _blend = 0
+): FeatureCollection<Point, { mm: number }> {
+  return { type: "FeatureCollection", features: [] };
 }

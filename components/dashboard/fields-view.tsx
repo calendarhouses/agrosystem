@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { Feature, FeatureCollection, Geometry } from "geojson";
+import type { Feature, FeatureCollection, Geometry, Polygon } from "geojson";
 import {
   CloudSun,
   Droplets,
   Focus,
+  History,
+  Info,
   Loader2,
   Map as MapIcon,
   MapPin,
@@ -14,7 +16,6 @@ import {
   Pentagon,
   Save,
   Settings2,
-  Tractor,
   Trash2,
   Wind,
   X,
@@ -22,6 +23,7 @@ import {
 
 import { FieldDetailSheet } from "@/components/dashboard/field-detail-sheet";
 import { FieldMicroclimate } from "@/components/dashboard/field-microclimate";
+import { FieldTechHistorySheet } from "@/components/dashboard/field-tech-history-sheet";
 import {
   FieldsMap,
   type FieldsMapHandle,
@@ -62,11 +64,18 @@ import {
   nextFieldNumber,
   type MapFieldItem,
 } from "@/lib/map-fields";
+import type {
+  WialonGeofenceProperties,
+  WialonUnit,
+} from "@/lib/wialon";
 import {
   DEFAULT_WEATHER_LOCATION,
   fetchWeather,
+  fetchWeatherWithHourly,
   readStoredWeatherLocation,
+  shortWeatherPlaceLabel,
   writeStoredWeatherLocation,
+  type HourlyForecastHour,
   type WeatherLocation,
   type WeatherSnapshot,
 } from "@/lib/weather";
@@ -74,6 +83,11 @@ import { searchPlaces, type GeoSearchResult } from "@/lib/geocode";
 import { cn } from "@/lib/utils";
 
 const EMPTY_DRAWN: FeatureCollection = {
+  type: "FeatureCollection",
+  features: [],
+};
+
+const EMPTY_GEOFENCES: FeatureCollection<Polygon, WialonGeofenceProperties> = {
   type: "FeatureCollection",
   features: [],
 };
@@ -88,83 +102,17 @@ const CROP_OPTIONS = [
 ] as const;
 
 type PassportMode = "create" | "edit";
-type ActivePanel = "inspector" | "passport" | "fleet";
-type FleetPeriod = "today" | "week" | "season";
-
-const FLEET_PERIODS: { id: FleetPeriod; label: string }[] = [
-  { id: "today", label: "Сьогодні" },
-  { id: "week", label: "7 днів" },
-  { id: "season", label: "Сезон" },
-];
-
-const FLEET_HISTORY: Record<
-  FleetPeriod,
-  Array<{ id: string; when: string; machine: string; task: string; hours: string }>
-> = {
-  today: [
-    {
-      id: "t1",
-      when: "09:20–13:40",
-      machine: "John Deere 8R",
-      task: "Дискування",
-      hours: "4 год 20 хв",
-    },
-  ],
-  week: [
-    {
-      id: "w1",
-      when: "5 сер",
-      machine: "John Deere 8R",
-      task: "Дискування",
-      hours: "4 год 20 хв",
-    },
-    {
-      id: "w2",
-      when: "3 сер",
-      machine: "Case IH Magnum",
-      task: "Обприскування",
-      hours: "2 год 10 хв",
-    },
-    {
-      id: "w3",
-      when: "1 сер",
-      machine: "Claas Lexion",
-      task: "Огляд",
-      hours: "0 год 45 хв",
-    },
-  ],
-  season: [
-    {
-      id: "s1",
-      when: "Серпень",
-      machine: "John Deere 8R",
-      task: "Обробіток ґрунту",
-      hours: "28 год",
-    },
-    {
-      id: "s2",
-      when: "Липень",
-      machine: "Case IH Magnum",
-      task: "ЗЗР",
-      hours: "11 год",
-    },
-    {
-      id: "s3",
-      when: "Травень",
-      machine: "John Deere 8R",
-      task: "Посів",
-      hours: "16 год",
-    },
-  ],
-};
+type ActivePanel = "inspector" | "passport";
 
 /** Компактна шапка: заголовок + жива погода Open-Meteo */
 function FieldsTopBar({
   plotCount,
   totalHa,
+  fieldsLoading,
 }: {
   plotCount: number;
   totalHa: number;
+  fieldsLoading?: boolean;
 }) {
   const [location, setLocation] = useState<WeatherLocation>(
     DEFAULT_WEATHER_LOCATION
@@ -283,12 +231,14 @@ function FieldsTopBar({
             Карта Полів
           </h1>
           <p className="truncate text-[11px] text-zinc-500 sm:text-xs">
-            {plotCount} ділянок · {totalHa} га
+            {fieldsLoading
+              ? "Завантаження ділянок…"
+              : `${plotCount} ділянок · ${totalHa} га`}
           </p>
         </div>
       </div>
 
-      <div className="flex items-center gap-2 sm:gap-3">
+      <div className="flex min-w-0 max-w-[min(46vw,200px)] shrink items-center gap-2 sm:max-w-[220px] sm:gap-3">
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#D69E2E]/30 bg-[#D69E2E]/15">
           {loading ? (
             <Loader2 className="h-4 w-4 animate-spin text-[#D69E2E]" />
@@ -296,17 +246,20 @@ function FieldsTopBar({
             <CloudSun className="h-4 w-4 text-[#D69E2E]" />
           )}
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1 overflow-hidden">
           <div className="flex items-baseline gap-1.5">
             <span className="text-lg font-extrabold tabular-nums leading-none text-zinc-900">
               {weather ? `${weather.tempC}°` : "—"}
             </span>
-            <span className="hidden text-[11px] text-zinc-500 sm:inline">
+            <span className="hidden truncate text-[11px] text-zinc-500 sm:inline">
               {error ? "Немає даних" : weather?.condition ?? "Завантаження…"}
             </span>
           </div>
-          <p className="truncate text-[10px] text-zinc-500 sm:text-[11px]">
-            {location.label}
+          <p
+            className="truncate text-[10px] text-zinc-500 sm:text-[11px]"
+            title={location.label}
+          >
+            {shortWeatherPlaceLabel(location.label)}
           </p>
         </div>
         <div className="hidden items-center gap-1.5 border-l border-[#E5DFD3] pl-3 md:flex">
@@ -423,8 +376,13 @@ export function FieldsView() {
   const fieldsMapRef = useRef<FieldsMapHandle>(null);
   const mapHostRef = useRef<HTMLDivElement>(null);
   const [portalReady, setPortalReady] = useState(false);
-  const [overlayPos, setOverlayPos] = useState<{ left: number; bottom: number }>({
+  const [overlayPos, setOverlayPos] = useState<{
+    left: number;
+    top: number;
+    bottom: number;
+  }>({
     left: 24,
+    top: 96,
     bottom: 24,
   });
 
@@ -438,6 +396,7 @@ export function FieldsView() {
     const rect = host.getBoundingClientRect();
     setOverlayPos({
       left: Math.max(12, rect.left + 12),
+      top: Math.max(12, rect.top + 12),
       bottom: Math.max(12, window.innerHeight - rect.bottom + 12),
     });
   }, []);
@@ -445,11 +404,17 @@ export function FieldsView() {
   const [drawnContours, setDrawnContours] =
     useState<FeatureCollection>(EMPTY_DRAWN);
   const [savedFields, setSavedFields] = useState<FarmField[]>([]);
+  const [wialonUnits, setWialonUnits] = useState<WialonUnit[]>([]);
+  const [wialonGeofences, setWialonGeofences] =
+    useState<FeatureCollection<Polygon, WialonGeofenceProperties>>(
+      EMPTY_GEOFENCES
+    );
+  const [wialonLoading, setWialonLoading] = useState(true);
   const [statusHint, setStatusHint] = useState<string | null>(null);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activePanel, setActivePanel] = useState<ActivePanel | null>(null);
-  const [fleetPeriod, setFleetPeriod] = useState<FleetPeriod>("today");
+  const [isFieldHistoryOpen, setIsFieldHistoryOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -474,8 +439,12 @@ export function FieldsView() {
   }, [syncOverlayPos, activePanel, selectedId]);
 
   const mapFields = useMemo(
-    () => buildMapFieldList(savedFields),
-    [savedFields]
+    () =>
+      buildMapFieldList(savedFields, wialonGeofences, {
+        // Поки Wialon грузиться — без демо «Поле 1/2/3»
+        allowDemoFallback: !wialonLoading,
+      }),
+    [savedFields, wialonGeofences, wialonLoading]
   );
 
   const selectedItem = useMemo(
@@ -484,12 +453,16 @@ export function FieldsView() {
   );
 
   const [fieldWeather, setFieldWeather] = useState<WeatherSnapshot | null>(null);
+  const [fieldHourly, setFieldHourly] = useState<HourlyForecastHour[] | null>(
+    null
+  );
   const [fieldWeatherLoading, setFieldWeatherLoading] = useState(false);
   const [fieldWeatherError, setFieldWeatherError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!selectedItem?.geometry) {
       setFieldWeather(null);
+      setFieldHourly(null);
       setFieldWeatherError(null);
       setFieldWeatherLoading(false);
       return;
@@ -498,6 +471,7 @@ export function FieldsView() {
     const centroid = fieldCentroid(selectedItem.geometry);
     if (!centroid) {
       setFieldWeather(null);
+      setFieldHourly(null);
       setFieldWeatherError("Немає центру поля");
       return;
     }
@@ -506,14 +480,20 @@ export function FieldsView() {
     setFieldWeatherLoading(true);
     setFieldWeatherError(null);
 
-    fetchWeather(centroid.latitude, centroid.longitude, controller.signal)
-      .then((data) => {
-        setFieldWeather(data);
+    fetchWeatherWithHourly(
+      centroid.latitude,
+      centroid.longitude,
+      controller.signal
+    )
+      .then(({ current, hourly }) => {
+        setFieldWeather(current);
+        setFieldHourly(hourly);
         setFieldWeatherLoading(false);
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
         setFieldWeather(null);
+        setFieldHourly(null);
         setFieldWeatherLoading(false);
         setFieldWeatherError(
           error instanceof Error ? error.message : "Помилка погоди"
@@ -554,17 +534,59 @@ export function FieldsView() {
     };
   }, []);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    setWialonLoading(true);
+
+    fetch("/api/wialon", { signal: controller.signal })
+      .then(async (response) => {
+        const data = (await response.json()) as {
+          ok?: boolean;
+          units?: WialonUnit[];
+          geofences?: FeatureCollection<Polygon, WialonGeofenceProperties>;
+        };
+        if (!response.ok || !Array.isArray(data.units)) {
+          throw new Error("Не вдалося завантажити Wialon");
+        }
+        setWialonUnits(data.units);
+        setWialonGeofences(
+          data.geofences?.type === "FeatureCollection"
+            ? data.geofences
+            : EMPTY_GEOFENCES
+        );
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        console.error(error);
+        setWialonUnits([]);
+        setWialonGeofences(EMPTY_GEOFENCES);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setWialonLoading(false);
+      });
+
+    return () => controller.abort();
+  }, []);
+
   const flashStatus = useCallback((message: string) => {
     setStatusHint(message);
     window.setTimeout(() => setStatusHint(null), 3200);
   }, []);
 
-  const closePanels = useCallback(() => {
+  const restoreMapOverview = useCallback(() => {
+    setSelectedId(null);
     setActivePanel(null);
     setConfirmDelete(false);
+    setIsFieldHistoryOpen(false);
+    setSheetOpen(false);
     setPendingFeature(null);
     setSavedFlash(false);
+    window.setTimeout(() => fieldsMapRef.current?.fitAllFields(), 40);
   }, []);
+
+  const closePanels = useCallback(() => {
+    restoreMapOverview();
+  }, [restoreMapOverview]);
 
   const closePassport = useCallback(() => {
     setActivePanel(null);
@@ -584,9 +606,8 @@ export function FieldsView() {
       setPendingFeature(null);
       setSavedFlash(false);
 
-      if (options?.fly !== false && item.geometry) {
-        fieldsMapRef.current?.focusGeometry(item.geometry);
-      }
+      if (options?.fly === false || !item.geometry) return;
+      fieldsMapRef.current?.focusFieldForInspector(item.geometry);
     },
     []
   );
@@ -617,12 +638,31 @@ export function FieldsView() {
       setConfirmDelete(false);
       return;
     }
+    if (isFieldHistoryOpen || sheetOpen) {
+      restoreMapOverview();
+      return;
+    }
+    if (activePanel === "inspector") {
+      closePanels();
+      return;
+    }
     if (activePanel) {
       setActivePanel(null);
       return;
     }
-    setSelectedId(null);
-  }, [activePanel, closePassport, confirmDelete]);
+    if (selectedId) {
+      restoreMapOverview();
+    }
+  }, [
+    activePanel,
+    closePanels,
+    closePassport,
+    confirmDelete,
+    isFieldHistoryOpen,
+    restoreMapOverview,
+    selectedId,
+    sheetOpen,
+  ]);
 
   function handleOpenCreatePassport() {
     if (editingFieldId) {
@@ -709,8 +749,8 @@ export function FieldsView() {
   function openFleetPanel(item: MapFieldItem) {
     setSelectedId(item.id);
     setConfirmDelete(false);
-    setFleetPeriod("today");
-    setActivePanel("fleet");
+    setActivePanel(null);
+    setIsFieldHistoryOpen(true);
   }
 
   async function persistGeometryEdit(feature: Feature<Geometry>) {
@@ -809,7 +849,15 @@ export function FieldsView() {
   }
 
   async function handleDeleteSelected() {
-    if (!selectedItem || selectedItem.source !== "saved" || !selectedItem.farmField) {
+    if (!selectedItem) return;
+
+    if (selectedItem.source !== "saved" || !selectedItem.farmField) {
+      setConfirmDelete(false);
+      flashStatus(
+        selectedItem.source === "wialon"
+          ? "Геозону Wialon не можна видалити з AgroSystem"
+          : "Демо-поле лише для огляду"
+      );
       return;
     }
 
@@ -844,6 +892,7 @@ export function FieldsView() {
   const overlayStyle = {
     position: "fixed" as const,
     left: overlayPos.left,
+    top: overlayPos.top,
     bottom: overlayPos.bottom,
     zIndex: 80,
   };
@@ -851,234 +900,140 @@ export function FieldsView() {
   const inspectorPanel =
     selectedItem && activePanel === "inspector" ? (
       <div
-        className="w-[min(92vw,380px)] rounded-xl border border-[#E5DFD3] bg-[#F4F1EA] p-5 text-zinc-900 shadow-xl"
-        style={overlayStyle}
+        className="flex w-[min(92vw,400px)] max-w-[400px] flex-col overflow-hidden rounded-2xl border border-[#E5DFD3] bg-white text-zinc-900 shadow-xl"
+        style={{ ...overlayStyle, maxWidth: 400 }}
       >
-        <div className="mb-4 flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="mb-2 flex items-center gap-2">
-              <span
-                className="h-3 w-3 rounded-full ring-2 ring-white"
-                style={{ backgroundColor: selectedItem.color }}
-              />
-              <span className="rounded-full border border-[#E5DFD3] bg-zinc-100 px-2.5 py-0.5 text-[10px] font-semibold tracking-wide text-zinc-500 uppercase">
-                {selectedItem.source === "saved" ? "Збережено" : "Демо"}
-              </span>
-            </div>
-            <p className="text-lg font-extrabold tracking-tight text-zinc-900">
-              {selectedItem.name}: {selectedItem.crop}
-            </p>
-            <p className="mt-1 text-sm tabular-nums text-zinc-500">
-              {selectedItem.areaHa} га
-            </p>
-          </div>
-          <button
-            type="button"
-            aria-label="Закрити"
-            onClick={closePanels}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-[#E5DFD3]/60 hover:text-zinc-900"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <FieldMicroclimate
-          className="mb-4"
-          weather={fieldWeather}
-          loading={fieldWeatherLoading}
-          error={fieldWeatherError}
-        />
-
-        {confirmDelete ? (
-          <div className="space-y-3 rounded-xl border border-[#C05621]/25 bg-[#C05621]/5 p-4">
-            <p className="text-sm font-semibold text-[#C05621]">
-              Видалити «{selectedItem.name}» назавжди?
-            </p>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void handleDeleteSelected()}
-                className="inline-flex h-10 flex-1 items-center justify-center rounded-lg bg-[#C05621] text-sm font-bold text-white transition-colors hover:bg-[#9c4221] disabled:opacity-60"
-              >
-                Так, видалити
-              </button>
-              <button
-                type="button"
-                onClick={() => setConfirmDelete(false)}
-                className="inline-flex h-10 flex-1 items-center justify-center rounded-lg border border-[#E5DFD3] bg-zinc-100 text-sm font-semibold text-zinc-700 transition-colors hover:bg-[#E5DFD3]/60"
-              >
-                Скасувати
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-2.5">
-            <button
-              type="button"
-              onClick={() => {
-                setActivePanel(null);
-                setSheetOpen(true);
-              }}
-              className="col-span-2 inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#276749] text-sm font-bold text-white shadow-sm transition-colors hover:bg-[#22543d]"
-            >
-              Деталі поля
-            </button>
-
-            {selectedItem.source === "saved" ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => openEditPassport(selectedItem)}
-                  className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-[#E5DFD3] bg-zinc-100 text-sm font-semibold text-zinc-800 transition-colors hover:bg-[#E5DFD3]/70"
-                >
-                  <Pencil className="h-4 w-4" />
-                  Паспорт
-                </button>
-                <button
-                  type="button"
-                  onClick={() => startGeometryEdit(selectedItem)}
-                  className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-[#E5DFD3] bg-zinc-100 text-sm font-semibold text-zinc-800 transition-colors hover:bg-[#E5DFD3]/70"
-                >
-                  <Pentagon className="h-4 w-4" />
-                  Контур
-                </button>
-                <button
-                  type="button"
-                  onClick={() => openFleetPanel(selectedItem)}
-                  className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-[#E5DFD3] bg-zinc-100 text-sm font-semibold text-zinc-800 transition-colors hover:bg-[#E5DFD3]/70"
-                >
-                  <Tractor className="h-4 w-4" />
-                  Техніка
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmDelete(true)}
-                  className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-[#C05621]/25 bg-[#C05621]/10 text-sm font-semibold text-[#C05621] transition-colors hover:bg-[#C05621]/15"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Видалити
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={() => openFleetPanel(selectedItem)}
-                  className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-[#E5DFD3] bg-zinc-100 text-sm font-semibold text-zinc-800 transition-colors hover:bg-[#E5DFD3]/70"
-                >
-                  <Tractor className="h-4 w-4" />
-                  Техніка
-                </button>
-                <p className="flex items-center justify-center text-xs leading-snug text-zinc-500">
-                  Демо-поле · лише огляд
+        <div className="custom-scrollbar flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto p-5">
+          <div className="sticky top-0 z-20 -mx-1 mb-5 flex items-start justify-between gap-3 bg-white px-1 pb-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2.5">
+                <span
+                  className="h-3 w-3 shrink-0 rounded-full ring-2 ring-white"
+                  style={{ backgroundColor: selectedItem.color }}
+                  aria-hidden
+                />
+                <p className="truncate text-lg font-extrabold tracking-tight text-zinc-900">
+                  {selectedItem.crop
+                    ? `${selectedItem.name}: ${selectedItem.crop}`
+                    : selectedItem.name}
                 </p>
-              </>
-            )}
-          </div>
-        )}
-      </div>
-    ) : null;
-
-  const fleetPanel =
-    selectedItem && activePanel === "fleet" ? (
-      <div
-        className="w-[min(92vw,400px)] rounded-xl border border-[#E5DFD3] bg-[#F4F1EA] p-5 text-zinc-900 shadow-xl"
-        style={overlayStyle}
-      >
-        <div className="mb-4 flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-lg font-extrabold tracking-tight text-zinc-900">
-              Техніка на полі
-            </p>
-            <p className="mt-1 truncate text-sm text-zinc-500">
-              {selectedItem.name}: {selectedItem.crop}
-            </p>
-          </div>
-          <button
-            type="button"
-            aria-label="Закрити"
-            onClick={closePanels}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-[#E5DFD3]/60 hover:text-zinc-900"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <div className="mb-4 rounded-xl border border-[#276749]/25 bg-[#276749]/10 px-3.5 py-3">
-          <div className="mb-1 flex items-center gap-2 text-[11px] font-semibold tracking-wide text-[#276749] uppercase">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#276749]" />
-            Зараз на полі
-          </div>
-          <p className="text-sm font-bold text-zinc-900">John Deere 8R</p>
-          <p className="mt-0.5 text-xs text-zinc-600">
-            Дискування · 12 км/год · паливо 45%
-          </p>
-        </div>
-
-        <FieldMicroclimate
-          className="mb-4"
-          weather={fieldWeather}
-          loading={fieldWeatherLoading}
-          error={fieldWeatherError}
-        />
-
-        <div className="mb-3 flex gap-1.5 rounded-xl bg-zinc-100 p-1">
-          {FLEET_PERIODS.map((period) => (
-            <button
-              key={period.id}
-              type="button"
-              onClick={() => setFleetPeriod(period.id)}
-              className={cn(
-                "flex-1 rounded-lg px-2 py-1.5 text-xs font-semibold transition-colors",
-                fleetPeriod === period.id
-                  ? "bg-[#F4F1EA] text-[#276749] shadow-sm"
-                  : "text-zinc-500 hover:text-zinc-800"
-              )}
-            >
-              {period.label}
-            </button>
-          ))}
-        </div>
-
-        <p className="mb-2 text-[11px] font-semibold tracking-wider text-zinc-500 uppercase">
-          Історія за період
-        </p>
-        <ul className="max-h-[240px] space-y-2 overflow-y-auto pr-0.5">
-          {FLEET_HISTORY[fleetPeriod].map((row) => (
-            <li
-              key={row.id}
-              className="rounded-xl border border-[#E5DFD3] bg-zinc-100/80 px-3 py-2.5"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-semibold text-zinc-900">{row.machine}</p>
-                <span className="text-[11px] tabular-nums text-zinc-500">
-                  {row.when}
-                </span>
               </div>
-              <p className="mt-0.5 text-xs text-zinc-600">
-                {row.task} · {row.hours}
+              <p className="mt-1 pl-[22px] text-sm text-zinc-500 tabular-nums">
+                {selectedItem.areaHa.toFixed(2)} га
               </p>
-            </li>
-          ))}
-        </ul>
+            </div>
+            <button
+              type="button"
+              aria-label="Закрити"
+              onClick={closePanels}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
 
-        <button
-          type="button"
-          onClick={() => {
-            setActivePanel(null);
-            flashStatus("Відкрийте розділ Техніка для повного журналу");
-          }}
-          className="mt-4 inline-flex h-10 w-full items-center justify-center rounded-xl border border-[#E5DFD3] bg-zinc-100 text-sm font-semibold text-zinc-800 transition-colors hover:bg-[#E5DFD3]/70"
-        >
-          Закрити
-        </button>
+          {confirmDelete ? (
+            <div className="space-y-3 rounded-2xl border border-rose-200 bg-rose-50 p-4">
+              <p className="text-sm font-semibold text-rose-700">
+                {selectedItem.source === "saved"
+                  ? `Видалити «${selectedItem.name}» назавжди?`
+                  : selectedItem.source === "wialon"
+                    ? `«${selectedItem.name}» — геозона Wialon. Видалити з AgroSystem неможливо.`
+                    : `«${selectedItem.name}» — демо-поле, лише для огляду.`}
+              </p>
+              <div className="flex gap-2">
+                {selectedItem.source === "saved" ? (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void handleDeleteSelected()}
+                    className="inline-flex h-11 flex-1 items-center justify-center rounded-xl bg-rose-500 text-sm font-bold text-white transition-colors hover:bg-rose-600 disabled:opacity-60"
+                  >
+                    Так, видалити
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(false)}
+                  className={cn(
+                    "inline-flex h-11 items-center justify-center rounded-xl border border-[#E5DFD3] bg-white text-sm font-semibold text-zinc-700 transition-colors hover:bg-zinc-50",
+                    selectedItem.source === "saved" ? "flex-1" : "w-full"
+                  )}
+                >
+                  {selectedItem.source === "saved" ? "Скасувати" : "Зрозуміло"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-1 flex-col gap-5">
+              <div className="flex flex-col gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActivePanel(null);
+                    setSheetOpen(true);
+                  }}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#276749] px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#1f5239]"
+                >
+                  <Info className="size-4 shrink-0" />
+                  Деталі поля
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openFleetPanel(selectedItem)}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[#E5DFD3] bg-zinc-50 px-4 py-3 text-sm font-semibold text-zinc-800 transition-colors hover:bg-zinc-100"
+                >
+                  <History className="size-4 shrink-0" />
+                  Історія техніки
+                </button>
+              </div>
+
+              {selectedItem.source === "saved" ? (
+                <div className="grid grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => openEditPassport(selectedItem)}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-[#E5DFD3] bg-white px-3 py-2.5 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-50"
+                  >
+                    <Pencil className="size-3.5 shrink-0" />
+                    Паспорт
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => startGeometryEdit(selectedItem)}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-[#E5DFD3] bg-white px-3 py-2.5 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-50"
+                  >
+                    <Pentagon className="size-3.5 shrink-0" />
+                    Контур
+                  </button>
+                </div>
+              ) : null}
+
+              <FieldMicroclimate
+                className="space-y-4"
+                weather={fieldWeather}
+                hourly={fieldHourly}
+                loading={fieldWeatherLoading}
+                error={fieldWeatherError}
+              />
+
+              <button
+                type="button"
+                className="mt-auto flex w-full items-center justify-center gap-2 rounded-xl bg-rose-50 py-3 font-medium text-rose-600 transition-colors hover:bg-rose-100"
+                onClick={() => setConfirmDelete(true)}
+              >
+                <Trash2 size={18} />
+                Видалити поле
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     ) : null;
 
   const passportPanel = passportOpen ? (
       <div
-        className="w-[min(92vw,400px)] rounded-xl border border-[#E5DFD3] bg-[#F4F1EA] p-5 text-zinc-900 shadow-xl"
+        className="flex w-[min(92vw,400px)] max-w-[400px] flex-col overflow-y-auto rounded-2xl border border-[#E5DFD3] bg-[#F4F1EA] p-5 text-zinc-900 shadow-xl"
         style={overlayStyle}
       >
       <div className="mb-4 flex items-start justify-between gap-3">
@@ -1223,7 +1178,11 @@ export function FieldsView() {
 
   return (
     <main className="mx-auto flex h-full w-full max-w-[1600px] flex-col px-4 pt-2 pb-3 sm:px-6 lg:px-8">
-      <FieldsTopBar plotCount={mapFields.length} totalHa={totalHa} />
+      <FieldsTopBar
+        plotCount={mapFields.length}
+        totalHa={totalHa}
+        fieldsLoading={wialonLoading}
+      />
 
       <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-5 lg:gap-4">
         <GlassCard className="flex min-h-0 flex-col overflow-hidden p-4 hover:scale-100 lg:col-span-1">
@@ -1240,53 +1199,77 @@ export function FieldsView() {
           </div>
 
           <ul className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto pr-1">
-            {mapFields.map((field) => {
-              const active =
-                selectedId === field.id || editingFieldId === field.id;
-              return (
-                <li key={field.id}>
-                  <button
-                    type="button"
-                    onClick={() => selectField(field)}
-                    onDoubleClick={() => {
-                      setSelectedId(field.id);
-                      setActivePanel(null);
-                      setSheetOpen(true);
-                      if (field.geometry) {
-                        fieldsMapRef.current?.focusGeometry(field.geometry);
-                      }
-                    }}
-                    className={cn(
-                      "group flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-all duration-200",
-                      active
-                        ? "border-[#276749]/35 bg-[#276749]/10 shadow-sm"
-                        : "border-[#E5DFD3] bg-zinc-100 hover:border-[#E5DFD3] hover:bg-[#E5DFD3]/40"
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "h-2.5 w-2.5 shrink-0 rounded-full transition-transform",
-                        active && "scale-125 ring-2 ring-white"
-                      )}
-                      style={{ backgroundColor: field.color }}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-zinc-900">
-                        {field.name}: {field.crop}
-                      </p>
-                      <p className="text-xs text-zinc-500">
-                        {field.areaHa} га
-                        {editingFieldId === field.id
-                          ? " · редагування"
-                          : field.source === "saved"
-                            ? " · ваше"
-                            : ""}
-                      </p>
-                    </div>
-                  </button>
+            {wialonLoading ? (
+              <>
+                <li className="flex items-center gap-2 px-1 py-1.5 text-xs font-medium text-zinc-500">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Завантаження ділянок…
                 </li>
-              );
-            })}
+                {Array.from({ length: 6 }).map((_, index) => (
+                  <li
+                    key={`field-skeleton-${index}`}
+                    className="flex items-center gap-3 rounded-xl border border-[#E5DFD3] bg-zinc-100/80 px-3 py-2.5"
+                    aria-hidden
+                  >
+                    <span className="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-zinc-300" />
+                    <div className="min-w-0 flex-1 space-y-1.5">
+                      <div className="h-3.5 w-[70%] animate-pulse rounded bg-zinc-200/90" />
+                      <div className="h-2.5 w-16 animate-pulse rounded bg-zinc-200/70" />
+                    </div>
+                  </li>
+                ))}
+              </>
+            ) : (
+              mapFields.map((field) => {
+                const active =
+                  selectedId === field.id || editingFieldId === field.id;
+                return (
+                  <li key={field.id}>
+                    <button
+                      type="button"
+                      onClick={() => selectField(field)}
+                      onDoubleClick={() => {
+                        setSelectedId(field.id);
+                        setActivePanel(null);
+                        setSheetOpen(true);
+                        if (field.geometry) {
+                          fieldsMapRef.current?.focusGeometry(field.geometry);
+                        }
+                      }}
+                      className={cn(
+                        "group flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-all duration-200",
+                        active
+                          ? "border-[#276749] bg-emerald-50/50 shadow-sm"
+                          : "border-[#E5DFD3] bg-zinc-100 hover:border-[#E5DFD3] hover:bg-[#E5DFD3]/40"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "h-2.5 w-2.5 shrink-0 rounded-full transition-transform",
+                          active && "scale-125 ring-2 ring-white"
+                        )}
+                        style={{ backgroundColor: field.color }}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-zinc-900">
+                          {field.crop
+                            ? `${field.name}: ${field.crop}`
+                            : field.name}
+                        </p>
+                        <p className="text-xs tabular-nums text-zinc-500">
+                          {field.areaHa.toFixed(2)} га
+                          {editingFieldId === field.id
+                            ? " · редагування"
+                            : field.source === "saved"
+                              ? " · ваше"
+                              : ""}
+                        </p>
+                      </div>
+                    </button>
+                  </li>
+                );
+              })
+            )}
           </ul>
 
           {(saveHint || statusHint) && (
@@ -1312,6 +1295,9 @@ export function FieldsView() {
               onFieldClick={openFieldById}
               onDrawnFeaturesChange={handleDrawnFeaturesChange}
               savedFieldsGeoJson={savedGeoJson}
+              wialonUnits={wialonUnits}
+              wialonGeofences={wialonGeofences}
+              wialonLoading={wialonLoading}
               editingFieldId={editingFieldId}
               selectedFieldId={selectedId}
               geometryEditMode={Boolean(editingFieldId)}
@@ -1328,20 +1314,35 @@ export function FieldsView() {
         ? createPortal(
             <>
               {inspectorPanel}
-              {fleetPanel}
               {passportPanel}
             </>,
             document.body
           )
         : null}
 
+      <FieldTechHistorySheet
+        open={isFieldHistoryOpen}
+        onOpenChange={(open) => {
+          setIsFieldHistoryOpen(open);
+          if (!open) restoreMapOverview();
+        }}
+        fieldName={selectedItem?.name ?? null}
+        areaHa={selectedItem?.areaHa ?? null}
+        fieldGeometry={selectedItem?.geometry ?? null}
+        units={wialonUnits}
+      />
+
       <FieldDetailSheet
         field={sheetField}
         analytics={sheetAnalytics}
         open={sheetOpen}
-        onOpenChange={setSheetOpen}
+        onOpenChange={(open) => {
+          setSheetOpen(open);
+          if (!open) restoreMapOverview();
+        }}
         onPlanWork={() => {
           setSheetOpen(false);
+          restoreMapOverview();
           flashStatus("Роботу додано до черги операцій");
         }}
       />

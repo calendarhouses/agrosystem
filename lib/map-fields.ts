@@ -1,3 +1,11 @@
+import type {
+  Feature,
+  FeatureCollection,
+  MultiPolygon,
+  Polygon,
+} from "geojson";
+import { area as turfArea, booleanPointInPolygon } from "@turf/turf";
+
 import {
   FIELD_ANALYTICS,
   FIELDS,
@@ -7,8 +15,9 @@ import {
 } from "@/lib/dashboard-data";
 import type { FarmField, FieldGeometry } from "@/lib/farm-fields";
 import { FIELDS_GEOJSON } from "@/lib/fields-geojson";
+import type { WialonGeofenceProperties, WialonUnit } from "@/lib/wialon";
 
-export type MapFieldSource = "demo" | "saved";
+export type MapFieldSource = "demo" | "saved" | "wialon";
 
 /** Єдина модель поля для списку / інспектора / карти */
 export type MapFieldItem = {
@@ -17,6 +26,7 @@ export type MapFieldItem = {
   crop: string;
   areaHa: number;
   color: string;
+  description: string;
   source: MapFieldSource;
   geometry: FieldGeometry | null;
   demoField?: Field;
@@ -50,6 +60,7 @@ export function demoToMapItem(field: Field): MapFieldItem {
     crop: field.crop,
     areaHa: field.areaHa,
     color: DEMO_COLORS[field.accent],
+    description: "",
     source: "demo",
     geometry: demoGeometry(field.id),
     demoField: field,
@@ -63,14 +74,99 @@ export function farmToMapItem(field: FarmField): MapFieldItem {
     crop: field.crop,
     areaHa: field.areaHa,
     color: field.color,
+    description: "",
     source: "saved",
     geometry: field.geometry,
     farmField: field,
   };
 }
 
-export function buildMapFieldList(saved: FarmField[]): MapFieldItem[] {
-  const items = [...FIELDS.map(demoToMapItem), ...saved.map(farmToMapItem)];
+/** Площа полігону в га через Turf (як у ТЗ) */
+export function areaHaFromFeature(feature: Feature): number {
+  try {
+    return Number((turfArea(feature) / 10_000).toFixed(2));
+  } catch {
+    return 0;
+  }
+}
+
+export function geofenceToMapItem(
+  feature: Feature<Polygon, WialonGeofenceProperties>
+): MapFieldItem | null {
+  if (feature.geometry?.type !== "Polygon") return null;
+  const props = feature.properties;
+  const id = props?.id ?? String(feature.id ?? "");
+  if (!id) return null;
+
+  return {
+    id,
+    name: props.name || props.id || "Поле",
+    crop: "",
+    areaHa: areaHaFromFeature(feature),
+    color: props.color || "#276749",
+    description: (props.description ?? "").trim(),
+    source: "wialon",
+    geometry: feature.geometry,
+  };
+}
+
+/** Техніка, чиї координати лежать всередині полігону поля */
+export function unitsInsideField(
+  units: WialonUnit[],
+  geometry: FieldGeometry | null | undefined
+): WialonUnit[] {
+  if (
+    !geometry ||
+    (geometry.type !== "Polygon" && geometry.type !== "MultiPolygon")
+  ) {
+    return [];
+  }
+
+  const polygon: Feature<Polygon | MultiPolygon> = {
+    type: "Feature",
+    properties: {},
+    geometry,
+  };
+
+  return units.filter((unit) => {
+    const pos = unit.pos;
+    if (!pos) return false;
+    if (!Number.isFinite(pos.x) || !Number.isFinite(pos.y)) return false;
+    if (pos.x <= 0 || pos.y <= 0) return false;
+    try {
+      return booleanPointInPolygon([pos.x, pos.y], polygon);
+    } catch {
+      return false;
+    }
+  });
+}
+
+/**
+ * Список ділянок: геозони Wialon (+ збережені з Supabase).
+ * Демо-мок — лише коли завантаження вже завершилось і геозон немає.
+ */
+export function buildMapFieldList(
+  saved: FarmField[],
+  geofences?: FeatureCollection<Polygon, WialonGeofenceProperties> | null,
+  options?: { allowDemoFallback?: boolean }
+): MapFieldItem[] {
+  const allowDemo = options?.allowDemoFallback !== false;
+  const fromWialon = (geofences?.features ?? [])
+    .map((feature) =>
+      geofenceToMapItem(
+        feature as Feature<Polygon, WialonGeofenceProperties>
+      )
+    )
+    .filter((item): item is MapFieldItem => item != null);
+
+  const base =
+    fromWialon.length > 0
+      ? fromWialon
+      : allowDemo
+        ? FIELDS.map(demoToMapItem)
+        : [];
+
+  const items = [...base, ...saved.map(farmToMapItem)];
   return items.sort((a, b) => {
     const numA = fieldNumber(a.name);
     const numB = fieldNumber(b.name);

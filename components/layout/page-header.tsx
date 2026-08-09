@@ -67,20 +67,15 @@ export function PageHeader({
         ) : null}
       </div>
       {actions ? (
-        <div className="hidden shrink-0 items-center gap-2 sm:flex">{actions}</div>
+        <div className="flex max-w-full shrink-0 flex-wrap items-center justify-end gap-1.5">
+          {actions}
+        </div>
       ) : null}
     </HeaderPanel>
   );
 
   if (!hasPanels) {
-    return (
-      <div className="mb-4 shrink-0">
-        {titleBlock}
-        {actions ? (
-          <div className="mt-3 flex flex-wrap gap-2 sm:hidden">{actions}</div>
-        ) : null}
-      </div>
-    );
+    return <div className="mb-4 shrink-0">{titleBlock}</div>;
   }
 
   return (
@@ -91,9 +86,6 @@ export function PageHeader({
           {panel}
         </div>
       ))}
-      {actions ? (
-        <div className="flex flex-wrap gap-2 sm:hidden">{actions}</div>
-      ) : null}
     </div>
   );
 }

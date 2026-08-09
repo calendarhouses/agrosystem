@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Bot,
+  Fuel,
   Map as MapIcon,
   Search,
   Tractor,
@@ -26,7 +26,7 @@ const iconMap = {
   map: MapIcon,
   tractor: Tractor,
   chart: TrendingUp,
-  bot: Bot,
+  fuel: Fuel,
 } as const;
 
 type CommandMenuProps = {

@@ -355,13 +355,6 @@ export const FINANCIAL_MONTH_FULL: Record<string, string> = {
   Сер: "Серпень",
 };
 
-/** Статус Telegram-бота (майбутня таблиця integrations) */
-export const TELEGRAM_BOT_STATUS = {
-  online: true,
-  connectedWorkers: 8,
-  lastPingLabel: "1 хв тому",
-};
-
 /** Пункти глобального пошуку (Command Menu) */
 export const COMMAND_ITEMS = [
   {
@@ -374,11 +367,19 @@ export const COMMAND_ITEMS = [
   },
   {
     id: "cmd-mtz",
-    label: "Статус МТЗ-82",
-    hint: "Моніторинг техніки",
+    label: "Статус техніки",
+    hint: "Моніторинг автопарку",
     group: "Техніка",
     icon: "tractor" as const,
-    href: "/fleet",
+    href: "/equipment",
+  },
+  {
+    id: "cmd-fuel",
+    label: "Склад палива",
+    hint: "Резервуари та списання",
+    group: "Техніка",
+    icon: "fuel" as const,
+    href: "/fuel",
   },
   {
     id: "cmd-report",
@@ -395,14 +396,6 @@ export const COMMAND_ITEMS = [
     group: "Операції",
     icon: "chart" as const,
     href: "/reports",
-  },
-  {
-    id: "cmd-telegram",
-    label: "Налаштування Telegram-бота",
-    hint: "Інтеграції та сповіщення",
-    group: "Система",
-    icon: "bot" as const,
-    href: "/fleet",
   },
 ] as const;
 
