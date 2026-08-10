@@ -41,7 +41,8 @@ type FieldLike = {
   geometry?: FieldGeometry | null;
 };
 
-const MIN_VISIT_SEC = 120;
+/** Короткі проїзди (3–15 хв) — шум GPS, не роботи на полі */
+const MIN_VISIT_SEC = 20 * 60;
 const CHUNK_DAYS = 7;
 
 /** Агросезон: 1 березня → останній день лютого наступного року */

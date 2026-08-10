@@ -47,7 +47,13 @@ async function loadFuelTransactions(): Promise<FuelTransaction[]> {
       .limit(20);
 
     if (error || !data) {
-      console.error("[fuel] loadFuelTransactions:", error?.message);
+      console.error(
+        "[fuel] loadFuelTransactions:",
+        error?.message,
+        error?.message?.includes("JWT issued at future")
+          ? "(зсув годинника / нові sb_ ключі — є auto-retry)"
+          : ""
+      );
       return [];
     }
 

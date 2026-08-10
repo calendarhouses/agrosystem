@@ -1,5 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
+import { createSupabaseResilientFetch } from "@/lib/supabase/resilient-fetch";
+
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -13,10 +15,14 @@ let browserClient: SupabaseClient | null = null;
 export function createBrowserSupabase() {
   if (browserClient) return browserClient;
 
-  browserClient = createClient(url ?? "", anonKey ?? "", {
+  const key = anonKey ?? "";
+  browserClient = createClient(url ?? "", key, {
     auth: {
       persistSession: false,
       autoRefreshToken: false,
+    },
+    global: {
+      fetch: createSupabaseResilientFetch(key),
     },
   });
 

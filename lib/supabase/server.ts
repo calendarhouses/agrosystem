@@ -1,7 +1,9 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-/** Серверний клієнт з service role (API routes) */
-export function createServiceSupabase() {
+import { createSupabaseResilientFetch } from "@/lib/supabase/resilient-fetch";
+
+/** Серверний клієнт з service role / secret key (API routes, RSC) */
+export function createServiceSupabase(): SupabaseClient {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key =
     process.env.SUPABASE_SERVICE_ROLE_KEY ??
@@ -15,6 +17,9 @@ export function createServiceSupabase() {
     auth: {
       persistSession: false,
       autoRefreshToken: false,
+    },
+    global: {
+      fetch: createSupabaseResilientFetch(key),
     },
   });
 }

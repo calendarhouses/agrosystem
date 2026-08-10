@@ -786,19 +786,6 @@ function getUnitMotionStatus(unit: WialonUnit): UnitMotionStatus {
   return { kind: "off" };
 }
 
-function formatMotionStatusLabel(status: UnitMotionStatus): string {
-  switch (status.kind) {
-    case "gps-error":
-      return "Похибка GPS";
-    case "moving":
-      return `В русі: ${status.speedKmh} км/год`;
-    case "idling":
-      return "Холостий хід";
-    case "off":
-      return "Вимкнено";
-  }
-}
-
 function UnitStatusBadge({ unit }: { unit: WialonUnit }) {
   const status = getUnitMotionStatus(unit);
 
@@ -1087,7 +1074,6 @@ function UnitCard({
   summaryHighlight = false,
   dimmed = false,
 }: UnitCardProps) {
-  const motion = getUnitMotionStatus(unit);
   const telemetry = parseUnitSensors(unit);
   const fuelPct = fuelProgressPercent(telemetry.fuelLiters);
   const hasFuel = telemetry.fuelLiters != null && Number.isFinite(telemetry.fuelLiters);
@@ -1140,20 +1126,6 @@ function UnitCard({
           <div className="min-w-0 flex-1 pr-1">
             <p className="text-base leading-snug font-bold break-words text-zinc-900">
               {unit.nm}
-            </p>
-            <p
-              className={cn(
-                "mt-0.5 text-sm",
-                motion.kind === "gps-error"
-                  ? "font-medium text-zinc-400"
-                  : motion.kind === "idling"
-                    ? "font-medium text-rose-600"
-                    : motion.kind === "moving"
-                      ? "font-medium text-zinc-600"
-                      : "text-zinc-500"
-              )}
-            >
-              {formatMotionStatusLabel(motion)}
             </p>
           </div>
         </div>

@@ -143,6 +143,7 @@ export function unitsInsideField(
 
 /**
  * Список ділянок: геозони Wialon (+ збережені з Supabase).
+ * Паспорт з БД накладається на Wialon за wialon_zone_id (без дублів).
  * Демо-мок — лише коли завантаження вже завершилось і геозон немає.
  */
 export function buildMapFieldList(
@@ -151,12 +152,37 @@ export function buildMapFieldList(
   options?: { allowDemoFallback?: boolean }
 ): MapFieldItem[] {
   const allowDemo = options?.allowDemoFallback !== false;
+  const passportByWialonId = new Map<string, FarmField>();
+  const standaloneSaved: FarmField[] = [];
+
+  for (const field of saved) {
+    const zoneId = field.wialonZoneId?.trim();
+    if (zoneId) {
+      passportByWialonId.set(zoneId, field);
+    } else {
+      standaloneSaved.push(field);
+    }
+  }
+
   const fromWialon = (geofences?.features ?? [])
-    .map((feature) =>
-      geofenceToMapItem(
+    .map((feature) => {
+      const base = geofenceToMapItem(
         feature as Feature<Polygon, WialonGeofenceProperties>
-      )
-    )
+      );
+      if (!base) return null;
+      const passport = passportByWialonId.get(base.id);
+      if (!passport) return base;
+      return {
+        ...base,
+        name: passport.name,
+        crop: passport.crop,
+        areaHa: passport.areaHa,
+        color: passport.color,
+        geometry: passport.geometry ?? base.geometry,
+        source: "saved" as const,
+        farmField: passport,
+      };
+    })
     .filter((item): item is MapFieldItem => item != null);
 
   const base =
@@ -166,7 +192,7 @@ export function buildMapFieldList(
         ? FIELDS.map(demoToMapItem)
         : [];
 
-  const items = [...base, ...saved.map(farmToMapItem)];
+  const items = [...base, ...standaloneSaved.map(farmToMapItem)];
   return items.sort((a, b) => {
     const numA = fieldNumber(a.name);
     const numB = fieldNumber(b.name);

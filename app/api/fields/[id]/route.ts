@@ -35,6 +35,9 @@ export async function PATCH(request: Request, context: RouteContext) {
     if (body.geometry) {
       patch.geometry = body.geometry;
     }
+    if (body.wialonZoneId !== undefined) {
+      patch.wialon_zone_id = body.wialonZoneId;
+    }
 
     if (Object.keys(patch).length === 0) {
       return NextResponse.json({ error: "Немає полів для оновлення" }, { status: 400 });

@@ -56,6 +56,9 @@ export async function POST(request: Request) {
         area_ha: body.areaHa,
         color: body.color || "#276749",
         geometry: body.geometry,
+        ...(body.wialonZoneId
+          ? { wialon_zone_id: body.wialonZoneId }
+          : {}),
       })
       .select("*")
       .single();

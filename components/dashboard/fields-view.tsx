@@ -64,6 +64,11 @@ import {
   nextFieldNumber,
   type MapFieldItem,
 } from "@/lib/map-fields";
+import {
+  fieldOperationsKey,
+  fieldOperationsLegacyKeys,
+} from "@/lib/field-operations";
+import { syncPlannedOpsFromTrackerPresence } from "@/lib/field-operation-tracker";
 import type {
   WialonGeofenceProperties,
   WialonUnit,
@@ -93,13 +98,19 @@ const EMPTY_GEOFENCES: FeatureCollection<Polygon, WialonGeofenceProperties> = {
 };
 
 const CROP_OPTIONS = [
-  "Соя",
   "Кукурудза",
-  "Пшениця",
-  "Соняшник",
   "Ріпак",
-  "Ячмінь",
+  "Соняшник",
+  "Пшениця",
 ] as const;
+
+function normalizeCrop(value: string | null | undefined): string {
+  const trimmed = value?.trim() ?? "";
+  const match = CROP_OPTIONS.find(
+    (option) => option.toLowerCase() === trimmed.toLowerCase()
+  );
+  return match ?? CROP_OPTIONS[0];
+}
 
 type PassportMode = "create" | "edit";
 type ActivePanel = "inspector" | "passport";
@@ -508,15 +519,63 @@ export function FieldsView() {
     [selectedItem]
   );
 
+  const sheetFieldKey = useMemo(
+    () => (selectedItem ? fieldOperationsKey(selectedItem) : null),
+    [selectedItem]
+  );
+
+  const sheetLegacyFieldKeys = useMemo(
+    () => (selectedItem ? fieldOperationsLegacyKeys(selectedItem) : []),
+    [selectedItem]
+  );
+
   const sheetAnalytics = useMemo(
     () => (selectedItem ? analyticsForMapField(selectedItem) : null),
     [selectedItem]
   );
 
   const savedGeoJson = useMemo(
-    () => farmFieldsToGeoJson(savedFields),
+    () =>
+      // Геозони Wialon уже на карті — не дублюємо контур паспорта (крива «подвійна» обводка)
+      farmFieldsToGeoJson(
+        savedFields.filter((field) => !field.wialonZoneId?.trim())
+      ),
     [savedFields]
   );
+
+  /** Колір / назва / культура з паспорта накладаються на шар Wialon */
+  const mapWialonGeofences = useMemo(() => {
+    const passportByZone = new Map(
+      savedFields
+        .filter((field) => field.wialonZoneId?.trim())
+        .map((field) => [field.wialonZoneId!.trim(), field] as const)
+    );
+    if (passportByZone.size === 0) return wialonGeofences;
+
+    return {
+      type: "FeatureCollection" as const,
+      features: wialonGeofences.features.map((feature) => {
+        const zoneId = String(feature.properties?.id ?? feature.id ?? "");
+        const passport = passportByZone.get(zoneId);
+        if (!passport) return feature;
+        return {
+          ...feature,
+          geometry:
+            passport.geometry?.type === "Polygon" ||
+            passport.geometry?.type === "MultiPolygon"
+              ? (passport.geometry as typeof feature.geometry)
+              : feature.geometry,
+          properties: {
+            ...feature.properties,
+            name: passport.name,
+            crop: passport.crop,
+            color: passport.color,
+            areaHa: passport.areaHa,
+          },
+        };
+      }),
+    };
+  }, [wialonGeofences, savedFields]);
 
   const totalHa = useMemo(() => {
     return Math.round(
@@ -533,6 +592,26 @@ export function FieldsView() {
       cancelled = true;
     };
   }, []);
+
+  /** Лікує старі паспорти без wialon_zone_id (подвійна обводка / битий клік) */
+  useEffect(() => {
+    if (wialonLoading || wialonGeofences.features.length === 0) return;
+    setSavedFields((prev) => {
+      let changed = false;
+      const next = prev.map((field) => {
+        if (field.wialonZoneId?.trim()) return field;
+        const match = wialonGeofences.features.find(
+          (feature) =>
+            feature.properties?.name?.trim() === field.name.trim()
+        );
+        const zoneId = match?.properties?.id;
+        if (!zoneId) return field;
+        changed = true;
+        return { ...field, wialonZoneId: String(zoneId) };
+      });
+      return changed ? next : prev;
+    });
+  }, [wialonLoading, wialonGeofences]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -568,6 +647,45 @@ export function FieldsView() {
     return () => controller.abort();
   }, []);
 
+  /** Автостатус: запланована техніка заїхала на поле → in_progress */
+  useEffect(() => {
+    if (wialonLoading || wialonUnits.length === 0 || mapFields.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function tick() {
+      if (cancelled) return;
+      const fields = mapFields
+        .filter((item) => item.geometry)
+        .map((item) => ({
+          fieldKey: fieldOperationsKey(item),
+          geometry: item.geometry,
+          farmFieldId: item.farmField?.id ?? null,
+        }));
+      if (fields.length === 0) return;
+      try {
+        await syncPlannedOpsFromTrackerPresence({
+          fields,
+          units: wialonUnits,
+        });
+      } catch {
+        /* silent */
+      }
+    }
+
+    void tick();
+    const timer = window.setInterval(() => {
+      void tick();
+    }, 60_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [wialonLoading, wialonUnits, mapFields]);
+
   const flashStatus = useCallback((message: string) => {
     setStatusHint(message);
     window.setTimeout(() => setStatusHint(null), 3200);
@@ -589,14 +707,15 @@ export function FieldsView() {
   }, [restoreMapOverview]);
 
   const closePassport = useCallback(() => {
-    setActivePanel(null);
     setPendingFeature(null);
     setSavedFlash(false);
     if (editingFieldId) {
       fieldsMapRef.current?.clearDraw();
       setEditingFieldId(null);
     }
-  }, [editingFieldId]);
+    // Повертаємо огляд усіх полів (не лишаємо фокус на одному)
+    restoreMapOverview();
+  }, [editingFieldId, restoreMapOverview]);
 
   const selectField = useCallback(
     (item: MapFieldItem, options?: { fly?: boolean }) => {
@@ -614,7 +733,9 @@ export function FieldsView() {
 
   const openFieldById = useCallback(
     (fieldId: string) => {
-      const item = mapFields.find((field) => field.id === fieldId);
+      const item =
+        mapFields.find((field) => field.id === fieldId) ??
+        mapFields.find((field) => field.farmField?.id === fieldId);
       if (!item) return;
       selectField(item, { fly: true });
     },
@@ -698,7 +819,7 @@ export function FieldsView() {
     setEditingFieldId(null);
     setPendingFeature(feature);
     setFieldName(`Поле ${nextIndex}`);
-    setCrop(CROP_OPTIONS[0]);
+    setCrop(normalizeCrop(CROP_OPTIONS[0]));
     setAreaHa(hectares);
     setColor(FIELD_COLOR_OPTIONS[colorIndex].value);
     setSaveHint(null);
@@ -707,27 +828,45 @@ export function FieldsView() {
     setActivePanel("passport");
   }
 
-  function openEditPassport(item: MapFieldItem) {
-    if (item.source !== "saved" || !item.farmField) return;
-    setPassportMode("edit");
-    setPendingFeature(null);
+  function openPassport(item: MapFieldItem) {
+    const hasPassport = Boolean(item.farmField);
+    setPassportMode(hasPassport ? "edit" : "create");
+    setPendingFeature(
+      hasPassport || !item.geometry
+        ? null
+        : {
+            type: "Feature",
+            properties: {
+              id: item.id,
+              name: item.name,
+              crop: item.crop,
+              color: item.color,
+            },
+            geometry: item.geometry,
+          }
+    );
     setFieldName(item.name);
-    setCrop(item.crop);
+    setCrop(normalizeCrop(item.crop));
     setAreaHa(item.areaHa);
-    setColor(item.color);
+    setColor(item.color || FIELD_COLOR_OPTIONS[0].value);
     setEditingFieldId(null);
     setSaveHint(null);
     setSavedFlash(false);
+    setConfirmDelete(false);
     setSelectedId(item.id);
     setActivePanel("passport");
   }
 
   function startGeometryEdit(item: MapFieldItem) {
-    if (item.source !== "saved" || !item.farmField || !item.geometry) return;
+    if (!item.geometry) {
+      flashStatus("Немає контуру для редагування");
+      return;
+    }
 
     setActivePanel(null);
     setConfirmDelete(false);
-    setEditingFieldId(item.id);
+    // id паспорта в БД (якщо є) або id зони / поля на карті
+    setEditingFieldId(item.farmField?.id ?? item.id);
     setSelectedId(item.id);
 
     const feature: Feature<Geometry> = {
@@ -756,17 +895,50 @@ export function FieldsView() {
   async function persistGeometryEdit(feature: Feature<Geometry>) {
     if (!editingFieldId || !isPolygonGeometry(feature.geometry)) return;
 
+    const item =
+      mapFields.find(
+        (field) =>
+          field.farmField?.id === editingFieldId || field.id === editingFieldId
+      ) ?? selectedItem;
+
+    if (!item) {
+      setSaveHint("Поле не знайдено");
+      return;
+    }
+
     setBusy(true);
     try {
       const hectares = hectaresFromFeature(feature);
-      const updated = await updateFarmField(editingFieldId, {
-        geometry: feature.geometry,
-        areaHa: hectares,
-      });
+      const geometry = feature.geometry;
 
-      setSavedFields((prev) =>
-        prev.map((field) => (field.id === updated.id ? updated : field))
-      );
+      if (item.farmField) {
+        const updated = await updateFarmField(item.farmField.id, {
+          geometry,
+          areaHa: hectares,
+        });
+        setSavedFields((prev) =>
+          prev.map((field) => (field.id === updated.id ? updated : field))
+        );
+      } else {
+        const wialonZoneId =
+          item.source === "wialon" ? item.id : null;
+        const created = await createFarmField({
+          name: item.name,
+          crop: normalizeCrop(item.crop),
+          areaHa: hectares,
+          color: item.color || FIELD_COLOR_OPTIONS[0].value,
+          geometry,
+          wialonZoneId,
+        });
+        const linked: FarmField = {
+          ...created,
+          wialonZoneId: created.wialonZoneId ?? wialonZoneId,
+        };
+        setSavedFields((prev) => [
+          linked,
+          ...prev.filter((field) => field.id !== linked.id),
+        ]);
+      }
 
       if (feature.id != null) {
         fieldsMapRef.current?.removeDrawFeature(feature.id);
@@ -801,18 +973,57 @@ export function FieldsView() {
         );
         setSavedFlash(true);
         window.setTimeout(() => {
-          setActivePanel(null);
+          setActivePanel("inspector");
           setSavedFlash(false);
           setBusy(false);
         }, 550);
         return;
       }
 
-      if (
-        !pendingFeature ||
-        !isPolygonGeometry(pendingFeature.geometry)
-      ) {
+      const geometryFromPending =
+        pendingFeature && isPolygonGeometry(pendingFeature.geometry)
+          ? pendingFeature.geometry
+          : null;
+      const geometryFromSelected =
+        selectedItem?.geometry && isPolygonGeometry(selectedItem.geometry)
+          ? selectedItem.geometry
+          : null;
+      const geometry = geometryFromPending ?? geometryFromSelected;
+
+      if (!geometry) {
+        setSaveHint("Немає контуру поля для збереження паспорта");
         setBusy(false);
+        return;
+      }
+
+      const wialonZoneId =
+        selectedItem?.source === "wialon"
+          ? selectedItem.id
+          : selectedItem?.farmField?.wialonZoneId ?? null;
+
+      const existingLinked = wialonZoneId
+        ? savedFields.find((field) => field.wialonZoneId === wialonZoneId)
+        : null;
+
+      if (existingLinked) {
+        const updated = await updateFarmField(existingLinked.id, {
+          name: fieldName.trim(),
+          crop,
+          areaHa,
+          color,
+          wialonZoneId,
+        });
+        setSavedFields((prev) =>
+          prev.map((field) => (field.id === updated.id ? updated : field))
+        );
+        setSavedFlash(true);
+        setSelectedId(wialonZoneId || updated.id);
+        window.setTimeout(() => {
+          setActivePanel("inspector");
+          setSavedFlash(false);
+          setPendingFeature(null);
+          setBusy(false);
+        }, 550);
         return;
       }
 
@@ -821,22 +1032,30 @@ export function FieldsView() {
         crop,
         areaHa,
         color,
-        geometry: pendingFeature.geometry,
+        geometry,
+        wialonZoneId,
       });
 
+      // Якщо колонка wialon_zone_id ще не в БД — тримаємо звʼязок локально
+      const linked: FarmField = {
+        ...saved,
+        wialonZoneId: saved.wialonZoneId ?? wialonZoneId,
+      };
+
       setSavedFields((prev) => [
-        saved,
-        ...prev.filter((field) => field.id !== saved.id),
+        linked,
+        ...prev.filter((field) => field.id !== linked.id),
       ]);
 
-      if (pendingFeature.id != null) {
+      if (pendingFeature?.id != null) {
         fieldsMapRef.current?.removeDrawFeature(pendingFeature.id);
       }
 
       setSavedFlash(true);
-      setSelectedId(saved.id);
+      // для Wialon лишаємо id зони в селекції (мердж підхопить паспорт)
+      setSelectedId(wialonZoneId || linked.id);
       window.setTimeout(() => {
-        setActivePanel(null);
+        setActivePanel("inspector");
         setSavedFlash(false);
         setPendingFeature(null);
         setBusy(false);
@@ -978,36 +1197,35 @@ export function FieldsView() {
                   <Info className="size-4 shrink-0" />
                   Деталі поля
                 </button>
-                <button
-                  type="button"
-                  onClick={() => openFleetPanel(selectedItem)}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[#E5DFD3] bg-zinc-50 px-4 py-3 text-sm font-semibold text-zinc-800 transition-colors hover:bg-zinc-100"
-                >
-                  <History className="size-4 shrink-0" />
-                  Історія техніки
-                </button>
-              </div>
-
-              {selectedItem.source === "saved" ? (
                 <div className="grid grid-cols-2 gap-2.5">
                   <button
                     type="button"
-                    onClick={() => openEditPassport(selectedItem)}
-                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-[#E5DFD3] bg-white px-3 py-2.5 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-50"
+                    onClick={() => openFleetPanel(selectedItem)}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#E5DFD3] bg-zinc-50 px-3 py-3 text-sm font-semibold text-zinc-800 transition-colors hover:bg-zinc-100"
                   >
-                    <Pencil className="size-3.5 shrink-0" />
-                    Паспорт
+                    <History className="size-4 shrink-0" />
+                    Історія техніки
                   </button>
                   <button
                     type="button"
-                    onClick={() => startGeometryEdit(selectedItem)}
-                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-[#E5DFD3] bg-white px-3 py-2.5 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-50"
+                    onClick={() => openPassport(selectedItem)}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#E5DFD3] bg-zinc-50 px-3 py-3 text-sm font-semibold text-zinc-800 transition-colors hover:bg-zinc-100"
                   >
-                    <Pentagon className="size-3.5 shrink-0" />
-                    Контур
+                    <Pencil className="size-4 shrink-0" />
+                    Паспорт
                   </button>
                 </div>
-              ) : null}
+                {selectedItem.geometry ? (
+                  <button
+                    type="button"
+                    onClick={() => startGeometryEdit(selectedItem)}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[#E5DFD3] bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50"
+                  >
+                    <Pentagon className="size-4 shrink-0" />
+                    Редагувати контур
+                  </button>
+                ) : null}
+              </div>
 
               <FieldMicroclimate
                 className="space-y-4"
@@ -1042,7 +1260,7 @@ export function FieldsView() {
             {passportMode === "edit" ? "Редагувати паспорт" : "Паспорт поля"}
           </p>
           <p className="mt-1 text-sm text-zinc-500">
-            Назва · культура · колір обведення
+            Назва · культура · площа · колір
           </p>
         </div>
         <button
@@ -1071,11 +1289,22 @@ export function FieldsView() {
           <Label className="text-[11px] tracking-wider text-zinc-500 uppercase">
             Культура
           </Label>
-          <Select value={crop} onValueChange={(value) => value && setCrop(value)}>
+          <Select
+            items={[...CROP_OPTIONS]}
+            value={crop}
+            onValueChange={(value) => {
+              if (typeof value === "string" && value) {
+                setCrop(normalizeCrop(value));
+              }
+            }}
+          >
             <SelectTrigger className="h-10 w-full rounded-lg border-[#E5DFD3] bg-zinc-100 text-sm text-zinc-900">
-              <SelectValue />
+              <SelectValue placeholder="Оберіть культуру" />
             </SelectTrigger>
-            <SelectContent className="z-[90] border-[#E5DFD3] bg-[#F4F1EA] text-zinc-900">
+            <SelectContent
+              alignItemWithTrigger={false}
+              className="z-[220] border-[#E5DFD3] bg-[#F4F1EA] text-zinc-900"
+            >
               {CROP_OPTIONS.map((option) => (
                 <SelectItem key={option} value={option}>
                   {option}
@@ -1135,8 +1364,19 @@ export function FieldsView() {
               ? "Збереження…"
               : passportMode === "edit"
                 ? "Оновити паспорт"
-                : "Зберегти поле"}
+                : "Зберегти паспорт"}
         </button>
+
+        {saveHint ? (
+          <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            {saveHint}
+          </p>
+        ) : (
+          <p className="text-xs leading-relaxed text-zinc-500">
+            Дані зберігаються в базі й підтягуються в «Деталі поля» після
+            оновлення сторінки.
+          </p>
+        )}
       </div>
     </div>
   ) : null;
@@ -1296,7 +1536,7 @@ export function FieldsView() {
               onDrawnFeaturesChange={handleDrawnFeaturesChange}
               savedFieldsGeoJson={savedGeoJson}
               wialonUnits={wialonUnits}
-              wialonGeofences={wialonGeofences}
+              wialonGeofences={mapWialonGeofences}
               wialonLoading={wialonLoading}
               editingFieldId={editingFieldId}
               selectedFieldId={selectedId}
@@ -1334,16 +1574,19 @@ export function FieldsView() {
 
       <FieldDetailSheet
         field={sheetField}
+        fieldKey={sheetFieldKey}
+        legacyFieldKeys={sheetLegacyFieldKeys}
+        farmFieldId={selectedItem?.farmField?.id ?? null}
+        fieldGeometry={selectedItem?.geometry ?? null}
         analytics={sheetAnalytics}
+        units={wialonUnits}
         open={sheetOpen}
         onOpenChange={(open) => {
           setSheetOpen(open);
           if (!open) restoreMapOverview();
         }}
         onPlanWork={() => {
-          setSheetOpen(false);
-          restoreMapOverview();
-          flashStatus("Роботу додано до черги операцій");
+          flashStatus("Роботу заплановано · див. історію операцій");
         }}
       />
     </main>

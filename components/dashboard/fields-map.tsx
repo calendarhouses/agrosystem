@@ -20,7 +20,6 @@ import {
   CloudRain,
   Focus,
   Loader2,
-  MousePointer2,
   Pause,
   Pentagon,
   Play,
@@ -755,14 +754,6 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         }
 
         if (
-          !geometryEditMode &&
-          (event.key === "v" || event.key === "V")
-        ) {
-          startEdit();
-          return;
-        }
-
-        if (
           (event.key === "Delete" || event.key === "Backspace") &&
           (hasSelection || selectedFieldIdRef.current)
         ) {
@@ -773,7 +764,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
 
       window.addEventListener("keydown", onKeyDown);
       return () => window.removeEventListener("keydown", onKeyDown);
-    }, [deleteSelected, geometryEditMode, hasSelection, searchOpen, startDraw, startEdit]);
+    }, [deleteSelected, geometryEditMode, hasSelection, searchOpen, startDraw]);
 
     const handleMapClick = useCallback(
       (event: MapMouseEvent) => {
@@ -1726,39 +1717,21 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
 
         <div className="absolute top-3 left-3 z-40 flex flex-wrap items-center gap-2 rounded-xl border border-[#E5DFD3] bg-[#F4F1EA]/95 p-1.5 shadow-md backdrop-blur-sm">
           {!geometryEditMode ? (
-            <>
-              <button
-                type="button"
-                disabled={!drawReady}
-                onClick={startDraw}
-                title="Малювати (D)"
-                className={cn(
-                  "inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-40",
-                  activeTool === "draw"
-                    ? "bg-[#276749] text-white shadow-sm"
-                    : "text-zinc-700 hover:bg-[#E5DFD3]/70 hover:text-zinc-900"
-                )}
-              >
-                <Pentagon className="h-4 w-4" />
-                Малювати
-              </button>
-
-              <button
-                type="button"
-                disabled={!drawReady}
-                onClick={startEdit}
-                title="Редагувати (V)"
-                className={cn(
-                  "inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-40",
-                  activeTool === "edit"
-                    ? "bg-[#276749] text-white shadow-sm"
-                    : "text-zinc-700 hover:bg-[#E5DFD3]/70 hover:text-zinc-900"
-                )}
-              >
-                <MousePointer2 className="h-4 w-4" />
-                Редагувати
-              </button>
-            </>
+            <button
+              type="button"
+              disabled={!drawReady}
+              onClick={startDraw}
+              title="Малювати (D)"
+              className={cn(
+                "inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-40",
+                activeTool === "draw"
+                  ? "bg-[#276749] text-white shadow-sm"
+                  : "text-zinc-700 hover:bg-[#E5DFD3]/70 hover:text-zinc-900"
+              )}
+            >
+              <Pentagon className="h-4 w-4" />
+              Малювати
+            </button>
           ) : null}
 
           {toolbarAction}

@@ -50,7 +50,9 @@ type CacheEntry = {
   fullSeason: boolean;
 };
 
+/** v2 — фільтр візитів ≥20 хв */
 const historyCache = new Map<string, CacheEntry>();
+const CACHE_VER = "v2-min20m";
 
 async function fetchHistoryChunk(args: {
   geometry: FieldGeometry;
@@ -158,7 +160,7 @@ export function FieldTechHistorySheet({
 
   const isCurrentSeason = seasonYear === currentSeasonYear();
   const seasonLabel = `Сезон ${seasonYear}`;
-  const cacheKey = `${fieldName ?? "field"}|${seasonYear}`;
+  const cacheKey = `${CACHE_VER}|${fieldName ?? "field"}|${seasonYear}`;
 
   // Швидке завантаження: лише останні 7 днів сезону
   useEffect(() => {

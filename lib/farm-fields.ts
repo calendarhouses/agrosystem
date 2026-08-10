@@ -10,6 +10,8 @@ export type FarmField = {
   color: string;
   geometry: FieldGeometry;
   createdAt: string;
+  /** id геозони Wialon, якщо паспорт привʼязаний до неї */
+  wialonZoneId?: string | null;
 };
 
 export type FarmFieldInput = {
@@ -18,15 +20,20 @@ export type FarmFieldInput = {
   areaHa: number;
   color: string;
   geometry: FieldGeometry;
+  wialonZoneId?: string | null;
 };
 
 export const FIELD_COLOR_OPTIONS = [
   { id: "green", value: "#276749", label: "Смарагд" },
+  { id: "teal", value: "#0F766E", label: "Бірюза" },
+  { id: "blue", value: "#2B6CB0", label: "Синій" },
+  { id: "sky", value: "#0284C7", label: "Небесний" },
+  { id: "violet", value: "#6B46C1", label: "Фіолет" },
+  { id: "rose", value: "#BE185D", label: "Малиновий" },
   { id: "rust", value: "#C05621", label: "Теракота" },
   { id: "gold", value: "#D69E2E", label: "Золото" },
-  { id: "blue", value: "#2B6CB0", label: "Синій" },
-  { id: "violet", value: "#6B46C1", label: "Фіолет" },
-  { id: "teal", value: "#0F766E", label: "Бірюза" },
+  { id: "olive", value: "#4D7C0F", label: "Олива" },
+  { id: "slate", value: "#475569", label: "Сланець" },
 ] as const;
 
 const LOCAL_KEY = "agrosystem.farm_fields.v1";
@@ -40,6 +47,10 @@ function mapRow(row: Record<string, unknown>): FarmField {
     color: String(row.color),
     geometry: row.geometry as FieldGeometry,
     createdAt: String(row.created_at ?? new Date().toISOString()),
+    wialonZoneId:
+      row.wialon_zone_id != null && String(row.wialon_zone_id).trim()
+        ? String(row.wialon_zone_id)
+        : null,
   };
 }
 
@@ -112,6 +123,7 @@ export async function createFarmField(
       color: input.color,
       geometry: input.geometry,
       createdAt: new Date().toISOString(),
+      wialonZoneId: input.wialonZoneId ?? null,
     };
     writeLocal([localField, ...readLocal()]);
     console.warn("[farm_fields] Збережено локально:", reason);
@@ -162,6 +174,9 @@ export async function updateFarmField(
       ...(patch.areaHa !== undefined ? { areaHa: patch.areaHa } : {}),
       ...(patch.color !== undefined ? { color: patch.color } : {}),
       ...(patch.geometry !== undefined ? { geometry: patch.geometry } : {}),
+      ...(patch.wialonZoneId !== undefined
+        ? { wialonZoneId: patch.wialonZoneId }
+        : {}),
     };
     writeLocal(local.map((field) => (field.id === id ? updated : field)));
     return updated;

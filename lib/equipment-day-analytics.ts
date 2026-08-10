@@ -389,7 +389,7 @@ function stableFuelEndpoints(fuelValues: number[]): {
 
   const fuelStart = Math.round(startMed * 10) / 10;
   const fuelEnd = Math.round(endMed * 10) / 10;
-  let fuelDelta = Math.round((fuelEnd - fuelStart) * 10) / 10;
+  let fuelDelta: number | null = Math.round((fuelEnd - fuelStart) * 10) / 10;
 
   // Баки агротехніки рідко > ~1200 л; стрибок ±1000+ л = сміття датчика
   const MAX_PLAUSIBLE_DELTA = 900;
