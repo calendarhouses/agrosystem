@@ -2,11 +2,11 @@
   "crons": [
     {
       "path": "/api/cron/sync-wialon-fuel",
-      "schedule": "0 * * * *"
+      "schedule": "0 3 * * *"
     },
     {
       "path": "/api/cron/sync-wialon-equipment-day",
-      "schedule": "*/15 * * * *"
+      "schedule": "0 4 * * *"
     }
   ]
 }
