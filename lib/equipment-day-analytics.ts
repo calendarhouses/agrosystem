@@ -396,7 +396,7 @@ function stableFuelEndpoints(
 
   // Баки агротехніки рідко > ~1200 л; цистерна бензовоза — до ~8000.
   // Якщо відомий номінал бака — дельта не може бути більшою за бак×1.15.
-  const tankCap =
+  const tankCap: number | null =
     tankVolumeLiters != null &&
     Number.isFinite(tankVolumeLiters) &&
     tankVolumeLiters > 0
@@ -408,7 +408,7 @@ function stableFuelEndpoints(
   if (fuelStart > MAX_PLAUSIBLE_LEVEL || fuelEnd > MAX_PLAUSIBLE_LEVEL) {
     return { fuelStart: null, fuelEnd: null, fuelDelta: null };
   }
-  if (Math.abs(fuelDelta) > MAX_PLAUSIBLE_DELTA) {
+  if (fuelDelta != null && Math.abs(fuelDelta) > MAX_PLAUSIBLE_DELTA) {
     fuelDelta = null;
   }
 
