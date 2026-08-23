@@ -1,30 +1,23 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-
-import { createSupabaseResilientFetch } from "@/lib/supabase/resilient-fetch";
-
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-if (!url || !anonKey) {
-  console.warn("[supabase] Відсутні NEXT_PUBLIC_SUPABASE_URL / ANON_KEY");
-}
+import { createBrowserClient } from "@supabase/ssr";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 let browserClient: SupabaseClient | null = null;
 
-/** Браузерний клієнт Supabase (singleton — без дублікатів GoTrue) */
-export function createBrowserSupabase() {
+/**
+ * Браузерний клієнт з cookie-сесією (Auth + Realtime під authenticated).
+ * Singleton — один WebSocket на вкладку, без дубльованих Realtime-каналів.
+ * Для service-role серверних операцій лишається createServiceSupabase().
+ */
+export function createBrowserSupabase(): SupabaseClient {
   if (browserClient) return browserClient;
 
-  const key = anonKey ?? "";
-  browserClient = createClient(url ?? "", key, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
-    global: {
-      fetch: createSupabaseResilientFetch(key),
-    },
-  });
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
+  if (!url || !anonKey) {
+    throw new Error("Немає NEXT_PUBLIC_SUPABASE_URL / ANON_KEY");
+  }
+
+  browserClient = createBrowserClient(url, anonKey);
   return browserClient;
 }

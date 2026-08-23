@@ -49,8 +49,8 @@ export function PageHeader({
     <HeaderPanel
       accent
       className={cn(
-        "flex h-full items-center gap-4 px-4 py-4 sm:px-5",
-        hasPanels ? "min-h-[7.5rem]" : "min-h-[4.75rem]"
+        "flex h-full items-center gap-4 px-4 py-3 sm:px-5",
+        hasPanels ? "min-h-[7.5rem]" : "min-h-0"
       )}
     >
       {Icon ? (
@@ -67,7 +67,7 @@ export function PageHeader({
         ) : null}
       </div>
       {actions ? (
-        <div className="flex max-w-full shrink-0 flex-wrap items-center justify-end gap-1.5">
+        <div className="flex max-w-full shrink-0 flex-wrap items-center justify-end gap-1.5 sm:max-w-[min(100%,32rem)]">
           {actions}
         </div>
       ) : null}

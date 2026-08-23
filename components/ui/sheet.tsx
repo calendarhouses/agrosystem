@@ -41,14 +41,28 @@ function SheetContent({
   children,
   side = "right",
   showCloseButton = true,
+  /** За замовчуванням затемнення. Для диспетчерських панелей — false. */
+  showOverlay = true,
+  overlayClassName,
   ...props
 }: SheetPrimitive.Popup.Props & {
   side?: "top" | "right" | "bottom" | "left"
   showCloseButton?: boolean
+  showOverlay?: boolean
+  overlayClassName?: string
 }) {
   return (
     <SheetPortal>
-      <SheetOverlay />
+      {showOverlay ? (
+        <SheetOverlay className={overlayClassName} />
+      ) : (
+        <SheetOverlay
+          className={cn(
+            "pointer-events-none bg-transparent supports-backdrop-filter:backdrop-blur-none",
+            overlayClassName
+          )}
+        />
+      )}
       <SheetPrimitive.Popup
         data-slot="sheet-content"
         data-side={side}

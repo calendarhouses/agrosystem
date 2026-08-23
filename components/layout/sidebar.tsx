@@ -2,24 +2,33 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import {
+  ChevronDown,
+  FileSpreadsheet,
   FileText,
   Fuel,
+  Link2,
+  LogOut,
   Map as MapIcon,
   PanelLeftClose,
   PanelLeftOpen,
   PieChart,
+  Settings,
+  Sprout,
   Tractor,
   Warehouse,
+  Wrench,
 } from "lucide-react";
 
+import { logoutAction } from "@/app/login/actions";
 import { SidebarNavTooltip } from "@/components/layout/sidebar-nav-tooltip";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   {
     href: "/",
-    label: "Карта Полів",
+    label: "Карта полів",
     hint: "Поля, контури та погода",
     icon: MapIcon,
   },
@@ -37,8 +46,8 @@ const NAV_ITEMS = [
   },
   {
     href: "/inventory",
-    label: "Склад та Врожай",
-    hint: "Залишки та партії",
+    label: "Склад",
+    hint: "ЗЗР, врожай, добрива, запчастини",
     icon: Warehouse,
   },
   {
@@ -48,12 +57,57 @@ const NAV_ITEMS = [
     icon: PieChart,
   },
   {
-    href: "/reports",
-    label: "Операції / Звіти",
-    hint: "Журнал операцій",
+    href: "/export",
+    label: "Експорт в 1С",
+    hint: "Excel для бухгалтера · чернетки списань",
+    icon: FileSpreadsheet,
+  },
+  // Детокс: /reports тимчасово сховано — лише OPERATION_RECORDS mock
+  // {
+  //   href: "/reports",
+  //   label: "Операції / Звіти",
+  //   hint: "Журнал операцій",
+  //   icon: FileText,
+  // },
+] as const;
+
+const SETTINGS_ITEMS = [
+  {
+    href: "/admin/equipment",
+    label: "Техніка BAS",
+    hint: "Синхронізація техніки з 1С",
+    icon: Wrench,
+  },
+  {
+    href: "/admin/fields",
+    label: "Реєстр полів",
+    hint: "Назви й площі для BAS AGRO",
+    icon: Sprout,
+  },
+  {
+    href: "/admin/mapping",
+    label: "Мапінг 1С",
+    hint: "Зіставлення з BAS AGRO",
+    icon: Link2,
+  },
+  {
+    href: "/admin/bas-request",
+    label: "Звірка полів",
+    hint: "Заявка бухгалтеру по довіднику полів 1С",
     icon: FileText,
   },
 ] as const;
+
+type NavItem = {
+  href: string;
+  label: string;
+  hint: string;
+  icon: typeof MapIcon;
+};
+
+function isSettingsPath(pathname: string): boolean {
+  return SETTINGS_ITEMS.some((item) => pathname.startsWith(item.href));
+}
 
 type SidebarProps = {
   collapsed: boolean;
@@ -64,6 +118,69 @@ type SidebarProps = {
 export function Sidebar({ collapsed, onToggleCollapsed }: SidebarProps) {
   const pathname = usePathname();
   const expanded = !collapsed;
+  const [settingsOpen, setSettingsOpen] = useState(() => isSettingsPath(pathname));
+
+  useEffect(() => {
+    if (isSettingsPath(pathname)) {
+      setSettingsOpen(true);
+    }
+  }, [pathname]);
+
+  function renderNavItem(item: NavItem, nested = false) {
+    const Icon = item.icon;
+    const active =
+      item.href === "/"
+        ? pathname === "/" || pathname.startsWith("/fields")
+        : pathname.startsWith(item.href);
+
+    const link = (
+      <Link
+        href={item.href}
+        aria-label={item.label}
+        aria-current={active ? "page" : undefined}
+        className={cn(
+          "group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
+          collapsed ? "justify-center px-0" : "justify-center md:justify-start",
+          nested && !collapsed && "md:pl-9",
+          active
+            ? "bg-gradient-to-r from-[#C05621]/25 to-transparent text-zinc-100"
+            : "text-zinc-400 hover:bg-zinc-700/30 hover:text-zinc-200"
+        )}
+      >
+        {active && collapsed ? (
+          <span
+            className="absolute top-1/2 left-0 h-5 w-0.5 -translate-y-1/2 rounded-full bg-[#C05621]"
+            aria-hidden
+          />
+        ) : null}
+        <span
+          className={cn(
+            "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors",
+            active
+              ? "bg-white/10 text-[#C05621]"
+              : "text-zinc-500 group-hover:text-zinc-300"
+          )}
+        >
+          <Icon className="h-5 w-5" />
+        </span>
+        {expanded ? (
+          <span className="hidden truncate md:inline">{item.label}</span>
+        ) : null}
+      </Link>
+    );
+
+    if (!collapsed) return <div key={item.href}>{link}</div>;
+
+    return (
+      <SidebarNavTooltip key={item.href} title={item.label} hint={item.hint}>
+        {(handlers) => (
+          <span className="block w-full" {...handlers}>
+            {link}
+          </span>
+        )}
+      </SidebarNavTooltip>
+    );
+  }
 
   const collapseToggle = (
     <button
@@ -155,67 +272,95 @@ export function Sidebar({ collapsed, onToggleCollapsed }: SidebarProps) {
       </div>
 
       <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto p-2">
-        {NAV_ITEMS.map((item) => {
-          const Icon = item.icon;
-          const active =
-            item.href === "/"
-              ? pathname === "/" || pathname.startsWith("/fields")
-              : pathname.startsWith(item.href);
+        {NAV_ITEMS.map((item) => renderNavItem(item))}
 
-          const link = (
-            <Link
-              href={item.href}
-              aria-label={item.label}
-              aria-current={active ? "page" : undefined}
-              className={cn(
-                "group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
-                collapsed
-                  ? "justify-center px-0"
-                  : "justify-center md:justify-start",
-                active
-                  ? "bg-gradient-to-r from-[#C05621]/25 to-transparent text-zinc-100"
-                  : "text-zinc-400 hover:bg-zinc-700/30 hover:text-zinc-200"
-              )}
-            >
-              {active && collapsed ? (
-                <span
-                  className="absolute top-1/2 left-0 h-5 w-0.5 -translate-y-1/2 rounded-full bg-[#C05621]"
-                  aria-hidden
-                />
-              ) : null}
-              <span
-                className={cn(
-                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors",
-                  active
-                    ? "bg-white/10 text-[#C05621]"
-                    : "text-zinc-500 group-hover:text-zinc-300"
-                )}
-              >
-                <Icon className="h-5 w-5" />
-              </span>
-              {expanded ? (
-                <span className="hidden truncate md:inline">{item.label}</span>
-              ) : null}
-            </Link>
-          );
-
-          if (!collapsed) return <div key={item.href}>{link}</div>;
-
-          return (
+        <div className={cn("mt-4", collapsed && "mt-3")}>
+          {collapsed ? (
             <SidebarNavTooltip
-              key={item.href}
-              title={item.label}
-              hint={item.hint}
+              title="Налаштування"
+              hint={settingsOpen ? "Згорнути" : "Розгорнути"}
             >
               {(handlers) => (
                 <span className="block w-full" {...handlers}>
-                  {link}
+                  <button
+                    type="button"
+                    onClick={() => setSettingsOpen((open) => !open)}
+                    aria-expanded={settingsOpen}
+                    aria-label="Налаштування"
+                    className={cn(
+                      "group relative flex w-full items-center justify-center rounded-lg px-0 py-2.5 text-sm font-medium transition-all duration-200",
+                      isSettingsPath(pathname)
+                        ? "bg-gradient-to-r from-[#C05621]/25 to-transparent text-zinc-100"
+                        : "text-zinc-400 hover:bg-zinc-700/30 hover:text-zinc-200"
+                    )}
+                  >
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors group-hover:text-zinc-300">
+                      <Settings className="h-5 w-5" />
+                    </span>
+                  </button>
                 </span>
               )}
             </SidebarNavTooltip>
-          );
-        })}
+          ) : (
+            <button
+              type="button"
+              onClick={() => setSettingsOpen((open) => !open)}
+              aria-expanded={settingsOpen}
+              className={cn(
+                "mb-1 flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-[11px] font-semibold tracking-wide text-zinc-500 uppercase transition-colors hover:bg-zinc-700/20 hover:text-zinc-300"
+              )}
+            >
+              <Settings className="h-3.5 w-3.5 shrink-0" />
+              <span className="hidden flex-1 md:inline">Налаштування</span>
+              <ChevronDown
+                className={cn(
+                  "hidden h-3.5 w-3.5 shrink-0 transition-transform md:inline",
+                  settingsOpen && "rotate-180"
+                )}
+                aria-hidden
+              />
+            </button>
+          )}
+
+          {settingsOpen
+            ? SETTINGS_ITEMS.map((item) => renderNavItem(item, true))
+            : null}
+        </div>
       </nav>
+
+      <div className="shrink-0 border-t border-zinc-700 p-2">
+        {collapsed ? (
+          <SidebarNavTooltip title="Вийти" hint="Завершити сесію">
+            {(handlers) => (
+              <span className="block w-full" {...handlers}>
+                <form action={logoutAction}>
+                  <button
+                    type="submit"
+                    aria-label="Вийти"
+                    className="flex w-full items-center justify-center rounded-lg px-0 py-2.5 text-zinc-400 transition-colors hover:bg-zinc-700/30 hover:text-zinc-100"
+                  >
+                    <span className="flex h-8 w-8 items-center justify-center rounded-lg">
+                      <LogOut className="h-5 w-5" />
+                    </span>
+                  </button>
+                </form>
+              </span>
+            )}
+          </SidebarNavTooltip>
+        ) : (
+          <form action={logoutAction}>
+            <button
+              type="submit"
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-zinc-400 transition-colors hover:bg-zinc-700/30 hover:text-zinc-100"
+            >
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg">
+                <LogOut className="h-5 w-5" />
+              </span>
+              <span className="hidden truncate md:inline">Вийти</span>
+            </button>
+          </form>
+        )}
+      </div>
     </aside>
   );
 }

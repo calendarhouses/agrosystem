@@ -126,10 +126,10 @@ export function DayShiftSummary({
           ? summary.hasFuelSensor
             ? "дельта недостовірна"
             : undefined
-          : summary.fuelDelta > 15
+            : summary.fuelDelta > 15
             ? `заправка ≈ +${Math.round(summary.fuelDelta)} л`
             : summary.fuelDelta < -15
-              ? `витрата ≈ ${Math.round(summary.fuelDelta)} л`
+              ? `витрата ≈ ${Math.round(Math.abs(summary.fuelDelta))} л`
               : "майже без змін",
       hintTone:
         summary.fuelDelta != null && summary.fuelDelta < -20

@@ -21,6 +21,7 @@ import {
   type DayAnalyticsPayload,
   type DayAnalyticsSample,
 } from "@/lib/equipment-day-analytics";
+import { resolveFuelTankVolumeLiters, isFuelDeliveryUnit } from "@/lib/equipment-fuel-tanks";
 
 export type {
   DayAnalyticsPayload,
@@ -42,9 +43,6 @@ export const WIALON_UNIT_FLAGS_BASIC_POS = WIALON_UNIT_FLAGS_TELEMETRY;
 
 /** Базовий прапор + геозони (1 | 4096) */
 export const WIALON_RESOURCE_FLAGS_ZONES = 4097;
-
-/** Середній обʼєм бака трактора (л), якщо точний не передається */
-export const DEFAULT_TRACTOR_TANK_LITERS = 800;
 
 const DEFAULT_GEOFENCE_COLOR = "#C05621";
 
@@ -456,9 +454,15 @@ function buildTrackFromMessages(
 }
 
 function buildAnalyticsSamplesFromMessages(
-  messages: WialonTrackMessage[]
+  messages: WialonTrackMessage[],
+  sensors: WialonSensor[] = []
 ): DayAnalyticsSample[] {
   const samples: DayAnalyticsSample[] = [];
+  const hasFuelSensors = sensors.some(
+    (s) =>
+      s.t === "fuel level" ||
+      /топлив|палив|fuel|бак/i.test(s.n || "")
+  );
 
   for (const msg of messages) {
     const pos = msg.pos;
@@ -481,7 +485,9 @@ function buildAnalyticsSamplesFromMessages(
       lng: x,
       lat: y,
       speed: Number.isFinite(speed) ? speed : 0,
-      fuelLiters: readFuelFromMessageParams(params),
+      fuelLiters: hasFuelSensors
+        ? readCalibratedFuelFromParams(sensors, params)
+        : readFuelFromMessageParams(params),
       ignition: readIgnitionFromMessageParams(params),
       driverCode: readDriverFromMessageParams(params),
     });
@@ -506,7 +512,7 @@ export async function getWialonUnitTrack(
 
 /**
  * Трек (лише рух) + денна аналітика (усі точки: паливо, idle, зливи).
- * Один запит messages/load_interval.
+ * Один запит messages/load_interval + датчики юніта для калібровки ДУТ.
  */
 export async function getWialonUnitTrackBundle(
   eid: string,
@@ -514,15 +520,54 @@ export async function getWialonUnitTrackBundle(
   timeFrom: number,
   timeTo: number
 ): Promise<WialonTrackBundle> {
-  const messages = await loadWialonUnitMessages(eid, unitId, timeFrom, timeTo);
+  const [messages, unit] = await Promise.all([
+    loadWialonUnitMessages(eid, unitId, timeFrom, timeTo),
+    getWialonUnitSensors(eid, unitId),
+  ]);
   const track = buildTrackFromMessages(messages, unitId);
-  const rawSamples = buildAnalyticsSamplesFromMessages(messages);
+  const sensors = unit ? listUnitSensors(unit) : [];
+  const unitName = unit?.nm ?? "";
+  const tankVolumeLiters = resolveFuelTankVolumeLiters(unitName);
+  const rawSamples = buildAnalyticsSamplesFromMessages(messages, sensors);
   const analytics =
     rawSamples.length > 0
-      ? buildDayAnalyticsFromSamples(rawSamples)
+      ? buildDayAnalyticsFromSamples(rawSamples, {
+          tankVolumeLiters,
+          skipFuelDrainDetection: isFuelDeliveryUnit(unitName),
+        })
       : EMPTY_DAY_ANALYTICS;
 
   return { track, analytics };
+}
+
+/** Датчики юніта без calc_last_message (для калібровки історії). */
+async function getWialonUnitSensors(
+  eid: string,
+  unitId: number
+): Promise<WialonUnit | null> {
+  if (!eid?.trim() || !Number.isFinite(unitId) || unitId <= 0) return null;
+  try {
+    const data = await wialonRequest<WialonSearchItemsResponse<WialonUnit>>(
+      "core/search_items",
+      {
+        spec: {
+          itemsType: "avl_unit",
+          propName: "sys_id",
+          propValueMask: String(unitId),
+          sortType: "sys_name",
+        },
+        force: 1,
+        flags: 4097, // base + sensors
+        from: 0,
+        to: 1,
+      },
+      eid
+    );
+    const unit = Array.isArray(data.items) ? data.items[0] : undefined;
+    return unit && unit.id === unitId ? unit : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Розрахунок усіх датчиків за останнім повідомленням (READ-ONLY). */
@@ -547,6 +592,36 @@ async function calcUnitLastMessageSensors(
   } catch {
     return {};
   }
+}
+
+/**
+ * Список юнітів (лише id + імʼя), без calc_last_message.
+ */
+export async function listWialonUnitBasics(
+  eid: string
+): Promise<Array<{ id: number; nm: string }>> {
+  if (!eid?.trim()) {
+    throw new Error("Потрібен eid (session id)");
+  }
+  const data = await wialonRequest<WialonSearchItemsResponse<WialonUnit>>(
+    "core/search_items",
+    {
+      spec: {
+        itemsType: "avl_unit",
+        propName: "sys_name",
+        propValueMask: "*",
+        sortType: "sys_name",
+      },
+      force: 1,
+      flags: 1,
+      from: 0,
+      to: 0,
+    },
+    eid
+  );
+  return (Array.isArray(data.items) ? data.items : [])
+    .filter((u) => Number.isFinite(u.id) && u.id > 0)
+    .map((u) => ({ id: u.id, nm: String(u.nm ?? "") }));
 }
 
 /**
@@ -694,13 +769,17 @@ function readCalcSensorValue(
   return value;
 }
 
-function evaluateSensorLocally(
-  unit: WialonUnit,
+/**
+ * Локальний розрахунок датчика за параметрами повідомлення
+ * (вкл. вирази `[Бак 1]+[Бак 2]` і калібрувальні таблиці).
+ */
+function evaluateSensorWithParams(
+  sensors: WialonSensor[],
   sensor: WialonSensor,
+  params: Record<string, unknown>,
   depth = 0
 ): number | null {
   if (!sensor || depth > 6) return null;
-  const params = getLastMessageParams(unit);
   const key = sensor.p?.trim() ?? "";
   if (!key) return null;
 
@@ -708,9 +787,14 @@ function evaluateSensorLocally(
     let sum = 0;
     let ok = false;
     for (const match of key.matchAll(/\[([^\]]+)\]/g)) {
-      const child = listUnitSensors(unit).find((item) => item.n === match[1]);
+      const child = sensors.find((item) => item.n === match[1]);
       if (!child) continue;
-      const childValue = evaluateSensorLocally(unit, child, depth + 1);
+      const childValue = evaluateSensorWithParams(
+        sensors,
+        child,
+        params,
+        depth + 1
+      );
       if (childValue != null && Number.isFinite(childValue)) {
         sum += childValue;
         ok = true;
@@ -726,6 +810,47 @@ function evaluateSensorLocally(
     return applySensorCalibrationTable(sensor.tbl, raw);
   }
   return raw;
+}
+
+function evaluateSensorLocally(
+  unit: WialonUnit,
+  sensor: WialonSensor,
+  depth = 0
+): number | null {
+  return evaluateSensorWithParams(
+    listUnitSensors(unit),
+    sensor,
+    getLastMessageParams(unit),
+    depth
+  );
+}
+
+/** Кандидати датчика палива: спочатку fuel level, потім іменовані. */
+function listFuelSensors(sensors: WialonSensor[]): WialonSensor[] {
+  const byType = sensors.filter((s) => s.t === "fuel level");
+  if (byType.length > 0) return byType;
+  return sensors.filter((s) =>
+    /топлив|палив|fuel|уровень топлива|рівень палив/i.test(s.n || "")
+  );
+}
+
+/**
+ * Калібровані літри з параметрів повідомлення (не сирий ADC/io_201).
+ * Без таблиці калібровки сирий io_* легко дає «3500 л» замість ~500 л.
+ */
+function readCalibratedFuelFromParams(
+  sensors: WialonSensor[],
+  params: Record<string, unknown>,
+  maxPlausible = 12_000
+): number | null {
+  const candidates = listFuelSensors(sensors);
+  for (const sensor of candidates) {
+    const value = evaluateSensorWithParams(sensors, sensor, params);
+    if (value != null && isPlausibleSensorValue(value, maxPlausible)) {
+      return Math.round(value * 10) / 10;
+    }
+  }
+  return null;
 }
 
 function resolveSensorNumeric(
@@ -763,14 +888,12 @@ export function parseWialonUnitTelemetry(unit: WialonUnit): WialonUnitTelemetry 
   const params = getLastMessageParams(unit);
 
   const fuelSensor =
-    sensors.find((sensor) => sensor.t === "fuel level") ||
-    sensors.find((sensor) =>
-      /топлив|палив|fuel|уровень топлива|рівень палив/i.test(sensor.n || "")
-    );
+    listFuelSensors(sensors).find((sensor) => sensor.t === "fuel level") ||
+    listFuelSensors(sensors)[0];
   const fuelLiters = fuelSensor
-    ? resolveSensorNumeric(unit, fuelSensor, 20_000)
+    ? resolveSensorNumeric(unit, fuelSensor, 12_000)
     : (() => {
-        for (const key of ["fuel", "adc1", "lls", "io_201"] as const) {
+        for (const key of ["fuel", "fuel_level"] as const) {
           const raw = Number(params[key]);
           if (isValidRawSensorValue(raw) && raw < 5000) return raw;
         }

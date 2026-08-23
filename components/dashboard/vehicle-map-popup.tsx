@@ -7,7 +7,6 @@ import { ArrowRight, Fuel, Gauge, X } from "lucide-react";
 import Link from "next/link";
 
 import {
-  DEFAULT_TRACTOR_TANK_LITERS,
   parseWialonUnitTelemetry,
   type WialonUnit,
 } from "@/lib/wialon";
@@ -43,10 +42,7 @@ export function VehicleMapPopup({ unit, onClose }: VehicleMapPopupProps) {
     fuelLiters !== undefined &&
     fuelLiters !== null &&
     Number.isFinite(fuelLiters) &&
-    fuelLiters > 0;
-  const fuelPct = hasFuelData
-    ? Math.min(100, Math.round((fuelLiters / DEFAULT_TRACTOR_TANK_LITERS) * 100))
-    : 0;
+    fuelLiters >= 0;
 
   const lastContact = lastContactLabel(unit);
 
@@ -91,29 +87,18 @@ export function VehicleMapPopup({ unit, onClose }: VehicleMapPopupProps) {
           </div>
 
           <div className="rounded-xl bg-zinc-50 px-3 py-2.5">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5 text-[11px] font-medium text-zinc-500">
-                <Fuel className="h-3.5 w-3.5 text-emerald-600" />
-                Паливо
-              </div>
-              {hasFuelData ? (
-                <span className="text-sm font-semibold tabular-nums text-zinc-900">
-                  {Math.round(fuelLiters).toLocaleString("uk-UA")} л
-                </span>
-              ) : (
-                <span className="text-xs font-medium text-zinc-400">
-                  Немає ДУТ
-                </span>
-              )}
+            <div className="flex items-center gap-1.5 text-[11px] font-medium text-zinc-500">
+              <Fuel className="h-3.5 w-3.5 text-emerald-600" />
+              Паливо
             </div>
             {hasFuelData ? (
-              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-zinc-200">
-                <div
-                  className="h-full rounded-full bg-emerald-500 transition-all"
-                  style={{ width: `${fuelPct}%` }}
-                />
-              </div>
-            ) : null}
+              <p className="mt-0.5 text-2xl font-bold tracking-tight tabular-nums text-zinc-900">
+                {Math.round(fuelLiters).toLocaleString("uk-UA")}{" "}
+                <span className="text-xs font-semibold text-zinc-400">л</span>
+              </p>
+            ) : (
+              <p className="mt-0.5 text-sm font-medium text-zinc-400">Немає ДУТ</p>
+            )}
           </div>
 
           <div className="rounded-xl bg-zinc-50 px-3 py-2.5">

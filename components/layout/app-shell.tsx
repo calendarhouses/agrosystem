@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 import { Sidebar } from "@/components/layout/sidebar";
@@ -10,6 +11,8 @@ const SIDEBAR_COLLAPSED_KEY = "agrosystem-sidebar-collapsed";
 
 /** App Shell: фіксований viewport + згортання сайдбару */
 export function AppShell({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const isAuthScreen = pathname === "/login";
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
@@ -30,7 +33,6 @@ export function AppShell({ children }: { children: ReactNode }) {
       } catch {
         /* ignore */
       }
-      // Mapbox і canvas слухають resize — після анімації ширини
       window.setTimeout(() => {
         window.dispatchEvent(new Event("resize"));
       }, 220);
@@ -38,18 +40,31 @@ export function AppShell({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const isCommandCenter = pathname === "/equipment";
+
+  if (isAuthScreen) {
+    return <>{children}</>;
+  }
+
   return (
     <div className="h-dvh overflow-hidden bg-zinc-100 text-zinc-900">
       <Sidebar collapsed={collapsed} onToggleCollapsed={toggleCollapsed} />
 
       <div
         className={cn(
-          "flex h-full flex-col transition-[padding] duration-200 ease-out",
+          "relative flex h-full flex-col transition-[padding] duration-200 ease-out",
           collapsed ? "pl-16" : "pl-16 md:pl-[250px]"
         )}
       >
         <TopBar />
-        <div className="relative min-h-0 flex-1 overflow-hidden">{children}</div>
+        <div
+          className={cn(
+            "relative min-h-0 flex-1 overflow-hidden",
+            isCommandCenter && "h-full"
+          )}
+        >
+          {children}
+        </div>
       </div>
     </div>
   );

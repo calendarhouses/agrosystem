@@ -1,6 +1,11 @@
 /** Регіональний вітер (Open-Meteo) + Live-радар опадів (RainViewer) */
 
-import type { FeatureCollection, Point } from "geojson";
+import type {
+  Feature,
+  FeatureCollection,
+  LineString,
+  Point,
+} from "geojson";
 
 export type WeatherHourPoint = {
   time: string;
@@ -327,6 +332,56 @@ export function timelineFromRegionalWeather(
     windSpeedMs: station.speed[index] ?? 0,
     windDirectionDeg: station.dir[index] ?? 0,
   }));
+}
+
+/** Кінець вектора вітру (градуси, м/с → зміщення на карті) */
+function windVectorEnd(
+  lng: number,
+  lat: number,
+  dirDeg: number,
+  speedMs: number
+): [number, number] {
+  const towardDeg = (dirDeg + 180) % 360;
+  const scale = Math.min(1.35, 0.55 + speedMs / 12);
+  const distDeg = (0.045 * scale) / Math.max(0.55, Math.cos((lat * Math.PI) / 180));
+  const rad = (towardDeg * Math.PI) / 180;
+  return [lng + distDeg * Math.sin(rad), lat + distDeg * Math.cos(rad)];
+}
+
+/** Сітка стрілок вітру над Україною для шару карти */
+export function buildWindGridLinesGeoJSON(
+  field: RegionalWeatherField,
+  progress: number,
+  options?: { stepDeg?: number }
+): FeatureCollection<LineString, { speed: number; dir: number }> {
+  const len = Math.max(0, field.times.length - 1);
+  const p = Math.max(0, Math.min(len, progress));
+  const index = Math.floor(p);
+  const blend = p - index;
+  const step = options?.stepDeg ?? 0.65;
+
+  const features: Feature<LineString, { speed: number; dir: number }>[] = [];
+
+  for (let lat = 44.2; lat <= 52.4; lat += step) {
+    for (let lng = 22.1; lng <= 40.2; lng += step) {
+      const { speed, dir } = windAtLocation(field, lat, lng, index, blend);
+      if (speed < 0.15) continue;
+      const [endLng, endLat] = windVectorEnd(lng, lat, dir, speed);
+      features.push({
+        type: "Feature",
+        properties: { speed, dir },
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            [lng, lat],
+            [endLng, endLat],
+          ],
+        },
+      });
+    }
+  }
+
+  return { type: "FeatureCollection", features };
 }
 
 /** @deprecated — опади на карті тепер лише Live-радар */

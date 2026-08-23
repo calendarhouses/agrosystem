@@ -20,6 +20,10 @@ export type FieldOperation = {
   implement: string;
   areaDone: number;
   areaTotal: number;
+  /** Планові значення з БД (area_plan / fuel_plan / wage_plan) */
+  areaPlan?: number;
+  fuelPlan?: number;
+  wagePlan?: number;
   fuelUsed: number;
   wage: number;
   status: Exclude<FieldOperationStatus, "cancelled">;
@@ -163,6 +167,9 @@ export function mapOperationRow(row: DbRow): FieldOperation {
     implement: String(row.implement ?? "—"),
     areaDone: Math.round(areaDone * 100) / 100,
     areaTotal: num(row.area_total, areaDone),
+    areaPlan: areaPlan > 0 ? Math.round(areaPlan * 100) / 100 : undefined,
+    fuelPlan: fuelPlan > 0 ? fuelPlan : undefined,
+    wagePlan: wagePlan > 0 ? wagePlan : undefined,
     fuelUsed:
       status === "completed" && fuelFact > 0
         ? fuelFact
@@ -340,11 +347,11 @@ export async function upsertFieldOperation(
     timeLabel: input.time,
     seasonYear: input.seasonYear,
     areaTotal: input.areaTotal,
-    areaPlan: input.areaDone,
+    areaPlan: input.areaPlan ?? input.areaDone,
     areaFact: input.status === "completed" ? input.areaDone : null,
-    fuelPlan: input.fuelUsed,
+    fuelPlan: input.fuelPlan ?? input.fuelUsed,
     fuelFact: input.status === "completed" ? input.fuelUsed : null,
-    wagePlan: input.wage,
+    wagePlan: input.wagePlan ?? input.wage,
     wageFact: input.status === "completed" ? input.wage : null,
     agronomistComment: input.agronomistComment ?? null,
     wialonUnitId: input.wialonUnitId ?? null,
@@ -366,21 +373,24 @@ export async function upsertFieldOperation(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    if (res.ok) {
-      const data = (await res.json()) as { operation?: FieldOperation };
-      if (data.operation) {
-        upsertLocal(input.fieldKey, data.operation);
-        return data.operation;
-      }
+    const data = (await res.json().catch(() => ({}))) as {
+      operation?: FieldOperation;
+      error?: string;
+    };
+    if (res.ok && data.operation) {
+      upsertLocal(input.fieldKey, data.operation);
+      return data.operation;
     }
-  } catch {
-    /* keep local */
+    throw new Error(
+      data.error ||
+        (res.status === 503
+          ? "Таблиця field_operations недоступна — виконайте міграції"
+          : `Не вдалося зберегти наряд (HTTP ${res.status})`)
+    );
+  } catch (error) {
+    if (error instanceof Error) throw error;
+    throw new Error("Не вдалося зберегти наряд");
   }
-
-  return {
-    ...input,
-    date: input.date || formatOpDateLabel(input.occurredAt),
-  };
 }
 
 export async function deleteFieldOperation(

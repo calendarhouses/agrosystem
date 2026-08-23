@@ -537,7 +537,7 @@ export function FuelActionDialogs({
                 <DialogTitle className="text-lg font-bold tracking-tight">
                   {isEditing && editTransaction?.type === "transfer"
                     ? "Редагувати переміщення"
-                    : "Переміщення (База → Бензовоз)"}
+                    : "Переміщення (Цистерни → Бензовоз)"}
                 </DialogTitle>
                 <DialogDescription className="mt-1 text-zinc-500">
                   Внутрішнє переливання між ємностями

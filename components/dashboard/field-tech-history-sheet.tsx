@@ -8,10 +8,12 @@ import {
   CalendarRange,
   Loader2,
   Radio,
+  RefreshCw,
   Route,
   Sparkles,
   Tractor,
 } from "lucide-react";
+import { toast } from "sonner";
 
 import {
   Sheet,
@@ -24,7 +26,6 @@ import type { FieldGeometry } from "@/lib/farm-fields";
 import {
   calculateTechInField,
   currentSeasonYear,
-  listFieldTechSeasons,
   liveUnitsToVisits,
   recentWindowInSeason,
   seasonDateRange,
@@ -32,6 +33,7 @@ import {
   summarizeVisits,
   type FieldTechVisit,
 } from "@/lib/field-tech-history";
+import { useSeasonStore } from "@/lib/season-store";
 import type { WialonUnit } from "@/lib/wialon";
 import { cn } from "@/lib/utils";
 
@@ -128,11 +130,12 @@ export function FieldTechHistorySheet({
   fieldGeometry = null,
   units = [],
 }: FieldTechHistorySheetProps) {
-  const seasons = useMemo(() => listFieldTechSeasons(), []);
-  const [seasonYear, setSeasonYear] = useState(() => currentSeasonYear());
+  const activeSeason = useSeasonStore((s) => s.activeSeason);
+  const seasonYear = Number(activeSeason) || currentSeasonYear();
   const [trackVisits, setTrackVisits] = useState<FieldTechVisit[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingSeason, setLoadingSeason] = useState(false);
+  const [forceSyncing, setForceSyncing] = useState(false);
   const [progressLabel, setProgressLabel] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [fullSeasonLoaded, setFullSeasonLoaded] = useState(false);
@@ -310,6 +313,57 @@ export function FieldTechHistorySheet({
 
   const summary = useMemo(() => summarizeVisits(visits), [visits]);
 
+  const hasNoActivity =
+    !loading &&
+    !forceSyncing &&
+    liveEntries.length === 0 &&
+    summary.totalVisits === 0 &&
+    summary.totalHours === 0 &&
+    summary.totalDistanceKm === 0;
+
+  async function forceSyncWialon() {
+    const geometry = geometryRef.current;
+    const unitList = unitsRef.current;
+    if (!geometry || unitList.length === 0 || forceSyncing) return;
+
+    const toastId = toast.message("Синхронізація з Wialon...");
+    setForceSyncing(true);
+    setError(null);
+    historyCache.delete(cacheKey);
+
+    try {
+      const { visits, partial: isPartial } = await fetchHistoryChunk({
+        geometry,
+        units: unitList,
+        from: dateRange.from,
+        to: dateRange.to,
+        signal: new AbortController().signal,
+      });
+      setTrackVisits(visits);
+      setPartial(isPartial);
+      setFullSeasonLoaded(false);
+      historyCache.set(cacheKey, {
+        visits,
+        partial: isPartial,
+        fullSeason: false,
+      });
+      toast.dismiss(toastId);
+      if (visits.length > 0) {
+        toast.success(`Знайдено ${visits.length} візит(ів) техніки`);
+      } else {
+        toast.message("Wialon не зафіксував перетинів з контуром за сезон");
+      }
+    } catch (err: unknown) {
+      toast.dismiss(toastId);
+      const message =
+        err instanceof Error ? err.message : "Не вдалося синхронізувати Wialon";
+      setError(message);
+      toast.error(message);
+    } finally {
+      setForceSyncing(false);
+    }
+  }
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
@@ -347,34 +401,10 @@ export function FieldTechHistorySheet({
         </div>
 
         <div className="flex flex-1 flex-col overflow-y-auto px-6 py-5">
-          <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold tracking-wider text-zinc-500 uppercase">
-            <CalendarRange className="h-3.5 w-3.5" />
-            Період
-          </div>
-          <div className="mb-3 flex flex-wrap gap-2">
-            {seasons.map((season) => {
-              const active = season.year === seasonYear;
-              return (
-                <button
-                  key={season.year}
-                  type="button"
-                  disabled={loading || loadingSeason}
-                  onClick={() => setSeasonYear(season.year)}
-                  className={cn(
-                    "rounded-xl px-3.5 py-2 text-sm font-medium transition-all disabled:opacity-60",
-                    active
-                      ? "bg-[#276749] text-white shadow-md shadow-[#276749]/25"
-                      : "border border-[#E5DFD3] bg-white text-zinc-600 hover:border-[#276749]/30 hover:text-zinc-900"
-                  )}
-                >
-                  {season.label}
-                </button>
-              );
-            })}
-          </div>
-
           <p className="mb-4 text-xs text-zinc-500">
-            За замовчуванням — останні 7 днів сезону (швидко). Повний сезон
+            Дані за сезоном{" "}
+            <span className="font-semibold text-zinc-700">{seasonLabel}</span> з
+            верхньої панелі. За замовчуванням — останні 7 днів; повний сезон
             можна довантажити окремо.
           </p>
 
@@ -470,8 +500,24 @@ export function FieldTechHistorySheet({
                 Техніка не зафіксована
               </p>
               <p className="mx-auto mt-2 max-w-[260px] text-sm leading-relaxed text-zinc-500">
-                За останні 7 днів у треках немає перетину з цим полем.
+                {fieldName ?? "Поле"} · за {seasonLabel.toLowerCase()} немає
+                перетину з контуром.
               </p>
+              {hasNoActivity && fieldGeometry && units.length > 0 ? (
+                <button
+                  type="button"
+                  disabled={forceSyncing || loadingSeason}
+                  onClick={() => void forceSyncWialon()}
+                  className="mt-5 inline-flex items-center justify-center gap-2 rounded-xl border border-[#276749]/25 bg-white px-4 py-2.5 text-sm font-semibold text-[#276749] shadow-sm transition-colors hover:bg-[#276749]/5 disabled:opacity-50"
+                >
+                  {forceSyncing ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4" />
+                  )}
+                  Перевірити в Wialon зараз
+                </button>
+              ) : null}
             </div>
           ) : visits.length > 0 ? (
             <div className="space-y-3">

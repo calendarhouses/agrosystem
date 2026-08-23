@@ -390,12 +390,36 @@ export const COMMAND_ITEMS = [
     href: "/finance",
   },
   {
-    id: "cmd-ops",
-    label: "Внести операцію",
-    hint: "Ручне введення доходів і витрат",
+    id: "cmd-export",
+    label: "Експорт в 1С",
+    hint: "Excel чернеток для бухгалтера",
     group: "Операції",
     icon: "chart" as const,
-    href: "/reports",
+    href: "/export",
+  },
+  {
+    id: "cmd-inventory",
+    label: "Склад",
+    hint: "ЗЗР, добрива, локальні списання",
+    group: "Операції",
+    icon: "fuel" as const,
+    href: "/inventory",
+  },
+  {
+    id: "cmd-bas-mapping",
+    label: "Мапінг 1С",
+    hint: "Зіставлення з BAS AGRO",
+    group: "Адмін",
+    icon: "link" as const,
+    href: "/admin/mapping",
+  },
+  {
+    id: "cmd-bas-request",
+    label: "Звірка полів",
+    hint: "Заявка бухгалтеру по довіднику 1С",
+    group: "Адмін",
+    icon: "link" as const,
+    href: "/admin/bas-request",
   },
 ] as const;
 
@@ -493,154 +517,6 @@ export const OPERATION_STATUS_META: Record<
   draft: {
     label: "Чернетка",
     className: "border-[#C05621]/30 bg-[#C05621]/10 text-[#C05621]",
-  },
-};
-
-/** Аналітика поля для глибокого Sheet */
-export type FieldCostItem = {
-  label: string;
-  perHaUsd: number;
-};
-
-export type FieldProfitPoint = {
-  month: string;
-  profit: number;
-};
-
-export type FieldAnalytics = {
-  yieldForecastTHa: number;
-  profitabilityPercent: number;
-  profitSeries: FieldProfitPoint[];
-  costsPerHa: FieldCostItem[];
-  agroHistory: FieldTimelineItem[];
-};
-
-export const FIELD_ANALYTICS: Record<string, FieldAnalytics> = {
-  "field-1": {
-    yieldForecastTHa: 2.8,
-    profitabilityPercent: 34,
-    profitSeries: [
-      { month: "Бер", profit: 8 },
-      { month: "Кві", profit: 12 },
-      { month: "Тра", profit: 18 },
-      { month: "Чер", profit: 22 },
-      { month: "Лип", profit: 28 },
-      { month: "Сер", profit: 34 },
-    ],
-    costsPerHa: [
-      { label: "Насіння", perHaUsd: 40 },
-      { label: "Дизель", perHaUsd: 15 },
-      { label: "Добрива", perHaUsd: 38 },
-      { label: "ЗЗР", perHaUsd: 22 },
-      { label: "Робоча сила", perHaUsd: 18 },
-    ],
-    agroHistory: [
-      {
-        id: "ah-1",
-        dateLabel: "10 Травня",
-        title: "Посів завершено",
-        status: "completed",
-        icon: "tractor",
-      },
-      {
-        id: "ah-2",
-        dateLabel: "15 Травня",
-        title: "Внесення добрив",
-        status: "completed",
-        icon: "droplet",
-      },
-      {
-        id: "ah-3",
-        dateLabel: "Сьогодні",
-        title: "Очікування опадів / обприскування",
-        status: "waiting",
-        icon: "cloud",
-      },
-    ],
-  },
-  "field-2": {
-    yieldForecastTHa: 9.4,
-    profitabilityPercent: 41,
-    profitSeries: [
-      { month: "Бер", profit: 10 },
-      { month: "Кві", profit: 16 },
-      { month: "Тра", profit: 24 },
-      { month: "Чер", profit: 30 },
-      { month: "Лип", profit: 36 },
-      { month: "Сер", profit: 41 },
-    ],
-    costsPerHa: [
-      { label: "Насіння", perHaUsd: 55 },
-      { label: "Дизель", perHaUsd: 22 },
-      { label: "Добрива", perHaUsd: 48 },
-      { label: "ЗЗР", perHaUsd: 28 },
-      { label: "Робоча сила", perHaUsd: 20 },
-    ],
-    agroHistory: [
-      {
-        id: "ah-4",
-        dateLabel: "2 Травня",
-        title: "Посів завершено",
-        status: "completed",
-        icon: "tractor",
-      },
-      {
-        id: "ah-5",
-        dateLabel: "12 Травня",
-        title: "Обприскування",
-        status: "completed",
-        icon: "droplet",
-      },
-      {
-        id: "ah-6",
-        dateLabel: "Сьогодні",
-        title: "Моніторинг вологості",
-        status: "waiting",
-        icon: "cloud",
-      },
-    ],
-  },
-  "field-3": {
-    yieldForecastTHa: 5.1,
-    profitabilityPercent: 29,
-    profitSeries: [
-      { month: "Бер", profit: 6 },
-      { month: "Кві", profit: 11 },
-      { month: "Тра", profit: 15 },
-      { month: "Чер", profit: 19 },
-      { month: "Лип", profit: 24 },
-      { month: "Сер", profit: 29 },
-    ],
-    costsPerHa: [
-      { label: "Насіння", perHaUsd: 32 },
-      { label: "Дизель", perHaUsd: 12 },
-      { label: "Добрива", perHaUsd: 30 },
-      { label: "ЗЗР", perHaUsd: 16 },
-      { label: "Робоча сила", perHaUsd: 14 },
-    ],
-    agroHistory: [
-      {
-        id: "ah-7",
-        dateLabel: "28 Квітня",
-        title: "Посів завершено",
-        status: "completed",
-        icon: "tractor",
-      },
-      {
-        id: "ah-8",
-        dateLabel: "8 Травня",
-        title: "Внесення добрив",
-        status: "completed",
-        icon: "droplet",
-      },
-      {
-        id: "ah-9",
-        dateLabel: "Сьогодні",
-        title: "Підготовка до збору",
-        status: "waiting",
-        icon: "cloud",
-      },
-    ],
   },
 };
 

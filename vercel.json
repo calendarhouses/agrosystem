@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/sync-wialon-fuel",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/sync-wialon-equipment-day",
+      "schedule": "*/15 * * * *"
+    }
+  ]
+}

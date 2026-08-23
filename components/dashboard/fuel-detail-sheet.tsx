@@ -137,14 +137,16 @@ export function FuelDetailSheet({
     const fromIso = subDays(new Date(), BURN_LOOKBACK_DAYS).toISOString();
     const supabase = createBrowserSupabase();
 
-    void supabase
-      .from("fuel_transactions")
-      .select(FUEL_TRANSACTIONS_SELECT)
-      .or(`from_storage_id.eq.${storageId},to_storage_id.eq.${storageId}`)
-      .gte("transaction_date", fromIso)
-      .order("transaction_date", { ascending: false })
-      .limit(100)
-      .then(({ data, error }) => {
+    void (async () => {
+      try {
+        const { data, error } = await supabase
+          .from("fuel_transactions")
+          .select(FUEL_TRANSACTIONS_SELECT)
+          .or(`from_storage_id.eq.${storageId},to_storage_id.eq.${storageId}`)
+          .gte("transaction_date", fromIso)
+          .order("transaction_date", { ascending: false })
+          .limit(100);
+
         if (cancelled) return;
         if (!error && data) {
           setHistory(
@@ -160,10 +162,10 @@ export function FuelDetailSheet({
               tx.fromStorageId === storageId || tx.toStorageId === storageId
           )
         );
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setHistoryLoading(false);
-      });
+      }
+    })();
 
     return () => {
       cancelled = true;

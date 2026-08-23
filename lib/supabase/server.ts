@@ -2,7 +2,11 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { createSupabaseResilientFetch } from "@/lib/supabase/resilient-fetch";
 
-/** Серверний клієнт з service role / secret key (API routes, RSC) */
+/**
+ * Service-role / secret key (API, RSC, server actions).
+ * Без next/headers — можна імпортувати з lib/*, які інколи
+ * потрапляють у клієнтський бандл (типи / чисті хелпери).
+ */
 export function createServiceSupabase(): SupabaseClient {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key =

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { mapOperationRow } from "@/lib/field-operations";
+import { upsertFieldOperationRow } from "@/lib/field-operations-db";
 import { createServiceSupabase } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -29,6 +29,7 @@ type CloseBody = {
   trackerDistanceKm?: number | null;
   trackerWorkHours?: number | null;
   trackerFuelL?: number | null;
+  correctOnly?: boolean;
 };
 
 function isUuid(value: string): boolean {
@@ -89,16 +90,22 @@ export async function POST(request: Request) {
       wage_plan: body.wagePlan ?? null,
       wage_fact: body.wageFact ?? null,
       agronomist_comment: body.agronomistComment?.trim() || null,
-      closed_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
+
+    if (!body.correctOnly) {
+      row.closed_at = new Date().toISOString();
+    }
 
     if (fieldKey) row.field_key = fieldKey;
     if (body.machinery != null) row.machinery = body.machinery;
     if (body.implement != null) row.implement = body.implement;
     if (body.occurredAt) row.occurred_at = body.occurredAt.slice(0, 10);
     if (body.timeLabel != null) row.time_label = body.timeLabel;
-    if (typeof body.seasonYear === "number") row.season_year = body.seasonYear;
+    if (typeof body.seasonYear === "number") {
+      row.season_year = body.seasonYear;
+      row.season = String(body.seasonYear);
+    }
     if (body.areaTotal != null) row.area_total = body.areaTotal;
     if (typeof body.wialonUnitId === "number") {
       row.wialon_unit_id = body.wialonUnitId;
@@ -117,24 +124,20 @@ export async function POST(request: Request) {
     }
 
     const supabase = createServiceSupabase();
-    const { data, error } = await supabase
-      .from("field_operations")
-      .upsert(row, { onConflict: "client_key" })
-      .select("*")
-      .single();
+    const result = await upsertFieldOperationRow(supabase, row);
 
-    if (error) {
+    if (!result.ok) {
       return NextResponse.json(
-        { error: error.message, code: error.code },
+        { error: result.error, code: result.code },
         {
           status:
-            error.code === "PGRST205" || error.code === "42P01" ? 503 : 500,
+            result.code === "PGRST205" || result.code === "42P01" ? 503 : 500,
         }
       );
     }
 
     return NextResponse.json({
-      operation: mapOperationRow(data as Record<string, unknown>),
+      operation: result.operation,
     });
   } catch (error) {
     return NextResponse.json(

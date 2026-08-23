@@ -69,7 +69,7 @@ export function FleetAlertStrip({
   }
 
   return (
-    <div className="flex flex-wrap items-center justify-end gap-1.5">
+    <div className="flex flex-wrap items-center justify-start gap-1.5">
       {alerts.map((alert) => {
         const style = ALERT_STYLES[alert.kind];
         const Icon = style.Icon;

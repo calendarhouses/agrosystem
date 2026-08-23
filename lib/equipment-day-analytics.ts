@@ -371,7 +371,10 @@ export function detectFuelDrainEvents(
 }
 
 /** Стабільний старт/фініш бака: медіана країв, без одиночного «битого» семпла Wialon */
-function stableFuelEndpoints(fuelValues: number[]): {
+function stableFuelEndpoints(
+  fuelValues: number[],
+  tankVolumeLiters?: number | null
+): {
   fuelStart: number | null;
   fuelEnd: number | null;
   fuelDelta: number | null;
@@ -391,8 +394,20 @@ function stableFuelEndpoints(fuelValues: number[]): {
   const fuelEnd = Math.round(endMed * 10) / 10;
   let fuelDelta: number | null = Math.round((fuelEnd - fuelStart) * 10) / 10;
 
-  // Баки агротехніки рідко > ~1200 л; стрибок ±1000+ л = сміття датчика
-  const MAX_PLAUSIBLE_DELTA = 900;
+  // Баки агротехніки рідко > ~1200 л; цистерна бензовоза — до ~8000.
+  // Якщо відомий номінал бака — дельта не може бути більшою за бак×1.15.
+  const tankCap =
+    tankVolumeLiters != null &&
+    Number.isFinite(tankVolumeLiters) &&
+    tankVolumeLiters > 0
+      ? tankVolumeLiters
+      : null;
+  const MAX_PLAUSIBLE_DELTA = tankCap != null ? tankCap * 1.15 : 900;
+  const MAX_PLAUSIBLE_LEVEL = tankCap != null ? tankCap * 1.2 : 2500;
+
+  if (fuelStart > MAX_PLAUSIBLE_LEVEL || fuelEnd > MAX_PLAUSIBLE_LEVEL) {
+    return { fuelStart: null, fuelEnd: null, fuelDelta: null };
+  }
   if (Math.abs(fuelDelta) > MAX_PLAUSIBLE_DELTA) {
     fuelDelta = null;
   }
@@ -401,7 +416,12 @@ function stableFuelEndpoints(fuelValues: number[]): {
 }
 
 export function buildDayAnalyticsFromSamples(
-  rawSamples: DayAnalyticsSample[]
+  rawSamples: DayAnalyticsSample[],
+  options?: {
+    tankVolumeLiters?: number | null;
+    /** Бензовоз тощо — не детектувати «злив» */
+    skipFuelDrainDetection?: boolean;
+  }
 ): DayAnalyticsPayload {
   const samples = downsampleAnalyticsSamples(rawSamples);
   const hasFuelSensor = samples.some((s) => s.fuelLiters != null);
@@ -410,7 +430,10 @@ export function buildDayAnalyticsFromSamples(
   const fuelValues = samples
     .map((s) => s.fuelLiters)
     .filter((v): v is number => v != null && Number.isFinite(v));
-  const { fuelStart, fuelEnd, fuelDelta } = stableFuelEndpoints(fuelValues);
+  const { fuelStart, fuelEnd, fuelDelta } = stableFuelEndpoints(
+    fuelValues,
+    options?.tankVolumeLiters
+  );
 
   const hoursIdling = sumConditionHours(
     samples,
@@ -442,7 +465,10 @@ export function buildDayAnalyticsFromSamples(
 
   return {
     summary,
-    fuelEvents: hasFuelSensor ? detectFuelDrainEvents(samples) : [],
+    fuelEvents:
+      hasFuelSensor && !options?.skipFuelDrainDetection
+        ? detectFuelDrainEvents(samples)
+        : [],
     samples,
   };
 }

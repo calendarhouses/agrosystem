@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import {
   endOfDay,
@@ -17,43 +17,35 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
+  Edit3,
   Fuel,
   History,
   Landmark,
-  MoreHorizontal,
+  Leaf,
+  PackageMinus,
   Pencil,
   Play,
+  Settings2,
   Sprout,
   Tractor,
   Trash2,
-  TrendingUp,
   Wallet,
 } from "lucide-react";
-import { Area, AreaChart, CartesianGrid, XAxis } from "recharts";
+import { AnimatePresence, motion } from "framer-motion";
 
 import { Calendar } from "@/components/ui/calendar";
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-  type ChartConfig,
-} from "@/components/ui/chart";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { DatePicker } from "@/components/ui/date-picker";
+import { TimePicker } from "@/components/ui/time-picker";
+import { Button } from "@/components/ui/button";
 import {
   deleteFieldOperation,
   listFieldOperations,
   upsertFieldOperation,
   type FieldOperation,
 } from "@/lib/field-operations";
-import type { FieldGeometry } from "@/lib/farm-fields";
+import type { FarmField, FieldGeometry } from "@/lib/farm-fields";
 import {
   Popover,
   PopoverContent,
@@ -75,64 +67,50 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { OperationClosePanel } from "@/components/dashboard/operation-close-modal";
+import { LiveFieldEconomicsPanel, useLiveFieldEconomics } from "@/components/dashboard/live-field-economics-panel";
+import { QuickIssueSheet } from "@/components/dashboard/quick-issue-sheet";
+import { FieldHistoryTimeline } from "@/components/dashboard/field-history-timeline";
+import { FieldIntegrationsPanel } from "@/components/dashboard/field-integrations-panel";
+import { FieldMicroclimate } from "@/components/dashboard/field-microclimate";
 import {
-  FIELD_ANALYTICS,
-  type Field,
-  type FieldAnalytics,
-} from "@/lib/dashboard-data";
-import type { WialonUnit } from "@/lib/wialon";
+  FieldPassportForm,
+  normalizeFieldCrop,
+} from "@/components/dashboard/field-passport-form";
+import { FieldPassportQuickFix } from "@/components/dashboard/field-passport-quick-fix";
+import { FieldTechHistoryPanel } from "@/components/dashboard/field-tech-history-panel";
+import { SmartWeatherAlert } from "@/components/dashboard/smart-weather-alert";
+import { OperationClosePanel } from "@/components/dashboard/operation-close-modal";
+import type { CloseableOperation } from "@/components/dashboard/operation-close-modal";
+import {
+  listImplementsForOps,
+  type ImplementOption,
+} from "@/app/admin/equipment/actions";
+import { getDieselPriceUah } from "@/app/fuel/actions";
+import { getFieldEvents } from "@/app/admin/fields/actions";
+import { useSeasonStore } from "@/lib/season-store";
+import type { Field } from "@/lib/dashboard-data";
+import type { FieldEvent } from "@/lib/field-events";
+import {
+  estimatePlanFuelLiters,
+  estimatePlanWageUah,
+  fuelLitersPerHa,
+  IMPLEMENT_PRESETS,
+  IMPLEMENT_WIDTH_DEFAULTS,
+  OPERATION_TYPES,
+  WAGE_UAH_PER_HA,
+  isSowingOperationType,
+} from "@/lib/field-operation-norms";
+import { formatUahCurrency } from "@/lib/fuel-price";
+import { isFieldPassportComplete } from "@/lib/field-passport";
+import type { WialonGeofenceProperties, WialonUnit } from "@/lib/wialon";
+import type { HourlyForecastHour, WeatherSnapshot } from "@/lib/weather";
+import type { FeatureCollection, Polygon } from "geojson";
+import type { MapFieldSource } from "@/lib/map-fields";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/skeleton";
 
-const OPERATION_TYPES = [
-  "Посів",
-  "Культивація",
-  "Оранка",
-  "Внесення ЗЗР",
-  "Внесення добрив",
-  "Збирання",
-] as const;
-
-/** Типові знаряддя (без фейкових брендів) */
-const IMPLEMENT_PRESETS: Record<string, string> = {
-  Посів: "Сівалка",
-  Культивація: "Культиватор",
-  Оранка: "Плуг",
-  "Внесення ЗЗР": "Обприскувач",
-  "Внесення добрив": "Розкидач добрив",
-  Збирання: "Жатка",
-};
-
-/** Дефолтна ширина знаряддя (м) для оцінки га з трека */
-const IMPLEMENT_WIDTH_DEFAULTS: Record<string, number> = {
-  Посів: 8,
-  Культивація: 6,
-  Оранка: 4,
-  "Внесення ЗЗР": 24,
-  "Внесення добрив": 12,
-  Збирання: 9,
-};
-
-/** Орієнтовна витрата палива л/га за типом робіт */
-const FUEL_L_PER_HA: Record<string, number> = {
-  Посів: 4.5,
-  Культивація: 7.5,
-  Оранка: 18,
-  "Внесення ЗЗР": 1.2,
-  "Внесення добрив": 3.5,
-  Збирання: 12,
-};
-
-const WAGE_UAH_PER_HA = 95;
-
-function estimatePlanFuel(type: string, areaHa: number): number {
-  const rate = FUEL_L_PER_HA[type] ?? 5;
-  return Math.max(1, Math.round(areaHa * rate));
-}
-
-function estimatePlanWage(areaHa: number): number {
-  return Math.max(100, Math.round(areaHa * WAGE_UAH_PER_HA));
-}
+export type FieldHubTab = "overview" | "history" | "tech" | "settings";
 
 type FieldDetailSheetProps = {
   field: Field | null;
@@ -144,12 +122,44 @@ type FieldDetailSheetProps = {
   farmFieldId?: string | null;
   /** Геометрія для аналізу трека при закритті наряду */
   fieldGeometry?: FieldGeometry | null;
-  analytics?: FieldAnalytics | null;
+  fieldColor?: string | null;
+  mapSource?: MapFieldSource;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  initialTab?: FieldHubTab;
+  /** Відкрити вкладку «Налаштування» з підтвердженням видалення (Delete на карті) */
+  initialConfirmDelete?: boolean;
   /** Техніка з Wialon для вибору в плані робіт */
   units?: WialonUnit[];
   onPlanWork?: (op?: FieldOperation) => void;
+  weather?: WeatherSnapshot | null;
+  hourly?: HourlyForecastHour[] | null;
+  weatherLoading?: boolean;
+  weatherError?: string | null;
+  passportMode?: "create" | "edit";
+  passportBusy?: boolean;
+  passportSavedFlash?: boolean;
+  passportSaveHint?: string | null;
+  passportName?: string;
+  passportCrop?: string;
+  passportAreaHa?: number;
+  passportColor?: string;
+  onPassportNameChange?: (value: string) => void;
+  onPassportCropChange?: (value: string) => void;
+  onPassportAreaHaChange?: (value: number) => void;
+  onPassportColorChange?: (value: string) => void;
+  onPassportSave?: () => void;
+  onPassportDelete?: () => void;
+  onEditGeometry?: () => void;
+  /** Показати «Видалити» (збережений паспорт або чернетка контуру) */
+  canDeleteField?: boolean;
+  /** Інкремент при Realtime-оновленні з Supabase */
+  realtimeVersion?: number;
+  wialonZoneId?: string | null;
+  wialonGeofences?: FeatureCollection<Polygon, WialonGeofenceProperties>;
+  wialonLoading?: boolean;
+  occupiedWialonZones?: Record<string, string>;
+  onIntegrationsFieldUpdated?: (field: FarmField) => void;
 };
 
 type HistoryPeriod =
@@ -169,21 +179,74 @@ const PERIOD_OPTIONS: Exclude<HistoryPeriod, "custom" | "Сезон">[] = [
 ];
 
 const TAB_ITEMS = [
-  { value: "history", label: "Історія", icon: History },
-  { value: "economy", label: "Економіка", icon: Landmark },
-  { value: "overview", label: "Огляд", icon: ChartPie },
-] as const;
+  {
+    value: "overview",
+    label: "Огляд",
+    shortLabel: "Огляд",
+    icon: ChartPie,
+  },
+  {
+    value: "history",
+    label: "Історія & Економіка",
+    shortLabel: "Історія",
+    icon: History,
+  },
+  {
+    value: "tech",
+    label: "Техніка",
+    shortLabel: "Техніка",
+    icon: Tractor,
+  },
+  {
+    value: "settings",
+    label: "Налаштування",
+    shortLabel: "Налашт.",
+    icon: Settings2,
+  },
+] as const satisfies ReadonlyArray<{
+  value: FieldHubTab;
+  label: string;
+  shortLabel: string;
+  icon: typeof ChartPie;
+}>;
 
-/** Агросезон: 1 березня → кінець лютого наступного року */
-function getSeasonRange(seasonYear: number, now = new Date()): {
+function HubTabPanel({
+  tab,
+  activeTab,
+  children,
+  className,
+}: {
+  tab: FieldHubTab;
+  activeTab: FieldHubTab;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <AnimatePresence mode="wait" initial={false}>
+      {activeTab === tab ? (
+        <motion.div
+          key={tab}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+          className={className}
+        >
+          {children}
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
+  );
+}
+
+/** Агросезон: 1 березня → кінець лютого наступного року (повний діапазон для історії). */
+function getSeasonRange(seasonYear: number): {
   start: Date;
   end: Date;
 } {
-  const start = startOfDay(new Date(seasonYear, 2, 1));
-  const endRaw = endOfDay(new Date(seasonYear + 1, 2, 0));
   return {
-    start,
-    end: endRaw.getTime() > now.getTime() ? endOfDay(now) : endRaw,
+    start: startOfDay(new Date(seasonYear, 2, 1)),
+    end: endOfDay(new Date(seasonYear + 1, 2, 0)),
   };
 }
 
@@ -194,7 +257,7 @@ function getPeriodRange(
 ): { start: Date; end: Date } {
   const now = new Date();
   if (period === "Сезон") {
-    return getSeasonRange(seasonYear, now);
+    return getSeasonRange(seasonYear);
   }
   if (period === "custom" && customRange?.from) {
     return {
@@ -221,23 +284,8 @@ function formatOpDateLabel(iso: string): string {
   return format(d, "d MMMM", { locale: uk });
 }
 
-const chartConfig = {
-  profit: {
-    label: "Рентабельність",
-    color: "#276749",
-  },
-} satisfies ChartConfig;
-
-function formatUsd(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
-
 function formatUah(value: number) {
-  return `${value.toLocaleString("uk-UA")} ₴`;
+  return formatUahCurrency(value);
 }
 
 function statusMeta(status: FieldOperation["status"]) {
@@ -259,6 +307,7 @@ type OperationCardProps = {
   onEdit: (op: FieldOperation) => void;
   onDelete: (op: FieldOperation) => void;
   onComplete: (op: FieldOperation) => void;
+  onCorrect?: (op: FieldOperation) => void;
 };
 
 function OperationCard({
@@ -267,6 +316,7 @@ function OperationCard({
   onEdit,
   onDelete,
   onComplete,
+  onCorrect,
 }: OperationCardProps) {
   const pct =
     op.areaTotal > 0 ? Math.round((op.areaDone / op.areaTotal) * 100) : 0;
@@ -275,11 +325,12 @@ function OperationCard({
   const status = statusMeta(op.status);
   const isPlanned = op.status === "planned";
   const isInProgress = op.status === "in_progress";
+  const isCompleted = op.status === "completed";
 
   return (
     <article
       className={cn(
-        "mb-3 rounded-2xl border bg-white p-4 shadow-sm transition-shadow hover:shadow-md",
+        "mb-3 overflow-hidden rounded-2xl border bg-white shadow-sm transition-shadow hover:shadow-md",
         isPlanned
           ? "border-sky-200/80 ring-1 ring-sky-50"
           : isInProgress
@@ -287,207 +338,272 @@ function OperationCard({
             : "border-zinc-200/90"
       )}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <div
-            className={cn(
-              "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
-              isPlanned
-                ? "bg-sky-50 text-sky-600"
-                : isInProgress
-                  ? "bg-amber-50 text-amber-600"
-                  : "bg-emerald-50 text-emerald-600"
-            )}
-          >
-            <Tractor className="h-5 w-5" strokeWidth={1.8} />
+      <div className="p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <div
+              className={cn(
+                "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
+                isPlanned
+                  ? "bg-sky-50 text-sky-600"
+                  : isInProgress
+                    ? "bg-amber-50 text-amber-600"
+                    : "bg-emerald-50 text-emerald-600"
+              )}
+            >
+              <Tractor className="h-5 w-5" strokeWidth={1.8} />
+            </div>
+            <div className="min-w-0">
+              <h4 className="truncate text-[15px] font-bold tracking-tight text-zinc-900">
+                {op.type}
+                <span className="font-semibold text-zinc-400"> · </span>
+                <span className="font-semibold text-zinc-700">{op.crop}</span>
+              </h4>
+              <p className="mt-0.5 text-xs text-zinc-500">
+                {op.date}
+                <span className="mx-1.5 text-zinc-300">·</span>
+                {op.time}
+              </p>
+            </div>
           </div>
-          <div className="min-w-0">
-            <h4 className="truncate text-[15px] font-bold tracking-tight text-zinc-900">
-              {op.type}
-              <span className="font-semibold text-zinc-400"> · </span>
-              <span className="font-semibold text-zinc-700">{op.crop}</span>
-            </h4>
-            <p className="mt-0.5 text-xs text-zinc-500">
-              {op.date}
-              <span className="mx-1.5 text-zinc-300">·</span>
-              {op.time}
-            </p>
-          </div>
-        </div>
 
-        <div className="flex shrink-0 items-center gap-1.5">
           <span
             className={cn(
-              "rounded-lg px-2 py-1 text-[11px] font-semibold",
+              "shrink-0 rounded-lg px-2 py-1 text-[11px] font-semibold",
               status.className
             )}
           >
             {status.label}
           </span>
+        </div>
 
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-800"
-              aria-label="Дії з операцією"
+        <div className="mt-3 flex items-center gap-2 rounded-xl bg-zinc-50 px-3 py-2.5">
+          <p className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-800">
+            {op.machinery}
+          </p>
+          <span className="shrink-0 text-zinc-300" aria-hidden>
+            ·
+          </span>
+          <p className="min-w-0 flex-1 truncate text-sm text-zinc-500">
+            {op.implement}
+          </p>
+        </div>
+
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          <div className="rounded-xl border border-zinc-100 bg-zinc-50/80 px-2.5 py-2.5 text-center">
+            <p className="text-[10px] font-semibold tracking-wider text-zinc-400 uppercase">
+              Площа
+            </p>
+            <p className="mt-1 text-sm font-bold tabular-nums text-zinc-900">
+              {op.areaDone}
+              <span className="text-[11px] font-semibold text-zinc-400">
+                {" "}
+                га
+              </span>
+            </p>
+            <div className="mx-auto mt-1.5 h-1 w-full max-w-[72px] overflow-hidden rounded-full bg-zinc-200">
+              <div
+                className={cn(
+                  "h-full rounded-full",
+                  isPlanned ? "bg-sky-400" : "bg-emerald-500"
+                )}
+                style={{ width: `${Math.min(100, isPlanned ? 0 : pct)}%` }}
+              />
+            </div>
+            <p
+              className={cn(
+                "mt-1 text-[11px] font-medium",
+                isPlanned ? "text-sky-600" : "text-emerald-600"
+              )}
             >
-              <MoreHorizontal size={18} />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="end"
-              className="z-[100] min-w-48 border-zinc-200 bg-white text-zinc-900"
-            >
-              {isPlanned ? (
-                <>
-                  <DropdownMenuItem
-                    className="gap-2"
-                    onClick={() => onStart(op)}
-                  >
-                    <Play className="h-4 w-4 text-emerald-600" />
-                    Почати роботу
-                  </DropdownMenuItem>
-                  <DropdownMenuItem className="gap-2" onClick={() => onEdit(op)}>
-                    <Pencil className="h-4 w-4 text-zinc-500" />
-                    Редагувати
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                </>
-              ) : null}
-              {isInProgress ? (
-                <>
-                  <DropdownMenuItem
-                    className="gap-2"
-                    onClick={() => onComplete(op)}
-                  >
-                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                    Завершити роботу
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                </>
-              ) : null}
-              <DropdownMenuItem
-                variant="destructive"
-                className="gap-2"
-                onClick={() => onDelete(op)}
-              >
-                <Trash2 className="h-4 w-4" />
-                Видалити
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+              {isPlanned ? "план" : `${pct}%`}
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-zinc-100 bg-zinc-50/80 px-2.5 py-2.5 text-center">
+            <p className="inline-flex items-center justify-center gap-1 text-[10px] font-semibold tracking-wider text-zinc-400 uppercase">
+              <Fuel className="h-3 w-3" />
+              Паливо
+            </p>
+            <p className="mt-1 text-sm font-bold tabular-nums text-zinc-900">
+              {fuelPerHa}
+              <span className="text-[11px] font-semibold text-zinc-400">
+                {" "}
+                л/га
+              </span>
+            </p>
+            <p className="mt-1.5 text-[11px] tabular-nums text-zinc-500">
+              {op.fuelUsed.toLocaleString("uk-UA")} л{" "}
+              {isPlanned ? "план" : "факт"}
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-zinc-100 bg-zinc-50/80 px-2.5 py-2.5 text-center">
+            <p className="inline-flex items-center justify-center gap-1 text-[10px] font-semibold tracking-wider text-zinc-400 uppercase">
+              <Wallet className="h-3 w-3" />
+              Оплата
+            </p>
+            <p className="mt-1 text-sm font-bold tabular-nums text-zinc-900">
+              {formatUah(op.wage)}
+            </p>
+            <p className="mt-1.5 text-[11px] text-zinc-500">механізатор</p>
+          </div>
         </div>
       </div>
 
-      <div className="mt-3 flex items-center gap-2 rounded-xl bg-zinc-50 px-3 py-2.5">
-        <p className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-800">
-          {op.machinery}
-        </p>
-        <span className="shrink-0 text-zinc-300" aria-hidden>
-          ·
-        </span>
-        <p className="min-w-0 flex-1 truncate text-sm text-zinc-500">
-          {op.implement}
-        </p>
-      </div>
-
-      <div className="mt-3 grid grid-cols-3 gap-2">
-        <div className="rounded-xl border border-zinc-100 bg-zinc-50/80 px-2.5 py-2.5 text-center">
-          <p className="text-[10px] font-semibold tracking-wider text-zinc-400 uppercase">
-            Площа
-          </p>
-          <p className="mt-1 text-sm font-bold tabular-nums text-zinc-900">
-            {op.areaDone}
-            <span className="text-[11px] font-semibold text-zinc-400"> га</span>
-          </p>
-          <div className="mx-auto mt-1.5 h-1 w-full max-w-[72px] overflow-hidden rounded-full bg-zinc-200">
-            <div
-              className={cn(
-                "h-full rounded-full",
-                isPlanned ? "bg-sky-400" : "bg-emerald-500"
-              )}
-              style={{ width: `${Math.min(100, isPlanned ? 0 : pct)}%` }}
-            />
-          </div>
-          <p
+      <div className="flex items-center gap-2 border-t border-zinc-100/90 bg-gradient-to-b from-[#FAFAF8] to-white px-3 py-2.5">
+        {isPlanned ? (
+          <button
+            type="button"
+            onClick={() => onStart(op)}
             className={cn(
-              "mt-1 text-[11px] font-medium",
-              isPlanned ? "text-sky-600" : "text-emerald-600"
+              "inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-xl px-3 text-sm font-bold text-white",
+              "bg-gradient-to-r from-[#1f5239] via-[#276749] to-[#2f7a52]",
+              "shadow-[0_8px_20px_-8px_rgba(39,103,73,0.55)]",
+              "transition-all hover:-translate-y-px hover:brightness-105 active:translate-y-0"
             )}
           >
-            {isPlanned ? "план" : `${pct}%`}
-          </p>
-        </div>
+            <Play className="h-4 w-4 fill-current" />
+            Почати роботу
+          </button>
+        ) : null}
 
-        <div className="rounded-xl border border-zinc-100 bg-zinc-50/80 px-2.5 py-2.5 text-center">
-          <p className="inline-flex items-center justify-center gap-1 text-[10px] font-semibold tracking-wider text-zinc-400 uppercase">
-            <Fuel className="h-3 w-3" />
-            Паливо
-          </p>
-          <p className="mt-1 text-sm font-bold tabular-nums text-zinc-900">
-            {fuelPerHa}
-            <span className="text-[11px] font-semibold text-zinc-400">
-              {" "}
-              л/га
-            </span>
-          </p>
-          <p className="mt-1.5 text-[11px] tabular-nums text-zinc-500">
-            {op.fuelUsed.toLocaleString("uk-UA")} л{" "}
-            {isPlanned ? "план" : "факт"}
-          </p>
-        </div>
+        {isInProgress ? (
+          <button
+            type="button"
+            onClick={() => onComplete(op)}
+            className={cn(
+              "inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-xl px-3 text-sm font-bold text-white",
+              "bg-gradient-to-r from-[#1f5239] via-[#276749] to-[#2f7a52]",
+              "shadow-[0_8px_20px_-8px_rgba(39,103,73,0.55)]",
+              "transition-all hover:-translate-y-px hover:brightness-105 active:translate-y-0"
+            )}
+          >
+            <CheckCircle2 className="h-4 w-4" />
+            Завершити
+          </button>
+        ) : null}
 
-        <div className="rounded-xl border border-zinc-100 bg-zinc-50/80 px-2.5 py-2.5 text-center">
-          <p className="inline-flex items-center justify-center gap-1 text-[10px] font-semibold tracking-wider text-zinc-400 uppercase">
-            <Wallet className="h-3 w-3" />
-            Оплата
-          </p>
-          <p className="mt-1 text-sm font-bold tabular-nums text-zinc-900">
-            {formatUah(op.wage)}
-          </p>
-          <p className="mt-1.5 text-[11px] text-zinc-500">механізатор</p>
-        </div>
+        {isCompleted && onCorrect ? (
+          <button
+            type="button"
+            onClick={() => onCorrect(op)}
+            className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-xl border border-[#C9D4CA] bg-white px-3 text-sm font-semibold text-zinc-800 shadow-sm transition-colors hover:bg-zinc-50"
+          >
+            <Edit3 className="h-4 w-4 text-zinc-500" />
+            Коригувати
+          </button>
+        ) : null}
+
+        {!isCompleted ? (
+          <button
+            type="button"
+            onClick={() => onEdit(op)}
+            className="inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-3.5 text-sm font-semibold text-zinc-700 shadow-sm transition-colors hover:bg-zinc-50"
+            aria-label="Редагувати"
+          >
+            <Pencil className="h-4 w-4 text-zinc-500" />
+            <span className="hidden sm:inline">Редагувати</span>
+          </button>
+        ) : null}
+
+        <button
+          type="button"
+          onClick={() => onDelete(op)}
+          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-transparent text-zinc-400 transition-colors hover:border-red-100 hover:bg-red-50 hover:text-red-600"
+          aria-label="Видалити"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
       </div>
     </article>
   );
 }
 
+type PlanWorkPrefill = {
+  occurredAt: string;
+  machinery?: string;
+  wialonUnitId?: number | null;
+  fuelUsed?: number | null;
+  areaDone?: number | null;
+};
+
 type PlanWorkPanelProps = {
   field: Field;
+  farmFieldId: string | null;
   seasonYear: number;
   units: WialonUnit[];
+  fieldGeometry?: FieldGeometry | null;
   initial?: FieldOperation | null;
+  /** Новий наряд з попередньо заповненими датою / технікою (не edit) */
+  prefill?: PlanWorkPrefill | null;
+  submitAsCompleted?: boolean;
+  onPassportPatched?: (patch: { crop: string; areaHa: number }) => void;
   onBack: () => void;
   onSubmit: (op: FieldOperation) => void;
 };
 
 function PlanWorkPanel({
   field,
+  farmFieldId,
   seasonYear,
   units,
+  fieldGeometry = null,
   initial = null,
+  prefill = null,
+  submitAsCompleted = false,
+  onPassportPatched,
   onBack,
   onSubmit,
 }: PlanWorkPanelProps) {
   const areaDefault = Number(field.areaHa) || 0;
   const isEdit = Boolean(initial);
+  const [passportCrop, setPassportCrop] = useState(field.crop);
+  const [passportAreaHa, setPassportAreaHa] = useState(field.areaHa);
+
+  useEffect(() => {
+    setPassportCrop(field.crop);
+    setPassportAreaHa(field.areaHa);
+  }, [field.crop, field.areaHa, field.id]);
+
+  const fieldPassportOk = isFieldPassportComplete({
+    areaHa: passportAreaHa,
+    crop: passportCrop,
+  });
+  const fieldPassportBlocked = !fieldPassportOk;
   const unitOptions = useMemo(() => {
     const list = units
-      .filter((u) => u.nm?.trim())
-      .map((u) => ({ id: u.id, name: u.nm.trim() }))
+      .filter((u) => Number.isFinite(u.id))
+      .map((u) => ({
+        id: u.id,
+        name: u.nm?.trim() || `Техніка ${u.id}`,
+      }))
       .sort((a, b) => a.name.localeCompare(b.name, "uk"));
-    if (
-      initial?.wialonUnitId != null &&
-      !list.some((u) => u.id === initial.wialonUnitId)
-    ) {
-      return [
-        {
-          id: initial.wialonUnitId,
-          name: initial.machinery || `Unit ${initial.wialonUnitId}`,
-        },
-        ...list,
-      ];
+    const injectId = initial?.wialonUnitId ?? prefill?.wialonUnitId ?? null;
+    const injectName =
+      initial?.machinery?.trim() ||
+      prefill?.machinery?.trim() ||
+      (injectId != null ? `Техніка ${injectId}` : "");
+    if (injectId != null && !list.some((u) => u.id === injectId)) {
+      return [{ id: injectId, name: injectName }, ...list];
     }
     return list;
-  }, [units, initial?.wialonUnitId, initial?.machinery]);
+  }, [
+    units,
+    initial?.wialonUnitId,
+    initial?.machinery,
+    prefill?.wialonUnitId,
+    prefill?.machinery,
+  ]);
+
+  const unitSelectItems = useMemo(
+    () =>
+      unitOptions.map((unit) => ({
+        value: String(unit.id),
+        label: unit.name,
+      })),
+    [unitOptions]
+  );
 
   const [type, setType] = useState<string>(OPERATION_TYPES[0]);
   const [crop, setCrop] = useState(field.crop || "");
@@ -498,15 +614,50 @@ function PlanWorkPanel({
     initial?.wialonUnitId != null ? String(initial.wialonUnitId) : null
   );
   const [implement, setImplement] = useState(IMPLEMENT_PRESETS.Посів);
+  const [implementId, setImplementId] = useState<string | null>(null);
   const [implementWidth, setImplementWidth] = useState(
     String(IMPLEMENT_WIDTH_DEFAULTS.Посів)
   );
+  const [implementOptions, setImplementOptions] = useState<ImplementOption[]>(
+    []
+  );
   const [areaDone, setAreaDone] = useState(String(areaDefault));
   const [fuelUsed, setFuelUsed] = useState(() =>
-    String(estimatePlanFuel(OPERATION_TYPES[0], areaDefault))
+    String(estimatePlanFuelLiters(OPERATION_TYPES[0], areaDefault))
   );
-  const [wage, setWage] = useState(() => String(estimatePlanWage(areaDefault)));
+  const [wage, setWage] = useState(() => String(estimatePlanWageUah(areaDefault)));
   const [error, setError] = useState<string | null>(null);
+  const [dieselPriceUah, setDieselPriceUah] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getDieselPriceUah().then((res) => {
+      if (cancelled || !res.ok) return;
+      setDieselPriceUah(res.data.priceUah);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const fuelLitersNum = Number(String(fuelUsed).replace(",", "."));
+  const fuelCostEstimate =
+    dieselPriceUah != null &&
+    Number.isFinite(fuelLitersNum) &&
+    fuelLitersNum > 0
+      ? Math.round(fuelLitersNum * dieselPriceUah)
+      : null;
+
+  useEffect(() => {
+    let cancelled = false;
+    void listImplementsForOps().then((res) => {
+      if (cancelled || !res.ok) return;
+      setImplementOptions(res.data);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     setError(null);
@@ -525,6 +676,7 @@ function PlanWorkPanel({
           : null
       );
       setImplement(initial.implement);
+      setImplementId(null);
       setImplementWidth(
         String(
           initial.implementWidthM ??
@@ -541,31 +693,70 @@ function PlanWorkPanel({
     const workType = OPERATION_TYPES[0];
     setType(workType);
     setCrop(field.crop || "");
-    setAreaDone(area > 0 ? String(area) : "");
-    setDate(format(new Date(), "yyyy-MM-dd"));
+    const prefillArea =
+      prefill?.areaDone != null &&
+      Number.isFinite(prefill.areaDone) &&
+      prefill.areaDone > 0
+        ? prefill.areaDone
+        : area;
+    setAreaDone(prefillArea > 0 ? String(prefillArea) : "");
+    setDate(
+      prefill?.occurredAt && /^\d{4}-\d{2}-\d{2}$/.test(prefill.occurredAt)
+        ? prefill.occurredAt
+        : format(new Date(), "yyyy-MM-dd")
+    );
     setTimeFrom("08:00");
     setTimeTo("18:00");
     setImplement(IMPLEMENT_PRESETS[workType] ?? "");
+    setImplementId(null);
     setImplementWidth(String(IMPLEMENT_WIDTH_DEFAULTS[workType] ?? 6));
-    setFuelUsed(String(estimatePlanFuel(workType, area)));
-    setWage(String(estimatePlanWage(area)));
-    setUnitId(null);
-  }, [initial, field.id, field.crop, field.areaHa]);
+    const fuelFromGps =
+      prefill?.fuelUsed != null &&
+      Number.isFinite(prefill.fuelUsed) &&
+      prefill.fuelUsed >= 0
+        ? Math.round(prefill.fuelUsed)
+        : estimatePlanFuelLiters(workType, prefillArea);
+    setFuelUsed(String(fuelFromGps));
+    setWage(String(estimatePlanWageUah(prefillArea)));
+    setUnitId(
+      prefill?.wialonUnitId != null ? String(prefill.wialonUnitId) : null
+    );
+  }, [initial, prefill, field.id, field.crop, field.areaHa]);
+
+  /** Підтягнути id зі довідника для вже обраної назви (edit / після завантаження). */
+  useEffect(() => {
+    if (implementOptions.length === 0 || !implement.trim()) return;
+    const matched = implementOptions.find(
+      (item) =>
+        item.name.trim().toLowerCase() === implement.trim().toLowerCase()
+    );
+    if (matched) setImplementId(matched.id);
+  }, [implementOptions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (initial) return;
+    if (initial || prefill?.wialonUnitId != null) return;
     setUnitId((prev) => prev ?? (unitOptions[0] ? String(unitOptions[0].id) : null));
-  }, [unitOptions, initial]);
+  }, [unitOptions, initial, prefill?.wialonUnitId]);
 
   function handleTypeChange(next: string | null) {
     if (!next) return;
     setType(next);
     if (!isEdit) {
       setImplement(IMPLEMENT_PRESETS[next] ?? "");
+      setImplementId(null);
       setImplementWidth(String(IMPLEMENT_WIDTH_DEFAULTS[next] ?? 6));
       const area = Number(areaDone.replace(",", ".")) || areaDefault;
-      setFuelUsed(String(estimatePlanFuel(next, area)));
+      setFuelUsed(String(estimatePlanFuelLiters(next, area)));
     }
+  }
+
+  function handleImplementSelect(id: string | null) {
+    if (!id) return;
+    const item = implementOptions.find((row) => row.id === id);
+    if (!item) return;
+    setImplementId(item.id);
+    setImplement(item.name);
+    setImplementWidth(String(item.workingWidthM || 0));
   }
 
   function handleAreaChange(value: string) {
@@ -573,12 +764,18 @@ function PlanWorkPanel({
     if (isEdit) return;
     const area = Number(value.replace(",", "."));
     if (!Number.isFinite(area) || area <= 0) return;
-    setFuelUsed(String(estimatePlanFuel(type, area)));
-    setWage(String(estimatePlanWage(area)));
+    setFuelUsed(String(estimatePlanFuelLiters(type, area)));
+    setWage(String(estimatePlanWageUah(area)));
   }
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    if (fieldPassportBlocked) {
+      setError(
+        "У цього поля не заповнений паспорт (площа або культура)."
+      );
+      return;
+    }
     const area = Number(areaDone.replace(",", "."));
     const fuel = Number(fuelUsed.replace(",", "."));
     const pay = Number(wage.replace(",", "."));
@@ -622,16 +819,18 @@ function PlanWorkPanel({
       seasonYear: opSeason,
       occurredAt: date,
       type: type.trim(),
-      crop: crop.trim() || field.crop || "—",
+      crop: crop.trim() || passportCrop || field.crop || "—",
       date: formatOpDateLabel(date),
       time: `${timeFrom} – ${timeTo}`,
       machinery: selectedUnit.name,
       implement: implement.trim(),
       areaDone: Math.round(area * 100) / 100,
-      areaTotal: Number(field.areaHa) || area,
+      areaTotal: Number(passportAreaHa) || Number(field.areaHa) || area,
       fuelUsed: Math.round(fuel),
       wage: Math.round(pay),
-      status: initial?.status ?? "planned",
+      status: submitAsCompleted
+        ? "completed"
+        : (initial?.status ?? "planned"),
       wialonUnitId: selectedUnit.id,
       implementWidthM: Math.round(width * 100) / 100,
       exportStatus: initial?.exportStatus ?? "none",
@@ -681,10 +880,18 @@ function PlanWorkPanel({
           <div className="relative">
             <p className="mb-1.5 inline-flex items-center gap-1.5 rounded-full border border-[#276749]/15 bg-white/80 px-2.5 py-1 text-[10px] font-semibold tracking-wider text-[#276749] uppercase">
               <CalendarPlus className="h-3 w-3" />
-              {isEdit ? "Редагування" : "Нова операція"}
+              {isEdit
+                ? "Редагування"
+                : submitAsCompleted
+                  ? "Минула операція"
+                  : "Нова операція"}
             </p>
             <h2 className="text-xl font-extrabold tracking-tight text-zinc-900">
-              {isEdit ? "Редагувати операцію" : "Запланувати роботи"}
+              {isEdit
+                ? "Редагувати операцію"
+                : submitAsCompleted
+                  ? "Внести виконану роботу"
+                  : "Запланувати роботи"}
             </h2>
             <p className="mt-1 text-sm text-zinc-600">
               {field.name}
@@ -741,32 +948,37 @@ function PlanWorkPanel({
             <div className={row3Class}>
               <div className={cellClass}>
                 <Label className={labelClass}>Дата</Label>
-                <Input
-                  type="date"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  className={cn(fieldControlClass, "min-w-0")}
+                <DatePicker
+                  date={
+                    date
+                      ? new Date(
+                          `${date}T12:00:00`
+                        )
+                      : undefined
+                  }
+                  onChange={(next) => {
+                    if (!next) return;
+                    setDate(format(next, "yyyy-MM-dd"));
+                  }}
+                  placeholder="Оберіть дату"
                 />
               </div>
               <div className={cellClass}>
                 <Label className={labelClass}>З</Label>
-                <Input
-                  type="time"
-                  value={timeFrom}
-                  onChange={(e) => setTimeFrom(e.target.value)}
-                  className={cn(fieldControlClass, "min-w-0")}
-                />
+                <TimePicker value={timeFrom} onChange={setTimeFrom} />
               </div>
               <div className={cellClass}>
                 <Label className={labelClass}>До</Label>
-                <Input
-                  type="time"
-                  value={timeTo}
-                  onChange={(e) => setTimeTo(e.target.value)}
-                  className={cn(fieldControlClass, "min-w-0")}
-                />
+                <TimePicker value={timeTo} onChange={setTimeTo} />
               </div>
             </div>
+            <SmartWeatherAlert
+              workType={type}
+              date={date}
+              timeFrom={timeFrom}
+              fieldGeometry={fieldGeometry}
+              className="mx-4 mb-4"
+            />
           </section>
 
           {/* Ресурси */}
@@ -778,14 +990,17 @@ function PlanWorkPanel({
             </div>
             <div className={row2Class}>
               <div className={cellClass}>
-                <Label className={labelClass}>Техніка (Wialon)</Label>
+                <Label className={labelClass}>Техніка</Label>
                 {unitOptions.length > 0 ? (
                   <Select
+                    items={unitSelectItems}
                     value={unitId}
-                    onValueChange={(v) => setUnitId(v)}
+                    onValueChange={(v) => {
+                      if (typeof v === "string" && v) setUnitId(v);
+                    }}
                   >
                     <SelectTrigger className={selectTriggerClass}>
-                      <SelectValue placeholder="Оберіть одиницю" />
+                      <SelectValue placeholder="Оберіть техніку" />
                     </SelectTrigger>
                     <SelectContent className="z-[120] max-h-64 border-[#E5DFD3] bg-white">
                       {unitOptions.map((item) => (
@@ -808,12 +1023,35 @@ function PlanWorkPanel({
               </div>
               <div className={cellClass}>
                 <Label className={labelClass}>Знаряддя</Label>
-                <Input
-                  value={implement}
-                  onChange={(e) => setImplement(e.target.value)}
-                  className={fieldControlClass}
-                  placeholder="Сівалка, культиватор…"
-                />
+                {implementOptions.length > 0 ? (
+                  <Select
+                    value={implementId}
+                    onValueChange={(v) => {
+                      if (typeof v === "string" && v) handleImplementSelect(v);
+                    }}
+                  >
+                    <SelectTrigger className={selectTriggerClass}>
+                      <SelectValue placeholder="Оберіть знаряддя" />
+                    </SelectTrigger>
+                    <SelectContent className="z-[120] max-h-64 border-[#E5DFD3] bg-white">
+                      {implementOptions.map((item) => (
+                        <SelectItem key={item.id} value={item.id}>
+                          {item.name}
+                          {item.workingWidthM > 0
+                            ? ` · ${item.workingWidthM} м`
+                            : " · 0 м"}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    value={implement}
+                    onChange={(e) => setImplement(e.target.value)}
+                    className={fieldControlClass}
+                    placeholder="Сівалка, культиватор…"
+                  />
+                )}
               </div>
             </div>
             <div className="border-t border-[#E5DFD3]/80 px-4 pb-4">
@@ -827,7 +1065,8 @@ function PlanWorkPanel({
                   placeholder="6"
                 />
                 <p className="text-[10px] text-zinc-400">
-                  для оцінки га з GPS: км × ширина / 10
+                  з довідника обладнання · можна змінити · км × ширина / 10 =
+                  га
                 </p>
               </div>
             </div>
@@ -860,7 +1099,12 @@ function PlanWorkPanel({
                   className={cn(fieldControlClass, "tabular-nums font-semibold")}
                 />
                 <p className="h-4 text-[10px] text-zinc-400">
-                  ≈ {FUEL_L_PER_HA[type] ?? 5} л/га
+                  ≈ {fuelLitersPerHa(type)} л/га
+                  {fuelCostEstimate != null
+                    ? ` · ${formatUahCurrency(fuelCostEstimate)}`
+                    : dieselPriceUah != null
+                      ? ` · ${formatUahCurrency(dieselPriceUah, { precise: true })}/л`
+                      : ""}
                 </p>
               </div>
               <div className={cellClass}>
@@ -872,26 +1116,40 @@ function PlanWorkPanel({
                   className={cn(fieldControlClass, "tabular-nums font-semibold")}
                 />
                 <p className="h-4 text-[10px] text-zinc-400">
-                  ≈ {WAGE_UAH_PER_HA} ₴/га
+                  ≈ {formatUahCurrency(estimatePlanWageUah(Number(areaDone.replace(",", ".")) || areaDefault))}
                 </p>
               </div>
             </div>
           </section>
 
-          {error ? (
+          {fieldPassportBlocked ? null : error ? (
             <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
               {error}
             </p>
           ) : (
             <p className="text-xs leading-relaxed text-zinc-500">
-              Операція зʼявиться в «Історії» зі статусом «Заплановано». Паливо й
-              оплату можна скоригувати — зараз це розрахунок від площі поля.
+              {submitAsCompleted
+                ? "Операція одразу потрапить у «Історію» як виконана — для розрахунку собівартості сезону."
+                : "Операція зʼявиться в «Історії» зі статусом «Заплановано». Паливо й оплату можна скоригувати — зараз це розрахунок від площі поля."}
             </p>
           )}
         </div>
       </div>
 
-      <div className="shrink-0 border-t border-[#E5DFD3] bg-gradient-to-t from-[#EDE8DF] to-[#F4F1EA] px-6 py-4">
+      <div className="shrink-0 space-y-3 border-t border-[#E5DFD3] bg-gradient-to-t from-[#EDE8DF] to-[#F4F1EA] px-6 py-4">
+        {fieldPassportBlocked && farmFieldId ? (
+          <FieldPassportQuickFix
+            fieldId={farmFieldId}
+            fieldName={field.name}
+            crop={passportCrop}
+            areaHa={passportAreaHa}
+            onSaved={(patch) => {
+              setPassportCrop(patch.crop);
+              setPassportAreaHa(patch.areaHa);
+              onPassportPatched?.(patch);
+            }}
+          />
+        ) : null}
         <div className="flex gap-2">
           <button
             type="button"
@@ -902,20 +1160,53 @@ function PlanWorkPanel({
           </button>
           <button
             type="submit"
+            disabled={fieldPassportBlocked}
             className={cn(
               "inline-flex h-12 flex-[1.4] items-center justify-center gap-2 rounded-2xl",
               "bg-gradient-to-r from-[#1f5239] via-[#276749] to-[#2f7a52]",
               "text-sm font-bold text-white shadow-[0_10px_28px_-8px_rgba(39,103,73,0.45)]",
-              "transition hover:brightness-105"
+              "transition hover:brightness-105 disabled:pointer-events-none disabled:opacity-50"
             )}
           >
             <CalendarPlus className="h-4 w-4" />
-            {isEdit ? "Зберегти" : "Додати в історію"}
+            {isEdit
+              ? "Зберегти"
+              : submitAsCompleted
+                ? "Зберегти виконану роботу"
+                : "Додати в історію"}
           </button>
         </div>
       </div>
     </form>
   );
+}
+
+function toCloseableOperation(op: FieldOperation): CloseableOperation {
+  return {
+    id: op.id,
+    type: op.type,
+    crop: op.crop,
+    machinery: op.machinery,
+    implement: op.implement,
+    date: op.date,
+    time: op.time,
+    occurredAt: op.occurredAt,
+    seasonYear: op.seasonYear,
+    areaDone: op.areaDone,
+    areaTotal: op.areaTotal,
+    areaPlan: op.areaPlan,
+    fuelPlan: op.fuelPlan,
+    wagePlan: op.wagePlan,
+    fuelUsed: op.fuelUsed,
+    wage: op.wage,
+    status: op.status,
+    agronomistComment: op.agronomistComment,
+    wialonUnitId: op.wialonUnitId,
+    implementWidthM: op.implementWidthM,
+    trackerDistanceKm: op.trackerDistanceKm,
+    trackerWorkHours: op.trackerWorkHours,
+    trackerFuelL: op.trackerFuelL,
+  };
 }
 
 /** Широка панель глибокої аналітики поля */
@@ -925,25 +1216,65 @@ export function FieldDetailSheet({
   legacyFieldKeys = [],
   farmFieldId = null,
   fieldGeometry = null,
-  analytics: analyticsProp,
+  fieldColor = null,
+  mapSource = "wialon",
   open,
   onOpenChange,
+  initialTab = "overview",
+  initialConfirmDelete = false,
   units = [],
   onPlanWork,
+  weather = null,
+  hourly = null,
+  weatherLoading = false,
+  weatherError = null,
+  passportMode = "edit",
+  passportBusy = false,
+  passportSavedFlash = false,
+  passportSaveHint = null,
+  passportName = "",
+  passportCrop = "",
+  passportAreaHa = 0,
+  passportColor = "#276749",
+  onPassportNameChange,
+  onPassportCropChange,
+  onPassportAreaHaChange,
+  onPassportColorChange,
+  onPassportSave,
+  onPassportDelete,
+  onEditGeometry,
+  canDeleteField = false,
+  realtimeVersion = 0,
+  wialonZoneId = null,
+  wialonGeofences,
+  wialonLoading = false,
+  occupiedWialonZones = {},
+  onIntegrationsFieldUpdated,
 }: FieldDetailSheetProps) {
-  const [seasonYear, setSeasonYear] = useState<number>(2026);
+  const activeSeason = useSeasonStore((s) => s.activeSeason);
+  const setActiveSeason = useSeasonStore((s) => s.setActiveSeason);
+  const seasonYear = Number(activeSeason) || 2026;
+  const setSeasonYear = (year: number) => setActiveSeason(String(year));
+
   const [period, setPeriod] = useState<HistoryPeriod>("Сезон");
   const [customRange, setCustomRange] = useState<DateRange | undefined>();
   const [rangeOpen, setRangeOpen] = useState(false);
   const [seasonOpen, setSeasonOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState("history");
+  const [activeTab, setActiveTab] = useState<FieldHubTab>("overview");
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
+  const [planPastWork, setPlanPastWork] = useState(false);
+  const [planPrefill, setPlanPrefill] = useState<PlanWorkPrefill | null>(null);
+  const [quickIssueOpen, setQuickIssueOpen] = useState(false);
   const [editingOp, setEditingOp] = useState<FieldOperation | null>(null);
   const [completeOp, setCompleteOp] = useState<FieldOperation | null>(null);
+  const [correctOp, setCorrectOp] = useState<FieldOperation | null>(null);
   const [operations, setOperations] = useState<FieldOperation[]>([]);
   const [opsLoading, setOpsLoading] = useState(false);
-  const analytics =
-    analyticsProp ?? (field ? FIELD_ANALYTICS[field.id] : null);
+  const [fieldEvents, setFieldEvents] = useState<FieldEvent[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const [eventsError, setEventsError] = useState<string | null>(null);
+  const fieldEventsRequestRef = useRef(0);
 
   const resolvedFieldKey =
     fieldKey?.trim() || (field ? `map:${field.id}` : null);
@@ -955,6 +1286,80 @@ export function FieldDetailSheet({
         .filter((key) => key && key !== resolvedFieldKey),
     [legacyKeysJoined, resolvedFieldKey]
   );
+
+  useEffect(() => {
+    if (open) {
+      setActiveTab(initialTab);
+      setConfirmDelete(initialConfirmDelete);
+    }
+  }, [open, initialTab, initialConfirmDelete, field?.id]);
+
+  const liveEconomics = useLiveFieldEconomics(
+    farmFieldId,
+    open && !!field,
+    realtimeVersion
+  );
+
+  /** Sticky footer — overview та історія (не settings/tech) */
+  const showStickyActionFooter =
+    activeTab !== "settings" && activeTab !== "tech";
+
+  async function reloadFieldEvents() {
+    if (!farmFieldId) {
+      setFieldEvents([]);
+      setEventsError(null);
+      setEventsLoading(false);
+      return;
+    }
+    const requestId = ++fieldEventsRequestRef.current;
+    setEventsLoading(true);
+    setEventsError(null);
+    const res = await getFieldEvents(farmFieldId, activeSeason);
+    if (requestId !== fieldEventsRequestRef.current) return;
+    setEventsLoading(false);
+    if (!res.ok) {
+      setEventsError(res.error);
+      return;
+    }
+    setFieldEvents(res.data);
+  }
+
+  function prependQuickIssueEvent(payload: {
+    moveId: string;
+    fieldId: string;
+    itemTitle: string;
+    category: "zzr" | "fertilizer" | "seed";
+    qty: number;
+    unit: string;
+  }) {
+    if (!farmFieldId) return;
+    if (payload.fieldId.toLowerCase() !== farmFieldId.toLowerCase()) return;
+
+    const categoryLabels = {
+      zzr: "ЗЗР",
+      fertilizer: "Добрива",
+      seed: "Насіння",
+    } as const;
+    const eventId = `material:${payload.moveId}`;
+    const today = new Date().toISOString().slice(0, 10);
+
+    setFieldEvents((prev) => {
+      if (prev.some((event) => event.id === eventId)) return prev;
+      const next: FieldEvent = {
+        id: eventId,
+        type: "material",
+        date: today,
+        title: payload.itemTitle,
+        category: payload.category,
+        categoryLabel: categoryLabels[payload.category],
+        qty: payload.qty,
+        unit: payload.unit,
+        costUah: 0,
+        status: "draft",
+      };
+      return [next, ...prev];
+    });
+  }
 
   useEffect(() => {
     if (!open || !resolvedFieldKey) {
@@ -983,33 +1388,129 @@ export function FieldDetailSheet({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [open, resolvedFieldKey, legacyKey]);
+  }, [open, resolvedFieldKey, legacyKey, realtimeVersion]);
 
-  const operationsHistory = useMemo(() => {
+  useEffect(() => {
+    if (!open || !farmFieldId) {
+      setFieldEvents([]);
+      setEventsError(null);
+      setEventsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const requestId = ++fieldEventsRequestRef.current;
+    setEventsLoading(true);
+    setEventsError(null);
+
+    void getFieldEvents(farmFieldId, activeSeason).then((res) => {
+      if (cancelled || requestId !== fieldEventsRequestRef.current) return;
+      setEventsLoading(false);
+      if (!res.ok) {
+        setEventsError(res.error);
+        return;
+      }
+      setFieldEvents(res.data);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, farmFieldId, activeSeason, realtimeVersion]);
+
+  const activeOperations = useMemo(() => {
     if (!resolvedFieldKey) return [];
     const { start, end } = getPeriodRange(period, seasonYear, customRange);
     return operations
+      .filter((op) => op.status === "planned" || op.status === "in_progress")
       .filter((op) => {
-        if (period === "Сезон") return op.seasonYear === seasonYear;
+        if (period === "Сезон") {
+          return op.seasonYear === seasonYear;
+        }
+        if (op.status === "in_progress") return true;
         const day = startOfDay(new Date(`${op.occurredAt}T12:00:00`));
         return day >= start && day <= end;
       })
-      .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
+      .sort((a, b) => {
+        if (a.status === "in_progress" && b.status !== "in_progress") return -1;
+        if (b.status === "in_progress" && a.status !== "in_progress") return 1;
+        return b.occurredAt.localeCompare(a.occurredAt);
+      });
   }, [operations, seasonYear, period, customRange, resolvedFieldKey]);
 
+  const daysSinceSowing = useMemo(() => {
+    const sowingOps = operations.filter(
+      (op) =>
+        op.status === "completed" && isSowingOperationType(op.type)
+    );
+    if (sowingOps.length === 0) return null;
+
+    const latest = sowingOps.reduce((best, op) =>
+      op.occurredAt.localeCompare(best.occurredAt) > 0 ? op : best
+    );
+
+    const sowDate = new Date(`${latest.occurredAt}T12:00:00`);
+    if (Number.isNaN(sowDate.getTime())) return null;
+
+    const today = startOfDay(new Date());
+    const sowDay = startOfDay(sowDate);
+    const diffMs = today.getTime() - sowDay.getTime();
+    return Math.max(0, Math.round(diffMs / (1000 * 60 * 60 * 24)));
+  }, [operations]);
+
+  const timelineEvents = useMemo(() => {
+    // Сезон уже відфільтровано на API (колонка season) — не обрізати
+    // календарним вікном бер–лют, інакше події з «пізнішою» датою зникають.
+    if (period === "Сезон") return fieldEvents;
+    const { start, end } = getPeriodRange(period, seasonYear, customRange);
+    return fieldEvents.filter((event) => {
+      const day = startOfDay(new Date(`${event.date}T12:00:00`));
+      return day >= start && day <= end;
+    });
+  }, [fieldEvents, period, seasonYear, customRange]);
+
   async function persistOperation(op: FieldOperation) {
-    if (!resolvedFieldKey) return op;
+    if (!resolvedFieldKey) {
+      throw new Error("Немає ключа поля для збереження");
+    }
     const saved = await upsertFieldOperation({
       ...op,
       fieldKey: resolvedFieldKey,
       fieldId: farmFieldId,
+      areaPlan: op.areaPlan,
+      fuelPlan: op.fuelPlan,
+      wagePlan: op.wagePlan,
     });
-    setOperations((prev) => {
-      const next = prev.filter((item) => item.id !== saved.id);
-      next.unshift(saved);
-      return next.sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
-    });
+    const ops = await listFieldOperations(resolvedFieldKey, legacyKey);
+    setOperations(ops);
+    if (saved.status === "completed") {
+      await reloadFieldEvents();
+      void liveEconomics.reload();
+    }
     return saved;
+  }
+
+  /** Після /api/field-operations/close — без другого upsert, лише refresh UI */
+  async function refreshAfterCloseWrite() {
+    if (resolvedFieldKey) {
+      setOperations(await listFieldOperations(resolvedFieldKey, legacyKey));
+    }
+    await reloadFieldEvents();
+    void liveEconomics.reload();
+  }
+
+  function openCorrection(op: FieldOperation) {
+    setCorrectOp(op);
+    setCompleteOp(null);
+    setPlanOpen(false);
+    setEditingOp(null);
+  }
+
+  function resolveOperationById(operationId: string): FieldOperation | null {
+    const key = operationId.startsWith("operation:")
+      ? operationId.slice("operation:".length)
+      : operationId;
+    return operations.find((row) => row.id === key) ?? null;
   }
 
   return (
@@ -1019,8 +1520,12 @@ export function FieldDetailSheet({
         onOpenChange(next);
         if (!next) {
           setPlanOpen(false);
+          setPlanPastWork(false);
+          setPlanPrefill(null);
+          setQuickIssueOpen(false);
           setEditingOp(null);
           setCompleteOp(null);
+          setCorrectOp(null);
         }
       }}
     >
@@ -1032,419 +1537,694 @@ export function FieldDetailSheet({
           "[&_[data-slot=sheet-close]]:text-zinc-500 [&_[data-slot=sheet-close]]:hover:bg-[#E5DFD3]/40"
         )}
       >
-        {field && analytics ? (
+        {field ? (
           <>
-            {completeOp ? (
+            {correctOp ? (
               <OperationClosePanel
-                op={completeOp}
+                mode="correct"
+                op={toCloseableOperation(correctOp)}
+                fieldId={farmFieldId ?? field.id}
+                fieldKey={resolvedFieldKey}
+                fieldName={field.name}
+                fieldGeometry={fieldGeometry}
+                onBack={() => setCorrectOp(null)}
+                onConfirm={() => {
+                  void refreshAfterCloseWrite().finally(() => {
+                    setCorrectOp(null);
+                    setActiveTab("history");
+                  });
+                }}
+              />
+            ) : completeOp ? (
+              <OperationClosePanel
+                op={toCloseableOperation(completeOp)}
                 fieldId={farmFieldId ?? field.id}
                 fieldKey={resolvedFieldKey}
                 fieldName={field.name}
                 fieldGeometry={fieldGeometry}
                 onBack={() => setCompleteOp(null)}
-                onConfirm={(payload) => {
-                  void persistOperation({
-                    ...completeOp,
-                    ...payload,
-                    exportStatus: "pending",
+                onConfirm={() => {
+                  void refreshAfterCloseWrite().finally(() => {
+                    setCompleteOp(null);
+                    setActiveTab("history");
                   });
-                  setCompleteOp(null);
-                  setActiveTab("history");
                 }}
               />
             ) : planOpen ? (
               <PlanWorkPanel
-                field={field}
+                field={{
+                  ...field,
+                  crop: passportCrop || field.crop,
+                  areaHa: passportAreaHa > 0 ? passportAreaHa : field.areaHa,
+                }}
+                farmFieldId={farmFieldId}
                 seasonYear={seasonYear}
                 units={units}
+                fieldGeometry={fieldGeometry}
                 initial={editingOp}
+                prefill={editingOp ? null : planPrefill}
+                submitAsCompleted={planPastWork && !editingOp}
+                onPassportPatched={(patch) => {
+                  onPassportCropChange?.(patch.crop);
+                  onPassportAreaHaChange?.(patch.areaHa);
+                }}
                 onBack={() => {
                   setPlanOpen(false);
+                  setPlanPastWork(false);
+                  setPlanPrefill(null);
                   setEditingOp(null);
                 }}
                 onSubmit={(op) => {
-                  void persistOperation(op).then(() => {
-                    if (!editingOp) onPlanWork?.(op);
-                  });
-                  setEditingOp(null);
-                  setPlanOpen(false);
-                  setActiveTab("history");
-                  setSeasonYear(op.seasonYear);
-                  setPeriod("Сезон");
+                  void persistOperation(op)
+                    .then((saved) => {
+                      if (!editingOp) onPlanWork?.(op);
+                      setEditingOp(null);
+                      setPlanOpen(false);
+                      setPlanPastWork(false);
+                      setPlanPrefill(null);
+                      setActiveTab("history");
+                      setSeasonYear(saved.seasonYear);
+                      setPeriod("Сезон");
+                      toast.success(
+                        planPastWork && !editingOp
+                          ? `Виконану роботу збережено · сезон ${saved.seasonYear}`
+                          : editingOp
+                            ? "Наряд оновлено"
+                            : "Наряд додано в історію"
+                      );
+                    })
+                    .catch((err) => {
+                      toast.error(
+                        err instanceof Error
+                          ? err.message
+                          : "Не вдалося зберегти наряд"
+                      );
+                    });
                 }}
               />
             ) : (
               <>
-            {/* Усе верхнє меню скролиться разом із журналом — місце під контент */}
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              <SheetHeader className="space-y-0 border-b border-[#E5DFD3] px-6 py-4 text-left">
-                <div className="flex flex-wrap items-start justify-between gap-3 pr-8">
-                  <div>
-                    <SheetTitle className="text-xl font-extrabold tracking-tight text-zinc-900">
-                      {field.name}: {field.crop}
-                    </SheetTitle>
-                    <SheetDescription className="mt-1 text-zinc-500">
-                      {field.areaHa} га · глибока аналітика ділянки
-                    </SheetDescription>
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div className="relative shrink-0 overflow-hidden border-b border-[#E5DFD3] bg-gradient-to-br from-[#E8F0EA] via-[#F4F1EA] to-[#EDE8DF] px-6 py-5">
+                <div
+                  className="pointer-events-none absolute -top-14 -right-8 h-32 w-32 rounded-full bg-[#276749]/10 blur-3xl"
+                  aria-hidden
+                />
+                <div className="relative flex flex-wrap items-start justify-between gap-3 pr-8">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-3">
+                      {fieldColor ? (
+                        <span
+                          className="mt-0.5 h-10 w-1.5 shrink-0 rounded-full shadow-sm ring-2 ring-white/80"
+                          style={{ backgroundColor: fieldColor }}
+                          aria-hidden
+                        />
+                      ) : (
+                        <span className="mt-0.5 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#276749]/12 text-[#276749] ring-1 ring-[#276749]/15">
+                          <Sprout className="h-5 w-5" />
+                        </span>
+                      )}
+                      <div className="min-w-0">
+                        <SheetTitle className="truncate text-xl font-extrabold tracking-tight text-zinc-900">
+                          {field.name}
+                        </SheetTitle>
+                        <SheetDescription className="mt-2 flex flex-wrap items-center gap-2">
+                          <span className="inline-flex items-center gap-1.5 rounded-xl border border-[#276749]/20 bg-white/80 px-2.5 py-1 text-xs font-semibold text-[#276749] shadow-sm">
+                            <Leaf className="h-3.5 w-3.5" />
+                            {field.crop || "Без культури"}
+                          </span>
+                          <span className="inline-flex items-center gap-1 rounded-xl border border-zinc-200/90 bg-white/70 px-2.5 py-1 text-xs font-bold tabular-nums text-zinc-800 shadow-sm">
+                            {field.areaHa}
+                            <span className="font-semibold text-zinc-400">
+                              га
+                            </span>
+                          </span>
+                        </SheetDescription>
+                      </div>
+                    </div>
                   </div>
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-[#276749]/30 bg-[#276749]/10 px-2.5 py-1 text-xs font-semibold text-[#276749]">
-                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#276749]" />
-                    Активне
-                  </span>
+                  {activeOperations.length > 0 ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">
+                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
+                      {activeOperations.length} у роботі
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-[#276749]/20 bg-white/70 px-2.5 py-1 text-xs font-semibold text-[#276749]">
+                      Готово до планування
+                    </span>
+                  )}
                 </div>
-              </SheetHeader>
+              </div>
 
               <Tabs
                 value={activeTab}
-                onValueChange={setActiveTab}
-                className="gap-0"
+                onValueChange={(value) => setActiveTab(value as FieldHubTab)}
+                className="flex min-h-0 flex-1 flex-col gap-0"
               >
-                <div className="border-b border-[#E5DFD3] px-6 pt-2">
-                  <TabsList
-                    variant="line"
-                    className="mb-0 h-auto w-full justify-start gap-1 rounded-none bg-transparent p-0"
-                  >
-                    {TAB_ITEMS.map((tab) => {
-                      const Icon = tab.icon;
-                      return (
-                        <TabsTrigger
-                          key={tab.value}
-                          value={tab.value}
-                          className={cn(
-                            "relative h-11 flex-1 gap-2 rounded-none border-0 bg-transparent px-2 pb-3 text-sm font-medium text-zinc-500 shadow-none",
-                            "hover:text-zinc-800",
-                            "after:absolute after:inset-x-2 after:bottom-0 after:h-[2.5px] after:rounded-full after:bg-transparent after:opacity-100",
-                            "data-active:bg-transparent data-active:text-[#276749] data-active:shadow-none",
-                            "data-active:after:bg-[#276749]"
-                          )}
-                        >
-                          <Icon className="h-4 w-4 shrink-0 opacity-80" />
-                          {tab.label}
-                        </TabsTrigger>
-                      );
-                    })}
-                  </TabsList>
-                </div>
-
-                <div className="mt-3 flex flex-wrap items-center gap-2 border-b border-[#E5DFD3]/70 px-6 pt-1 pb-3.5">
-                  <div className="inline-flex flex-wrap items-center gap-0.5 rounded-xl bg-zinc-100 p-1">
-                    {PERIOD_OPTIONS.map((option) => {
-                      const active = period === option;
-                      return (
-                        <button
-                          key={option}
-                          type="button"
-                          onClick={() => setPeriod(option)}
-                          className={cn(
-                            "rounded-md px-3 py-1.5 text-xs transition-all",
-                            active
-                              ? "bg-white font-medium text-zinc-900 shadow-sm"
-                              : "font-medium text-zinc-500 hover:text-zinc-700"
-                          )}
-                        >
-                          {option}
-                        </button>
-                      );
-                    })}
-
-                    <Popover
-                      open={seasonOpen}
-                      onOpenChange={(next) => {
-                        setSeasonOpen(next);
-                        if (next) setPeriod("Сезон");
-                      }}
+                <div className="shrink-0 space-y-0 border-b border-[#E5DFD3] bg-[#F7F4EE]">
+                  <div className="px-3 pt-3 pb-2 sm:px-6">
+                    <TabsList
+                      variant="default"
+                      className={cn(
+                        "mb-0 grid h-11 w-full grid-cols-4 gap-0.5 rounded-2xl p-1",
+                        "border border-[#E0DBD0] bg-[#EDE8DF] shadow-[inset_0_1px_2px_rgba(39,33,24,0.06)]",
+                        "group-data-horizontal/tabs:h-11"
+                      )}
                     >
-                      <PopoverTrigger
-                        className={cn(
-                          "inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs transition-all",
-                          period === "Сезон"
-                            ? "bg-white font-medium text-zinc-900 shadow-sm"
-                            : "font-medium text-zinc-500 hover:text-zinc-700"
-                        )}
-                      >
-                        Сезон {seasonYear}
-                        <ChevronDown className="h-3 w-3 opacity-60" />
-                      </PopoverTrigger>
-                      <PopoverContent
-                        align="start"
-                        className="z-[100] w-40 rounded-xl border border-zinc-200 bg-white p-1 shadow-xl"
-                      >
-                        {SEASON_OPTIONS.map((year) => (
-                          <button
-                            key={year}
-                            type="button"
-                            onClick={() => {
-                              setSeasonYear(year);
-                              setPeriod("Сезон");
-                              setSeasonOpen(false);
-                            }}
+                      {TAB_ITEMS.map((tab) => {
+                        const Icon = tab.icon;
+                        return (
+                          <TabsTrigger
+                            key={tab.value}
+                            value={tab.value}
                             className={cn(
-                              "flex w-full items-center rounded-lg px-3 py-2 text-left text-sm transition-colors",
-                              seasonYear === year && period === "Сезон"
-                                ? "bg-[#276749]/10 font-semibold text-[#276749]"
-                                : "text-zinc-700 hover:bg-zinc-50"
+                              "group/hubtab h-9 min-w-0 gap-1.5 rounded-[14px] border-0 bg-transparent px-1.5 text-[11px] font-semibold tracking-tight shadow-none sm:gap-2 sm:px-2 sm:text-[12px]",
+                              "text-zinc-500 transition-all duration-200",
+                              "hover:bg-white/55 hover:text-zinc-800",
+                              "focus-visible:ring-2 focus-visible:ring-[#276749]/25",
+                              "after:hidden",
+                              "data-active:bg-white data-active:text-[#1f5239]",
+                              "data-active:shadow-[0_1px_2px_rgba(39,33,24,0.06),0_4px_12px_-4px_rgba(39,103,73,0.28)]",
+                              "data-active:hover:bg-white data-active:hover:text-[#1f5239]",
+                              "dark:data-active:bg-white dark:data-active:text-[#1f5239]"
                             )}
                           >
-                            Сезон {year}
-                          </button>
-                        ))}
-                      </PopoverContent>
-                    </Popover>
+                            <Icon className="h-3.5 w-3.5 shrink-0 opacity-65 transition-opacity group-data-active/hubtab:opacity-100 sm:h-4 sm:w-4" />
+                            <span className="max-w-full truncate">
+                              {tab.shortLabel}
+                            </span>
+                          </TabsTrigger>
+                        );
+                      })}
+                    </TabsList>
                   </div>
-
-                  <Popover open={rangeOpen} onOpenChange={setRangeOpen}>
-                    <PopoverTrigger
-                      className={cn(
-                        "inline-flex h-8 items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-700 shadow-sm",
-                        "outline-none transition hover:bg-zinc-50 focus-visible:ring-2 focus-visible:ring-[#276749]/25",
-                        period === "custom" &&
-                          "border-[#276749]/35 bg-[#276749]/5 text-[#276749]"
-                      )}
-                    >
-                      <CalendarIcon className="h-3.5 w-3.5 shrink-0 opacity-70" />
-                      {period === "custom" && customRange?.from
-                        ? `${format(customRange.from, "d MMM", { locale: uk })}${
-                            customRange.to
-                              ? ` – ${format(customRange.to, "d MMM", { locale: uk })}`
-                              : ""
-                          }`
-                        : "Діапазон"}
-                    </PopoverTrigger>
-                    <PopoverContent
-                      align="start"
-                      className="z-[100] w-auto rounded-2xl border border-zinc-200 bg-white p-2 shadow-xl"
-                    >
-                      <Calendar
-                        mode="range"
-                        numberOfMonths={1}
-                        selected={customRange}
-                        onSelect={(range) => {
-                          setCustomRange(range);
-                          setPeriod("custom");
-                          if (range?.from && range?.to) setRangeOpen(false);
-                        }}
-                        locale={uk}
-                        className="rounded-xl"
-                      />
-                    </PopoverContent>
-                  </Popover>
                 </div>
 
-                <TabsContent
-                  value="history"
-                  className="px-6 py-5 outline-none"
-                >
-                  {opsLoading ? (
-                    <div className="rounded-2xl border border-dashed border-zinc-200 bg-white/70 px-4 py-12 text-center">
-                      <p className="text-sm font-semibold text-zinc-800">
-                        Завантаження історії…
-                      </p>
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                  {activeTab === "history" ? (
+                    <div className="border-b border-[#E5DFD3]/70 px-3 py-2.5 sm:px-6">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Popover
+                          open={seasonOpen}
+                          onOpenChange={(next) => {
+                            setSeasonOpen(next);
+                            if (next) setPeriod("Сезон");
+                          }}
+                        >
+                          <PopoverTrigger
+                            className={cn(
+                              "inline-flex h-9 shrink-0 items-center gap-2 rounded-xl border px-2.5 text-left text-xs font-semibold transition-all",
+                              period === "Сезон"
+                                ? "border-[#276749] bg-[#276749] text-white shadow-[0_6px_16px_-6px_rgba(39,103,73,0.55)]"
+                                : "border-[#E0DBD0] bg-white text-zinc-700 hover:border-[#276749]/35"
+                            )}
+                            aria-label="Обрати агросезон"
+                          >
+                            <span
+                              className={cn(
+                                "inline-flex h-6 w-6 items-center justify-center rounded-lg",
+                                period === "Сезон"
+                                  ? "bg-white/15 text-white"
+                                  : "bg-[#276749]/12 text-[#276749]"
+                              )}
+                            >
+                              <Sprout className="h-3.5 w-3.5" />
+                            </span>
+                            <span className="tabular-nums">
+                              Сезон {seasonYear}
+                            </span>
+                            <ChevronDown
+                              className={cn(
+                                "h-3.5 w-3.5",
+                                period === "Сезон"
+                                  ? "text-white/80"
+                                  : "text-zinc-400"
+                              )}
+                            />
+                          </PopoverTrigger>
+                          <PopoverContent
+                            align="start"
+                            className="z-[100] w-[min(100vw-3rem,20rem)] rounded-2xl border border-zinc-200 bg-white p-2 shadow-xl"
+                          >
+                            <p className="px-2.5 pt-1.5 pb-2 text-[11px] leading-snug text-zinc-500">
+                              Фільтр витрат, ТМЦ і нарядів за агросезоном
+                              (березень–лютий).
+                            </p>
+                            <div className="space-y-1">
+                              {SEASON_OPTIONS.map((year) => (
+                                <button
+                                  key={year}
+                                  type="button"
+                                  onClick={() => {
+                                    setSeasonYear(year);
+                                    setPeriod("Сезон");
+                                    setSeasonOpen(false);
+                                  }}
+                                  className={cn(
+                                    "flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left transition-colors",
+                                    seasonYear === year
+                                      ? "bg-[#276749] text-white"
+                                      : "text-zinc-800 hover:bg-zinc-50"
+                                  )}
+                                >
+                                  <span className="text-sm font-semibold">
+                                    Сезон {year}
+                                  </span>
+                                  <span
+                                    className={cn(
+                                      "text-[11px] font-medium",
+                                      seasonYear === year
+                                        ? "text-white/75"
+                                        : "text-zinc-400"
+                                    )}
+                                  >
+                                    бер {year} – лют {year + 1}
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+
+                        <div className="inline-flex w-fit max-w-full flex-wrap items-center gap-0.5 rounded-xl bg-[#EDE8DF] p-0.5">
+                          {PERIOD_OPTIONS.map((option) => (
+                            <button
+                              key={option}
+                              type="button"
+                              onClick={() => setPeriod(option)}
+                              className={cn(
+                                "h-8 rounded-[10px] px-2.5 text-xs font-semibold transition-all sm:px-3",
+                                period === option
+                                  ? "bg-[#276749] text-white shadow-[0_4px_12px_-4px_rgba(39,103,73,0.55)]"
+                                  : "text-zinc-500 hover:bg-white/70 hover:text-zinc-800"
+                              )}
+                            >
+                              {option}
+                            </button>
+                          ))}
+                        </div>
+
+                        <Popover
+                          open={rangeOpen}
+                          onOpenChange={(next) => {
+                            setRangeOpen(next);
+                            if (next) setPeriod("custom");
+                          }}
+                        >
+                          <PopoverTrigger
+                            className={cn(
+                              "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-semibold transition-all",
+                              period === "custom"
+                                ? "border-[#276749] bg-[#276749] text-white shadow-[0_6px_16px_-6px_rgba(39,103,73,0.55)]"
+                                : "border-[#E0DBD0] bg-white text-zinc-700 hover:border-[#276749]/35"
+                            )}
+                          >
+                            <CalendarIcon
+                              className={cn(
+                                "h-3.5 w-3.5 shrink-0",
+                                period === "custom"
+                                  ? "text-white/90"
+                                  : "opacity-70"
+                              )}
+                            />
+                            {period === "custom" && customRange?.from
+                              ? `${format(customRange.from, "d MMM", { locale: uk })}${
+                                  customRange.to
+                                    ? ` – ${format(customRange.to, "d MMM", { locale: uk })}`
+                                    : " → …"
+                                }`
+                              : "Діапазон"}
+                          </PopoverTrigger>
+                          <PopoverContent
+                            align="end"
+                            className="z-[100] w-auto rounded-2xl border border-zinc-200 bg-white p-3 shadow-xl"
+                          >
+                            <p className="mb-2 px-1 text-[11px] text-zinc-500">
+                              {customRange?.from && customRange?.to
+                                ? "Натисніть дату, щоб обрати новий початок"
+                                : customRange?.from
+                                  ? "Тепер оберіть кінець періоду"
+                                  : "Оберіть початок, потім кінець періоду"}
+                            </p>
+                            <Calendar
+                              mode="range"
+                              numberOfMonths={1}
+                              selected={customRange}
+                              defaultMonth={customRange?.from ?? new Date()}
+                              onSelect={(range, triggerDate) => {
+                                setPeriod("custom");
+                                // Повний діапазон уже був — новий клік починає вибір заново
+                                if (
+                                  customRange?.from &&
+                                  customRange?.to &&
+                                  triggerDate
+                                ) {
+                                  setCustomRange({
+                                    from: triggerDate,
+                                    to: undefined,
+                                  });
+                                  return;
+                                }
+                                setCustomRange(range);
+                              }}
+                              locale={uk}
+                              className="rounded-xl"
+                            />
+                            <div className="mt-3 flex items-center gap-2 border-t border-zinc-100 pt-3">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCustomRange(undefined);
+                                  setPeriod("Сезон");
+                                  setRangeOpen(false);
+                                }}
+                                className="h-9 flex-1 rounded-xl border border-zinc-200 bg-white text-xs font-semibold text-zinc-600 hover:bg-zinc-50"
+                              >
+                                Скинути
+                              </button>
+                              <button
+                                type="button"
+                                disabled={!customRange?.from}
+                                onClick={() => {
+                                  if (!customRange?.from) return;
+                                  if (!customRange.to) {
+                                    setCustomRange({
+                                      from: customRange.from,
+                                      to: customRange.from,
+                                    });
+                                  }
+                                  setPeriod("custom");
+                                  setRangeOpen(false);
+                                }}
+                                className="h-9 flex-[1.4] rounded-xl bg-[#276749] text-xs font-bold text-white hover:bg-[#22543d] disabled:opacity-50"
+                              >
+                                Застосувати
+                              </button>
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                      </div>
                     </div>
-                  ) : operationsHistory.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-zinc-200 bg-white/70 px-4 py-12 text-center">
-                      <p className="text-sm font-semibold text-zinc-800">
-                        Немає операцій
+                  ) : null}
+
+                  <HubTabPanel
+                    tab="overview"
+                    activeTab={activeTab}
+                    className="px-6 py-5 outline-none"
+                  >
+                    <FieldMicroclimate
+                      weather={weather}
+                      hourly={hourly}
+                      loading={weatherLoading}
+                      error={weatherError}
+                      daysSinceSowing={daysSinceSowing}
+                      crop={passportCrop || field.crop}
+                    />
+
+                    {opsLoading && activeOperations.length === 0 ? (
+                      <div className="mt-5 space-y-2">
+                        <Skeleton className="h-3 w-28" />
+                        <Skeleton className="h-20 w-full rounded-2xl" />
+                      </div>
+                    ) : activeOperations.length > 0 ? (
+                      <div className="mt-5">
+                        <p className="mb-2.5 text-[11px] font-semibold tracking-[0.12em] text-zinc-500 uppercase">
+                          Статус робіт
+                        </p>
+                        {activeOperations.map((op) => (
+                          <OperationCard
+                            key={op.id}
+                            op={op}
+                            onStart={(item) => {
+                              void persistOperation({
+                                ...item,
+                                status: "in_progress",
+                              });
+                            }}
+                            onEdit={(item) => {
+                              setPlanPastWork(false);
+                              setPlanPrefill(null);
+                              setEditingOp(item);
+                              setPlanOpen(true);
+                            }}
+                            onDelete={(item) => {
+                              if (!resolvedFieldKey) return;
+                              setOperations((prev) =>
+                                prev.filter((p) => p.id !== item.id)
+                              );
+                              void deleteFieldOperation(
+                                resolvedFieldKey,
+                                item.id,
+                                legacyKey
+                              );
+                            }}
+                            onComplete={(item) => setCompleteOp(item)}
+                            onCorrect={openCorrection}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-5 rounded-2xl border border-dashed border-zinc-200 bg-white/70 px-4 py-4 text-center text-sm text-zinc-500">
+                        Немає активних нарядів — заплануйте роботу на сезон.
                       </p>
-                      <p className="mt-1 text-xs text-zinc-500">
-                        За обраний період у сезоні {seasonYear} робіт не
-                        зафіксовано. Заплануйте першу роботу нижче.
+                    )}
+
+                  </HubTabPanel>
+
+                  <HubTabPanel
+                    tab="history"
+                    activeTab={activeTab}
+                    className="space-y-6 px-6 py-5 outline-none"
+                  >
+                    {!farmFieldId ? (
+                      <div className="rounded-2xl border border-dashed border-zinc-200 bg-white/70 px-4 py-4 text-center">
+                        <p className="text-sm font-semibold text-zinc-800">
+                          Немає паспорта поля
+                        </p>
+                        <p className="mt-1 text-xs text-zinc-500">
+                          Збережіть паспорт у вкладці «Налаштування», щоб бачити
+                          ТМЦ і наряди.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab("settings")}
+                          className="mt-3 text-xs font-semibold text-[#276749] underline-offset-2 hover:underline"
+                        >
+                          Перейти до налаштувань
+                        </button>
+                      </div>
+                    ) : null}
+
+                    <div>
+                      <p className="mb-3 text-[11px] font-semibold tracking-[0.12em] text-zinc-500 uppercase">
+                        Економіка поля
                       </p>
-                    </div>
-                  ) : (
-                    operationsHistory.map((op) => (
-                      <OperationCard
-                        key={op.id}
-                        op={op}
-                        onStart={(item) => {
-                          void persistOperation({
-                            ...item,
-                            status: "in_progress",
-                          });
-                        }}
-                        onEdit={(item) => {
-                          setEditingOp(item);
+                      <LiveFieldEconomicsPanel
+                        farmFieldId={farmFieldId}
+                        areaHa={field.areaHa}
+                        loading={liveEconomics.loading}
+                        error={liveEconomics.error}
+                        data={liveEconomics.data}
+                        onRetry={() => void liveEconomics.reload()}
+                        onDataChange={liveEconomics.setData}
+                        onQuickIssue={() => setQuickIssueOpen(true)}
+                        onAddPastOperation={() => {
+                          setEditingOp(null);
+                          setPlanPrefill(null);
+                          setPlanPastWork(true);
                           setPlanOpen(true);
                         }}
-                        onDelete={(item) => {
-                          if (!resolvedFieldKey) return;
-                          setOperations((prev) =>
-                            prev.filter((p) => p.id !== item.id)
-                          );
-                          void deleteFieldOperation(
-                            resolvedFieldKey,
-                            item.id,
-                            legacyKey
-                          );
-                        }}
-                        onComplete={(item) => setCompleteOp(item)}
                       />
-                    ))
-                  )}
-                </TabsContent>
-
-                <TabsContent value="economy" className="px-6 py-5 outline-none">
-                  <p className="mb-3 text-xs font-medium tracking-wider text-zinc-500 uppercase">
-                    Витрати на 1 гектар · сезон {seasonYear}
-                  </p>
-                  <ul className="space-y-2">
-                    {analytics.costsPerHa.map((item) => (
-                      <li
-                        key={item.label}
-                        className="flex items-center justify-between rounded-xl border border-[#E5DFD3] bg-zinc-100 px-3.5 py-3"
-                      >
-                        <span className="text-sm text-zinc-900">
-                          {item.label}
-                        </span>
-                        <span className="text-sm font-semibold tabular-nums text-[#C05621]">
-                          {formatUsd(item.perHaUsd)}/га
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                  <div className="mt-4 flex items-center justify-between rounded-xl border border-[#276749]/30 bg-[#276749]/10 px-3.5 py-3">
-                    <span className="text-sm font-medium text-[#276749]">
-                      Разом на га
-                    </span>
-                    <span className="text-sm font-bold text-[#276749]">
-                      {formatUsd(
-                        analytics.costsPerHa.reduce(
-                          (sum, item) => sum + item.perHaUsd,
-                          0
-                        )
-                      )}
-                      /га
-                    </span>
-                  </div>
-                  <div className="mt-3 rounded-xl border border-[#E5DFD3] bg-zinc-100 px-3.5 py-3 text-xs text-zinc-500">
-                    Очікуваний дохід поля:{" "}
-                    <span className="font-semibold text-zinc-900">
-                      {formatUsd(field.economics.expectedRevenueUsd)}
-                    </span>
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="overview" className="px-6 py-5 outline-none">
-                  <div className="mb-4 grid grid-cols-2 gap-3">
-                    <div className="rounded-xl border border-[#E5DFD3] bg-zinc-100 p-3.5">
-                      <p className="text-[11px] tracking-wider text-zinc-500 uppercase">
-                        Рентабельність
-                      </p>
-                      <p className="mt-1 text-2xl font-extrabold tracking-tight text-[#276749]">
-                        {analytics.profitabilityPercent}%
-                      </p>
                     </div>
-                    <div className="rounded-xl border border-[#E5DFD3] bg-zinc-100 p-3.5">
-                      <div className="flex items-center gap-1.5 text-[11px] tracking-wider text-zinc-500 uppercase">
-                        <Sprout className="h-3 w-3 text-[#276749]" />
-                        Прогноз врожаю
+
+                    {activeOperations.length > 0 ? (
+                      <div>
+                        <p className="mb-3 text-[11px] font-semibold tracking-[0.12em] text-zinc-500 uppercase">
+                          У роботі зараз
+                        </p>
+                        <div className="space-y-2">
+                          {activeOperations.map((op) => (
+                            <OperationCard
+                              key={op.id}
+                              op={op}
+                              onStart={(item) => {
+                                void persistOperation({
+                                  ...item,
+                                  status: "in_progress",
+                                });
+                              }}
+                              onEdit={(item) => {
+                                setPlanPastWork(false);
+                                setPlanPrefill(null);
+                                setEditingOp(item);
+                                setPlanOpen(true);
+                              }}
+                              onDelete={(item) => {
+                                if (!resolvedFieldKey) return;
+                                setOperations((prev) =>
+                                  prev.filter((p) => p.id !== item.id)
+                                );
+                                void deleteFieldOperation(
+                                  resolvedFieldKey,
+                                  item.id,
+                                  legacyKey
+                                );
+                              }}
+                              onComplete={(item) => setCompleteOp(item)}
+                              onCorrect={openCorrection}
+                            />
+                          ))}
+                        </div>
                       </div>
-                      <p className="mt-1 text-2xl font-extrabold tracking-tight text-zinc-900">
-                        {analytics.yieldForecastTHa}{" "}
-                        <span className="text-sm font-medium text-zinc-500">
-                          т/га
-                        </span>
-                      </p>
-                    </div>
-                  </div>
+                    ) : null}
 
-                  <p className="mb-2 flex items-center gap-2 text-xs font-medium tracking-wider text-zinc-500 uppercase">
-                    <TrendingUp className="h-3.5 w-3.5 text-[#276749]" />
-                    Динаміка рентабельності
-                  </p>
-                  <ChartContainer
-                    config={chartConfig}
-                    className="aspect-auto h-[180px] w-full"
-                  >
-                    <AreaChart
-                      data={analytics.profitSeries}
-                      margin={{ top: 8, right: 4, left: 0, bottom: 0 }}
-                    >
-                      <defs>
-                        <linearGradient
-                          id="fillFieldProfit"
-                          x1="0"
-                          y1="0"
-                          x2="0"
-                          y2="1"
-                        >
-                          <stop
-                            offset="0%"
-                            stopColor="var(--color-profit)"
-                            stopOpacity={0.35}
-                          />
-                          <stop
-                            offset="100%"
-                            stopColor="var(--color-profit)"
-                            stopOpacity={0}
-                          />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid
-                        vertical={false}
-                        stroke="#E5DFD3"
-                        strokeOpacity={0.8}
-                      />
-                      <XAxis
-                        dataKey="month"
-                        tickLine={false}
-                        axisLine={false}
-                        tick={{ fill: "#71717a", fontSize: 11 }}
-                      />
-                      <ChartTooltip
-                        content={
-                          <ChartTooltipContent
-                            className="border-[#E5DFD3] bg-[#F4F1EA] text-zinc-900 shadow-sm"
-                            formatter={(value) => (
-                              <span className="font-semibold text-[#276749]">
-                                {Number(value)}%
-                              </span>
-                            )}
-                          />
+                    <div>
+                      <p className="mb-3 text-[11px] font-semibold tracking-[0.12em] text-zinc-500 uppercase">
+                        Хронологія
+                      </p>
+                      <FieldHistoryTimeline
+                        events={timelineEvents}
+                        loading={eventsLoading}
+                        error={eventsError}
+                        onRetry={() => void reloadFieldEvents()}
+                        onCorrectOperation={(operationId) => {
+                          const op = resolveOperationById(operationId);
+                          if (op) openCorrection(op);
+                        }}
+                        emptyHint={
+                          farmFieldId
+                            ? `За обраний період у сезоні ${seasonYear} подій не зафіксовано.`
+                            : "Після створення паспорта тут зʼявиться єдина історія поля."
                         }
                       />
-                      <Area
-                        dataKey="profit"
-                        type="monotone"
-                        fill="url(#fillFieldProfit)"
-                        stroke="var(--color-profit)"
-                        strokeWidth={2}
-                        dot={false}
-                      />
-                    </AreaChart>
-                  </ChartContainer>
-                </TabsContent>
+                    </div>
+                  </HubTabPanel>
+
+                  <HubTabPanel
+                    tab="tech"
+                    activeTab={activeTab}
+                    className="px-6 py-5 outline-none"
+                  >
+                    <FieldTechHistoryPanel
+                      enabled={open && activeTab === "tech"}
+                      farmFieldId={farmFieldId}
+                      fieldGeometry={fieldGeometry}
+                      units={units}
+                      realtimeVersion={realtimeVersion}
+                      onCreateOrderFromGps={(entry) => {
+                        setEditingOp(null);
+                        setPlanPrefill({
+                          occurredAt: entry.date,
+                          machinery: entry.equipmentName,
+                          wialonUnitId: entry.wialonUnitId,
+                          fuelUsed: entry.gpsFuelConsumedL ?? null,
+                          areaDone: entry.areaHa ?? null,
+                        });
+                        setPlanPastWork(true);
+                        setPlanOpen(true);
+                      }}
+                    />
+                  </HubTabPanel>
+
+                  <HubTabPanel
+                    tab="settings"
+                    activeTab={activeTab}
+                    className="px-6 py-5 outline-none"
+                  >
+                    <FieldPassportForm
+                      mode={passportMode}
+                      fieldName={passportName || field.name}
+                      onFieldNameChange={onPassportNameChange ?? (() => {})}
+                      crop={passportCrop || field.crop}
+                      onCropChange={
+                        onPassportCropChange ??
+                        ((v) => normalizeFieldCrop(v))
+                      }
+                      areaHa={passportAreaHa || field.areaHa}
+                      onAreaHaChange={onPassportAreaHaChange ?? (() => {})}
+                      color={passportColor || fieldColor || "#276749"}
+                      onColorChange={onPassportColorChange ?? (() => {})}
+                      busy={passportBusy}
+                      savedFlash={passportSavedFlash}
+                      saveHint={passportSaveHint}
+                      onSave={onPassportSave ?? (() => {})}
+                      source={mapSource}
+                      canDelete={canDeleteField}
+                      confirmDelete={confirmDelete}
+                      onConfirmDeleteChange={setConfirmDelete}
+                      onDelete={onPassportDelete}
+                      onEditGeometry={onEditGeometry}
+                      showEditGeometry={Boolean(fieldGeometry && onEditGeometry)}
+                    />
+
+                    <FieldIntegrationsPanel
+                      className="mt-5"
+                      farmFieldId={farmFieldId}
+                      wialonZoneId={wialonZoneId}
+                      wialonGeofences={
+                        wialonGeofences ?? {
+                          type: "FeatureCollection",
+                          features: [],
+                        }
+                      }
+                      wialonLoading={wialonLoading}
+                      occupiedWialonZones={occupiedWialonZones}
+                      onFieldUpdated={onIntegrationsFieldUpdated}
+                      onPassportAreaChange={onPassportAreaHaChange}
+                    />
+                  </HubTabPanel>
+                </div>
               </Tabs>
             </div>
 
-            <SheetFooter className="shrink-0 border-t border-[#E5DFD3] bg-gradient-to-t from-[#EDE8DF] to-[#F4F1EA] px-6 py-4">
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingOp(null);
-                  setPlanOpen(true);
-                }}
-                className={cn(
-                  "group relative w-full overflow-hidden rounded-2xl px-5 py-3.5 text-sm font-bold text-white",
-                  "bg-gradient-to-r from-[#1f5239] via-[#276749] to-[#2f7a52]",
-                  "shadow-[0_10px_28px_-8px_rgba(39,103,73,0.55)]",
-                  "transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_32px_-10px_rgba(39,103,73,0.6)]",
-                  "active:translate-y-0 active:scale-[0.99]"
-                )}
-              >
-                <span
-                  className="pointer-events-none absolute inset-0 bg-gradient-to-r from-white/0 via-white/15 to-white/0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
-                  aria-hidden
-                />
-                <span className="relative inline-flex items-center justify-center gap-2.5">
-                  <CalendarPlus className="h-4.5 w-4.5 h-[18px] w-[18px]" />
-                  Запланувати роботи
-                </span>
-              </button>
-            </SheetFooter>
+            {showStickyActionFooter ? (
+              <SheetFooter className="sticky bottom-0 z-20 shrink-0 border-t border-[#E5DFD3] bg-gradient-to-t from-[#EDE8DF] via-[#F4F1EA]/95 to-[#F4F1EA]/80 px-6 py-4 backdrop-blur-sm supports-[backdrop-filter]:bg-[#F4F1EA]/75">
+                <div className="grid w-full grid-cols-2 gap-3">
+                  <Button
+                    type="button"
+                    onClick={() => setQuickIssueOpen(true)}
+                    className={cn(
+                      "h-12 gap-2 rounded-2xl border-0 px-3 text-sm font-bold text-white shadow-[0_12px_32px_-8px_rgba(39,103,73,0.55)]",
+                      "bg-gradient-to-r from-[#1f5239] via-[#276749] to-[#2f7a52]",
+                      "transition-all duration-200 hover:-translate-y-0.5 hover:bg-gradient-to-r hover:from-[#1f5239] hover:via-[#276749] hover:to-[#2f7a52] hover:shadow-[0_18px_36px_-10px_rgba(39,103,73,0.6)]",
+                      "active:translate-y-0 active:scale-[0.99]"
+                    )}
+                  >
+                    <PackageMinus className="h-[18px] w-[18px]" />
+                    Списати ТМЦ
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setEditingOp(null);
+                      setPlanPrefill(null);
+                      setPlanPastWork(false);
+                      setPlanOpen(true);
+                    }}
+                    className="h-12 gap-2 rounded-2xl border-[#C9D4CA] bg-white/90 px-3 text-sm font-bold text-zinc-800 shadow-sm hover:bg-white"
+                  >
+                    <Tractor className="h-[18px] w-[18px]" />
+                    Додати роботу
+                  </Button>
+                </div>
+              </SheetFooter>
+            ) : null}
               </>
             )}
           </>
         ) : null}
+        <QuickIssueSheet
+          open={quickIssueOpen}
+          onOpenChange={setQuickIssueOpen}
+          presetFieldId={farmFieldId}
+          onSuccess={(payload) => {
+            setPeriod("Сезон");
+            prependQuickIssueEvent(payload);
+            void liveEconomics.reload();
+            void reloadFieldEvents();
+          }}
+        />
       </SheetContent>
     </Sheet>
   );

@@ -3,14 +3,7 @@
 import { useState } from "react";
 import { format } from "date-fns";
 import { uk } from "date-fns/locale";
-import {
-  Calendar as CalendarIcon,
-  Droplets,
-  Loader2,
-  MapPin,
-  Route,
-  Zap,
-} from "lucide-react";
+import { Calendar as CalendarIcon, Loader2 } from "lucide-react";
 
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -34,7 +27,6 @@ export type FleetDaySummary = {
   hoursOnField: number;
   hoursIdling: number;
   drainEvents: number;
-  /** Техніка, що входить у кожну метрику (для підсвітки карток) */
   byMetric: Record<FleetSummaryMetric, number[]>;
 };
 
@@ -43,17 +35,21 @@ type FleetDaySummaryBarProps = {
   onDateChange: (date: Date) => void;
   summary: FleetDaySummary | null;
   loading?: boolean;
+  /** Підказка, коли CRON ще не відпрацював або йде sync */
+  syncHint?: "syncing" | "empty" | null;
   activeMetric?: FleetSummaryMetric | null;
   onMetricSelect?: (metric: FleetSummaryMetric | null) => void;
+  /** Компактні плитки для Command Center */
+  compact?: boolean;
 };
 
 function formatHoursShort(h: number): string {
-  if (!Number.isFinite(h) || h <= 0) return "0 хв";
+  if (!Number.isFinite(h) || h <= 0) return "0";
   const totalMin = Math.round(h * 60);
   const hours = Math.floor(totalMin / 60);
   const minutes = totalMin % 60;
-  if (hours <= 0) return `${minutes} хв`;
-  if (minutes <= 0) return `${hours} год`;
+  if (hours <= 0) return `${minutes}хв`;
+  if (minutes <= 0) return `${hours}г`;
   return `${hours}г ${minutes}хв`;
 }
 
@@ -72,8 +68,10 @@ export function FleetDaySummaryBar({
   onDateChange,
   summary,
   loading,
+  syncHint = null,
   activeMetric = null,
   onMetricSelect,
+  compact = false,
 }: FleetDaySummaryBarProps) {
   const [open, setOpen] = useState(false);
   const today = new Date();
@@ -85,101 +83,96 @@ export function FleetDaySummaryBar({
 
   const tiles: Array<{
     metric: FleetSummaryMetric;
-    icon: typeof Route;
     label: string;
     value: string;
-    tone: string;
     empty: boolean;
+    valueClassName?: string;
   }> = [
     {
       metric: "active",
-      icon: Route,
       label: "У роботі",
       value: summary
-        ? `${summary.unitsActive} / ${summary.unitsTotal}`
+        ? `${summary.unitsActive}/${summary.unitsTotal}`
         : "—",
-      tone: "text-zinc-900",
       empty: !summary || summary.unitsActive <= 0,
     },
     {
       metric: "onField",
-      icon: MapPin,
       label: "На полях",
       value: summary ? formatHoursShort(summary.hoursOnField) : "—",
-      tone: "text-emerald-700",
       empty: !summary || summary.hoursOnField <= 0,
+      valueClassName: "text-emerald-700",
     },
     {
       metric: "distance",
-      icon: Route,
-      label: "Пробіг флоту",
+      label: "Пробіг",
       value: summary
-        ? `${summary.distanceKm.toLocaleString("uk-UA", {
-            maximumFractionDigits: 0,
-          })} км`
+        ? `${Math.round(summary.distanceKm).toLocaleString("uk-UA")} км`
         : "—",
-      tone: "text-zinc-900",
       empty: !summary || summary.distanceKm <= 0.05,
     },
     {
       metric: "idling",
-      icon: Zap,
       label: "Холостий",
       value: summary ? formatHoursShort(summary.hoursIdling) : "—",
-      tone:
-        summary && summary.hoursIdling > 1 ? "text-rose-600" : "text-zinc-900",
       empty: !summary || summary.hoursIdling <= 0,
+      valueClassName:
+        summary && summary.hoursIdling > 1 ? "text-rose-600" : undefined,
     },
     {
       metric: "drain",
-      icon: Droplets,
-      label: "Підозри зливу",
+      label: "Зливи",
       value: summary ? String(summary.drainEvents) : "—",
-      tone:
-        summary && summary.drainEvents > 0 ? "text-rose-600" : "text-zinc-900",
       empty: !summary || summary.drainEvents <= 0,
+      valueClassName:
+        summary && summary.drainEvents > 0 ? "text-rose-600" : undefined,
     },
   ];
 
   return (
-    <div className="mb-4 overflow-hidden rounded-2xl border border-[#E5DFD3] bg-gradient-to-r from-[#F4F1EA] via-white to-[#F4F1EA] shadow-sm">
-      <div className="flex flex-col gap-3 border-b border-[#E5DFD3]/80 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="text-[11px] font-semibold tracking-[0.14em] text-zinc-500 uppercase">
-            Підсумок зміни флоту
-          </p>
-          <p className="text-sm font-bold text-zinc-900">
-            Агрегат по всьому парку за обрану дату
-          </p>
-          {activeMetric ? (
-            <p className="mt-0.5 text-xs text-[#276749]">
-              Підсвічено техніку з обраної метрики · натисніть ще раз, щоб
-              скинути
-            </p>
-          ) : (
-            <p className="mt-0.5 text-xs text-zinc-500">
-              Натисніть картку — підсвітиться відповідна техніка
-            </p>
+    <section className={cn(compact ? "space-y-2" : "space-y-3")}>
+      <div className="flex items-center justify-between gap-2">
+        <h2
+          className={cn(
+            "font-semibold tracking-tight text-foreground",
+            compact ? "text-xs" : "text-sm"
           )}
-        </div>
+        >
+          Активність парку
+        </h2>
 
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger
             className={cn(
-              "inline-flex h-9 items-center justify-start gap-2 rounded-xl border border-[#E5DFD3] bg-white px-3 text-sm font-semibold text-zinc-800 shadow-sm",
-              "outline-none transition hover:border-[#276749]/30 hover:bg-white focus-visible:ring-2 focus-visible:ring-[#276749]/25"
+              "inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border/60 bg-background/80 text-muted-foreground shadow-sm outline-none transition",
+              "hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40",
+              compact ? "h-7 px-2" : "h-8 px-2.5"
             )}
+            aria-label={`Дата: ${format(date, "d MMMM yyyy", { locale: uk })}`}
           >
-            <CalendarIcon className="h-3.5 w-3.5 text-[#276749]" />
-            {format(date, "d MMMM yyyy", { locale: uk })}
             {loading ? (
-              <Loader2 className="ml-1 h-3.5 w-3.5 animate-spin text-zinc-400" />
-            ) : null}
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <CalendarIcon className="h-3.5 w-3.5 shrink-0" />
+            )}
+            <span
+              className={cn(
+                "font-semibold tabular-nums text-foreground",
+                compact ? "text-[11px]" : "text-xs"
+              )}
+            >
+              {format(date, compact ? "d MMM yyyy" : "d MMMM yyyy", {
+                locale: uk,
+              })}
+            </span>
           </PopoverTrigger>
           <PopoverContent
             align="end"
-            className="w-auto overflow-hidden rounded-2xl border border-[#E5DFD3] bg-[#F4F1EA] p-0 shadow-xl"
+            className="w-auto overflow-hidden rounded-xl border border-border bg-popover p-0 shadow-xl"
           >
+            <div className="border-b border-border/60 px-3 py-2 text-xs font-medium text-muted-foreground">
+              {format(date, "d MMMM yyyy", { locale: uk })}
+            </div>
             <Calendar
               mode="single"
               selected={date}
@@ -195,9 +188,20 @@ export function FleetDaySummaryBar({
         </Popover>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-3 lg:grid-cols-5">
+      {syncHint === "syncing" ? (
+        <p className="flex items-center gap-1.5 text-[10px] font-medium text-amber-800/90">
+          <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+          Завантаження з бази…
+        </p>
+      ) : syncHint === "empty" && !loading ? (
+        <p className="text-[10px] font-medium text-muted-foreground">
+          Немає даних за день — дочекайтесь CRON (кожні 15 хв) або перевірте
+          CRON_SECRET на Vercel
+        </p>
+      ) : null}
+
+      <div className={cn("grid grid-cols-2", compact ? "gap-1.5" : "gap-3")}>
         {tiles.map((tile) => {
-          const Icon = tile.icon;
           const active = activeMetric === tile.metric;
           const interactive = Boolean(onMetricSelect && summary && !tile.empty);
           return (
@@ -210,31 +214,38 @@ export function FleetDaySummaryBar({
                 onMetricSelect(active ? null : tile.metric);
               }}
               className={cn(
-                "rounded-xl border px-3 py-2.5 text-left transition-all",
-                "shadow-[0_1px_0_rgba(255,255,255,0.7)_inset]",
+                "min-w-0 rounded-lg border text-left transition-colors",
+                compact ? "px-2 py-1.5" : "rounded-xl px-3 py-2.5",
                 active
-                  ? "border-[#276749] bg-emerald-50/80 ring-2 ring-[#276749]/20"
-                  : "border-[#E5DFD3]/80 bg-white/85",
-                interactive &&
-                  !active &&
-                  "cursor-pointer hover:-translate-y-0.5 hover:border-[#276749]/35 hover:shadow-md",
-                !interactive && "cursor-default opacity-80"
+                  ? "border-primary/50 bg-primary/5 ring-1 ring-primary/20"
+                  : "border-border/50 bg-background/60",
+                interactive && !active && "hover:bg-background/90",
+                !interactive && "cursor-default"
               )}
             >
-              <div className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold tracking-wide text-zinc-500 uppercase">
-                <Icon
-                  className={cn(
-                    "h-3 w-3",
-                    active ? "text-[#276749]" : "text-[#C05621]"
-                  )}
-                  strokeWidth={1.6}
-                />
+              <p
+                className={cn(
+                  "truncate whitespace-nowrap text-muted-foreground",
+                  compact ? "text-[10px] leading-tight" : "text-xs"
+                )}
+              >
                 {tile.label}
-              </div>
+              </p>
               {loading && !summary ? (
-                <div className="h-5 w-16 animate-pulse rounded bg-zinc-100" />
+                <div
+                  className={cn(
+                    "animate-pulse rounded bg-muted",
+                    compact ? "mt-0.5 h-4 w-10" : "mt-1 h-6 w-12"
+                  )}
+                />
               ) : (
-                <p className={cn("text-sm font-bold tabular-nums", tile.tone)}>
+                <p
+                  className={cn(
+                    "truncate font-bold whitespace-nowrap tabular-nums text-foreground",
+                    compact ? "mt-0 text-sm leading-tight" : "mt-0.5 text-lg",
+                    tile.valueClassName
+                  )}
+                >
                   {tile.value}
                 </p>
               )}
@@ -242,6 +253,6 @@ export function FleetDaySummaryBar({
           );
         })}
       </div>
-    </div>
+    </section>
   );
 }

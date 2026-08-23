@@ -1,0 +1,82 @@
+-- =============================================================================
+-- 019_auth_rls_bootstrap.sql
+-- Auth + RLS: інструкції для SQL Editor (Supabase Dashboard)
+-- =============================================================================
+--
+-- ЦЯ МІГРАЦІЯ НАВМИСНО НЕ МІНЯЄ ПОЛІТИКИ АВТОМАТИЧНО.
+-- Спочатку створіть тестового юзера в Dashboard, потім виконайте блок RLS нижче.
+--
+-- -----------------------------------------------------------------------------
+-- 1) ПЕРШИЙ ТЕСТОВИЙ КОРИСТУВАЧ
+-- -----------------------------------------------------------------------------
+-- Рекомендовано (UI):
+--   Authentication → Users → Add user
+--   Email:    admin@agrosystem.local
+--   Password: (надійний пароль)
+--   Auto Confirm User: ON
+--
+-- Або через Admin API (service role) з вашого бекенду:
+--   await supabase.auth.admin.createUser({
+--     email: 'admin@agrosystem.local',
+--     password: '...',
+--     email_confirm: true,
+--   })
+--
+-- НЕ вставляйте пароль напряму в auth.users через SQL — хеш має бути через GoTrue.
+--
+-- -----------------------------------------------------------------------------
+-- 2) ЗАКРИТИ ТАБЛИЦІ ДЛЯ ANON (лише authenticated)
+-- -----------------------------------------------------------------------------
+-- Увага: server actions зараз часто використовують SUPABASE_SERVICE_ROLE_KEY
+-- (bypass RLS). Браузерний клієнт і anon-запити після цього вимагатимуть логін.
+--
+-- Приклад для основних таблиць (повторіть патерн для інших):
+--
+--   -- farm_fields
+--   drop policy if exists "farm_fields_select_anon" on public.farm_fields;
+--   drop policy if exists "farm_fields_insert_anon" on public.farm_fields;
+--   drop policy if exists "farm_fields_update_anon" on public.farm_fields;
+--   drop policy if exists "farm_fields_delete_anon" on public.farm_fields;
+--
+--   create policy "farm_fields_select_authenticated"
+--     on public.farm_fields for select
+--     to authenticated
+--     using (auth.role() = 'authenticated');
+--
+--   create policy "farm_fields_write_authenticated"
+--     on public.farm_fields for all
+--     to authenticated
+--     using (auth.role() = 'authenticated')
+--     with check (auth.role() = 'authenticated');
+--
+-- Те саме для:
+--   fuel_storages, fuel_transactions, field_operations, equipment, implements,
+--   inventory_items_cache, inventory_local_moves, wialon_bas_mapping
+--
+-- Шаблон «закрити anon / відкрити authenticated»:
+--
+--   alter table public.<table> enable row level security;
+--
+--   drop policy if exists "<table>_select_anon" on public.<table>;
+--   drop policy if exists "<table>_insert_anon" on public.<table>;
+--   drop policy if exists "<table>_update_anon" on public.<table>;
+--   drop policy if exists "<table>_delete_anon" on public.<table>;
+--
+--   create policy "<table>_authenticated_all"
+--     on public.<table> for all
+--     to authenticated
+--     using (true)
+--     with check (true);
+--
+-- (using (true) при to authenticated еквівалентно «будь-який залогінений»).
+-- Строгіше: using (auth.role() = 'authenticated').
+--
+-- -----------------------------------------------------------------------------
+-- 3) ПЕРЕВІРКА
+-- -----------------------------------------------------------------------------
+--   select auth.role();           -- у SQL Editor як anon → 'anon'
+--   -- після логіну в додатку браузерні запити йдуть як authenticated
+--
+-- =============================================================================
+
+select 1 as auth_bootstrap_readme;

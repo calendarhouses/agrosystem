@@ -7,13 +7,15 @@ import type {
 import { area as turfArea, booleanPointInPolygon } from "@turf/turf";
 
 import {
-  FIELD_ANALYTICS,
   FIELDS,
   type AccentTone,
   type Field,
-  type FieldAnalytics,
 } from "@/lib/dashboard-data";
-import type { FarmField, FieldGeometry } from "@/lib/farm-fields";
+import type {
+  FarmField,
+  FieldGeometry,
+} from "@/lib/farm-fields";
+import { cleanFieldName } from "@/lib/bas-field-names";
 import { FIELDS_GEOJSON } from "@/lib/fields-geojson";
 import type { WialonGeofenceProperties, WialonUnit } from "@/lib/wialon";
 
@@ -70,7 +72,7 @@ export function demoToMapItem(field: Field): MapFieldItem {
 export function farmToMapItem(field: FarmField): MapFieldItem {
   return {
     id: field.id,
-    name: field.name,
+    name: cleanFieldName(field.name) || field.name,
     crop: field.crop,
     areaHa: field.areaHa,
     color: field.color,
@@ -100,7 +102,7 @@ export function geofenceToMapItem(
 
   return {
     id,
-    name: props.name || props.id || "Поле",
+    name: cleanFieldName(props.name || props.id || "Поле") || "Поле",
     crop: "",
     areaHa: areaHaFromFeature(feature),
     color: props.color || "#276749",
@@ -174,7 +176,7 @@ export function buildMapFieldList(
       if (!passport) return base;
       return {
         ...base,
-        name: passport.name,
+        name: cleanFieldName(passport.name) || passport.name,
         crop: passport.crop,
         areaHa: passport.areaHa,
         color: passport.color,
@@ -193,12 +195,31 @@ export function buildMapFieldList(
         : [];
 
   const items = [...base, ...standaloneSaved.map(farmToMapItem)];
-  return items.sort((a, b) => {
-    const numA = fieldNumber(a.name);
-    const numB = fieldNumber(b.name);
-    if (numA !== numB) return numA - numB;
-    return a.name.localeCompare(b.name, "uk");
+  return items.sort(compareMapFields);
+}
+
+/** Алфавіт за текстовою частиною, потім № поля. */
+function compareMapFields(a: MapFieldItem, b: MapFieldItem): number {
+  const keyA = fieldSortKey(a.name);
+  const keyB = fieldSortKey(b.name);
+  const byAlpha = keyA.alpha.localeCompare(keyB.alpha, "uk", {
+    sensitivity: "base",
   });
+  if (byAlpha !== 0) return byAlpha;
+  if (keyA.num !== keyB.num) return keyA.num - keyB.num;
+  return a.name.localeCompare(b.name, "uk", { numeric: true });
+}
+
+function fieldSortKey(name: string): { alpha: string; num: number } {
+  const cleaned = cleanFieldName(name) || name;
+  const num = fieldNumber(cleaned);
+  const alpha = cleaned
+    .replace(/№/g, " ")
+    .replace(/\d+(?:[.,]\d+)?/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLocaleLowerCase("uk");
+  return { alpha: alpha || cleaned.toLocaleLowerCase("uk"), num };
 }
 
 /** Номер з назви «Поле 12» → 12; без номера — в кінець */
@@ -219,74 +240,19 @@ export function nextFieldNumber(items: MapFieldItem[]): number {
   return max + 1;
 }
 
-function hashSeed(value: string): number {
-  let hash = 0;
-  for (let i = 0; i < value.length; i += 1) {
-    hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
-  }
-  return hash;
-}
-
-/** Аналітика для sheet: демо з моків, збережені — розумний stub */
-export function analyticsForMapField(item: MapFieldItem): FieldAnalytics {
-  if (item.source === "demo" && FIELD_ANALYTICS[item.id]) {
-    return FIELD_ANALYTICS[item.id];
-  }
-
-  const seed = hashSeed(item.id);
-  const profitability = 18 + (seed % 28);
-  const yieldForecast = Math.round((1.8 + (seed % 20) / 10) * 10) / 10;
-
-  return {
-    yieldForecastTHa: yieldForecast,
-    profitabilityPercent: profitability,
-    profitSeries: [
-      { month: "Бер", profit: Math.max(4, profitability - 22) },
-      { month: "Кві", profit: Math.max(6, profitability - 16) },
-      { month: "Тра", profit: Math.max(10, profitability - 10) },
-      { month: "Чер", profit: Math.max(12, profitability - 6) },
-      { month: "Лип", profit: Math.max(14, profitability - 3) },
-      { month: "Сер", profit: profitability },
-    ],
-    costsPerHa: [
-      { label: "Насіння", perHaUsd: 36 + (seed % 12) },
-      { label: "Дизель", perHaUsd: 12 + (seed % 8) },
-      { label: "Добрива", perHaUsd: 30 + (seed % 14) },
-      { label: "ЗЗР", perHaUsd: 18 + (seed % 10) },
-      { label: "Робоча сила", perHaUsd: 14 + (seed % 9) },
-    ],
-    agroHistory: [
-      {
-        id: `${item.id}-h1`,
-        dateLabel: "Цього сезону",
-        title: `Посів · ${item.crop}`,
-        status: "completed",
-        icon: "tractor",
-      },
-      {
-        id: `${item.id}-h2`,
-        dateLabel: "Нещодавно",
-        title: "Агромоніторинг контуру",
-        status: "completed",
-        icon: "droplet",
-      },
-      {
-        id: `${item.id}-h3`,
-        dateLabel: "Сьогодні",
-        title: "Очікування вікна обробки",
-        status: "waiting",
-        icon: "cloud",
-      },
-    ],
-  };
-}
-
-/** Адаптер у Field для існуючого sheet */
+/** Адаптер у Field для існуючого sheet (економіка — live з складу) */
 export function mapItemToSheetField(item: MapFieldItem): Field {
-  if (item.demoField) return item.demoField;
-
-  const costs = analyticsForMapField(item).costsPerHa;
-  const costPerHaUsd = costs.reduce((sum, row) => sum + row.perHaUsd, 0);
+  if (item.demoField) {
+    return {
+      ...item.demoField,
+      economics: {
+        costPerHaUsd: 0,
+        fuelUsedL: 0,
+        expectedRevenueUsd: 0,
+      },
+      timeline: [],
+    };
+  }
 
   return {
     id: item.id,
@@ -297,10 +263,10 @@ export function mapItemToSheetField(item: MapFieldItem): Field {
     mapPositionClass: "",
     accent: "lime",
     economics: {
-      costPerHaUsd,
-      fuelUsedL: Math.round(item.areaHa * 8.5),
-      expectedRevenueUsd: Math.round(item.areaHa * 980),
+      costPerHaUsd: 0,
+      fuelUsedL: 0,
+      expectedRevenueUsd: 0,
     },
-    timeline: analyticsForMapField(item).agroHistory,
+    timeline: [],
   };
 }

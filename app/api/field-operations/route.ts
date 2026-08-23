@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { mapOperationRow } from "@/lib/field-operations";
+import { upsertFieldOperationRow } from "@/lib/field-operations-db";
 import { createServiceSupabase } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -23,6 +24,7 @@ type UpsertBody = {
   occurredAt?: string;
   timeLabel?: string;
   seasonYear?: number;
+  season?: string;
   areaTotal?: number | null;
   areaPlan?: number | null;
   areaFact?: number | null;
@@ -157,6 +159,12 @@ export async function POST(request: Request) {
         typeof body.seasonYear === "number" && Number.isFinite(body.seasonYear)
           ? body.seasonYear
           : null,
+      season:
+        typeof body.seasonYear === "number" && Number.isFinite(body.seasonYear)
+          ? String(body.seasonYear)
+          : typeof body.season === "string" && /^\d{4}$/.test(body.season.trim())
+            ? body.season.trim()
+            : "2026",
       area_total: body.areaTotal ?? null,
       area_plan: body.areaPlan ?? null,
       area_fact: body.areaFact ?? null,
@@ -198,24 +206,20 @@ export async function POST(request: Request) {
     };
 
     const supabase = createServiceSupabase();
-    const { data, error } = await supabase
-      .from("field_operations")
-      .upsert(row, { onConflict: "client_key" })
-      .select("*")
-      .single();
+    const result = await upsertFieldOperationRow(supabase, row);
 
-    if (error) {
+    if (!result.ok) {
       return NextResponse.json(
-        { error: error.message, code: error.code },
+        { error: result.error, code: result.code },
         {
           status:
-            error.code === "PGRST205" || error.code === "42P01" ? 503 : 500,
+            result.code === "PGRST205" || result.code === "42P01" ? 503 : 500,
         }
       );
     }
 
     return NextResponse.json({
-      operation: mapOperationRow(data as Record<string, unknown>),
+      operation: result.operation,
     });
   } catch (error) {
     return NextResponse.json(

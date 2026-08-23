@@ -8,17 +8,25 @@ import {
   Fuel,
   Loader2,
   MapPinned,
+  Satellite,
   Tractor,
   Wallet,
 } from "lucide-react";
+import { toast } from "sonner";
 
+import { resolveImplementWorkingWidth } from "@/app/admin/equipment/actions";
+import { getDieselPriceUah } from "@/app/fuel/actions";
 import { Label } from "@/components/ui/label";
 import type { FieldGeometry } from "@/lib/farm-fields";
 import {
   estimateAreaHaFromTrack,
 } from "@/lib/field-operations";
 import type { FieldTechVisit } from "@/lib/field-tech-history";
+import { formatUahCurrency } from "@/lib/fuel-price";
 import { cn } from "@/lib/utils";
+
+const TRACKER_MANUAL_FALLBACK =
+  "Помилка зв'язку з трекером. Будь ласка, вкажіть площу та паливо вручну";
 
 export type CloseableOperation = {
   id: string;
@@ -33,6 +41,9 @@ export type CloseableOperation = {
   /** Запланована / поточна площа наряду (те, що на картці) */
   areaDone: number;
   areaTotal: number;
+  areaPlan?: number;
+  fuelPlan?: number;
+  wagePlan?: number;
   fuelUsed: number;
   wage: number;
   status: "completed" | "in_progress" | "planned";
@@ -64,16 +75,19 @@ type TrackerSuggestion = {
   fuelL: number | null;
   areaHa: number | null;
   loading: boolean;
+  calculating: boolean;
   error: string | null;
 };
 
 type OperationClosePanelProps = {
   op: CloseableOperation;
+  mode?: "close" | "correct";
   fieldId?: string | null;
   fieldKey?: string | null;
   fieldName?: string | null;
   fieldGeometry?: FieldGeometry | null;
   onBack: () => void;
+  /** Викликається лише після успішного запису в /api/field-operations/close */
   onConfirm: (payload: ClosedOperationPayload) => void;
 };
 
@@ -132,16 +146,22 @@ function MetricDelta({
 }
 
 function planFromOperation(op: CloseableOperation) {
-  const areaPlan = op.areaDone > 0 ? op.areaDone : op.areaTotal;
+  const areaPlan =
+    op.areaPlan != null && op.areaPlan > 0
+      ? op.areaPlan
+      : op.areaDone > 0
+        ? op.areaDone
+        : op.areaTotal;
   return {
     areaPlan,
-    fuelPlan: op.fuelUsed,
-    wagePlan: op.wage,
+    fuelPlan: op.fuelPlan ?? op.fuelUsed,
+    wagePlan: op.wagePlan ?? op.wage,
   };
 }
 
 export function OperationClosePanel({
   op,
+  mode = "close",
   fieldId,
   fieldKey,
   fieldName,
@@ -149,7 +169,46 @@ export function OperationClosePanel({
   onBack,
   onConfirm,
 }: OperationClosePanelProps) {
+  const isCorrection = mode === "correct";
   const { areaPlan, fuelPlan, wagePlan } = planFromOperation(op);
+
+  const [resolvedWidthM, setResolvedWidthM] = useState(0);
+  const [dieselPriceUah, setDieselPriceUah] = useState<number | null>(null);
+
+  const widthFromOp =
+    op.implementWidthM != null && Number.isFinite(op.implementWidthM)
+      ? Number(op.implementWidthM)
+      : 0;
+  const widthM = widthFromOp > 0 ? widthFromOp : resolvedWidthM;
+
+  const canCalcFromWialon =
+    widthM > 0 && op.wialonUnitId != null && fieldGeometry != null;
+
+  useEffect(() => {
+    let cancelled = false;
+    void getDieselPriceUah().then((res) => {
+      if (cancelled || !res.ok) return;
+      setDieselPriceUah(res.data.priceUah);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (widthFromOp > 0 || !op.implement?.trim()) {
+      setResolvedWidthM(0);
+      return;
+    }
+    let cancelled = false;
+    void resolveImplementWorkingWidth(op.implement).then((res) => {
+      if (cancelled || !res.ok) return;
+      setResolvedWidthM(res.widthM);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [op.implement, widthFromOp]);
 
   const [areaFact, setAreaFact] = useState(String(areaPlan));
   const [fuelFact, setFuelFact] = useState(String(fuelPlan));
@@ -163,27 +222,27 @@ export function OperationClosePanel({
     fuelL: op.trackerFuelL ?? null,
     areaHa: null,
     loading: false,
+    calculating: false,
     error: null,
   });
 
   useEffect(() => {
     const next = planFromOperation(op);
-    setAreaFact(String(next.areaPlan));
-    setFuelFact(String(next.fuelPlan));
-    setWageFact(String(next.wagePlan));
+    setAreaFact(String(isCorrection ? op.areaDone : next.areaPlan));
+    setFuelFact(String(isCorrection ? op.fuelUsed : next.fuelPlan));
+    setWageFact(String(isCorrection ? op.wage : next.wagePlan));
     setComment(op.agronomistComment ?? "");
     setError(null);
     setSaving(false);
-  }, [op]);
+  }, [op, isCorrection]);
 
   useEffect(() => {
     const unitId = op.wialonUnitId;
     if (unitId == null || !fieldGeometry) {
-      const width = op.implementWidthM;
       const dist = op.trackerDistanceKm ?? 0;
       const areaHa =
-        width && dist > 0
-          ? estimateAreaHaFromTrack(dist, width, op.areaTotal)
+        widthM > 0 && dist > 0
+          ? estimateAreaHaFromTrack(dist, widthM, op.areaTotal)
           : null;
       setTracker({
         distanceKm: dist,
@@ -191,6 +250,7 @@ export function OperationClosePanel({
         fuelL: op.trackerFuelL ?? null,
         areaHa,
         loading: false,
+        calculating: false,
         error: null,
       });
       return;
@@ -198,7 +258,12 @@ export function OperationClosePanel({
 
     let cancelled = false;
     const { from, to } = dayUnixRange(op.occurredAt);
-    setTracker((prev) => ({ ...prev, loading: true, error: null }));
+    setTracker((prev) => ({
+      ...prev,
+      loading: true,
+      calculating: false,
+      error: null,
+    }));
 
     async function load() {
       try {
@@ -237,8 +302,6 @@ export function OperationClosePanel({
             analytics?: {
               summary?: {
                 fuelDelta?: number | null;
-                workHours?: number;
-                distanceKm?: number;
               };
             };
           };
@@ -246,18 +309,27 @@ export function OperationClosePanel({
           if (summary?.fuelDelta != null && Number.isFinite(summary.fuelDelta)) {
             fuelL = Math.abs(summary.fuelDelta);
           }
-          // Якщо візитів у полі немає — не підміняємо денним треком усього дня
-          if (distanceKm <= 0 && (summary?.distanceKm ?? 0) > 0) {
-            // лишаємо 0 по полю; fuel може бути з усього дня — не нав'язуємо
-          }
+        }
+
+        if (!historyRes.ok && !trackRes.ok) {
+          if (cancelled) return;
+          setTracker({
+            distanceKm: 0,
+            workHours: 0,
+            fuelL: null,
+            areaHa: null,
+            loading: false,
+            calculating: false,
+            error: TRACKER_MANUAL_FALLBACK,
+          });
+          return;
         }
 
         distanceKm = Math.round(distanceKm * 10) / 10;
         workHours = Math.round(workHours * 10) / 10;
-        const width = op.implementWidthM;
         const areaHa =
-          width && distanceKm > 0
-            ? estimateAreaHaFromTrack(distanceKm, width, op.areaTotal)
+          widthM > 0 && distanceKm > 0
+            ? estimateAreaHaFromTrack(distanceKm, widthM, op.areaTotal)
             : null;
 
         if (cancelled) return;
@@ -268,21 +340,16 @@ export function OperationClosePanel({
           fuelL,
           areaHa,
           loading: false,
+          calculating: false,
           error: null,
         });
-
-        if (areaHa != null && areaHa > 0) {
-          setAreaFact(String(areaHa));
-        }
-        if (fuelL != null && fuelL > 0) {
-          setFuelFact(String(Math.round(fuelL * 10) / 10));
-        }
       } catch {
         if (!cancelled) {
           setTracker((prev) => ({
             ...prev,
             loading: false,
-            error: "Не вдалося зчитати трек",
+            calculating: false,
+            error: TRACKER_MANUAL_FALLBACK,
           }));
         }
       }
@@ -296,17 +363,101 @@ export function OperationClosePanel({
     op.wialonUnitId,
     op.occurredAt,
     op.machinery,
-    op.implementWidthM,
     op.areaTotal,
     op.trackerDistanceKm,
     op.trackerWorkHours,
     op.trackerFuelL,
     fieldGeometry,
+    widthM,
   ]);
+
+  async function handleCalcAreaFromWialon() {
+    if (!canCalcFromWialon || tracker.calculating) return;
+    const unitId = op.wialonUnitId!;
+    const { from, to } = dayUnixRange(op.occurredAt);
+
+    setTracker((prev) => ({ ...prev, calculating: true, error: null }));
+
+    try {
+      const historyRes = await fetch("/api/wialon/field-history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          geometry: fieldGeometry,
+          units: [{ id: unitId, name: op.machinery || String(unitId) }],
+          from,
+          to,
+        }),
+      });
+
+      if (!historyRes.ok) {
+        throw new Error(TRACKER_MANUAL_FALLBACK);
+      }
+
+      const hist = (await historyRes.json()) as {
+        visits?: FieldTechVisit[];
+      };
+
+      let distanceKm = 0;
+      let workHours = 0;
+      for (const visit of hist.visits ?? []) {
+        distanceKm += visit.distanceKm ?? 0;
+        workHours += Math.max(0, (visit.endUnix - visit.startUnix) / 3600);
+      }
+
+      distanceKm = Math.round(distanceKm * 10) / 10;
+      workHours = Math.round(workHours * 10) / 10;
+
+      if (distanceKm <= 0) {
+        setTracker((prev) => ({
+          ...prev,
+          distanceKm: 0,
+          workHours,
+          areaHa: null,
+          calculating: false,
+          error: "У геозоні поля немає пробігу за цей день",
+        }));
+        toast.message("Wialon: пробіг у полі = 0 км", {
+          description: "Перевірте дату наряду або GPS-трек.",
+        });
+        return;
+      }
+
+      const areaHa = estimateAreaHaFromTrack(distanceKm, widthM, op.areaTotal);
+      setTracker((prev) => ({
+        ...prev,
+        distanceKm,
+        workHours,
+        areaHa,
+        calculating: false,
+        error: null,
+      }));
+      setAreaFact(String(areaHa));
+      toast.success(
+        `Wialon: Пробіг ${formatNum(distanceKm, 1)} км. Розрахована площа ${formatNum(areaHa)} га`
+      );
+    } catch {
+      setTracker((prev) => ({
+        ...prev,
+        calculating: false,
+        error: TRACKER_MANUAL_FALLBACK,
+      }));
+      toast.message(TRACKER_MANUAL_FALLBACK);
+    }
+  }
 
   const areaFactNum = useMemo(() => parseNum(areaFact), [areaFact]);
   const fuelFactNum = useMemo(() => parseNum(fuelFact), [fuelFact]);
   const wageFactNum = useMemo(() => parseNum(wageFact), [wageFact]);
+
+  const fuelPlanCostUah =
+    dieselPriceUah != null && Number.isFinite(fuelPlan)
+      ? Math.round(fuelPlan * dieselPriceUah)
+      : null;
+  const fuelFactCostUah =
+    dieselPriceUah != null && Number.isFinite(fuelFactNum)
+      ? Math.round(fuelFactNum * dieselPriceUah)
+      : null;
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -340,7 +491,7 @@ export function OperationClosePanel({
       trackerWorkHours: tracker.workHours || null,
       trackerFuelL: tracker.fuelL,
       wialonUnitId: op.wialonUnitId ?? null,
-      implementWidthM: op.implementWidthM ?? null,
+      implementWidthM: widthM > 0 ? widthM : null,
     };
 
     setSaving(true);
@@ -374,6 +525,7 @@ export function OperationClosePanel({
           trackerDistanceKm: payload.trackerDistanceKm,
           trackerWorkHours: payload.trackerWorkHours,
           trackerFuelL: payload.trackerFuelL,
+          correctOnly: isCorrection,
         }),
       });
 
@@ -381,14 +533,16 @@ export function OperationClosePanel({
         const body = (await res.json().catch(() => null)) as {
           error?: string;
         } | null;
-        if (res.status !== 503) {
-          setError(body?.error ?? "Не вдалося зберегти в базу");
-          setSaving(false);
-          return;
-        }
+        setError(body?.error ?? "Не вдалося зберегти в базу");
+        setSaving(false);
+        return;
       }
 
+      // Єдиний запис уже в БД — батьківський компонент лише оновлює UI
       onConfirm(payload);
+      if (isCorrection) {
+        toast.success("Результати наряду оновлено");
+      }
     } catch {
       setError("Помилка мережі під час збереження");
     } finally {
@@ -415,7 +569,7 @@ export function OperationClosePanel({
           <div className="relative">
             <p className="mb-1.5 inline-flex items-center gap-1.5 rounded-full border border-emerald-200/80 bg-white/85 px-2.5 py-1 text-[10px] font-semibold tracking-wider text-emerald-700 uppercase">
               <CheckCircle2 className="h-3 w-3" />
-              Підтвердження агронома
+              {isCorrection ? "Коригування факту" : "Підтвердження агронома"}
             </p>
             <h2 className="text-xl font-extrabold tracking-tight text-zinc-900">
               {op.type}
@@ -428,7 +582,9 @@ export function OperationClosePanel({
             </h2>
             <p className="mt-1 text-sm text-zinc-600">
               {fieldName ? `${fieldName} · ` : ""}
-              звірка план / факт (далі — чорновик 1С)
+              {isCorrection
+                ? "виправлення площі, палива та ЗП після закриття"
+                : "звірка план / факт (далі — чорновик 1С)"}
             </p>
           </div>
         </div>
@@ -445,9 +601,8 @@ export function OperationClosePanel({
                 </p>
                 <p className="truncate text-xs text-zinc-500">
                   {op.implement || "—"}
-                  {op.implementWidthM
-                    ? ` · ${formatNum(op.implementWidthM, 1)} м`
-                    : ""}
+                  {widthM > 0 ? ` · ${formatNum(widthM, 1)} м` : ""}
+                  {widthFromOp <= 0 && resolvedWidthM > 0 ? " · з довідника" : ""}
                   {op.date ? ` · ${op.date}` : ""}
                 </p>
               </div>
@@ -460,12 +615,20 @@ export function OperationClosePanel({
                 <MapPinned className="h-3.5 w-3.5" />
                 Дані з трекера
               </p>
-              {tracker.loading ? (
+              {tracker.loading || tracker.calculating ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin text-zinc-400" />
               ) : null}
             </div>
             {tracker.error ? (
-              <p className="px-4 py-3 text-xs text-amber-700">{tracker.error}</p>
+              <div className="border-b border-amber-100 bg-amber-50 px-4 py-3">
+                <p className="text-xs font-medium text-amber-900">
+                  {tracker.error}
+                </p>
+                <p className="mt-1 text-[11px] text-amber-800/90">
+                  Поля нижче доступні для ручного вводу — збереження працює без
+                  трекера.
+                </p>
+              </div>
             ) : (
               <div className="grid grid-cols-3 divide-x divide-[#E5DFD3]">
                 <div className="px-3 py-3 text-center">
@@ -494,12 +657,40 @@ export function OperationClosePanel({
                 </div>
               </div>
             )}
-            <p className="border-t border-[#E5DFD3]/80 px-4 py-2 text-[11px] text-zinc-500">
-              Оцінка: км × ширина знаряддя / 10. Можна змінити факти нижче.
-              {tracker.fuelL != null
-                ? ` Паливо з датчика: ${formatNum(tracker.fuelL, 1)} л.`
-                : ""}
-            </p>
+            <div className="space-y-2 border-t border-[#E5DFD3]/80 px-4 py-3">
+              <p className="text-[11px] text-zinc-500">
+                Оцінка: км × ширина знаряддя / 10. Можна змінити факт нижче.
+                {tracker.fuelL != null
+                  ? ` Паливо з датчика: ${formatNum(tracker.fuelL, 1)} л.`
+                  : ""}
+              </p>
+              {canCalcFromWialon ? (
+                <button
+                  type="button"
+                  onClick={() => void handleCalcAreaFromWialon()}
+                  disabled={tracker.calculating || tracker.loading}
+                  className={cn(
+                    "inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl",
+                    "border border-sky-200 bg-sky-50 text-sm font-semibold text-sky-900",
+                    "transition hover:bg-sky-100 disabled:opacity-60"
+                  )}
+                >
+                  {tracker.calculating ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Satellite className="h-4 w-4" />
+                  )}
+                  {isCorrection
+                    ? "Перерахувати з Wialon"
+                    : "Рахувати площу з Wialon"}
+                </button>
+              ) : widthM <= 0 ? (
+                <p className="text-[11px] text-amber-700">
+                  Ширина знаряддя = 0 м — вкажіть ширину в Налаштування → Техніка
+                  BAS (Обладнання).
+                </p>
+              ) : null}
+            </div>
           </section>
 
           <section className="overflow-hidden rounded-2xl border border-[#E5DFD3] bg-white shadow-sm">
@@ -553,6 +744,14 @@ export function OperationClosePanel({
               </p>
               <MetricDelta fact={fuelFactNum} plan={fuelPlan} unit="л" />
             </div>
+            {dieselPriceUah != null ? (
+              <p className="border-b border-[#E5DFD3]/60 bg-sky-50/50 px-4 py-2 text-[11px] text-sky-900">
+                Ціна дизеля:{" "}
+                <span className="font-semibold tabular-nums">
+                  {formatUahCurrency(dieselPriceUah, { precise: true })}/л
+                </span>
+              </p>
+            ) : null}
             <div className="grid grid-cols-2 gap-0 divide-x divide-[#E5DFD3]">
               <div className="bg-zinc-50/80 px-4 py-4">
                 <p className="text-[10px] font-semibold tracking-wider text-zinc-400 uppercase">
@@ -562,6 +761,11 @@ export function OperationClosePanel({
                   {formatNum(fuelPlan, 0)}
                   <span className="ml-1 text-sm font-semibold">л</span>
                 </p>
+                {fuelPlanCostUah != null ? (
+                  <p className="mt-1 text-xs font-medium tabular-nums text-zinc-400">
+                    ≈ {formatUahCurrency(fuelPlanCostUah)}
+                  </p>
+                ) : null}
               </div>
               <div className="px-4 py-4">
                 <p className="text-[10px] font-semibold tracking-wider text-emerald-600 uppercase">
@@ -585,6 +789,11 @@ export function OperationClosePanel({
                     л
                   </span>
                 </div>
+                {fuelFactCostUah != null ? (
+                  <p className="mt-1 text-xs font-semibold tabular-nums text-emerald-700">
+                    ≈ {formatUahCurrency(fuelFactCostUah)}
+                  </p>
+                ) : null}
               </div>
             </div>
           </section>
@@ -603,8 +812,7 @@ export function OperationClosePanel({
                   План
                 </p>
                 <p className="mt-2 text-2xl font-bold tabular-nums text-zinc-500">
-                  {formatNum(wagePlan, 0)}
-                  <span className="ml-1 text-sm font-semibold">₴</span>
+                  {formatUahCurrency(wagePlan)}
                 </p>
               </div>
               <div className="px-4 py-4">
@@ -625,10 +833,12 @@ export function OperationClosePanel({
                       "[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                     )}
                   />
-                  <span className="shrink-0 text-sm font-semibold text-zinc-400">
-                    ₴
-                  </span>
                 </div>
+                {Number.isFinite(wageFactNum) && wageFactNum > 0 ? (
+                  <p className="mt-1 text-xs font-semibold tabular-nums text-emerald-700">
+                    {formatUahCurrency(wageFactNum)}
+                  </p>
+                ) : null}
               </div>
             </div>
           </section>
@@ -673,7 +883,7 @@ export function OperationClosePanel({
           ) : (
             <CheckCircle2 className="h-4 w-4" />
           )}
-          Підтвердити факт
+          {isCorrection ? "Зберегти коригування" : "Підтвердити факт"}
         </button>
       </div>
     </form>

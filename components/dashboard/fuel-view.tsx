@@ -14,12 +14,14 @@ import {
   MoreHorizontal,
   Plus,
   RefreshCw,
+  Satellite,
   Settings2,
   Tractor,
   Trash2,
 } from "lucide-react";
 import type { DateRange } from "react-day-picker";
 
+import { getTodayFieldFuelConsumed } from "@/app/fuel/actions";
 import {
   FuelActionDialogs,
   type FleetUnitOption,
@@ -440,6 +442,8 @@ export function FuelView({
 
   const [units, setUnits] = useState<FleetUnitOption[]>(FALLBACK_UNITS);
   const [unitsLoading, setUnitsLoading] = useState(false);
+  const [fieldFuelToday, setFieldFuelToday] = useState<number | null>(null);
+  const [fieldFuelLoading, setFieldFuelLoading] = useState(true);
 
   const unitNameById = useMemo(() => {
     const map = new Map<number, string>();
@@ -628,6 +632,20 @@ export function FuelView({
     };
   }, [refreshStorages, refreshTransactions, refreshAll]);
 
+  /** Витрата на полях сьогодні (Wialon CRON → wialon_field_fuel_logs) */
+  useEffect(() => {
+    let cancelled = false;
+    setFieldFuelLoading(true);
+    void getTodayFieldFuelConsumed().then((res) => {
+      if (cancelled) return;
+      setFieldFuelToday(res.ok ? res.data.liters : 0);
+      setFieldFuelLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [transactions]);
+
   /** Список техніки з Wialon для модалки заправки */
   useEffect(() => {
     const controller = new AbortController();
@@ -699,6 +717,38 @@ export function FuelView({
           </div>
         }
       />
+
+      <section className="mb-6">
+        <div className="rounded-2xl border border-sky-200/80 bg-gradient-to-br from-sky-50 to-white px-4 py-4 shadow-sm sm:px-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-sky-800">
+                <Satellite className="h-5 w-5" />
+              </span>
+              <div>
+                <p className="text-sm font-semibold text-zinc-900">
+                  Витрачено на полях сьогодні
+                </p>
+                <p className="mt-0.5 text-xs text-zinc-500">
+                  Авто з ДРП Wialon · оновлення щогодини (CRON)
+                </p>
+              </div>
+            </div>
+            <div className="text-right">
+              {fieldFuelLoading ? (
+                <Loader2 className="ml-auto h-5 w-5 animate-spin text-sky-600" />
+              ) : (
+                <p className="text-2xl font-bold tabular-nums tracking-tight text-sky-900">
+                  {formatLiters(fieldFuelToday ?? 0)}{" "}
+                  <span className="text-base font-semibold text-sky-700/80">
+                    л
+                  </span>
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
 
       <div className="mb-8 flex flex-wrap items-center gap-3">
         <button

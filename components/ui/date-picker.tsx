@@ -3,6 +3,7 @@
 import { format } from "date-fns";
 import { uk } from "date-fns/locale";
 import { Calendar as CalendarIcon } from "lucide-react";
+import { useState } from "react";
 
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -29,6 +30,7 @@ export function DatePicker({
   className,
   seasonLabel = false,
 }: DatePickerProps) {
+  const [open, setOpen] = useState(false);
   const label = date
     ? seasonLabel
       ? `Сезон ${date.getFullYear()}`
@@ -36,12 +38,15 @@ export function DatePicker({
     : placeholder;
 
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
+        type="button"
         className={cn(
-          "inline-flex h-9 items-center justify-start gap-2 rounded-xl border border-[#E5DFD3] bg-zinc-100 px-3 text-sm font-medium text-zinc-900 outline-none transition-colors shadow-sm",
-          "hover:border-[#E5DFD3] hover:bg-[#E5DFD3]/40 focus-visible:ring-2 focus-visible:ring-[#276749]/30",
-          !date && "text-zinc-500",
+          "inline-flex h-11 w-full min-w-0 items-center justify-start gap-2 rounded-xl border border-[#E5DFD3] bg-white px-3",
+          "text-sm font-semibold text-zinc-900 shadow-[0_1px_0_rgba(255,255,255,0.8)_inset]",
+          "transition-colors outline-none",
+          "hover:border-[#276749]/35 focus-visible:border-[#276749]/45 focus-visible:ring-2 focus-visible:ring-[#276749]/15",
+          !date && "font-medium text-zinc-400",
           className
         )}
       >
@@ -49,13 +54,17 @@ export function DatePicker({
         <span className="truncate">{label}</span>
       </PopoverTrigger>
       <PopoverContent
-        align="end"
-        className="w-auto rounded-xl border-[#E5DFD3] bg-[#F4F1EA] p-2 text-zinc-900 shadow-sm"
+        align="start"
+        className="z-[130] w-auto overflow-hidden rounded-2xl border border-[#E5DFD3] bg-[#F4F1EA] p-2 text-zinc-900 shadow-lg"
       >
         <Calendar
           mode="single"
           selected={date}
-          onSelect={onChange}
+          onSelect={(next) => {
+            onChange?.(next);
+            if (next) setOpen(false);
+          }}
+          locale={uk}
           className="rounded-xl bg-transparent text-zinc-900"
         />
       </PopoverContent>

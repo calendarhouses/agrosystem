@@ -112,6 +112,28 @@ body {
   display: none !important;
 }
 
+/* Кастомний стиль вершин Mapbox Draw */
+.mapbox-gl-draw_vertex,
+.mapbox-gl-draw_vertex-active {
+  stroke: rgba(255, 255, 255, 0.95) !important;
+  stroke-width: 2px !important;
+}
+.mapbox-gl-draw_vertex {
+  fill: #276749 !important;
+}
+.mapbox-gl-draw_vertex-active {
+  fill: #c05621 !important;
+}
+.mapbox-gl-draw_polygon-fill {
+  fill: #276749 !important;
+  fill-opacity: 0.14 !important;
+}
+.mapbox-gl-draw_polygon-stroke,
+.mapbox-gl-draw_line {
+  stroke: #276749 !important;
+  stroke-width: 2.5px !important;
+}
+
 @utility no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;

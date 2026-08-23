@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Fuel,
+  Link2,
   Map as MapIcon,
   Search,
   Tractor,
@@ -27,6 +28,7 @@ const iconMap = {
   tractor: Tractor,
   chart: TrendingUp,
   fuel: Fuel,
+  link: Link2,
 } as const;
 
 type CommandMenuProps = {
@@ -58,7 +60,7 @@ export function CommandMenu({ className }: CommandMenuProps) {
         type="button"
         onClick={() => setOpen(true)}
         className={cn(
-          "group flex w-full max-w-md items-center gap-3 rounded-xl border border-[#E5DFD3] bg-[#F4F1EA] px-3.5 py-2.5 text-left shadow-sm",
+          "group flex h-10 w-full max-w-md items-center gap-3 rounded-xl border border-[#E5DFD3] bg-[#F4F1EA] px-3.5 text-left shadow-sm",
           "transition-all duration-200 hover:border-[#E5DFD3] hover:bg-[#E5DFD3]/40",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#276749]/30",
           className
