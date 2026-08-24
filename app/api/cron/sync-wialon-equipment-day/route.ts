@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { syncWialonEquipmentDayStats } from "@/lib/wialon-equipment-day-sync";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
+export const maxDuration = 60;
 
 const JSON_UTF8 = {
   "Content-Type": "application/json; charset=utf-8",
@@ -34,7 +34,9 @@ async function handle(request: NextRequest) {
   try {
     const url = new URL(request.url);
     const date = url.searchParams.get("date")?.trim() || undefined;
-    const result = await syncWialonEquipmentDayStats(date);
+    const result = await syncWialonEquipmentDayStats(date, {
+      budgetMs: 55_000,
+    });
     console.log("[cron/sync-wialon-equipment-day]", result);
     return NextResponse.json(result, { headers: JSON_UTF8 });
   } catch (error) {

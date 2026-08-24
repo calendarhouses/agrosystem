@@ -37,14 +37,21 @@ function numOrNull(value: unknown): number | null {
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
+function plateTokens(value: string): string[] {
+  return (value.match(/[a-zа-яіїєґ]*\d{4,}[a-zа-яіїєґ\d]*/gi) ?? []).map((t) =>
+    t.toLowerCase()
+  );
+}
+
 function namesMatch(a: string, b: string): boolean {
   const na = normalizeName(a);
   const nb = normalizeName(b);
   if (!na || !nb) return false;
   if (na === nb) return true;
-  if (na.length >= 4 && nb.includes(na)) return true;
-  if (nb.length >= 4 && na.includes(nb)) return true;
-  return false;
+  const aPlates = plateTokens(na);
+  const bPlates = new Set(plateTokens(nb));
+  if (aPlates.length === 0 || bPlates.size === 0) return false;
+  return aPlates.some((t) => bPlates.has(t));
 }
 
 type FieldJoin = {

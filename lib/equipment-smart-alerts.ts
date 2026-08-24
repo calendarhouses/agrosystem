@@ -34,33 +34,29 @@ function parseTelemetryIgnition(unit: WialonUnit): boolean | null {
   return null;
 }
 
-function longestIdleStreakSec(samples: DayAnalyticsPayload["samples"]): number {
+function isIdleSample(s: { speed: number; ignition: boolean | null }): boolean {
+  return (
+    s.speed <= IDLE_MAX_SPEED &&
+    (s.ignition === true || s.ignition == null)
+  );
+}
+
+/** Поточний простій (хвіст треку), не сума за день. */
+export function currentIdleStreakSec(
+  samples: DayAnalyticsPayload["samples"],
+  nowSec: number
+): number {
   if (!samples?.length) return 0;
-  let best = 0;
-  let streakStart: number | null = null;
-  for (let i = 0; i < samples.length; i++) {
-    const s = samples[i];
-    const idle =
-      (s.ignition === true || (s.ignition == null && s.speed <= IDLE_MAX_SPEED)) &&
-      s.speed <= IDLE_MAX_SPEED;
-    if (idle) {
-      if (streakStart == null) streakStart = s.t;
-    } else if (streakStart != null) {
-      best = Math.max(best, s.t - streakStart);
-      streakStart = null;
-    }
-  }
-  const last = samples[samples.length - 1];
-  if (streakStart != null && last) {
-    best = Math.max(best, last.t - streakStart);
-  }
-  return best;
+  let i = samples.length - 1;
+  if (!isIdleSample(samples[i]!)) return 0;
+  while (i > 0 && isIdleSample(samples[i - 1]!)) i--;
+  const start = samples[i]!.t;
+  return Math.max(0, nowSec - start);
 }
 
 export type BuildSmartAlertsInput = {
   units: FleetTrackedUnit[];
   analyticsByUnitId?: Map<number, DayAnalyticsPayload>;
-  idleHoursByUnitId?: Map<number, number>;
   /** Події зливу з БД (wialon_equipment_day_stats) для fleet-wide моніторингу */
   drainEventsByUnitId?: Map<number, number>;
   /** YYYY-MM-DD — для стабільного id toast (без повторів при зміні count) */
@@ -75,7 +71,6 @@ export function buildSmartAlerts(input: BuildSmartAlertsInput): SmartAlert[] {
   const nowSec = Math.floor(Date.now() / 1000);
   const out: SmartAlert[] = [];
   const analyticsMap = input.analyticsByUnitId ?? new Map();
-  const idleHours = input.idleHoursByUnitId ?? new Map();
   const drainFromDb = input.drainEventsByUnitId ?? new Map();
   const dayKey = input.alertDayKey ?? "today";
 
@@ -85,12 +80,6 @@ export function buildSmartAlerts(input: BuildSmartAlertsInput): SmartAlert[] {
     const lat = pos?.y ?? null;
 
     const analytics = analyticsMap.get(unit.id);
-    const idleStreak = analytics
-      ? longestIdleStreakSec(analytics.samples)
-      : 0;
-    const idleFromDb = (idleHours.get(unit.id) ?? 0) * 3600;
-    const idleSec = Math.max(idleStreak, idleFromDb);
-
     const speed = Number(pos?.s ?? 0);
     const ignition = parseTelemetryIgnition(unit);
     const currentlyIdle =
@@ -98,19 +87,19 @@ export function buildSmartAlerts(input: BuildSmartAlertsInput): SmartAlert[] {
       speed <= IDLE_MAX_SPEED &&
       (ignition === true || ignition == null);
 
-    if (
-      (currentlyIdle && idleSec >= LONG_IDLE_SEC) ||
-      idleFromDb >= LONG_IDLE_SEC
-    ) {
-      const hours =
-        Math.round((Math.max(idleSec, idleFromDb) / 3600) * 10) / 10;
+    const idleSec = currentlyIdle
+      ? currentIdleStreakSec(analytics?.samples ?? [], nowSec)
+      : 0;
+
+    if (currentlyIdle && idleSec >= LONG_IDLE_SEC) {
+      const hours = Math.round((idleSec / 3600) * 10) / 10;
       out.push({
         id: `idle:${unit.id}:${dayKey}:${Math.floor(hours)}`,
         kind: "long_idle",
         unitId: unit.id,
         unitName: unit.nm,
         title: "Тривалий холостий хід",
-        detail: `${unit.nm} — ~${hours} год простою, зайве паливо`,
+        detail: `${unit.nm} — ~${hours} год простою зараз, зайве паливо`,
         severity: "warning",
         lng,
         lat,

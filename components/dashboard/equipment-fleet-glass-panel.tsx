@@ -209,6 +209,7 @@ type Props = {
   onBackToList: () => void;
   onSummaryDateChange: (d: Date) => void;
   onSummaryMetricSelect: (m: FleetSummaryMetric | null) => void;
+  onSummaryRefresh?: () => void;
   /** Вміст Vehicle 360 для Master-Detail */
   detailContent: ReactNode;
 };
@@ -240,6 +241,7 @@ export function EquipmentFleetGlassPanel({
   onBackToList,
   onSummaryDateChange,
   onSummaryMetricSelect,
+  onSummaryRefresh,
   detailContent,
 }: Props) {
   const sortedUnits = sortedUnitIds
@@ -281,6 +283,7 @@ export function EquipmentFleetGlassPanel({
             syncHint={fleetSummarySyncHint}
             activeMetric={summaryMetric}
             onMetricSelect={onSummaryMetricSelect}
+            onRefresh={onSummaryRefresh}
             compact
           />
         </div>
@@ -307,6 +310,12 @@ export function EquipmentFleetGlassPanel({
                   className="h-20 animate-pulse rounded-2xl bg-white/40"
                 />
               ))
+            : sortedUnits.length === 0 ? (
+                <p className="px-2 py-8 text-center text-xs font-medium text-zinc-500">
+                  Немає техніки з GPS. Перевірте Wialon або зіставлення в
+                  налаштуваннях.
+                </p>
+              )
             : sortedUnits.map((unit) => {
                 const kinds = unitAlertKinds.get(unit.id);
                 const inSummary = summaryHighlightIds?.has(unit.id) ?? false;

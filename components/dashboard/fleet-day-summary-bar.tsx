@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { format } from "date-fns";
 import { uk } from "date-fns/locale";
-import { Calendar as CalendarIcon, Loader2 } from "lucide-react";
+import { Calendar as CalendarIcon, Loader2, RefreshCw } from "lucide-react";
 
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -28,6 +28,8 @@ export type FleetDaySummary = {
   hoursIdling: number;
   drainEvents: number;
   byMetric: Record<FleetSummaryMetric, number[]>;
+  syncedAt?: string | null;
+  truncated?: boolean;
 };
 
 type FleetDaySummaryBarProps = {
@@ -35,10 +37,12 @@ type FleetDaySummaryBarProps = {
   onDateChange: (date: Date) => void;
   summary: FleetDaySummary | null;
   loading?: boolean;
-  /** Підказка, коли CRON ще не відпрацював або йде sync */
+  /** Підказка: йде sync з Wialon або БД порожня */
   syncHint?: "syncing" | "empty" | null;
   activeMetric?: FleetSummaryMetric | null;
   onMetricSelect?: (metric: FleetSummaryMetric | null) => void;
+  /** Примусове оновлення з Wialon */
+  onRefresh?: () => void;
   /** Компактні плитки для Command Center */
   compact?: boolean;
 };
@@ -71,6 +75,7 @@ export function FleetDaySummaryBar({
   syncHint = null,
   activeMetric = null,
   onMetricSelect,
+  onRefresh,
   compact = false,
 }: FleetDaySummaryBarProps) {
   const [open, setOpen] = useState(false);
@@ -98,7 +103,7 @@ export function FleetDaySummaryBar({
     },
     {
       metric: "onField",
-      label: "На полях",
+      label: "Час на полі",
       value: summary ? formatHoursShort(summary.hoursOnField) : "—",
       empty: !summary || summary.hoursOnField <= 0,
       valueClassName: "text-emerald-700",
@@ -141,62 +146,92 @@ export function FleetDaySummaryBar({
           Активність парку
         </h2>
 
-        <Popover open={open} onOpenChange={setOpen}>
-          <PopoverTrigger
-            className={cn(
-              "inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border/60 bg-background/80 text-muted-foreground shadow-sm outline-none transition",
-              "hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40",
-              compact ? "h-7 px-2" : "h-8 px-2.5"
-            )}
-            aria-label={`Дата: ${format(date, "d MMMM yyyy", { locale: uk })}`}
-          >
-            {loading ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <CalendarIcon className="h-3.5 w-3.5 shrink-0" />
-            )}
-            <span
+        <div className="flex shrink-0 items-center gap-1">
+          {onRefresh ? (
+            <button
+              type="button"
+              onClick={onRefresh}
+              disabled={loading}
+              title="Оновити з Wialon"
+              aria-label="Оновити з Wialon"
               className={cn(
-                "font-semibold tabular-nums text-foreground",
-                compact ? "text-[11px]" : "text-xs"
+                "inline-flex items-center justify-center rounded-lg border border-border/60 bg-background/80 text-muted-foreground shadow-sm outline-none transition",
+                "hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40",
+                "disabled:pointer-events-none disabled:opacity-50",
+                compact ? "h-7 w-7" : "h-8 w-8"
               )}
             >
-              {format(date, compact ? "d MMM yyyy" : "d MMMM yyyy", {
-                locale: uk,
-              })}
-            </span>
-          </PopoverTrigger>
-          <PopoverContent
-            align="end"
-            className="w-auto overflow-hidden rounded-xl border border-border bg-popover p-0 shadow-xl"
-          >
-            <div className="border-b border-border/60 px-3 py-2 text-xs font-medium text-muted-foreground">
-              {format(date, "d MMMM yyyy", { locale: uk })}
-            </div>
-            <Calendar
-              mode="single"
-              selected={date}
-              onSelect={(next) => {
-                if (!next) return;
-                onDateChange(next);
-                setOpen(false);
-              }}
-              disabled={{ after: todayStart }}
-              className="rounded-xl bg-transparent p-2"
-            />
-          </PopoverContent>
-        </Popover>
+              <RefreshCw
+                className={cn("h-3.5 w-3.5", loading && "animate-spin")}
+              />
+            </button>
+          ) : null}
+
+          <Popover open={open} onOpenChange={setOpen}>
+            <PopoverTrigger
+              className={cn(
+                "inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border/60 bg-background/80 text-muted-foreground shadow-sm outline-none transition",
+                "hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40",
+                compact ? "h-7 px-2" : "h-8 px-2.5"
+              )}
+              aria-label={`Дата: ${format(date, "d MMMM yyyy", { locale: uk })}`}
+            >
+              {loading && !onRefresh ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <CalendarIcon className="h-3.5 w-3.5 shrink-0" />
+              )}
+              <span
+                className={cn(
+                  "font-semibold tabular-nums text-foreground",
+                  compact ? "text-[11px]" : "text-xs"
+                )}
+              >
+                {format(date, compact ? "d MMM yyyy" : "d MMMM yyyy", {
+                  locale: uk,
+                })}
+              </span>
+            </PopoverTrigger>
+            <PopoverContent
+              align="end"
+              className="w-auto overflow-hidden rounded-xl border border-border bg-popover p-0 shadow-xl"
+            >
+              <div className="border-b border-border/60 px-3 py-2 text-xs font-medium text-muted-foreground">
+                {format(date, "d MMMM yyyy", { locale: uk })}
+              </div>
+              <Calendar
+                mode="single"
+                selected={date}
+                onSelect={(next) => {
+                  if (!next) return;
+                  onDateChange(next);
+                  setOpen(false);
+                }}
+                disabled={{ after: todayStart }}
+                className="rounded-xl bg-transparent p-2"
+              />
+            </PopoverContent>
+          </Popover>
+        </div>
       </div>
 
       {syncHint === "syncing" ? (
         <p className="flex items-center gap-1.5 text-[10px] font-medium text-amber-800/90">
           <Loader2 className="h-3 w-3 animate-spin shrink-0" />
-          Завантаження з бази…
+          Оновлюємо з Wialon…
         </p>
       ) : syncHint === "empty" && !loading ? (
         <p className="text-[10px] font-medium text-muted-foreground">
-          Немає даних за день — дочекайтесь CRON (кожні 15 хв) або перевірте
-          CRON_SECRET на Vercel
+          Немає денної статистики — натисніть оновлення з Wialon
+        </p>
+      ) : summary?.truncated && !loading ? (
+        <p className="text-[10px] font-medium text-amber-800/90">
+          Частина парку не встигла оновитись — натисніть оновлення ще раз
+        </p>
+      ) : summary?.syncedAt && !loading ? (
+        <p className="text-[10px] font-medium text-muted-foreground">
+          Оновлено{" "}
+          {format(new Date(summary.syncedAt), "HH:mm", { locale: uk })}
         </p>
       ) : null}
 

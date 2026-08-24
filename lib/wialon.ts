@@ -220,10 +220,23 @@ async function wialonRequest<T>(
     url.searchParams.set("sid", sid);
   }
 
-  const response = await fetch(url.toString(), {
-    method: "GET",
-    cache: "no-store",
-  });
+  const WIALON_FETCH_TIMEOUT_MS = 20_000;
+  let response: Response;
+  try {
+    response = await fetch(url.toString(), {
+      method: "GET",
+      cache: "no-store",
+      signal: AbortSignal.timeout(WIALON_FETCH_TIMEOUT_MS),
+    });
+  } catch (err) {
+    const timedOut =
+      err instanceof Error &&
+      (err.name === "TimeoutError" || err.name === "AbortError");
+    if (timedOut) {
+      throw new Error(`Wialon timeout (${svc}, ${WIALON_FETCH_TIMEOUT_MS / 1000}с)`);
+    }
+    throw err;
+  }
 
   if (!response.ok) {
     throw new Error(`Wialon HTTP ${response.status}`);

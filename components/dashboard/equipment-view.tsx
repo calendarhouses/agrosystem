@@ -1296,6 +1296,9 @@ export function EquipmentView() {
   const [fleetSummarySource, setFleetSummarySource] = useState<
     "db" | "empty" | null
   >(null);
+  const [fleetSummaryRefreshToken, setFleetSummaryRefreshToken] = useState(0);
+  const [fleetSummaryTick, setFleetSummaryTick] = useState(0);
+  const fleetSummaryForceRefreshRef = useRef(false);
   const fleetSummaryCacheRef = useRef(new Map<string, FleetDaySummary>());
   const dayBundleCacheRef = useRef(
     new Map<
@@ -1322,6 +1325,9 @@ export function EquipmentView() {
     if (liveWialonUnits.length === 0) return;
     setUnits((prev) => patchFleetGps(prev, liveWialonUnits));
   }, [liveWialonUnits]);
+
+  /** Стабільний ключ — GPS-поллінг не перезапускає KPI sync */
+  const fleetUnitIdsKey = units.map((u) => u.id).join(",");
 
   const selectedUnitId = selectedUnit?.id ?? null;
   const liveSelectedUnit = useMemo(() => {
@@ -1508,16 +1514,21 @@ export function EquipmentView() {
     return () => controller.abort();
   }, [selectedUnitId, trackDate]);
 
-  /** Підсумок флоту з БД (CRON), без N× /api/wialon/track */
+  /** Підсумок флоту: БД + sync з Wialon якщо порожньо / застаріло / refresh */
   useEffect(() => {
     if (loading || units.length === 0) return;
 
     const dayKey = calendarDateToYmd(fleetSummaryDate);
+    const isToday = dayKey === todayKyivYmd();
     const ignoreDrainIds = units
       .filter((u) => isFuelDeliveryUnit(u.nm))
       .map((u) => u.id);
     const cacheKey = `${dayKey}|nodrain:${ignoreDrainIds.join(",")}`;
-    const cached = fleetSummaryCacheRef.current.get(cacheKey);
+    const forceRefresh = fleetSummaryForceRefreshRef.current;
+    if (forceRefresh) fleetSummaryForceRefreshRef.current = false;
+    const cached = forceRefresh || isToday
+      ? undefined
+      : fleetSummaryCacheRef.current.get(cacheKey);
     if (cached?.byMetric) {
       setFleetSummary(cached);
       setFleetSummarySource("db");
@@ -1532,7 +1543,9 @@ export function EquipmentView() {
     const params = new URLSearchParams({
       date: dayKey,
       unitIds: units.map((u) => u.id).join(","),
+      syncIfEmpty: "1",
     });
+    if (forceRefresh) params.set("refresh", "1");
     if (ignoreDrainIds.length > 0) {
       params.set("ignoreDrainIds", ignoreDrainIds.join(","));
     }
@@ -1551,6 +1564,8 @@ export function EquipmentView() {
           drainEvents?: number;
           byMetric?: FleetDaySummary["byMetric"];
           source?: "db" | "empty";
+          syncedAt?: string | null;
+          truncated?: boolean;
           unitStats?: Array<{
             wialonUnitId: number;
             hoursIdling: number;
@@ -1569,13 +1584,17 @@ export function EquipmentView() {
           hoursIdling: data.hoursIdling ?? 0,
           drainEvents: data.drainEvents ?? 0,
           byMetric: data.byMetric ?? emptyFleetByMetric(),
+          syncedAt: data.syncedAt ?? null,
+          truncated: data.truncated === true,
         };
-        // Не кешуємо порожній результат — CRON може ще не відпрацювати
-        if (data.source === "db") {
+        if (data.source === "db" && !isToday) {
           fleetSummaryCacheRef.current.set(cacheKey, next);
         }
         setFleetSummary(next);
         setFleetSummarySource(data.source ?? "empty");
+        if (isToday && data.unitStats) {
+          setAlertUnitStats(data.unitStats);
+        }
       })
       .catch((err: unknown) => {
         if (controller.signal.aborted) return;
@@ -1596,11 +1615,18 @@ export function EquipmentView() {
       });
 
     return () => controller.abort();
-  }, [units, fleetSummaryDate, loading]);
+  }, [
+    fleetUnitIdsKey,
+    fleetSummaryDate,
+    loading,
+    fleetSummaryRefreshToken,
+    fleetSummaryTick,
+  ]);
 
-  /** Дзвіночок завжди бере денну статистику за сьогодні (Kyiv), навіть якщо KPI дивиться на інший день */
+  /** Дзвіночок: сьогоднішні unitStats, якщо KPI дивиться на інший день */
   useEffect(() => {
     if (loading || units.length === 0) return;
+    if (calendarDateToYmd(fleetSummaryDate) === todayKyivYmd()) return;
 
     const dayKey = todayKyivYmd();
     const ignoreDrainIds = units
@@ -1636,7 +1662,16 @@ export function EquipmentView() {
       });
 
     return () => controller.abort();
-  }, [units, loading]);
+  }, [units, loading, fleetSummaryDate]);
+
+  /** Автооновлення KPI сьогодні кожні 15 хв */
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      if (calendarDateToYmd(fleetSummaryDate) !== todayKyivYmd()) return;
+      setFleetSummaryTick((n) => n + 1);
+    }, 15 * 60 * 1000);
+    return () => window.clearInterval(id);
+  }, [fleetSummaryDate]);
 
   useEffect(() => {
     setSummaryMetric(null);
@@ -1768,14 +1803,6 @@ export function EquipmentView() {
     return null;
   }, [fleetSummaryLoading, fleetSummary, fleetSummarySource]);
 
-  const idleHoursByUnitId = useMemo(() => {
-    const map = new Map<number, number>();
-    for (const row of alertUnitStats) {
-      map.set(row.wialonUnitId, row.hoursIdling);
-    }
-    return map;
-  }, [alertUnitStats]);
-
   const drainEventsByUnitId = useMemo(() => {
     const map = new Map<number, number>();
     for (const row of alertUnitStats) {
@@ -1791,11 +1818,10 @@ export function EquipmentView() {
       buildSmartAlerts({
         units,
         analyticsByUnitId,
-        idleHoursByUnitId,
         drainEventsByUnitId,
         alertDayKey: todayKyivYmd(),
       }),
-    [units, analyticsByUnitId, idleHoursByUnitId, drainEventsByUnitId]
+    [units, analyticsByUnitId, drainEventsByUnitId]
   );
 
   const isDesktopMapLayout = useMediaQuery("(min-width: 768px)");
@@ -2064,6 +2090,11 @@ export function EquipmentView() {
               firstId != null ? units.find((u) => u.id === firstId) : null;
             if (unit) openUnitFromList(unit);
           }
+        }}
+        onSummaryRefresh={() => {
+          fleetSummaryCacheRef.current.clear();
+          fleetSummaryForceRefreshRef.current = true;
+          setFleetSummaryRefreshToken((n) => n + 1);
         }}
         detailContent={
           liveSelectedUnit && selectedTelemetry ? (

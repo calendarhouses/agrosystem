@@ -9,6 +9,7 @@ import {
 } from "@/lib/wialon";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 const JSON_UTF8 = {
   "Content-Type": "application/json; charset=utf-8",

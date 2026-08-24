@@ -21,6 +21,7 @@ import {
 } from "@/lib/wialon";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 const JSON_UTF8 = {
   "Content-Type": "application/json; charset=utf-8",
@@ -96,12 +97,16 @@ export async function GET() {
 
     try {
       const eid = await wialonLogin();
-      const [units, resources] = await Promise.all([
-        getWialonUnits(eid),
-        getWialonGeofences(eid),
-      ]);
-      wialonUnits = units;
-      geofences = wialonResourcesToGeofenceGeoJSON(resources);
+      wialonUnits = await getWialonUnits(eid);
+      try {
+        const resources = await getWialonGeofences(eid);
+        geofences = wialonResourcesToGeofenceGeoJSON(resources);
+      } catch (geoErr) {
+        wialonError =
+          geoErr instanceof Error
+            ? `Геозони: ${geoErr.message}`
+            : "Не вдалося завантажити геозони";
+      }
     } catch (err) {
       wialonError =
         err instanceof Error ? err.message : "Не вдалося завантажити Wialon";

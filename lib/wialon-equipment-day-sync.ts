@@ -45,7 +45,27 @@ export type SyncEquipmentDayResult = {
   unitsProcessed: number;
   upserted: number;
   errors: string[];
+  truncated: boolean;
 };
+
+/** Сьогоднішні KPI вважаємо застарілими після цього інтервалу */
+export const FLEET_DAY_STALE_MS = 15 * 60 * 1000;
+/** Бюджет user-request sync (Hobby ~60с) */
+export const FLEET_DAY_SYNC_BUDGET_MS = 50_000;
+
+export function isFleetDayStatsStale(
+  dateYmd: string,
+  syncedAt: string | null,
+  now = new Date()
+): boolean {
+  if (dateYmd !== todayKyivYmd(now)) return false;
+  if (!syncedAt) return true;
+  const t = Date.parse(syncedAt);
+  if (!Number.isFinite(t)) return true;
+  return now.getTime() - t >= FLEET_DAY_STALE_MS;
+}
+
+const inflightSync = new Map<string, Promise<SyncEquipmentDayResult>>();
 
 function toPolygonFeature(
   geometry: FieldGeometry
@@ -96,18 +116,76 @@ async function loadFieldPolygons(
   return out;
 }
 
+async function persistDayStatRows(
+  supabase: ReturnType<typeof createServiceSupabase>,
+  upserts: EquipmentDayStatRow[]
+): Promise<number> {
+  if (upserts.length === 0) return 0;
+  const { error, count } = await supabase
+    .from("wialon_equipment_day_stats")
+    .upsert(upserts, {
+      onConflict: "wialon_unit_id,date,season",
+      count: "exact",
+    });
+  if (error) {
+    if (
+      error.message?.includes("wialon_equipment_day_stats") ||
+      error.code === "42P01" ||
+      error.code === "PGRST205"
+    ) {
+      throw new Error(
+        "Таблиця wialon_equipment_day_stats відсутня. Виконай міграцію 026."
+      );
+    }
+    if (
+      error.message?.includes("onConflict") ||
+      error.code === "42P10" ||
+      error.message?.includes("wialon_equipment_day_stats_unique")
+    ) {
+      const mappedOnly = upserts.filter((r) => r.equipment_id != null);
+      if (mappedOnly.length === 0) return 0;
+      const legacy = await supabase
+        .from("wialon_equipment_day_stats")
+        .upsert(mappedOnly, {
+          onConflict: "equipment_id,date,season",
+          count: "exact",
+        });
+      if (legacy.error) throw new Error(legacy.error.message);
+      return legacy.count ?? mappedOnly.length;
+    }
+    throw new Error(error.message);
+  }
+  return count ?? upserts.length;
+}
+
 /**
  * Синхронізує денну статистику для всього Wialon-флоту
  * (equipment_id опційний — поки немає зіставлення з 1С).
  */
 export async function syncWialonEquipmentDayStats(
-  dateYmd: string = todayKyivYmd()
+  dateYmd: string = todayKyivYmd(),
+  options?: { budgetMs?: number }
+): Promise<SyncEquipmentDayResult> {
+  const existing = inflightSync.get(dateYmd);
+  if (existing) return existing;
+  const pending = runEquipmentDaySync(dateYmd, options).finally(() => {
+    if (inflightSync.get(dateYmd) === pending) inflightSync.delete(dateYmd);
+  });
+  inflightSync.set(dateYmd, pending);
+  return pending;
+}
+
+async function runEquipmentDaySync(
+  dateYmd: string,
+  options?: { budgetMs?: number }
 ): Promise<SyncEquipmentDayResult> {
   const season = currentAgroSeason();
   const { fromUnix, toUnix } = kyivDayBoundsUnix(dateYmd);
   const supabase = createServiceSupabase();
   const syncTime = new Date().toISOString();
   const errors: string[] = [];
+  const budgetMs = options?.budgetMs ?? FLEET_DAY_SYNC_BUDGET_MS;
+  const startedAt = Date.now();
 
   const eid = await wialonLogin();
   const [wialonUnits, eqResult, polygons] = await Promise.all([
@@ -131,13 +209,11 @@ export async function syncWialonEquipmentDayStats(
     }
   }
 
-  const units = wialonUnits
-    .slice(0, MAX_UNITS)
-    .map((u) => ({
-      wialon_id: u.id,
-      name: u.nm,
-      equipment_id: eqByWialon.get(u.id) ?? null,
-    }));
+  const units = wialonUnits.slice(0, MAX_UNITS).map((u) => ({
+    wialon_id: u.id,
+    name: u.nm,
+    equipment_id: eqByWialon.get(u.id) ?? null,
+  }));
 
   if (units.length === 0) {
     return {
@@ -146,12 +222,23 @@ export async function syncWialonEquipmentDayStats(
       unitsProcessed: 0,
       upserted: 0,
       errors: [],
+      truncated: false,
     };
   }
 
-  const upserts: EquipmentDayStatRow[] = [];
+  let upserted = 0;
+  let truncated = false;
+  let processed = 0;
 
   for (let i = 0; i < units.length; i += CONCURRENCY) {
+    if (Date.now() - startedAt > budgetMs) {
+      truncated = true;
+      errors.push(
+        `Час вичерпано, лишилось ${units.length - i} одиниць — натисніть оновлення ще раз`
+      );
+      break;
+    }
+
     const batch = units.slice(i, i + CONCURRENCY);
     const results = await Promise.all(
       batch.map(async (unit) => {
@@ -183,67 +270,24 @@ export async function syncWialonEquipmentDayStats(
             sync_time: syncTime,
           } satisfies EquipmentDayStatRow;
         } catch (err) {
-          const msg =
-            err instanceof Error ? err.message : "помилка Wialon";
+          const msg = err instanceof Error ? err.message : "помилка Wialon";
           errors.push(`${unit.name} (${unit.wialon_id}): ${msg}`);
           return null;
         }
       })
     );
-    for (const row of results) {
-      if (row) upserts.push(row);
-    }
-  }
-
-  let upserted = 0;
-  if (upserts.length > 0) {
-    const { error, count } = await supabase
-      .from("wialon_equipment_day_stats")
-      .upsert(upserts, {
-        onConflict: "wialon_unit_id,date,season",
-        count: "exact",
-      });
-    if (error) {
-      if (
-        error.message?.includes("wialon_equipment_day_stats") ||
-        error.code === "42P01" ||
-        error.code === "PGRST205"
-      ) {
-        throw new Error(
-          "Таблиця wialon_equipment_day_stats відсутня. Виконай міграцію 026."
-        );
-      }
-      // Fallback: стара unique (equipment_id,date,season) до міграції 028
-      if (
-        error.message?.includes("onConflict") ||
-        error.code === "42P10" ||
-        error.message?.includes("wialon_equipment_day_stats_unique")
-      ) {
-        const mappedOnly = upserts.filter((r) => r.equipment_id != null);
-        if (mappedOnly.length > 0) {
-          const legacy = await supabase
-            .from("wialon_equipment_day_stats")
-            .upsert(mappedOnly, {
-              onConflict: "equipment_id,date,season",
-              count: "exact",
-            });
-          if (legacy.error) throw new Error(legacy.error.message);
-          upserted = legacy.count ?? mappedOnly.length;
-        }
-      } else {
-        throw new Error(error.message);
-      }
-    } else {
-      upserted = count ?? upserts.length;
-    }
+    const rows = results.filter((row): row is EquipmentDayStatRow => row != null);
+    processed += batch.length;
+    upserted += await persistDayStatRows(supabase, rows);
   }
 
   return {
     ok: true,
     date: dateYmd,
-    unitsProcessed: units.length,
+    unitsProcessed: processed,
     upserted,
     errors,
+    truncated,
   };
 }
 

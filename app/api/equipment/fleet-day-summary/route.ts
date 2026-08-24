@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import {
+  isFleetDayStatsStale,
   loadFleetDaySummaryFromDb,
+  syncWialonEquipmentDayStats,
   todayKyivYmd,
 } from "@/lib/wialon-equipment-day-sync";
 
 export const runtime = "nodejs";
-/** Лише читання з БД — sync робить CRON, не user request */
-export const maxDuration = 30;
+/** Hobby ~60с; sync пише батчами і обривається по бюджету */
+export const maxDuration = 60;
 
 const JSON_UTF8 = {
   "Content-Type": "application/json; charset=utf-8",
@@ -23,11 +25,13 @@ function parseIdList(raw: string): number[] {
 
 /**
  * GET /api/equipment/fleet-day-summary?date=YYYY-MM-DD&unitIds=1,2,3&ignoreDrainIds=…
- * unitIds — поточний live-флот (Wialon).
- * ignoreDrainIds — бензовоз тощо: не рахувати «зливи» (роздача палива).
+ * &syncIfEmpty=1 — якщо в БД порожньо, підтягнути з Wialon
+ * &refresh=1 — примусово пересинхронізувати день з Wialon
  *
- * Тільки читання wialon_equipment_day_stats.
- * Заповнення таблиці — /api/cron/sync-wialon-equipment-day (кожні 15 хв).
+ * unitIds — поточний live-флот (Wialon).
+ * ignoreDrainIds — бензовоз тощо: не рахувати «зливи».
+ *
+ * CRON лишається фоновою підстраховкою; UI може оновлюватись без нього.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -42,20 +46,43 @@ export async function GET(request: NextRequest) {
     const ignoreDrainIds = parseIdList(
       url.searchParams.get("ignoreDrainIds") ?? ""
     );
+    const refresh = url.searchParams.get("refresh") === "1";
+    const syncIfEmpty = url.searchParams.get("syncIfEmpty") === "1";
 
-    const summary = await loadFleetDaySummaryFromDb(
+    const loadOpts = {
+      ignoreDrainUnitIds:
+        ignoreDrainIds.length > 0 ? ignoreDrainIds : undefined,
+    };
+
+    let summary = await loadFleetDaySummaryFromDb(
       dateYmd,
       trackedIds.length > 0 ? trackedIds : undefined,
-      {
-        ignoreDrainUnitIds:
-          ignoreDrainIds.length > 0 ? ignoreDrainIds : undefined,
-      }
+      loadOpts
     );
+
+    const shouldSync =
+      refresh ||
+      (syncIfEmpty &&
+        (summary.source === "empty" ||
+          isFleetDayStatsStale(dateYmd, summary.syncedAt)));
+
+    let truncated = false;
+    if (shouldSync) {
+      const syncResult = await syncWialonEquipmentDayStats(dateYmd);
+      truncated = syncResult.truncated;
+      summary = await loadFleetDaySummaryFromDb(
+        dateYmd,
+        trackedIds.length > 0 ? trackedIds : undefined,
+        loadOpts
+      );
+    }
 
     return NextResponse.json(
       {
         ok: true,
         date: dateYmd,
+        synced: shouldSync,
+        truncated,
         ...summary,
       },
       { headers: JSON_UTF8 }
