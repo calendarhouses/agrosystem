@@ -105,17 +105,17 @@ function getDateRange(
     return { start: startOfDay(day), end: endOfDay(day) };
   }
   if (period === "Тиждень") {
-    return { start: startOfDay(subDays(now, 6)), end: now };
+    return { start: startOfDay(subDays(now, 6)), end: endOfDay(now) };
   }
   if (period === "Місяць") {
-    return { start: startOfDay(subDays(now, 29)), end: now };
+    return { start: startOfDay(subDays(now, 29)), end: endOfDay(now) };
   }
   if (period === "Рік") {
-    return { start: startOfYear(now), end: now };
+    return { start: startOfYear(now), end: endOfDay(now) };
   }
 
-  // Сьогодні (і fallback)
-  return { start: startOfDay(now), end: now };
+  // Сьогодні — завжди до кінця доби (інакше нові заправки «після відкриття сторінки» не видно)
+  return { start: startOfDay(now), end: endOfDay(now) };
 }
 
 /** Fallback, якщо Wialon недоступний */
@@ -683,13 +683,15 @@ export function FuelView({
 
   const refreshTransactions = useCallback(async () => {
     setTxLoading(true);
+    // Свіжий кінець періоду (не «час відкриття сторінки»)
+    const range = getDateRange(period, customRange);
     try {
       const supabase = createBrowserSupabase();
       const { data, error } = await supabase
         .from("fuel_transactions")
         .select(FUEL_TRANSACTIONS_SELECT)
-        .gte("transaction_date", dateRange.start.toISOString())
-        .lte("transaction_date", dateRange.end.toISOString())
+        .gte("transaction_date", range.start.toISOString())
+        .lte("transaction_date", range.end.toISOString())
         .order("transaction_date", { ascending: false })
         .limit(200);
 
@@ -704,8 +706,8 @@ export function FuelView({
 
       const params = new URLSearchParams({
         limit: "200",
-        from: dateRange.start.toISOString(),
-        to: dateRange.end.toISOString(),
+        from: range.start.toISOString(),
+        to: range.end.toISOString(),
       });
       const response = await fetch(`/api/fuel/transactions?${params}`);
       const json = (await response.json()) as {
@@ -716,18 +718,19 @@ export function FuelView({
     } finally {
       setTxLoading(false);
     }
-  }, [dateRange]);
+  }, [period, customRange]);
 
   /** Кнопка «Оновити»: повторна звірка Wialon + перезавантаження журналу */
   const refreshJournalWithReverify = useCallback(async () => {
     setTxLoading(true);
+    const range = getDateRange(period, customRange);
     try {
       const reverify = await fetch("/api/fuel/transactions/reverify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          from: dateRange.start.toISOString(),
-          to: dateRange.end.toISOString(),
+          from: range.start.toISOString(),
+          to: range.end.toISOString(),
         }),
       });
       const reverifyJson = (await reverify.json()) as {
@@ -745,20 +748,21 @@ export function FuelView({
     } finally {
       setTxLoading(false);
     }
-  }, [dateRange, refreshTransactions]);
+  }, [period, customRange, refreshTransactions]);
 
   /** Точкова звірка однієї outbound («Очікування GPS») */
   const reverifySingleTransaction = useCallback(
     async (txId: string) => {
       setReverifyTxId(txId);
+      const range = getDateRange(period, customRange);
       try {
         const response = await fetch("/api/fuel/transactions/reverify", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             transactionId: txId,
-            from: dateRange.start.toISOString(),
-            to: dateRange.end.toISOString(),
+            from: range.start.toISOString(),
+            to: range.end.toISOString(),
           }),
         });
         const json = (await response.json()) as {
@@ -787,7 +791,7 @@ export function FuelView({
         setReverifyTxId(null);
       }
     },
-    [dateRange, refreshTransactions]
+    [period, customRange, refreshTransactions]
   );
 
   const sendTransactionTo1c = useCallback(
@@ -967,7 +971,7 @@ export function FuelView({
     return () => {
       cancelled = true;
     };
-  }, [fieldFuelPeriod]);
+  }, [fieldFuelPeriod, kpiRefreshToken]);
 
   /** Список техніки з Wialon для модалки заправки */
   useEffect(() => {
@@ -1037,6 +1041,7 @@ export function FuelView({
         onRadarApproved={() => {
           void refreshStorages();
           void refreshTransactions();
+          setKpiRefreshToken((n) => n + 1);
         }}
       />
 
@@ -1326,15 +1331,11 @@ export function FuelView({
                           {litersLabel}
                         </td>
                         <td className="min-w-[140px] px-4 py-4 text-left">
-                          {tx.type === "inbound" || tx.type === "transfer" ? (
-                            <BasSyncBadge
-                              status={tx.syncStatus}
-                              sending={send1cTxId === tx.id}
-                              onSend={() => void sendTransactionTo1c(tx)}
-                            />
-                          ) : (
-                            <span className="text-xs text-zinc-400">—</span>
-                          )}
+                          <BasSyncBadge
+                            status={tx.syncStatus}
+                            sending={send1cTxId === tx.id}
+                            onSend={() => void sendTransactionTo1c(tx)}
+                          />
                         </td>
                         <td className="w-12 text-center">
                           <DropdownMenu>

@@ -114,16 +114,21 @@ async function submitRefuel(payload: {
   operatorName?: string | null;
   hasFuelSensor: boolean;
   fieldOperationId?: string | null;
-}): Promise<void> {
+}): Promise<{ transaction?: FuelTransaction }> {
   const response = await fetch("/api/fuel/refuel", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  const data = (await response.json()) as { ok?: boolean; error?: string };
+  const data = (await response.json()) as {
+    ok?: boolean;
+    error?: string;
+    transaction?: FuelTransaction;
+  };
   if (!response.ok || !data.ok) {
     throw new Error(data.error || "Не вдалося зберегти заправку");
   }
+  return { transaction: data.transaction };
 }
 
 function parseAmount(raw: string): number | null {

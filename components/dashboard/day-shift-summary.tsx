@@ -233,15 +233,26 @@ export function DayShiftSummary({
             Немає датчика
           </p>
         ) : fuelEvents.length === 0 ? (
-          <div className="rounded-xl border border-emerald-200/70 bg-emerald-50/70 px-3 py-3">
-            <p className="text-sm font-semibold text-emerald-800">
-              Підозр на злив не виявлено
-            </p>
-            <p className="mt-0.5 text-xs text-emerald-700/80">
-              Немає стійкого падіння ≥40 л на довгій стоянці (з підтвердженням
-              датчика)
-            </p>
-          </div>
+          summary.fuelDelta != null && summary.fuelDelta > 15 ? (
+            <div className="rounded-xl border border-emerald-200/70 bg-emerald-50/70 px-3 py-3">
+              <p className="text-sm font-semibold text-emerald-800">
+                Заправка за день ≈ +{Math.round(summary.fuelDelta)} л
+              </p>
+              <p className="mt-0.5 text-xs text-emerald-700/80">
+                Рівень бака зріс за обрану добу (ДУТ). Зливів не виявлено.
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-emerald-200/70 bg-emerald-50/70 px-3 py-3">
+              <p className="text-sm font-semibold text-emerald-800">
+                Підозр на злив не виявлено
+              </p>
+              <p className="mt-0.5 text-xs text-emerald-700/80">
+                Немає стійкого падіння ≥40 л на довгій стоянці (з підтвердженням
+                датчика)
+              </p>
+            </div>
+          )
         ) : (
           <ul className="space-y-2">
             {fuelEvents.map((event) => (
