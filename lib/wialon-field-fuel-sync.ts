@@ -697,6 +697,84 @@ export type FieldFuelBreakdownRow = {
   fieldId: string;
 };
 
+function relationName(value: unknown): string | null {
+  if (value == null) return null;
+  if (Array.isArray(value)) {
+    const first = value[0] as { name?: unknown } | undefined;
+    return first?.name != null ? String(first.name).trim() || null : null;
+  }
+  if (typeof value === "object" && "name" in value) {
+    const name = (value as { name?: unknown }).name;
+    return name != null ? String(name).trim() || null : null;
+  }
+  return null;
+}
+
+function isPlaceholderEquipmentName(name: string): boolean {
+  return (
+    !name.trim() ||
+    name === "Техніка" ||
+    /^Wialon #\d+$/i.test(name.trim())
+  );
+}
+
+/**
+ * Імена для розшифровки: equipment (id / wialon_id) → назва з Wialon.
+ * Після 033 багато логів без equipment_id — без цього fallback лишається «Wialon #…».
+ */
+async function resolveBreakdownEquipmentNames(
+  wialonIds: number[],
+  knownByEquipmentId: Map<string, string>
+): Promise<{
+  byWialonId: Map<number, string>;
+  equipmentIdByWialon: Map<number, string>;
+}> {
+  const byWialonId = new Map<number, string>();
+  const equipmentIdByWialon = new Map<number, string>();
+  const unique = [...new Set(wialonIds.filter((id) => id > 0))];
+  if (unique.length === 0) {
+    return { byWialonId, equipmentIdByWialon };
+  }
+
+  const supabase = createServiceSupabase();
+  const { data: eqRows } = await supabase
+    .from("equipment")
+    .select("id, name, wialon_id")
+    .in("wialon_id", unique);
+
+  for (const row of eqRows ?? []) {
+    const wid = Number(row.wialon_id);
+    if (!Number.isFinite(wid) || wid <= 0) continue;
+    const name = String(row.name ?? "").trim();
+    if (name) byWialonId.set(wid, name);
+    equipmentIdByWialon.set(wid, String(row.id));
+    if (name) knownByEquipmentId.set(String(row.id), name);
+  }
+
+  const stillMissing = unique.filter((id) => !byWialonId.has(id));
+  if (stillMissing.length === 0) {
+    return { byWialonId, equipmentIdByWialon };
+  }
+
+  try {
+    const eid = await wialonLogin();
+    const units = await listWialonUnitBasics(eid);
+    const want = new Set(stillMissing);
+    for (const u of units) {
+      if (!want.has(u.id)) continue;
+      const nm = String(u.nm ?? "").trim();
+      if (nm) byWialonId.set(u.id, nm);
+    }
+  } catch (err) {
+    console.error(
+      "[field-fuel] breakdown Wialon names",
+      err instanceof Error ? err.message : err
+    );
+  }
+
+  return { byWialonId, equipmentIdByWialon };
+}
+
 /**
  * Розшифровка: хто × на якому полі спалив за період.
  */
@@ -744,21 +822,9 @@ export async function listFieldFuelBreakdownForPeriod(
     throw new Error(error.message);
   }
 
-  const relationName = (value: unknown): string | null => {
-    if (value == null) return null;
-    if (Array.isArray(value)) {
-      const first = value[0] as { name?: unknown } | undefined;
-      return first?.name != null ? String(first.name) : null;
-    }
-    if (typeof value === "object" && "name" in value) {
-      const name = (value as { name?: unknown }).name;
-      return name != null ? String(name) : null;
-    }
-    return null;
-  };
-
   type Agg = FieldFuelBreakdownRow;
   const map = new Map<string, Agg>();
+  const knownByEquipmentId = new Map<string, string>();
 
   for (const row of data ?? []) {
     const liters = Number(row.fuel_consumed) || 0;
@@ -771,13 +837,21 @@ export async function listFieldFuelBreakdownForPeriod(
         ? Number(row.wialon_unit_id)
         : null;
     const fieldName = relationName(row.farm_fields) || "Поле";
+    const joinedName = relationName(row.equipment);
+    if (equipmentId && joinedName) {
+      knownByEquipmentId.set(equipmentId, joinedName);
+    }
     const equipmentName =
-      relationName(row.equipment) ||
+      joinedName ||
       (wialonUnitId != null ? `Wialon #${wialonUnitId}` : "Техніка");
-    const key = `${equipmentId ?? wialonUnitId ?? "x"}|${fieldId}`;
+    const key = `${wialonUnitId ?? equipmentId ?? "x"}|${fieldId}`;
     const prev = map.get(key);
     if (prev) {
       prev.liters = Math.round((prev.liters + liters) * 10) / 10;
+      if (isPlaceholderEquipmentName(prev.equipmentName) && joinedName) {
+        prev.equipmentName = joinedName;
+      }
+      if (!prev.equipmentId && equipmentId) prev.equipmentId = equipmentId;
     } else {
       map.set(key, {
         equipmentName,
@@ -787,6 +861,34 @@ export async function listFieldFuelBreakdownForPeriod(
         equipmentId,
         fieldId,
       });
+    }
+  }
+
+  const needResolve = [...map.values()]
+    .map((r) => r.wialonUnitId)
+    .filter((id): id is number => id != null && id > 0);
+
+  if (needResolve.length > 0) {
+    const { byWialonId, equipmentIdByWialon } =
+      await resolveBreakdownEquipmentNames(needResolve, knownByEquipmentId);
+
+    for (const row of map.values()) {
+      if (row.equipmentId && knownByEquipmentId.has(row.equipmentId)) {
+        const known = knownByEquipmentId.get(row.equipmentId)!;
+        if (!isPlaceholderEquipmentName(known)) {
+          row.equipmentName = known;
+        }
+      }
+      if (row.wialonUnitId != null) {
+        const fromWialon = byWialonId.get(row.wialonUnitId);
+        if (fromWialon && isPlaceholderEquipmentName(row.equipmentName)) {
+          row.equipmentName = fromWialon;
+        }
+        if (!row.equipmentId) {
+          row.equipmentId =
+            equipmentIdByWialon.get(row.wialonUnitId) ?? null;
+        }
+      }
     }
   }
 
