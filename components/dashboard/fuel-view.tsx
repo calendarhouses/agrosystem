@@ -25,6 +25,8 @@ import type { DateRange } from "react-day-picker";
 
 import {
   getFieldFuelConsumed,
+  getFuelRefueledForPeriod,
+  type FieldFuelBreakdownRow,
   type FieldFuelPeriod,
 } from "@/app/fuel/actions";
 import {
@@ -610,6 +612,20 @@ export function FuelView({
   const [fieldFuelLoading, setFieldFuelLoading] = useState(true);
   const [fieldFuelPeriod, setFieldFuelPeriod] =
     useState<FieldFuelPeriod>("today");
+  const [fieldFuelBreakdown, setFieldFuelBreakdown] = useState<
+    FieldFuelBreakdownRow[]
+  >([]);
+  const [refuelLiters, setRefuelLiters] = useState<number | null>(null);
+  const [refuelHasData, setRefuelHasData] = useState(false);
+  const [refuelLoading, setRefuelLoading] = useState(true);
+  const [refuelBreakdown, setRefuelBreakdown] = useState<
+    Array<{
+      equipmentName: string;
+      liters: number;
+      wialonUnitId: number | null;
+    }>
+  >([]);
+  const [kpiRefreshToken, setKpiRefreshToken] = useState(0);
   const [reverifyTxId, setReverifyTxId] = useState<string | null>(null);
   const [send1cTxId, setSend1cTxId] = useState<string | null>(null);
   const [deleteStorage, setDeleteStorage] = useState<FuelStorage | null>(null);
@@ -847,6 +863,7 @@ export function FuelView({
 
   const refreshAll = useCallback(async () => {
     await Promise.all([refreshStorages(), refreshTransactions()]);
+    setKpiRefreshToken((n) => n + 1);
   }, [refreshStorages, refreshTransactions]);
 
   useEffect(() => {
@@ -916,20 +933,36 @@ export function FuelView({
     };
   }, [refreshStorages, refreshTransactions, refreshAll]);
 
-  /** Витрата на полях: live Wialon (сьогодні/вчора) → логи */
+  /** Витрата на полях + заправки зі складу за обраний період */
   useEffect(() => {
     let cancelled = false;
     setFieldFuelLoading(true);
-    void getFieldFuelConsumed(fieldFuelPeriod).then((res) => {
+    setRefuelLoading(true);
+    void Promise.all([
+      getFieldFuelConsumed(fieldFuelPeriod),
+      getFuelRefueledForPeriod(fieldFuelPeriod),
+    ]).then(([burned, refueled]) => {
       if (cancelled) return;
-      if (res.ok) {
-        setFieldFuelToday(res.data.liters);
-        setFieldFuelHasData(res.data.hasData);
+      if (burned.ok) {
+        setFieldFuelToday(burned.data.liters);
+        setFieldFuelHasData(burned.data.hasData);
+        setFieldFuelBreakdown(burned.data.breakdown);
       } else {
         setFieldFuelToday(null);
         setFieldFuelHasData(false);
+        setFieldFuelBreakdown([]);
+      }
+      if (refueled.ok) {
+        setRefuelLiters(refueled.data.liters);
+        setRefuelHasData(refueled.data.hasData);
+        setRefuelBreakdown(refueled.data.breakdown);
+      } else {
+        setRefuelLiters(null);
+        setRefuelHasData(false);
+        setRefuelBreakdown([]);
       }
       setFieldFuelLoading(false);
+      setRefuelLoading(false);
     });
     return () => {
       cancelled = true;
@@ -983,6 +1016,11 @@ export function FuelView({
         fieldFuelHasData={fieldFuelHasData}
         fieldFuelLoading={fieldFuelLoading}
         fieldFuelPeriod={fieldFuelPeriod}
+        fieldFuelBreakdown={fieldFuelBreakdown}
+        refuelLiters={refuelLiters}
+        refuelHasData={refuelHasData}
+        refuelLoading={refuelLoading}
+        refuelBreakdown={refuelBreakdown}
         onFieldFuelPeriodChange={setFieldFuelPeriod}
         onPurchase={() => {
           setEditTransaction(null);

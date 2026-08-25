@@ -606,11 +606,29 @@ export function todayKyivDateString(now = new Date()): string {
   return todayKyivYmd(now);
 }
 
-export type FieldFuelPeriod = "today" | "yesterday" | "week";
+export type FieldFuelPeriod = "today" | "yesterday" | "week" | "month";
+
+export function resolveFieldFuelPeriodBounds(
+  period: FieldFuelPeriod,
+  now = new Date()
+): { fromDate: string; toDate: string } {
+  const today = todayKyivYmd(now);
+  if (period === "yesterday") {
+    const d = shiftKyivYmd(today, -1);
+    return { fromDate: d, toDate: d };
+  }
+  if (period === "week") {
+    return { fromDate: shiftKyivYmd(today, -6), toDate: today };
+  }
+  if (period === "month") {
+    return { fromDate: shiftKyivYmd(today, -29), toDate: today };
+  }
+  return { fromDate: today, toDate: today };
+}
 
 /**
  * Сума спаленого за період Europe/Kyiv:
- * today / yesterday / week (останні 7 календарних днів включно з сьогодні).
+ * today / yesterday / week (7 днів) / month (30 днів).
  */
 export async function sumFieldFuelConsumedForPeriod(
   period: FieldFuelPeriod,
@@ -622,16 +640,7 @@ export async function sumFieldFuelConsumedForPeriod(
   liters: number;
   hasData: boolean;
 }> {
-  const today = todayKyivYmd(now);
-  let fromDate = today;
-  let toDate = today;
-  if (period === "yesterday") {
-    fromDate = shiftKyivYmd(today, -1);
-    toDate = fromDate;
-  } else if (period === "week") {
-    fromDate = shiftKyivYmd(today, -6);
-    toDate = today;
-  }
+  const { fromDate, toDate } = resolveFieldFuelPeriodBounds(period, now);
 
   const supabase = createServiceSupabase();
   const { fromUnix } = kyivDayBoundsUnix(fromDate);
@@ -677,4 +686,110 @@ export async function sumFieldFuelConsumedForPeriod(
     liters: Math.round(sum * 10) / 10,
     hasData: rows.length > 0,
   };
+}
+
+export type FieldFuelBreakdownRow = {
+  equipmentName: string;
+  fieldName: string;
+  liters: number;
+  wialonUnitId: number | null;
+  equipmentId: string | null;
+  fieldId: string;
+};
+
+/**
+ * Розшифровка: хто × на якому полі спалив за період.
+ */
+export async function listFieldFuelBreakdownForPeriod(
+  period: FieldFuelPeriod,
+  now = new Date()
+): Promise<{
+  period: FieldFuelPeriod;
+  fromDate: string;
+  toDate: string;
+  rows: FieldFuelBreakdownRow[];
+}> {
+  const { fromDate, toDate } = resolveFieldFuelPeriodBounds(period, now);
+  const supabase = createServiceSupabase();
+
+  let { data, error } = await supabase
+    .from("wialon_field_fuel_logs")
+    .select(
+      "fuel_consumed, wialon_unit_id, equipment_id, field_id, farm_fields(name), equipment(name)"
+    )
+    .gte("date", fromDate)
+    .lte("date", toDate)
+    .gt("fuel_consumed", 0);
+
+  if (error && (error.message?.includes("wialon_unit_id") || error.code === "42703")) {
+    const legacy = await supabase
+      .from("wialon_field_fuel_logs")
+      .select(
+        "fuel_consumed, equipment_id, field_id, farm_fields(name), equipment(name)"
+      )
+      .gte("date", fromDate)
+      .lte("date", toDate)
+      .gt("fuel_consumed", 0);
+    data = (legacy.data ?? []).map((row) => ({
+      ...row,
+      wialon_unit_id: null,
+    }));
+    error = legacy.error;
+  }
+
+  if (error) {
+    if (error.code === "PGRST205" || error.code === "42P01") {
+      return { period, fromDate, toDate, rows: [] };
+    }
+    throw new Error(error.message);
+  }
+
+  const relationName = (value: unknown): string | null => {
+    if (value == null) return null;
+    if (Array.isArray(value)) {
+      const first = value[0] as { name?: unknown } | undefined;
+      return first?.name != null ? String(first.name) : null;
+    }
+    if (typeof value === "object" && "name" in value) {
+      const name = (value as { name?: unknown }).name;
+      return name != null ? String(name) : null;
+    }
+    return null;
+  };
+
+  type Agg = FieldFuelBreakdownRow;
+  const map = new Map<string, Agg>();
+
+  for (const row of data ?? []) {
+    const liters = Number(row.fuel_consumed) || 0;
+    if (liters <= 0) continue;
+    const fieldId = String(row.field_id);
+    const equipmentId =
+      row.equipment_id != null ? String(row.equipment_id) : null;
+    const wialonUnitId =
+      row.wialon_unit_id != null && Number.isFinite(Number(row.wialon_unit_id))
+        ? Number(row.wialon_unit_id)
+        : null;
+    const fieldName = relationName(row.farm_fields) || "Поле";
+    const equipmentName =
+      relationName(row.equipment) ||
+      (wialonUnitId != null ? `Wialon #${wialonUnitId}` : "Техніка");
+    const key = `${equipmentId ?? wialonUnitId ?? "x"}|${fieldId}`;
+    const prev = map.get(key);
+    if (prev) {
+      prev.liters = Math.round((prev.liters + liters) * 10) / 10;
+    } else {
+      map.set(key, {
+        equipmentName,
+        fieldName,
+        liters: Math.round(liters * 10) / 10,
+        wialonUnitId,
+        equipmentId,
+        fieldId,
+      });
+    }
+  }
+
+  const rows = [...map.values()].sort((a, b) => b.liters - a.liters);
+  return { period, fromDate, toDate, rows };
 }

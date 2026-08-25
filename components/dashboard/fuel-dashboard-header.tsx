@@ -4,12 +4,16 @@ import {
   ArrowRightLeft,
   ChevronDown,
   Fuel,
+  Info,
   Loader2,
   Plus,
   Tractor,
 } from "lucide-react";
 
-import type { FieldFuelPeriod } from "@/app/fuel/actions";
+import type {
+  FieldFuelBreakdownRow,
+  FieldFuelPeriod,
+} from "@/app/fuel/actions";
 import { FuelRefuelRadar } from "@/components/dashboard/fuel-refuel-radar";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,6 +22,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Popover,
+  PopoverContent,
+  PopoverDescription,
+  PopoverHeader,
+  PopoverTitle,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import type { FuelStorage } from "@/lib/fuel-storages";
 import { cn } from "@/lib/utils";
@@ -34,13 +46,21 @@ const FIELD_FUEL_PERIODS: Array<{ id: FieldFuelPeriod; label: string }> = [
   { id: "today", label: "Сьогодні" },
   { id: "yesterday", label: "Вчора" },
   { id: "week", label: "7 днів" },
+  { id: "month", label: "Місяць" },
 ];
 
 function fieldFuelPeriodCaption(period: FieldFuelPeriod): string {
   if (period === "yesterday") return "вчора";
   if (period === "week") return "за 7 днів";
+  if (period === "month") return "за місяць";
   return "сьогодні";
 }
+
+type RefuelBreakdownRow = {
+  equipmentName: string;
+  liters: number;
+  wialonUnitId: number | null;
+};
 
 type FuelDashboardHeaderProps = {
   storages: FuelStorage[];
@@ -51,12 +71,54 @@ type FuelDashboardHeaderProps = {
   fieldFuelHasData: boolean;
   fieldFuelLoading: boolean;
   fieldFuelPeriod: FieldFuelPeriod;
+  fieldFuelBreakdown: FieldFuelBreakdownRow[];
+  refuelLiters: number | null;
+  refuelHasData: boolean;
+  refuelLoading: boolean;
+  refuelBreakdown: RefuelBreakdownRow[];
   onFieldFuelPeriodChange: (period: FieldFuelPeriod) => void;
   onPurchase: () => void;
   onTransfer: () => void;
   onRefuel: () => void;
   onRadarApproved: () => void;
 };
+
+function KpiBreakdownList({
+  emptyLabel,
+  rows,
+}: {
+  emptyLabel: string;
+  rows: Array<{ title: string; subtitle?: string; liters: number }>;
+}) {
+  if (rows.length === 0) {
+    return (
+      <p className="px-1 py-2 text-xs text-muted-foreground">{emptyLabel}</p>
+    );
+  }
+  return (
+    <ul className="max-h-64 space-y-1 overflow-y-auto pr-0.5">
+      {rows.map((row, index) => (
+        <li
+          key={`${row.title}-${row.subtitle ?? ""}-${index}`}
+          className="flex items-start justify-between gap-3 rounded-lg px-2 py-1.5 hover:bg-zinc-50"
+        >
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-zinc-900">
+              {row.title}
+            </p>
+            {row.subtitle ? (
+              <p className="truncate text-[11px] text-zinc-500">{row.subtitle}</p>
+            ) : null}
+          </div>
+          <p className="shrink-0 text-sm font-bold tabular-nums text-zinc-900">
+            {formatLiters(row.liters)}{" "}
+            <span className="text-[11px] font-semibold text-zinc-500">л</span>
+          </p>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 /** Монолітна Energy Header + Command Bar для /fuel */
 export function FuelDashboardHeader({
@@ -68,6 +130,11 @@ export function FuelDashboardHeader({
   fieldFuelHasData,
   fieldFuelLoading,
   fieldFuelPeriod,
+  fieldFuelBreakdown,
+  refuelLiters,
+  refuelHasData,
+  refuelLoading,
+  refuelBreakdown,
   onFieldFuelPeriodChange,
   onPurchase,
   onTransfer,
@@ -77,6 +144,16 @@ export function FuelDashboardHeader({
   const periodLabel =
     FIELD_FUEL_PERIODS.find((p) => p.id === fieldFuelPeriod)?.label ??
     "Сьогодні";
+
+  const burnedRows = fieldFuelBreakdown.map((row) => ({
+    title: row.equipmentName,
+    subtitle: row.fieldName,
+    liters: row.liters,
+  }));
+  const refuelRows = refuelBreakdown.map((row) => ({
+    title: row.equipmentName,
+    liters: row.liters,
+  }));
 
   return (
     <header
@@ -136,10 +213,44 @@ export function FuelDashboardHeader({
             {fieldFuelLoading ? (
               <Loader2 className="mt-2 h-5 w-5 animate-spin text-muted-foreground" />
             ) : fieldFuelHasData ? (
-              <p className="mt-0.5 text-2xl font-bold tracking-tight tabular-nums text-zinc-900">
-                {formatLiters(fieldFuelLiters ?? 0)}{" "}
-                <span className="text-sm font-semibold text-zinc-500">л</span>
-              </p>
+              <Popover>
+                <PopoverTrigger
+                  className={cn(
+                    "mt-0.5 inline-flex items-baseline gap-1.5 rounded-lg text-left",
+                    "outline-none transition hover:bg-zinc-100/80",
+                    "focus-visible:ring-2 focus-visible:ring-zinc-900/10"
+                  )}
+                >
+                  <span className="text-2xl font-bold tracking-tight tabular-nums text-zinc-900">
+                    {formatLiters(fieldFuelLiters ?? 0)}{" "}
+                    <span className="text-sm font-semibold text-zinc-500">
+                      л
+                    </span>
+                  </span>
+                  <Info
+                    className="mb-0.5 h-3.5 w-3.5 shrink-0 text-zinc-400"
+                    strokeWidth={2}
+                  />
+                </PopoverTrigger>
+                <PopoverContent
+                  align="start"
+                  side="bottom"
+                  className="w-[20rem] rounded-2xl border border-zinc-200 bg-white p-3 text-zinc-900 shadow-xl"
+                >
+                  <PopoverHeader className="mb-2 gap-0.5 px-1">
+                    <PopoverTitle className="text-sm font-bold">
+                      Хто спалив на полях
+                    </PopoverTitle>
+                    <PopoverDescription className="text-[11px] text-zinc-500">
+                      Техніка × поле · {periodLabel.toLowerCase()}
+                    </PopoverDescription>
+                  </PopoverHeader>
+                  <KpiBreakdownList
+                    emptyLabel="Немає розшифровки за період"
+                    rows={burnedRows}
+                  />
+                </PopoverContent>
+              </Popover>
             ) : (
               <p className="mt-1 max-w-[12rem] text-sm font-medium leading-snug text-zinc-500">
                 Немає даних за {fieldFuelPeriodCaption(fieldFuelPeriod)}
@@ -166,7 +277,8 @@ export function FuelDashboardHeader({
                     key={option.id}
                     className={cn(
                       "cursor-pointer rounded-lg px-2.5 py-2 text-sm",
-                      fieldFuelPeriod === option.id && "bg-zinc-100 font-semibold"
+                      fieldFuelPeriod === option.id &&
+                        "bg-zinc-100 font-semibold"
                     )}
                     onClick={() => onFieldFuelPeriodChange(option.id)}
                   >
@@ -175,6 +287,67 @@ export function FuelDashboardHeader({
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
+          </div>
+
+          <Separator
+            orientation="vertical"
+            className="mx-0 hidden h-auto min-h-14 self-stretch data-[orientation=vertical]:h-auto sm:block"
+          />
+
+          <div className="min-w-[9rem] pt-3 sm:pt-0 sm:pl-6">
+            <p className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+              <Fuel className="h-3.5 w-3.5" strokeWidth={2} />
+              Заправлено
+            </p>
+            {refuelLoading ? (
+              <Loader2 className="mt-2 h-5 w-5 animate-spin text-muted-foreground" />
+            ) : refuelHasData ? (
+              <Popover>
+                <PopoverTrigger
+                  className={cn(
+                    "mt-0.5 inline-flex items-baseline gap-1.5 rounded-lg text-left",
+                    "outline-none transition hover:bg-zinc-100/80",
+                    "focus-visible:ring-2 focus-visible:ring-zinc-900/10"
+                  )}
+                >
+                  <span className="text-2xl font-bold tracking-tight tabular-nums text-zinc-900">
+                    {formatLiters(refuelLiters ?? 0)}{" "}
+                    <span className="text-sm font-semibold text-zinc-500">
+                      л
+                    </span>
+                  </span>
+                  <Info
+                    className="mb-0.5 h-3.5 w-3.5 shrink-0 text-zinc-400"
+                    strokeWidth={2}
+                  />
+                </PopoverTrigger>
+                <PopoverContent
+                  align="start"
+                  side="bottom"
+                  className="w-[18rem] rounded-2xl border border-zinc-200 bg-white p-3 text-zinc-900 shadow-xl"
+                >
+                  <PopoverHeader className="mb-2 gap-0.5 px-1">
+                    <PopoverTitle className="text-sm font-bold">
+                      Кому списали зі складу
+                    </PopoverTitle>
+                    <PopoverDescription className="text-[11px] text-zinc-500">
+                      Заправки · {periodLabel.toLowerCase()}
+                    </PopoverDescription>
+                  </PopoverHeader>
+                  <KpiBreakdownList
+                    emptyLabel="Немає заправок за період"
+                    rows={refuelRows}
+                  />
+                </PopoverContent>
+              </Popover>
+            ) : (
+              <p className="mt-1 max-w-[11rem] text-sm font-medium leading-snug text-zinc-500">
+                Немає заправок за {fieldFuelPeriodCaption(fieldFuelPeriod)}
+              </p>
+            )}
+            <p className="mt-1 px-1.5 text-[11px] font-semibold text-zinc-400">
+              {periodLabel}
+            </p>
           </div>
         </div>
       </div>
