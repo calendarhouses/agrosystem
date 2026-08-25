@@ -216,9 +216,20 @@ function fuelConsumedInWindows(
       (s) => s.t >= win.startUnix && s.t <= win.endUnix
     );
     const { consumedLiters } = estimateFuelConsumedByFls(inWin);
-    if (consumedLiters != null && consumedLiters > 0) {
-      total += consumedLiters;
+    if (consumedLiters == null || consumedLiters <= 0) continue;
+
+    // Анти-шум: під час заправки ДУТ «скаче» і FLS малює тисячі літрів
+    const hours = Math.max((win.endUnix - win.startUnix) / 3600, 1 / 60);
+    const maxPlausible = Math.min(600, hours * 90 + 40);
+    if (consumedLiters > maxPlausible) {
+      console.warn("[field-fuel] відхилено неправдоподібну витрату", {
+        consumedLiters,
+        maxPlausible,
+        hours: Math.round(hours * 100) / 100,
+      });
+      continue;
     }
+    total += consumedLiters;
   }
   return Math.round(total * 10) / 10;
 }

@@ -16,8 +16,10 @@ import {
 
 /** Різкий приріст рівня (л) = заправка, не «відкат» датчика */
 const REFILL_JUMP_L = 15;
+/** Один стрибок більше — сміття датчика, не заправка */
+const MAX_REFILL_JUMP_L = 400;
 /** Немовірна витрата за інтервал — сміття датчика */
-const MAX_PLAUSIBLE_CONSUMED_L = 2500;
+const MAX_PLAUSIBLE_CONSUMED_L = 800;
 
 export type WialonFuelConsumptionResult = {
   /** Літри спаленого палива за ДРП; null — немає даних / помилка */
@@ -74,7 +76,7 @@ export function estimateFuelConsumedByFls(
   let filledLiters = 0;
   for (let i = 1; i < samples.length; i++) {
     const delta = samples[i]!.liters - samples[i - 1]!.liters;
-    if (delta >= REFILL_JUMP_L) {
+    if (delta >= REFILL_JUMP_L && delta <= MAX_REFILL_JUMP_L) {
       filledLiters += delta;
     }
   }

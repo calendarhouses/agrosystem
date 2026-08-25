@@ -122,6 +122,7 @@ export function FuelSparkline({
   loading,
   liveLiters,
   tankVolume,
+  hasFuelSensor: hasFuelSensorProp,
 }: {
   analytics: DayAnalyticsPayload;
   fuelEvents: FuelDrainEvent[];
@@ -130,39 +131,40 @@ export function FuelSparkline({
   liveLiters?: number | null;
   /** Номінальний обʼєм бака, л */
   tankVolume?: number | null;
+  /** false = немає ДУТ — не показувати 0 л / «критично» */
+  hasFuelSensor?: boolean;
 }) {
   void _fuelEvents;
 
-  const remaining =
-    liveLiters != null && Number.isFinite(liveLiters)
-      ? liveLiters
-      : analytics.summary.fuelEnd;
-
-  const hasFuel =
-    remaining != null && Number.isFinite(remaining) && remaining >= 0;
-  const tank =
-    tankVolume != null && Number.isFinite(tankVolume) && tankVolume > 0
-      ? tankVolume
-      : null;
-  const pct = hasFuel ? fuelPercentOfTank(remaining, tank) : null;
-  const critical = hasFuel && isFuelCritical(remaining, tank);
-  const low = pct != null && pct < 30 && !critical;
+  const hasFuelSensor =
+    hasFuelSensorProp ?? analytics.summary.hasFuelSensor;
 
   if (loading) {
     return <div className="h-[108px] animate-pulse rounded-xl bg-muted/50" />;
   }
 
-  if (!hasFuel && !analytics.summary.hasFuelSensor) {
+  if (!hasFuelSensor) {
     return (
       <GlassEmptyState
         icon={Fuel}
-        title="Дані палива відсутні"
-        hint="Датчик рівня палива не налаштований"
+        title="Немає датчика"
       />
     );
   }
 
-  if (!hasFuel) {
+  const remainingRaw =
+    liveLiters != null && Number.isFinite(liveLiters)
+      ? liveLiters
+      : analytics.summary.fuelEnd;
+
+  const remaining =
+    remainingRaw != null &&
+    Number.isFinite(remainingRaw) &&
+    remainingRaw > 0
+      ? remainingRaw
+      : null;
+
+  if (remaining == null) {
     return (
       <GlassEmptyState
         icon={Fuel}
@@ -171,6 +173,14 @@ export function FuelSparkline({
       />
     );
   }
+
+  const tank =
+    tankVolume != null && Number.isFinite(tankVolume) && tankVolume > 0
+      ? tankVolume
+      : null;
+  const pct = fuelPercentOfTank(remaining, tank);
+  const critical = isFuelCritical(remaining, tank);
+  const low = pct != null && pct < 30 && !critical;
 
   const fillPct =
     pct ?? Math.min(100, Math.max(0, (remaining / 800) * 100));

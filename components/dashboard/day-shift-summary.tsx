@@ -123,29 +123,22 @@ export function DayShiftSummary({
         : summary.fuelStart != null && summary.fuelEnd != null
           ? `${Math.round(summary.fuelStart)} → ${Math.round(summary.fuelEnd)} л`
           : liveFuelLiters != null && Number.isFinite(liveFuelLiters)
-            ? `зараз ${Math.round(liveFuelLiters)} л`
+            ? `${Math.round(liveFuelLiters)} л`
             : summary.sampleCount === 0
               ? "Немає даних за день"
               : "—",
       tone: "text-zinc-900",
-      hint:
-        summary.fuelDelta == null
-          ? summary.hasFuelSensor &&
-            summary.fuelStart != null &&
-            summary.fuelEnd != null
-            ? "дельта недостовірна"
-            : liveFuelLiters != null &&
-                summary.fuelStart == null &&
-                summary.hasFuelSensor
-              ? summary.distanceKm < 0.05
-                ? "стоїть · зміни за день ще немає"
-                : "немає семплів ДУТ за цей день"
-              : undefined
-          : summary.fuelDelta > 15
+      hint: !summary.hasFuelSensor
+        ? undefined
+        : summary.fuelStart != null &&
+            summary.fuelEnd != null &&
+            summary.fuelDelta != null
+          ? summary.fuelDelta > 15
             ? `заправка ≈ +${Math.round(summary.fuelDelta)} л`
             : summary.fuelDelta < -15
               ? `витрата ≈ ${Math.round(Math.abs(summary.fuelDelta))} л`
-              : "майже без змін",
+              : undefined
+          : undefined,
       hintTone:
         summary.fuelDelta != null && summary.fuelDelta < -20
           ? "text-rose-600"
@@ -237,7 +230,7 @@ export function DayShiftSummary({
 
         {!summary.hasFuelSensor ? (
           <p className="rounded-xl border border-dashed border-[#E5DFD3] bg-white/50 px-3 py-3 text-sm text-zinc-500">
-            Немає даних датчика палива в повідомленнях за цей день
+            Немає датчика
           </p>
         ) : fuelEvents.length === 0 ? (
           <div className="rounded-xl border border-emerald-200/70 bg-emerald-50/70 px-3 py-3">

@@ -299,9 +299,15 @@ async function runEquipmentDaySync(
             drain_events: isFuelDeliveryUnit(unit.name)
               ? 0
               : analytics.fuelEvents.length,
-            fuel_start: analytics.summary.fuelStart,
-            fuel_end: analytics.summary.fuelEnd,
-            fuel_delta: analytics.summary.fuelDelta,
+            fuel_start: analytics.summary.hasFuelSensor
+              ? analytics.summary.fuelStart
+              : null,
+            fuel_end: analytics.summary.hasFuelSensor
+              ? analytics.summary.fuelEnd
+              : null,
+            fuel_delta: analytics.summary.hasFuelSensor
+              ? analytics.summary.fuelDelta
+              : null,
             has_fuel_sensor: analytics.summary.hasFuelSensor,
             sync_time: syncTime,
           } satisfies EquipmentDayStatRow;
@@ -635,11 +641,22 @@ export function enrichDayAnalyticsFromDbStats(
     changed = true;
   }
 
-  if (summary.fuelStart == null && db.fuelStart != null) {
+  // Не підмішуємо 0/0 з БД, якщо ДУТ немає
+  if (!summary.hasFuelSensor && !db.hasFuelSensor) {
+    if (summary.sampleCount === 0 && db.distanceKm > 0) {
+      summary.distanceKm = db.distanceKm;
+      summary.workHours = db.workHours;
+      summary.hoursIdling = db.hoursIdling;
+      return { ...analytics, summary };
+    }
+    return analytics;
+  }
+
+  if (summary.fuelStart == null && db.fuelStart != null && db.fuelStart > 0) {
     summary.fuelStart = db.fuelStart;
     changed = true;
   }
-  if (summary.fuelEnd == null && db.fuelEnd != null) {
+  if (summary.fuelEnd == null && db.fuelEnd != null && db.fuelEnd > 0) {
     summary.fuelEnd = db.fuelEnd;
     changed = true;
   }

@@ -1708,6 +1708,7 @@ export function EquipmentView() {
         kinds.add("offline");
       }
       if (
+        unitHasFuelSensor(unit) &&
         isFuelCritical(
           telemetry.fuelLiters,
           unit.fuelTankVolume,
@@ -2120,8 +2121,16 @@ export function EquipmentView() {
                 analytics={dayAnalytics}
                 fuelEvents={displayFuelEvents}
                 loading={trackLoading}
-                liveLiters={selectedTelemetry.fuelLiters}
+                liveLiters={
+                  unitHasFuelSensor(liveSelectedUnit)
+                    ? selectedTelemetry.fuelLiters
+                    : null
+                }
                 tankVolume={liveSelectedUnit.fuelTankVolume}
+                hasFuelSensor={
+                  unitHasFuelSensor(liveSelectedUnit) ||
+                  dayAnalytics.summary.hasFuelSensor
+                }
               />
 
               <MechanicPresenceBlock
@@ -2142,7 +2151,11 @@ export function EquipmentView() {
                 <TelemetryTile
                   icon={Fuel}
                   label="Паливо"
-                  value={formatLiters(selectedTelemetry.fuelLiters)}
+                  value={
+                    unitHasFuelSensor(liveSelectedUnit)
+                      ? formatLiters(selectedTelemetry.fuelLiters)
+                      : "Немає датчика"
+                  }
                 />
                 <TelemetryTile
                   icon={Clock}
