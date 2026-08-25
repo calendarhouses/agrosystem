@@ -15,13 +15,13 @@ import {
 } from "@/lib/fuel-price";
 import { sumOutboundRefueledForPeriod } from "@/lib/fuel-refuel-period";
 import {
-  ensureWialonFieldFuelFresh,
+  ensureFieldFuelPeriodCoverage,
   listFieldFuelBreakdownForPeriod,
+  listUnsyncedFieldFuelDates,
   sumFieldFuelConsumedForPeriod,
   type FieldFuelBreakdownRow,
   type FieldFuelPeriod,
 } from "@/lib/wialon-field-fuel-sync";
-import { shiftKyivYmd, todayKyivYmd } from "@/lib/kyiv-date";
 
 export type ActionResult<T = null> =
   | { ok: true; data: T }
@@ -51,28 +51,27 @@ export async function getFieldFuelConsumed(
     toDate: string;
     hasData: boolean;
     liveSynced: boolean;
+    /** Скільки календарних днів періоду вже є в БД */
+    daysCovered: number;
+    daysExpected: number;
+    /** true = ще тягнемо історію з Wialon */
+    coverageIncomplete: boolean;
     breakdown: FieldFuelBreakdownRow[];
   }>
 > {
   try {
     const safe = normalizePeriod(period);
-    const today = todayKyivYmd();
     let liveSynced = false;
 
     try {
-      if (safe === "today" || safe === "week" || safe === "month") {
-        const r = await ensureWialonFieldFuelFresh(today, 5 * 60 * 1000);
-        liveSynced = r.synced;
-      } else if (safe === "yesterday") {
-        const r = await ensureWialonFieldFuelFresh(
-          shiftKyivYmd(today, -1),
-          30 * 60 * 1000
-        );
-        liveSynced = r.synced;
-      }
+      const coverage = await ensureFieldFuelPeriodCoverage(safe, {
+        maxDays: safe === "month" ? 12 : safe === "week" ? 7 : 1,
+        budgetMs: safe === "today" || safe === "yesterday" ? 20_000 : 50_000,
+      });
+      liveSynced = coverage.daysSyncedNow > 0 || !coverage.truncated;
     } catch (syncErr) {
       console.error(
-        "[field-fuel] live Wialon sync",
+        "[field-fuel] period coverage",
         syncErr instanceof Error ? syncErr.message : syncErr
       );
     }
@@ -81,6 +80,18 @@ export async function getFieldFuelConsumed(
       sumFieldFuelConsumedForPeriod(safe),
       listFieldFuelBreakdownForPeriod(safe),
     ]);
+
+    const stillMissing = await listUnsyncedFieldFuelDates(
+      sum.fromDate,
+      sum.toDate
+    );
+    const daysExpected =
+      Math.round(
+        (Date.parse(`${sum.toDate}T12:00:00Z`) -
+          Date.parse(`${sum.fromDate}T12:00:00Z`)) /
+          86_400_000
+      ) + 1;
+    const daysCovered = Math.max(0, daysExpected - stillMissing.length);
 
     return {
       ok: true,
@@ -91,6 +102,9 @@ export async function getFieldFuelConsumed(
         toDate: sum.toDate,
         hasData: sum.hasData,
         liveSynced,
+        daysCovered,
+        daysExpected,
+        coverageIncomplete: stillMissing.length > 0,
         breakdown: breakdown.rows,
       },
     };

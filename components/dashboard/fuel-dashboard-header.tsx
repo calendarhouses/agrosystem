@@ -72,6 +72,11 @@ type FuelDashboardHeaderProps = {
   fieldFuelLoading: boolean;
   fieldFuelPeriod: FieldFuelPeriod;
   fieldFuelBreakdown: FieldFuelBreakdownRow[];
+  fieldFuelCoverage?: {
+    daysCovered: number;
+    daysExpected: number;
+    incomplete: boolean;
+  } | null;
   refuelLiters: number | null;
   refuelHasData: boolean;
   refuelLoading: boolean;
@@ -268,6 +273,7 @@ export function FuelDashboardHeader({
   fieldFuelLoading,
   fieldFuelPeriod,
   fieldFuelBreakdown,
+  fieldFuelCoverage,
   refuelLiters,
   refuelHasData,
   refuelLoading,
@@ -291,6 +297,13 @@ export function FuelDashboardHeader({
     title: row.equipmentName,
     liters: row.liters,
   }));
+
+  const coverageHint =
+    fieldFuelCoverage &&
+    fieldFuelCoverage.daysExpected > 1 &&
+    fieldFuelCoverage.incomplete
+      ? `дані за ${fieldFuelCoverage.daysCovered} з ${fieldFuelCoverage.daysExpected} дн.`
+      : null;
 
   return (
     <header className="mb-3 flex flex-col gap-4 px-6 py-5 sm:mb-4 sm:px-8">
@@ -379,6 +392,9 @@ export function FuelDashboardHeader({
               />
               <p className="mt-2 text-[12px] font-medium text-zinc-400">
                 {periodLabel}
+                {coverageHint ? (
+                  <span className="ml-1.5 text-amber-700">· {coverageHint}</span>
+                ) : null}
               </p>
             </div>
           </div>

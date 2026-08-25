@@ -403,6 +403,13 @@ export async function syncWialonFieldFuelForDate(
     upserted = await persistFieldFuelLogs(upserts);
   }
 
+  await markFieldFuelDaySynced({
+    date,
+    upserted,
+    unitsProcessed: units.length,
+    skipped,
+  });
+
   return {
     ok: true,
     date,
@@ -413,6 +420,201 @@ export async function syncWialonFieldFuelForDate(
     skipped,
     errors,
   };
+}
+
+/** Позначити день як синхронізований (таблиця 035; fallback — sentinel-лог). */
+async function markFieldFuelDaySynced(input: {
+  date: string;
+  upserted: number;
+  unitsProcessed: number;
+  skipped: number;
+}): Promise<void> {
+  const supabase = createServiceSupabase();
+  try {
+    const { error } = await supabase.from("wialon_field_fuel_day_sync").upsert(
+      {
+        date: input.date,
+        synced_at: new Date().toISOString(),
+        upserted: input.upserted,
+        units_processed: input.unitsProcessed,
+        skipped: input.skipped,
+      },
+      { onConflict: "date" }
+    );
+    if (!error) return;
+    if (error.code !== "PGRST205" && error.code !== "42P01") {
+      console.warn("[field-fuel] day_sync mark", error.message);
+    }
+  } catch (err) {
+    console.warn(
+      "[field-fuel] day_sync mark failed",
+      err instanceof Error ? err.message : err
+    );
+  }
+
+  // Fallback без міграції 035: рядок-маркер (0 л, unit 0), щоб не ганяти день знову
+  if (input.upserted > 0) return;
+  try {
+    const { data: field } = await supabase
+      .from("farm_fields")
+      .select("id")
+      .not("geometry", "is", null)
+      .limit(1)
+      .maybeSingle();
+    if (!field?.id) return;
+    const season = currentAgroSeason();
+    await supabase.from("wialon_field_fuel_logs").upsert(
+      {
+        field_id: field.id,
+        equipment_id: null,
+        wialon_unit_id: 0,
+        date: input.date,
+        fuel_consumed: 0,
+        sync_time: new Date().toISOString(),
+        season,
+      },
+      { onConflict: "field_id,wialon_unit_id,date,season" }
+    );
+  } catch (err) {
+    console.warn(
+      "[field-fuel] sentinel mark failed",
+      err instanceof Error ? err.message : err
+    );
+  }
+}
+
+/** Дати в діапазоні [fromDate, toDate], яких ще немає в day_sync (або в логах). */
+export async function listUnsyncedFieldFuelDates(
+  fromDate: string,
+  toDate: string
+): Promise<string[]> {
+  const all: string[] = [];
+  let cursor = fromDate;
+  while (cursor <= toDate) {
+    all.push(cursor);
+    cursor = shiftKyivYmd(cursor, 1);
+  }
+  if (all.length === 0) return [];
+
+  const supabase = createServiceSupabase();
+  const synced = new Set<string>();
+
+  const { data: markers, error: markerErr } = await supabase
+    .from("wialon_field_fuel_day_sync")
+    .select("date")
+    .gte("date", fromDate)
+    .lte("date", toDate);
+
+  if (!markerErr) {
+    for (const row of markers ?? []) {
+      if (row.date) synced.add(String(row.date).slice(0, 10));
+    }
+  }
+
+  // Логи (вкл. sentinel unit=0) також рахуємо як «день відомий»
+  const { data: logs } = await supabase
+    .from("wialon_field_fuel_logs")
+    .select("date")
+    .gte("date", fromDate)
+    .lte("date", toDate);
+  for (const row of logs ?? []) {
+    if (row.date) synced.add(String(row.date).slice(0, 10));
+  }
+
+  return all.filter((d) => !synced.has(d));
+}
+
+export type FieldFuelBackfillResult = {
+  fromDate: string;
+  toDate: string;
+  daysExpected: number;
+  daysSyncedBefore: number;
+  daysSyncedNow: number;
+  daysStillMissing: number;
+  results: SyncWialonFieldFuelResult[];
+  truncated: boolean;
+};
+
+/**
+ * Бекфіл пропущених днів [fromDate, toDate].
+ * maxDays / budgetMs обмежують один запит (cron / KPI).
+ */
+export async function backfillWialonFieldFuelRange(
+  fromDate: string,
+  toDate: string,
+  options?: { maxDays?: number; budgetMs?: number; now?: Date }
+): Promise<FieldFuelBackfillResult> {
+  const now = options?.now ?? new Date();
+  const maxDays = Math.max(1, options?.maxDays ?? 7);
+  const budgetMs = Math.max(5_000, options?.budgetMs ?? 50_000);
+  const started = Date.now();
+
+  const expected: string[] = [];
+  let cursor = fromDate;
+  while (cursor <= toDate) {
+    expected.push(cursor);
+    cursor = shiftKyivYmd(cursor, 1);
+  }
+
+  const missing = await listUnsyncedFieldFuelDates(fromDate, toDate);
+  const daysSyncedBefore = expected.length - missing.length;
+  // Свіжі дні першими — KPI «місяць» швидше стає правдивим
+  const queue = [...missing].reverse().slice(0, maxDays);
+  const results: SyncWialonFieldFuelResult[] = [];
+
+  for (const date of queue) {
+    if (Date.now() - started > budgetMs) break;
+    results.push(await syncWialonFieldFuelForDate(date, now));
+  }
+
+  const stillMissing = await listUnsyncedFieldFuelDates(fromDate, toDate);
+
+  return {
+    fromDate,
+    toDate,
+    daysExpected: expected.length,
+    daysSyncedBefore,
+    daysSyncedNow: results.length,
+    daysStillMissing: stillMissing.length,
+    results,
+    truncated: stillMissing.length > 0,
+  };
+}
+
+/**
+ * Перед KPI за тиждень/місяць: підтягнути пропущені дні (обмежений бюджет).
+ */
+export async function ensureFieldFuelPeriodCoverage(
+  period: FieldFuelPeriod,
+  options?: { maxDays?: number; budgetMs?: number; now?: Date }
+): Promise<FieldFuelBackfillResult & { period: FieldFuelPeriod }> {
+  const now = options?.now ?? new Date();
+  const { fromDate, toDate } = resolveFieldFuelPeriodBounds(period, now);
+
+  if (period === "today" || period === "yesterday") {
+    const date = period === "today" ? toDate : fromDate;
+    const maxAgeMs = period === "today" ? 5 * 60 * 1000 : 30 * 60 * 1000;
+    await ensureWialonFieldFuelFresh(date, maxAgeMs, now);
+    const missing = await listUnsyncedFieldFuelDates(fromDate, toDate);
+    return {
+      period,
+      fromDate,
+      toDate,
+      daysExpected: 1,
+      daysSyncedBefore: missing.length === 0 ? 1 : 0,
+      daysSyncedNow: 0,
+      daysStillMissing: missing.length,
+      results: [],
+      truncated: missing.length > 0,
+    };
+  }
+
+  const backfill = await backfillWialonFieldFuelRange(fromDate, toDate, {
+    maxDays: options?.maxDays ?? (period === "week" ? 7 : 10),
+    budgetMs: options?.budgetMs ?? 45_000,
+    now,
+  });
+  return { period, ...backfill };
 }
 
 async function persistFieldFuelLogs(
@@ -564,16 +766,18 @@ export async function sumFieldFuelConsumedForDate(
   // 1) Основний ключ CRON: date = YYYY-MM-DD у Києві
   let { data, error } = await supabase
     .from("wialon_field_fuel_logs")
-    .select("fuel_consumed")
-    .eq("date", date);
+    .select("fuel_consumed, farm_fields(name, field_no, tract)")
+    .eq("date", date)
+    .gt("wialon_unit_id", 0);
 
   // 2) Fallback: sync_time в межах доби Києва (якщо date зсунуто TZ)
   if (!error && (data?.length ?? 0) === 0) {
     const bySync = await supabase
       .from("wialon_field_fuel_logs")
-      .select("fuel_consumed")
+      .select("fuel_consumed, farm_fields(name, field_no, tract)")
       .gte("sync_time", fromIso)
-      .lte("sync_time", toIso);
+      .lte("sync_time", toIso)
+      .gt("wialon_unit_id", 0);
     if (!bySync.error) {
       data = bySync.data;
       error = bySync.error;
@@ -587,7 +791,20 @@ export async function sumFieldFuelConsumedForDate(
     throw new Error(error.message);
   }
 
-  const rows = data ?? [];
+  const fieldMeta = (row: {
+    farm_fields?: unknown;
+  }): { name?: string | null; field_no?: string | null; tract?: string | null } => {
+    const raw = row.farm_fields;
+    if (raw == null) return {};
+    if (Array.isArray(raw)) {
+      return (raw[0] as { name?: string; field_no?: string; tract?: string }) ?? {};
+    }
+    return raw as { name?: string; field_no?: string; tract?: string };
+  };
+
+  const rows = (data ?? []).filter((row) =>
+    isProductiveFieldForFuelBurn(fieldMeta(row))
+  );
   const sum = rows.reduce(
     (acc, row) => acc + (Number(row.fuel_consumed) || 0),
     0
@@ -607,6 +824,26 @@ export function todayKyivDateString(now = new Date()): string {
 }
 
 export type FieldFuelPeriod = "today" | "yesterday" | "week" | "month";
+
+/**
+ * Чи рахувати геозону в KPI «Спалено на полях».
+ * База / магазин / соцсфера — стоянка й шум ДУТ, не робота в полі.
+ */
+export function isProductiveFieldForFuelBurn(field: {
+  name?: string | null;
+  field_no?: string | null;
+  tract?: string | null;
+}): boolean {
+  const name = String(field.name ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+  if (!name) return false;
+  if (name === "база" || name.startsWith("база ")) return false;
+  if (name.includes("магазин")) return false;
+  if (name.includes("соцсфера")) return false;
+  return true;
+}
 
 export function resolveFieldFuelPeriodBounds(
   period: FieldFuelPeriod,
@@ -650,16 +887,18 @@ export async function sumFieldFuelConsumedForPeriod(
 
   let { data, error } = await supabase
     .from("wialon_field_fuel_logs")
-    .select("fuel_consumed")
+    .select("fuel_consumed, farm_fields(name, field_no, tract)")
     .gte("date", fromDate)
-    .lte("date", toDate);
+    .lte("date", toDate)
+    .gt("wialon_unit_id", 0);
 
   if (!error && (data?.length ?? 0) === 0) {
     const bySync = await supabase
       .from("wialon_field_fuel_logs")
-      .select("fuel_consumed")
+      .select("fuel_consumed, farm_fields(name, field_no, tract)")
       .gte("sync_time", fromIso)
-      .lte("sync_time", toIso);
+      .lte("sync_time", toIso)
+      .gt("wialon_unit_id", 0);
     if (!bySync.error) {
       data = bySync.data;
       error = bySync.error;
@@ -673,7 +912,20 @@ export async function sumFieldFuelConsumedForPeriod(
     throw new Error(error.message);
   }
 
-  const rows = data ?? [];
+  const fieldMeta = (row: {
+    farm_fields?: unknown;
+  }): { name?: string | null; field_no?: string | null; tract?: string | null } => {
+    const raw = row.farm_fields;
+    if (raw == null) return {};
+    if (Array.isArray(raw)) {
+      return (raw[0] as { name?: string; field_no?: string; tract?: string }) ?? {};
+    }
+    return raw as { name?: string; field_no?: string; tract?: string };
+  };
+
+  const rows = (data ?? []).filter((row) =>
+    isProductiveFieldForFuelBurn(fieldMeta(row))
+  );
   const sum = rows.reduce(
     (acc, row) => acc + (Number(row.fuel_consumed) || 0),
     0
@@ -793,17 +1045,18 @@ export async function listFieldFuelBreakdownForPeriod(
   let { data, error } = await supabase
     .from("wialon_field_fuel_logs")
     .select(
-      "fuel_consumed, wialon_unit_id, equipment_id, field_id, farm_fields(name), equipment(name)"
+      "fuel_consumed, wialon_unit_id, equipment_id, field_id, farm_fields(name, field_no, tract), equipment(name)"
     )
     .gte("date", fromDate)
     .lte("date", toDate)
-    .gt("fuel_consumed", 0);
+    .gt("fuel_consumed", 0)
+    .gt("wialon_unit_id", 0);
 
   if (error && (error.message?.includes("wialon_unit_id") || error.code === "42703")) {
     const legacy = await supabase
       .from("wialon_field_fuel_logs")
       .select(
-        "fuel_consumed, equipment_id, field_id, farm_fields(name), equipment(name)"
+        "fuel_consumed, equipment_id, field_id, farm_fields(name, field_no, tract), equipment(name)"
       )
       .gte("date", fromDate)
       .lte("date", toDate)
@@ -826,9 +1079,27 @@ export async function listFieldFuelBreakdownForPeriod(
   const map = new Map<string, Agg>();
   const knownByEquipmentId = new Map<string, string>();
 
+  const fieldMeta = (value: unknown): {
+    name?: string | null;
+    field_no?: string | null;
+    tract?: string | null;
+  } => {
+    if (value == null) return {};
+    if (Array.isArray(value)) {
+      return (value[0] as {
+        name?: string;
+        field_no?: string;
+        tract?: string;
+      }) ?? {};
+    }
+    return value as { name?: string; field_no?: string; tract?: string };
+  };
+
   for (const row of data ?? []) {
     const liters = Number(row.fuel_consumed) || 0;
     if (liters <= 0) continue;
+    const meta = fieldMeta(row.farm_fields);
+    if (!isProductiveFieldForFuelBurn(meta)) continue;
     const fieldId = String(row.field_id);
     const equipmentId =
       row.equipment_id != null ? String(row.equipment_id) : null;

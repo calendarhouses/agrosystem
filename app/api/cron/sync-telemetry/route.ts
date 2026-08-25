@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { shiftKyivYmd, todayKyivYmd } from "@/lib/kyiv-date";
 import { syncWialonEquipmentDayStats } from "@/lib/wialon-equipment-day-sync";
 import {
+  backfillWialonFieldFuelRange,
   syncWialonFieldFuelForToday,
   syncWialonFieldFuelForYesterday,
 } from "@/lib/wialon-field-fuel-sync";
@@ -34,13 +35,10 @@ function authorizeCron(request: NextRequest): boolean {
  *
  * Auth: Authorization: Bearer $CRON_SECRET
  *
- * Зовнішній cron (не Vercel Hobby):
- *   * * * * * curl -s -H "Authorization: Bearer $CRON_SECRET" \
- *     https://YOUR_HOST/api/cron/sync-telemetry
- *
  * Query:
- *   ?mode=tick     — швидкий прогін сьогодні (за замовчуванням)
- *   ?mode=nightly  — ще й закритий вчорашній день (поля + техніка)
+ *   ?mode=tick      — сьогодні (за замовчуванням)
+ *   ?mode=nightly   — сьогодні + вчора + бекфіл 3 пропущених днів
+ *   ?mode=backfill  — лише бекфіл пропущених днів (до 12 за прогін)
  */
 async function handle(request: NextRequest) {
   if (!authorizeCron(request)) {
@@ -56,10 +54,32 @@ async function handle(request: NextRequest) {
   const today = todayKyivYmd();
 
   try {
+    if (mode === "backfill") {
+      const fromDate = shiftKyivYmd(today, -29);
+      const backfill = await backfillWialonFieldFuelRange(fromDate, today, {
+        maxDays: 12,
+        budgetMs: 50_000,
+      });
+      const payload = {
+        ok: true as const,
+        mode,
+        elapsedMs: Date.now() - started,
+        fieldFuelBackfill: backfill,
+      };
+      console.log("[cron/sync-telemetry]", payload);
+      return NextResponse.json(payload, { headers: JSON_UTF8 });
+    }
+
     const fieldToday = await syncWialonFieldFuelForToday();
     const fieldYesterday =
+      mode === "nightly" ? await syncWialonFieldFuelForYesterday() : null;
+
+    const fieldBackfill =
       mode === "nightly"
-        ? await syncWialonFieldFuelForYesterday()
+        ? await backfillWialonFieldFuelRange(shiftKyivYmd(today, -29), today, {
+            maxDays: 3,
+            budgetMs: Math.max(8_000, 25_000 - (Date.now() - started)),
+          })
         : null;
 
     const remainingAfterField = Math.max(
@@ -85,6 +105,7 @@ async function handle(request: NextRequest) {
       elapsedMs: Date.now() - started,
       fieldFuelToday: fieldToday,
       fieldFuelYesterday: fieldYesterday,
+      fieldFuelBackfill: fieldBackfill,
       equipmentDay: equipmentToday,
       equipmentDayYesterday: equipmentYesterday,
     };
@@ -94,6 +115,7 @@ async function handle(request: NextRequest) {
       fieldUpserted: fieldToday.upserted,
       equipmentUpserted: equipmentToday.upserted,
       equipmentTruncated: equipmentToday.truncated,
+      backfillMissing: fieldBackfill?.daysStillMissing ?? null,
     });
     return NextResponse.json(payload, { headers: JSON_UTF8 });
   } catch (error) {

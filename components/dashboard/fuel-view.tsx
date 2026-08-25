@@ -615,6 +615,11 @@ export function FuelView({
   const [fieldFuelBreakdown, setFieldFuelBreakdown] = useState<
     FieldFuelBreakdownRow[]
   >([]);
+  const [fieldFuelCoverage, setFieldFuelCoverage] = useState<{
+    daysCovered: number;
+    daysExpected: number;
+    incomplete: boolean;
+  } | null>(null);
   const [refuelLiters, setRefuelLiters] = useState<number | null>(null);
   const [refuelHasData, setRefuelHasData] = useState(false);
   const [refuelLoading, setRefuelLoading] = useState(true);
@@ -940,6 +945,7 @@ export function FuelView({
   /** Витрата на полях + заправки зі складу за обраний період */
   useEffect(() => {
     let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
     setFieldFuelLoading(true);
     setRefuelLoading(true);
     void Promise.all([
@@ -951,10 +957,22 @@ export function FuelView({
         setFieldFuelToday(burned.data.liters);
         setFieldFuelHasData(burned.data.hasData);
         setFieldFuelBreakdown(burned.data.breakdown);
+        setFieldFuelCoverage({
+          daysCovered: burned.data.daysCovered,
+          daysExpected: burned.data.daysExpected,
+          incomplete: burned.data.coverageIncomplete,
+        });
+        // Поки історія не закрита — підтягуємо наступну порцію днів
+        if (burned.data.coverageIncomplete) {
+          retryTimer = setTimeout(() => {
+            setKpiRefreshToken((n) => n + 1);
+          }, 2500);
+        }
       } else {
         setFieldFuelToday(null);
         setFieldFuelHasData(false);
         setFieldFuelBreakdown([]);
+        setFieldFuelCoverage(null);
       }
       if (refueled.ok) {
         setRefuelLiters(refueled.data.liters);
@@ -970,6 +988,7 @@ export function FuelView({
     });
     return () => {
       cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
     };
   }, [fieldFuelPeriod, kpiRefreshToken]);
 
@@ -1021,6 +1040,7 @@ export function FuelView({
         fieldFuelLoading={fieldFuelLoading}
         fieldFuelPeriod={fieldFuelPeriod}
         fieldFuelBreakdown={fieldFuelBreakdown}
+        fieldFuelCoverage={fieldFuelCoverage}
         refuelLiters={refuelLiters}
         refuelHasData={refuelHasData}
         refuelLoading={refuelLoading}
