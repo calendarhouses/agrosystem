@@ -124,7 +124,7 @@ export async function getTodayFieldFuelConsumed() {
   return getFieldFuelConsumed("today");
 }
 
-/** Заправлено (outbound зі складу) за той самий період, що й «Спалено». */
+/** Заправлено: ДУТ (стрибки бака) + ручні outbound без дубля. */
 export async function getFuelRefueledForPeriod(
   period: FieldFuelPeriod = "today"
 ): Promise<
@@ -134,10 +134,13 @@ export async function getFuelRefueledForPeriod(
     fromDate: string;
     toDate: string;
     hasData: boolean;
+    wialonLiters: number;
+    manualOnlyLiters: number;
     breakdown: Array<{
       equipmentName: string;
       liters: number;
       wialonUnitId: number | null;
+      source: "wialon" | "manual" | "mixed";
     }>;
   }>
 > {
@@ -151,6 +154,8 @@ export async function getFuelRefueledForPeriod(
         fromDate: data.fromDate,
         toDate: data.toDate,
         hasData: data.hasData,
+        wialonLiters: data.wialonLiters,
+        manualOnlyLiters: data.manualOnlyLiters,
         breakdown: data.rows,
       },
     };

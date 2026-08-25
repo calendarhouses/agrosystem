@@ -628,6 +628,7 @@ export function FuelView({
       equipmentName: string;
       liters: number;
       wialonUnitId: number | null;
+      source?: "wialon" | "manual" | "mixed";
     }>
   >([]);
   const [kpiRefreshToken, setKpiRefreshToken] = useState(0);
