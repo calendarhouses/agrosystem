@@ -8,6 +8,7 @@ import {
   Loader2,
   Plus,
   Tractor,
+  Warehouse,
 } from "lucide-react";
 
 import type {
@@ -30,7 +31,6 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Separator } from "@/components/ui/separator";
 import type { FuelStorage } from "@/lib/fuel-storages";
 import { cn } from "@/lib/utils";
 
@@ -96,11 +96,11 @@ function KpiBreakdownList({
     );
   }
   return (
-    <ul className="max-h-64 space-y-1 overflow-y-auto pr-0.5">
+    <ul className="max-h-64 space-y-0.5 overflow-y-auto pr-0.5">
       {rows.map((row, index) => (
         <li
           key={`${row.title}-${row.subtitle ?? ""}-${index}`}
-          className="flex items-start justify-between gap-3 rounded-lg px-2 py-1.5 hover:bg-zinc-50"
+          className="flex items-start justify-between gap-3 rounded-xl px-2.5 py-2 hover:bg-zinc-50"
         >
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-zinc-900">
@@ -112,7 +112,7 @@ function KpiBreakdownList({
           </div>
           <p className="shrink-0 text-sm font-bold tabular-nums text-zinc-900">
             {formatLiters(row.liters)}{" "}
-            <span className="text-[11px] font-semibold text-zinc-500">л</span>
+            <span className="text-[11px] font-semibold text-zinc-400">л</span>
           </p>
         </li>
       ))}
@@ -120,7 +120,144 @@ function KpiBreakdownList({
   );
 }
 
-/** Монолітна Energy Header + Command Bar для /fuel */
+function PeriodSelect({
+  period,
+  onChange,
+}: {
+  period: FieldFuelPeriod;
+  onChange: (period: FieldFuelPeriod) => void;
+}) {
+  const label =
+    FIELD_FUEL_PERIODS.find((p) => p.id === period)?.label ?? "Сьогодні";
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        className={cn(
+          "inline-flex h-8 items-center gap-1.5 rounded-full px-3",
+          "border border-zinc-200/90 bg-white/80 text-[12px] font-semibold text-zinc-700",
+          "shadow-sm outline-none transition",
+          "hover:border-zinc-300 hover:bg-white hover:text-zinc-900",
+          "focus-visible:ring-2 focus-visible:ring-emerald-500/20"
+        )}
+      >
+        {label}
+        <ChevronDown className="h-3.5 w-3.5 text-zinc-400" strokeWidth={2.2} />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="end"
+        className="min-w-[9rem] rounded-xl border border-zinc-200 bg-white p-1 text-zinc-900 shadow-lg"
+      >
+        {FIELD_FUEL_PERIODS.map((option) => (
+          <DropdownMenuItem
+            key={option.id}
+            className={cn(
+              "cursor-pointer rounded-lg px-2.5 py-2 text-sm",
+              period === option.id && "bg-zinc-100 font-semibold"
+            )}
+            onClick={() => onChange(option.id)}
+          >
+            {option.label}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function KpiValue({
+  liters,
+  loading,
+  empty,
+  interactive,
+  popoverTitle,
+  popoverDescription,
+  breakdownEmpty,
+  breakdownRows,
+  accentClass,
+}: {
+  liters: number | null;
+  loading: boolean;
+  empty: boolean;
+  interactive: boolean;
+  popoverTitle: string;
+  popoverDescription: string;
+  breakdownEmpty: string;
+  breakdownRows: Array<{ title: string; subtitle?: string; liters: number }>;
+  accentClass?: string;
+}) {
+  if (loading) {
+    return (
+      <div className="flex h-10 items-center">
+        <Loader2 className="h-5 w-5 animate-spin text-zinc-400" />
+      </div>
+    );
+  }
+
+  if (empty) {
+    return (
+      <p className="max-w-[14rem] text-sm font-medium leading-snug text-zinc-400">
+        {breakdownEmpty}
+      </p>
+    );
+  }
+
+  const value = (
+    <span
+      className={cn(
+        "inline-flex items-baseline gap-1.5",
+        interactive &&
+          "rounded-xl px-1.5 py-0.5 -mx-1.5 transition hover:bg-zinc-100/90"
+      )}
+    >
+      <span
+        className={cn(
+          "text-[1.75rem] font-bold tracking-tight tabular-nums leading-none sm:text-[2rem]",
+          accentClass ?? "text-zinc-950"
+        )}
+      >
+        {formatLiters(liters ?? 0)}
+      </span>
+      <span className="text-sm font-semibold text-zinc-400">л</span>
+      {interactive ? (
+        <Info
+          className="mb-0.5 h-3.5 w-3.5 shrink-0 text-zinc-300 transition group-hover:text-zinc-500"
+          strokeWidth={2}
+        />
+      ) : null}
+    </span>
+  );
+
+  if (!interactive) return value;
+
+  return (
+    <Popover>
+      <PopoverTrigger
+        className={cn(
+          "group inline-flex text-left outline-none",
+          "focus-visible:ring-2 focus-visible:ring-emerald-500/20 rounded-xl"
+        )}
+      >
+        {value}
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        side="bottom"
+        className="w-[20rem] rounded-2xl border border-zinc-200 bg-white p-3 text-zinc-900 shadow-xl"
+      >
+        <PopoverHeader className="mb-2 gap-0.5 px-1">
+          <PopoverTitle className="text-sm font-bold">{popoverTitle}</PopoverTitle>
+          <PopoverDescription className="text-[11px] text-zinc-500">
+            {popoverDescription}
+          </PopoverDescription>
+        </PopoverHeader>
+        <KpiBreakdownList emptyLabel={breakdownEmpty} rows={breakdownRows} />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/** Energy Header + Command Bar для /fuel */
 export function FuelDashboardHeader({
   storages,
   totalLiters,
@@ -156,203 +293,123 @@ export function FuelDashboardHeader({
   }));
 
   return (
-    <header
-      className={cn(
-        "mb-3 flex flex-col gap-4 border-b border-zinc-200/70 bg-background/60 px-6 py-5 backdrop-blur-2xl sm:mb-4 sm:px-8"
-      )}
-    >
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+    <header className="mb-3 flex flex-col gap-4 px-6 py-5 sm:mb-4 sm:px-8">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-2xl font-extrabold tracking-tight text-zinc-900 sm:text-3xl">
             Облік Палива
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-1 text-sm text-zinc-500">
             Управління дизельними активами
           </p>
         </div>
+        <PeriodSelect
+          period={fieldFuelPeriod}
+          onChange={onFieldFuelPeriodChange}
+        />
+      </div>
 
-        <div className="flex flex-wrap items-stretch gap-0">
-          <div className="min-w-[8.5rem] pr-5 sm:pr-6">
-            <p className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-              Усього на складах
+      {/* KPI strip */}
+      <div
+        className={cn(
+          "relative overflow-hidden rounded-2xl border border-zinc-200/80",
+          "bg-gradient-to-br from-white via-zinc-50/80 to-emerald-50/40",
+          "shadow-[0_1px_0_rgba(255,255,255,0.8)_inset,0_8px_24px_-12px_rgba(24,24,27,0.12)]"
+        )}
+      >
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white to-transparent"
+        />
+
+        <div className="grid grid-cols-1 divide-y divide-zinc-200/70 md:grid-cols-3 md:divide-x md:divide-y-0">
+          {/* Stock */}
+          <div className="flex min-h-[7.25rem] flex-col justify-between gap-3 p-5 sm:p-6">
+            <div className="flex items-center justify-between gap-2">
+              <p className="inline-flex items-center gap-2 text-[11px] font-semibold tracking-[0.08em] text-zinc-500 uppercase">
+                <Warehouse className="h-3.5 w-3.5 text-emerald-600" strokeWidth={2} />
+                Усього на складах
+              </p>
               {live ? (
-                <span className="ml-1.5 inline-flex items-center gap-1 font-medium normal-case tracking-normal text-emerald-600">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold tracking-wide text-emerald-700 ring-1 ring-emerald-600/15">
                   <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
-                  live
+                  LIVE
                 </span>
               ) : null}
-            </p>
+            </div>
+
             {storages.length === 0 ? (
-              <p className="mt-1 inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+              <p className="inline-flex items-center gap-1.5 text-sm text-zinc-400">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 Немає складів
               </p>
             ) : (
-              <>
-                <p className="mt-0.5 text-2xl font-bold tracking-tight tabular-nums text-zinc-900">
-                  {formatLiters(totalLiters)}{" "}
-                  <span className="text-sm font-semibold text-zinc-500">л</span>
+              <div>
+                <p className="flex items-baseline gap-1.5">
+                  <span className="text-[1.75rem] font-bold tracking-tight tabular-nums leading-none text-zinc-950 sm:text-[2rem]">
+                    {formatLiters(totalLiters)}
+                  </span>
+                  <span className="text-sm font-semibold text-zinc-400">л</span>
                 </p>
-                <p className="text-xs font-medium tabular-nums text-muted-foreground">
-                  ≈ {formatMoney(totalValue)} ₴
+                <p className="mt-2 text-[13px] font-medium tabular-nums text-zinc-500">
+                  ≈ {formatMoney(totalValue)}{" "}
+                  <span className="text-zinc-400">₴</span>
                 </p>
-              </>
+              </div>
             )}
           </div>
 
-          <Separator
-            orientation="vertical"
-            className="mx-0 hidden h-auto min-h-14 self-stretch data-[orientation=vertical]:h-auto sm:block"
-          />
-
-          <div className="min-w-[9.5rem] pt-3 sm:pt-0 sm:pl-6">
-            <p className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-              <Tractor className="h-3.5 w-3.5" strokeWidth={2} />
+          {/* Burned */}
+          <div className="flex min-h-[7.25rem] flex-col justify-between gap-3 p-5 sm:p-6">
+            <p className="inline-flex items-center gap-2 text-[11px] font-semibold tracking-[0.08em] text-zinc-500 uppercase">
+              <Tractor className="h-3.5 w-3.5 text-amber-600" strokeWidth={2} />
               Спалено на полях
             </p>
-            {fieldFuelLoading ? (
-              <Loader2 className="mt-2 h-5 w-5 animate-spin text-muted-foreground" />
-            ) : fieldFuelHasData ? (
-              <Popover>
-                <PopoverTrigger
-                  className={cn(
-                    "mt-0.5 inline-flex items-baseline gap-1.5 rounded-lg text-left",
-                    "outline-none transition hover:bg-zinc-100/80",
-                    "focus-visible:ring-2 focus-visible:ring-zinc-900/10"
-                  )}
-                >
-                  <span className="text-2xl font-bold tracking-tight tabular-nums text-zinc-900">
-                    {formatLiters(fieldFuelLiters ?? 0)}{" "}
-                    <span className="text-sm font-semibold text-zinc-500">
-                      л
-                    </span>
-                  </span>
-                  <Info
-                    className="mb-0.5 h-3.5 w-3.5 shrink-0 text-zinc-400"
-                    strokeWidth={2}
-                  />
-                </PopoverTrigger>
-                <PopoverContent
-                  align="start"
-                  side="bottom"
-                  className="w-[20rem] rounded-2xl border border-zinc-200 bg-white p-3 text-zinc-900 shadow-xl"
-                >
-                  <PopoverHeader className="mb-2 gap-0.5 px-1">
-                    <PopoverTitle className="text-sm font-bold">
-                      Хто спалив на полях
-                    </PopoverTitle>
-                    <PopoverDescription className="text-[11px] text-zinc-500">
-                      Техніка × поле · {periodLabel.toLowerCase()}
-                    </PopoverDescription>
-                  </PopoverHeader>
-                  <KpiBreakdownList
-                    emptyLabel="Немає розшифровки за період"
-                    rows={burnedRows}
-                  />
-                </PopoverContent>
-              </Popover>
-            ) : (
-              <p className="mt-1 max-w-[12rem] text-sm font-medium leading-snug text-zinc-500">
-                Немає даних за {fieldFuelPeriodCaption(fieldFuelPeriod)}
-              </p>
-            )}
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                className={cn(
-                  "mt-1 inline-flex items-center gap-1 rounded-lg px-1.5 py-0.5",
-                  "text-[11px] font-semibold text-zinc-500",
-                  "outline-none transition hover:bg-zinc-100 hover:text-zinc-800",
-                  "focus-visible:ring-2 focus-visible:ring-zinc-900/10"
-                )}
-              >
+            <div>
+              <KpiValue
+                liters={fieldFuelLiters}
+                loading={fieldFuelLoading}
+                empty={!fieldFuelHasData}
+                interactive={fieldFuelHasData && !fieldFuelLoading}
+                popoverTitle="Хто спалив на полях"
+                popoverDescription={`Техніка × поле · ${periodLabel.toLowerCase()}`}
+                breakdownEmpty={`Немає даних за ${fieldFuelPeriodCaption(fieldFuelPeriod)}`}
+                breakdownRows={burnedRows}
+                accentClass="text-amber-950"
+              />
+              <p className="mt-2 text-[12px] font-medium text-zinc-400">
                 {periodLabel}
-                <ChevronDown className="h-3 w-3 opacity-70" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="start"
-                className="min-w-[8.5rem] rounded-xl border border-zinc-200 bg-white p-1 text-zinc-900 shadow-lg"
-              >
-                {FIELD_FUEL_PERIODS.map((option) => (
-                  <DropdownMenuItem
-                    key={option.id}
-                    className={cn(
-                      "cursor-pointer rounded-lg px-2.5 py-2 text-sm",
-                      fieldFuelPeriod === option.id &&
-                        "bg-zinc-100 font-semibold"
-                    )}
-                    onClick={() => onFieldFuelPeriodChange(option.id)}
-                  >
-                    {option.label}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+              </p>
+            </div>
           </div>
 
-          <Separator
-            orientation="vertical"
-            className="mx-0 hidden h-auto min-h-14 self-stretch data-[orientation=vertical]:h-auto sm:block"
-          />
-
-          <div className="min-w-[9rem] pt-3 sm:pt-0 sm:pl-6">
-            <p className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-              <Fuel className="h-3.5 w-3.5" strokeWidth={2} />
+          {/* Refueled */}
+          <div className="flex min-h-[7.25rem] flex-col justify-between gap-3 p-5 sm:p-6">
+            <p className="inline-flex items-center gap-2 text-[11px] font-semibold tracking-[0.08em] text-zinc-500 uppercase">
+              <Fuel className="h-3.5 w-3.5 text-sky-600" strokeWidth={2} />
               Заправлено
             </p>
-            {refuelLoading ? (
-              <Loader2 className="mt-2 h-5 w-5 animate-spin text-muted-foreground" />
-            ) : refuelHasData ? (
-              <Popover>
-                <PopoverTrigger
-                  className={cn(
-                    "mt-0.5 inline-flex items-baseline gap-1.5 rounded-lg text-left",
-                    "outline-none transition hover:bg-zinc-100/80",
-                    "focus-visible:ring-2 focus-visible:ring-zinc-900/10"
-                  )}
-                >
-                  <span className="text-2xl font-bold tracking-tight tabular-nums text-zinc-900">
-                    {formatLiters(refuelLiters ?? 0)}{" "}
-                    <span className="text-sm font-semibold text-zinc-500">
-                      л
-                    </span>
-                  </span>
-                  <Info
-                    className="mb-0.5 h-3.5 w-3.5 shrink-0 text-zinc-400"
-                    strokeWidth={2}
-                  />
-                </PopoverTrigger>
-                <PopoverContent
-                  align="start"
-                  side="bottom"
-                  className="w-[18rem] rounded-2xl border border-zinc-200 bg-white p-3 text-zinc-900 shadow-xl"
-                >
-                  <PopoverHeader className="mb-2 gap-0.5 px-1">
-                    <PopoverTitle className="text-sm font-bold">
-                      Кому списали зі складу
-                    </PopoverTitle>
-                    <PopoverDescription className="text-[11px] text-zinc-500">
-                      Заправки · {periodLabel.toLowerCase()}
-                    </PopoverDescription>
-                  </PopoverHeader>
-                  <KpiBreakdownList
-                    emptyLabel="Немає заправок за період"
-                    rows={refuelRows}
-                  />
-                </PopoverContent>
-              </Popover>
-            ) : (
-              <p className="mt-1 max-w-[11rem] text-sm font-medium leading-snug text-zinc-500">
-                Немає заправок за {fieldFuelPeriodCaption(fieldFuelPeriod)}
+            <div>
+              <KpiValue
+                liters={refuelLiters}
+                loading={refuelLoading}
+                empty={!refuelHasData}
+                interactive={refuelHasData && !refuelLoading}
+                popoverTitle="Кому списали зі складу"
+                popoverDescription={`Заправки · ${periodLabel.toLowerCase()}`}
+                breakdownEmpty={`Немає заправок за ${fieldFuelPeriodCaption(fieldFuelPeriod)}`}
+                breakdownRows={refuelRows}
+                accentClass="text-sky-950"
+              />
+              <p className="mt-2 text-[12px] font-medium text-zinc-400">
+                {periodLabel}
               </p>
-            )}
-            <p className="mt-1 px-1.5 text-[11px] font-semibold text-zinc-400">
-              {periodLabel}
-            </p>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Command Bar — плитки без спільної «коробки» */}
+      {/* Command Bar */}
       <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           <Button
