@@ -421,10 +421,17 @@ export function buildDayAnalyticsFromSamples(
     tankVolumeLiters?: number | null;
     /** Бензовоз тощо — не детектувати «злив» */
     skipFuelDrainDetection?: boolean;
+    /**
+     * ДУТ сконфігуровано на юніті (з Wialon sens).
+     * Не плутати з «у семплах дня є літри» — інакше порожній день = «Немає датчика».
+     */
+    hasFuelSensorConfigured?: boolean;
   }
 ): DayAnalyticsPayload {
   const samples = downsampleAnalyticsSamples(rawSamples);
-  const hasFuelSensor = samples.some((s) => s.fuelLiters != null);
+  const hasFuelSamples = samples.some((s) => s.fuelLiters != null);
+  const hasFuelSensor =
+    options?.hasFuelSensorConfigured ?? hasFuelSamples;
   const hasIgnitionSensor = samples.some((s) => s.ignition != null);
 
   const fuelValues = samples
@@ -466,7 +473,7 @@ export function buildDayAnalyticsFromSamples(
   return {
     summary,
     fuelEvents:
-      hasFuelSensor && !options?.skipFuelDrainDetection
+      hasFuelSamples && !options?.skipFuelDrainDetection
         ? detectFuelDrainEvents(samples)
         : [],
     samples,

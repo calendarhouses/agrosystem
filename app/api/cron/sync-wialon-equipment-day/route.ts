@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { shiftKyivYmd, todayKyivYmd } from "@/lib/kyiv-date";
 import { syncWialonEquipmentDayStats } from "@/lib/wialon-equipment-day-sync";
 
 export const runtime = "nodejs";
@@ -21,7 +22,8 @@ function authorizeCron(request: NextRequest): boolean {
 
 /**
  * GET/POST /api/cron/sync-wialon-equipment-day
- * Денний пробіг / idle / зливи по техніці → wialon_equipment_day_stats.
+ * Денний пробіг / idle / зливи / паливо по техніці → wialon_equipment_day_stats.
+ * Без ?date= — спочатку вчора (повна доба), потім сьогодні.
  */
 async function handle(request: NextRequest) {
   if (!authorizeCron(request)) {
@@ -34,9 +36,24 @@ async function handle(request: NextRequest) {
   try {
     const url = new URL(request.url);
     const date = url.searchParams.get("date")?.trim() || undefined;
-    const result = await syncWialonEquipmentDayStats(date, {
-      budgetMs: 55_000,
+    if (date) {
+      const result = await syncWialonEquipmentDayStats(date, {
+        budgetMs: 55_000,
+      });
+      console.log("[cron/sync-wialon-equipment-day]", result);
+      return NextResponse.json(result, { headers: JSON_UTF8 });
+    }
+
+    const started = Date.now();
+    const today = todayKyivYmd();
+    const yesterday = await syncWialonEquipmentDayStats(
+      shiftKyivYmd(today, -1),
+      { budgetMs: 40_000 }
+    );
+    const todayResult = await syncWialonEquipmentDayStats(today, {
+      budgetMs: Math.max(8_000, 55_000 - (Date.now() - started)),
     });
+    const result = { ok: true as const, yesterday, today: todayResult };
     console.log("[cron/sync-wialon-equipment-day]", result);
     return NextResponse.json(result, { headers: JSON_UTF8 });
   } catch (error) {

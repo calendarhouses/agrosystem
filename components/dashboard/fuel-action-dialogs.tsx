@@ -12,6 +12,16 @@ import {
 } from "lucide-react";
 
 import { getRefuelSmartContext } from "@/app/fuel/actions";
+import {
+  FuelSheetFooter,
+  FuelSheetHeader,
+  fuelFieldLabelClass,
+  fuelPrimaryBtnClass,
+  fuelSelectItemClass,
+  fuelSelectTriggerClass,
+  fuelSheetBodyClass,
+  fuelSheetContentClass,
+} from "@/components/dashboard/fuel-sheet-chrome";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -24,10 +34,6 @@ import {
 import {
   Sheet,
   SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
 } from "@/components/ui/sheet";
 import type { RefuelActiveOpHint } from "@/lib/fuel-refuel-context";
 import type { FuelStorage } from "@/lib/fuel-storages";
@@ -66,28 +72,9 @@ type FuelActionDialogsProps = {
   onSuccess: () => void | Promise<void>;
 };
 
-const selectTriggerClass = cn(
-  "h-12 w-full min-w-0 max-w-full data-[size=default]:h-12 rounded-2xl border border-zinc-200 bg-zinc-50/80 px-4",
-  "text-sm font-medium text-zinc-900",
-  "overflow-hidden outline-none transition-all",
-  "focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/10",
-  "data-placeholder:text-zinc-400"
-);
-
-const selectItemClass = cn(
-  "cursor-pointer rounded-xl px-3 py-2.5 text-sm",
-  "focus:bg-zinc-100"
-);
-
-const actionSheetClass = cn(
-  "w-full gap-0 border-l border-zinc-200/80 bg-background p-0 text-zinc-900 shadow-xl sm:max-w-md",
-  "[&_[data-slot=sheet-close]]:text-zinc-500"
-);
-
-const stickyFooterClass = cn(
-  "mt-auto shrink-0 border-t border-border/60 bg-background/95 p-4 backdrop-blur-md",
-  "supports-[backdrop-filter]:bg-background/85"
-);
+const selectTriggerClass = fuelSelectTriggerClass;
+const selectItemClass = fuelSelectItemClass;
+const actionSheetClass = fuelSheetContentClass;
 
 async function saveTransaction(
   payload: {
@@ -260,13 +247,16 @@ function LitersAmountField({
 }) {
   return (
     <div className="space-y-2">
-      <Label
-        htmlFor={id}
-        className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase"
-      >
+      <Label htmlFor={id} className={fuelFieldLabelClass}>
         Кількість (літрів)
       </Label>
-      <div className="relative flex items-center justify-center rounded-2xl border border-zinc-200/80 bg-muted/20 px-3 py-2">
+      <div
+        className={cn(
+          "relative flex items-center justify-center rounded-2xl px-3 py-2",
+          "border border-zinc-200/90 bg-white",
+          "shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_1px_2px_rgba(24,24,27,0.04)]"
+        )}
+      >
         <input
           id={id}
           type="text"
@@ -307,13 +297,16 @@ function MoneyAmountField({
 }) {
   return (
     <div className="space-y-2">
-      <Label
-        htmlFor={id}
-        className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase"
-      >
+      <Label htmlFor={id} className={fuelFieldLabelClass}>
         {label}
       </Label>
-      <div className="relative flex items-center justify-center rounded-2xl border border-zinc-200/80 bg-muted/20 px-3 py-2">
+      <div
+        className={cn(
+          "relative flex items-center justify-center rounded-2xl px-3 py-2",
+          "border border-zinc-200/90 bg-white",
+          "shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_1px_2px_rgba(24,24,27,0.04)]"
+        )}
+      >
         <input
           id={id}
           type="text"
@@ -353,9 +346,7 @@ function StorageSelect({
 }) {
   return (
     <div className="space-y-1.5">
-      <Label className="text-xs font-semibold tracking-wide text-zinc-500 uppercase">
-        {label}
-      </Label>
+      <Label className={fuelFieldLabelClass}>{label}</Label>
       <Select
         items={items}
         value={value || null}
@@ -629,48 +620,41 @@ export function FuelActionDialogs({
           showOverlay={false}
           className={actionSheetClass}
         >
-          <SheetHeader className="shrink-0 border-b border-border/50 px-5 py-4 pr-12">
-            <div className="flex items-start gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-zinc-900 text-white shadow-sm">
-                <Plus className="h-4 w-4" strokeWidth={2} />
-              </div>
-              <div className="min-w-0">
-                <SheetTitle className="text-base font-bold tracking-tight text-zinc-900">
-                  {isEditing && editTransaction?.type === "inbound"
-                    ? "Редагувати закупівлю"
-                    : "Закупівля"}
-                </SheetTitle>
-                <SheetDescription className="mt-0.5 text-xs text-muted-foreground">
-                  Прихід на базу · видно залишки складів
-                </SheetDescription>
-              </div>
-            </div>
-          </SheetHeader>
+          <FuelSheetHeader
+            icon={Plus}
+            accent="emerald"
+            title={
+              isEditing && editTransaction?.type === "inbound"
+                ? "Редагувати закупівлю"
+                : "Закупівля"
+            }
+            description="Прихід на базу · видно залишки складів"
+          />
 
           {purchaseSuccess ? (
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
               <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 py-10 text-center">
-                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600">
-                  <CheckCircle2 className="h-7 w-7" strokeWidth={1.8} />
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 ring-1 ring-emerald-500/20">
+                  <CheckCircle2 className="h-8 w-8" strokeWidth={1.8} />
                 </div>
                 <div className="space-y-1.5">
                   <p className="text-base font-semibold text-zinc-900">
                     Партію збережено
                   </p>
-                  <p className="text-sm leading-relaxed text-muted-foreground">
+                  <p className="max-w-xs text-sm leading-relaxed text-zinc-500">
                     {purchaseSuccess}
                   </p>
                 </div>
               </div>
-              <SheetFooter className={stickyFooterClass}>
+              <FuelSheetFooter>
                 <Button
                   type="button"
                   onClick={() => closeReceive(false)}
-                  className="h-12 w-full rounded-xl bg-zinc-900 text-sm font-semibold text-white hover:bg-zinc-800"
+                  className={fuelPrimaryBtnClass}
                 >
                   Готово
                 </Button>
-              </SheetFooter>
+              </FuelSheetFooter>
             </div>
           ) : (
           <form
@@ -723,7 +707,7 @@ export function FuelActionDialogs({
               })();
             }}
           >
-            <div className="flex-1 space-y-6 overflow-y-auto px-5 py-5">
+            <div className={cn(fuelSheetBodyClass, "space-y-6")}>
               <StorageSelect
                 label="Куди зливаємо"
                 value={toStorage}
@@ -775,7 +759,7 @@ export function FuelActionDialogs({
               {error ? <FormErrorBanner message={error} /> : null}
             </div>
 
-            <SheetFooter className={stickyFooterClass}>
+            <FuelSheetFooter>
               <Button
                 type="submit"
                 disabled={
@@ -785,11 +769,7 @@ export function FuelActionDialogs({
                   receiveOverflow ||
                   storages.length === 0
                 }
-                className={cn(
-                  "h-12 w-full rounded-xl bg-zinc-900 text-sm font-semibold text-white",
-                  "hover:bg-zinc-800 active:scale-[0.99]",
-                  "disabled:cursor-not-allowed disabled:opacity-50"
-                )}
+                className={fuelPrimaryBtnClass}
               >
                 {submitting ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -799,7 +779,7 @@ export function FuelActionDialogs({
                   "Підтвердити прихід"
                 )}
               </Button>
-            </SheetFooter>
+            </FuelSheetFooter>
           </form>
           )}
         </SheetContent>
@@ -812,23 +792,16 @@ export function FuelActionDialogs({
           showOverlay={false}
           className={actionSheetClass}
         >
-          <SheetHeader className="shrink-0 border-b border-border/50 px-5 py-4 pr-12">
-            <div className="flex items-start gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-700">
-                <ArrowRightLeft className="h-4 w-4" strokeWidth={1.8} />
-              </div>
-              <div className="min-w-0">
-                <SheetTitle className="text-base font-bold tracking-tight text-zinc-900">
-                  {isEditing && editTransaction?.type === "transfer"
-                    ? "Редагувати переміщення"
-                    : "Переміщення"}
-                </SheetTitle>
-                <SheetDescription className="mt-0.5 text-xs text-muted-foreground">
-                  Цистерни → бензовоз · видно залишки
-                </SheetDescription>
-              </div>
-            </div>
-          </SheetHeader>
+          <FuelSheetHeader
+            icon={ArrowRightLeft}
+            accent="sky"
+            title={
+              isEditing && editTransaction?.type === "transfer"
+                ? "Редагувати переміщення"
+                : "Переміщення"
+            }
+            description="Цистерни → бензовоз · видно залишки"
+          />
 
           <form
             className="flex min-h-0 flex-1 flex-col overflow-hidden"
@@ -868,7 +841,7 @@ export function FuelActionDialogs({
               )
             }
           >
-            <div className="flex-1 space-y-6 overflow-y-auto px-5 py-5">
+            <div className={cn(fuelSheetBodyClass, "space-y-6")}>
               <StorageSelect
                 label="Звідки"
                 value={fromStorage}
@@ -902,7 +875,7 @@ export function FuelActionDialogs({
               {error ? <FormErrorBanner message={error} /> : null}
             </div>
 
-            <SheetFooter className={stickyFooterClass}>
+            <FuelSheetFooter>
               <Button
                 type="submit"
                 disabled={
@@ -912,11 +885,7 @@ export function FuelActionDialogs({
                   transferOverflow ||
                   storages.length < 2
                 }
-                className={cn(
-                  "h-12 w-full rounded-xl border border-zinc-200 bg-white text-sm font-semibold text-zinc-800",
-                  "hover:bg-zinc-50 active:scale-[0.99]",
-                  "disabled:cursor-not-allowed disabled:opacity-50"
-                )}
+                className={cn(fuelPrimaryBtnClass, "bg-sky-700 hover:bg-sky-800 shadow-sky-700/30")}
               >
                 {submitting ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -926,7 +895,7 @@ export function FuelActionDialogs({
                   "Перемістити паливо"
                 )}
               </Button>
-            </SheetFooter>
+            </FuelSheetFooter>
           </form>
         </SheetContent>
       </Sheet>
@@ -938,23 +907,16 @@ export function FuelActionDialogs({
           showOverlay={false}
           className={actionSheetClass}
         >
-          <SheetHeader className="shrink-0 border-b border-border/50 px-5 py-4 pr-12">
-            <div className="flex items-start gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-sm">
-                <Tractor className="h-4 w-4" strokeWidth={1.8} />
-              </div>
-              <div className="min-w-0">
-                <SheetTitle className="text-base font-bold tracking-tight text-zinc-900">
-                  {isEditing && editTransaction?.type === "outbound"
-                    ? "Редагувати заправку"
-                    : "Заправка техніки"}
-                </SheetTitle>
-                <SheetDescription className="mt-0.5 text-xs text-muted-foreground">
-                  Списання з бензовоза · видно залишки
-                </SheetDescription>
-              </div>
-            </div>
-          </SheetHeader>
+          <FuelSheetHeader
+            icon={Tractor}
+            accent="emerald"
+            title={
+              isEditing && editTransaction?.type === "outbound"
+                ? "Редагувати заправку"
+                : "Заправка техніки"
+            }
+            description="Списання з бензовоза · видно залишки"
+          />
 
           <form
             className="flex min-h-0 flex-1 flex-col overflow-hidden"
@@ -1012,7 +974,7 @@ export function FuelActionDialogs({
               )
             }
           >
-            <div className="flex-1 space-y-6 overflow-y-auto px-5 py-5">
+            <div className={cn(fuelSheetBodyClass, "space-y-6")}>
               <StorageSelect
                 label="Звідки"
                 value={fromStorage}
@@ -1023,7 +985,7 @@ export function FuelActionDialogs({
               />
 
               <div className="min-w-0 space-y-1.5">
-                <Label className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+                <Label className={fuelFieldLabelClass}>
                   Техніка
                 </Label>
                 <Select
@@ -1085,7 +1047,7 @@ export function FuelActionDialogs({
               </div>
 
               {unitId ? (
-                <div className="space-y-2.5 rounded-2xl border border-emerald-200/70 bg-emerald-50/50 px-3.5 py-3">
+                <div className="space-y-2.5 rounded-2xl border border-emerald-200/60 bg-gradient-to-br from-emerald-50/90 to-white px-3.5 py-3 shadow-sm">
                   {refuelContextLoading ? (
                     <p className="flex items-center gap-2 text-sm text-emerald-800/80">
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -1100,7 +1062,7 @@ export function FuelActionDialogs({
                             strokeWidth={2}
                           />
                           <span>
-                            Трактор зараз: {refuelLocationLabel}
+                            Локація зараз: {refuelLocationLabel}
                           </span>
                         </p>
                       ) : (
@@ -1151,7 +1113,7 @@ export function FuelActionDialogs({
               ) : null}
             </div>
 
-            <SheetFooter className={stickyFooterClass}>
+            <FuelSheetFooter>
               <Button
                 type="submit"
                 disabled={
@@ -1161,11 +1123,7 @@ export function FuelActionDialogs({
                   isAbsurdAmount ||
                   units.length === 0
                 }
-                className={cn(
-                  "h-12 w-full rounded-xl bg-emerald-600 text-sm font-semibold text-white",
-                  "hover:bg-emerald-700 active:scale-[0.99]",
-                  "disabled:cursor-not-allowed disabled:opacity-50"
-                )}
+                className={cn(fuelPrimaryBtnClass, "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/35")}
               >
                 {submitting ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -1175,7 +1133,7 @@ export function FuelActionDialogs({
                   "Заправити техніку"
                 )}
               </Button>
-            </SheetFooter>
+            </FuelSheetFooter>
           </form>
         </SheetContent>
       </Sheet>

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { syncWialonFieldFuelForToday } from "@/lib/wialon-field-fuel-sync";
+import {
+  syncWialonFieldFuelForToday,
+  syncWialonFieldFuelForYesterday,
+} from "@/lib/wialon-field-fuel-sync";
 
 export const runtime = "nodejs";
 /** Vercel Pro: до 300с; Hobby — обмеження платформи */
@@ -25,8 +28,8 @@ function authorizeCron(request: NextRequest): boolean {
 /**
  * GET/POST /api/cron/sync-wialon-fuel
  *
- * Фоновий CRON: візити техніки в геозонах полів за сьогодні +
- * витрата палива за ДРП → upsert у wialon_field_fuel_logs.
+ * Нічний CRON: закритий вчорашній день + часткове «сьогодні»
+ * → upsert у wialon_field_fuel_logs.
  *
  * Auth: Authorization: Bearer $CRON_SECRET
  */
@@ -39,7 +42,9 @@ async function handle(request: NextRequest) {
   }
 
   try {
-    const result = await syncWialonFieldFuelForToday();
+    const yesterday = await syncWialonFieldFuelForYesterday();
+    const today = await syncWialonFieldFuelForToday();
+    const result = { ok: true as const, yesterday, today };
     console.log("[cron/sync-wialon-fuel]", result);
     return NextResponse.json(result, { headers: JSON_UTF8 });
   } catch (error) {

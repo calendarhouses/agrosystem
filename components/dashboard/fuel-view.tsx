@@ -8,6 +8,7 @@ import {
   ArrowRightLeft,
   Calendar as CalendarIcon,
   CheckCircle2,
+  Clock3,
   Edit2,
   Factory,
   Fuel,
@@ -22,7 +23,10 @@ import {
 } from "lucide-react";
 import type { DateRange } from "react-day-picker";
 
-import { getTodayFieldFuelConsumed } from "@/app/fuel/actions";
+import {
+  getFieldFuelConsumed,
+  type FieldFuelPeriod,
+} from "@/app/fuel/actions";
 import {
   FuelActionDialogs,
   type FleetUnitOption,
@@ -46,7 +50,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { GlassCard } from "@/components/ui/glass-card";
-import { Badge } from "@/components/ui/badge";
 import {
   Popover,
   PopoverContent,
@@ -138,34 +141,71 @@ function formatRoute(tx: FuelTransaction): string {
   return tx.fromName ? `${tx.fromName} → техніка` : "→ техніка";
 }
 
-function BasSyncBadge({ status }: { status: FuelSyncStatus }) {
+function BasSyncBadge({
+  status,
+  onSend,
+  sending,
+}: {
+  status: FuelSyncStatus;
+  onSend?: () => void;
+  sending?: boolean;
+}) {
   if (status === "synced") {
     return (
-      <Badge
-        variant="outline"
-        className="border-emerald-200 bg-emerald-50 font-medium text-emerald-700"
+      <span
+        className={cn(
+          "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1",
+          "bg-emerald-50 text-[11px] font-semibold tracking-wide text-emerald-800",
+          "ring-1 ring-emerald-600/15"
+        )}
       >
-        ✅ Проведено в 1С
-      </Badge>
+        <CheckCircle2 className="h-3 w-3 shrink-0" strokeWidth={2.2} />
+        Проведено в 1С
+      </span>
     );
   }
   if (status === "error") {
     return (
-      <Badge
-        variant="outline"
-        className="border-rose-200 bg-rose-50 font-medium text-rose-700"
+      <button
+        type="button"
+        disabled={sending || !onSend}
+        onClick={onSend}
+        className={cn(
+          "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1",
+          "bg-rose-50 text-[11px] font-semibold tracking-wide text-rose-800",
+          "ring-1 ring-rose-600/15 transition hover:bg-rose-100",
+          "disabled:cursor-not-allowed disabled:opacity-60"
+        )}
       >
-        ⚠ Помилка 1С
-      </Badge>
+        {sending ? (
+          <Loader2 className="h-3 w-3 animate-spin" />
+        ) : (
+          <AlertTriangle className="h-3 w-3 shrink-0" strokeWidth={2.2} />
+        )}
+        Повторити 1С
+      </button>
     );
   }
   return (
-    <Badge
-      variant="outline"
-      className="border-amber-200 bg-amber-50 font-medium text-amber-800"
+    <button
+      type="button"
+      disabled={sending || !onSend}
+      onClick={onSend}
+      title="Підготувати чернетку для бухгалтера в 1С"
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1",
+        "bg-amber-50 text-[11px] font-semibold tracking-wide text-amber-900",
+        "ring-1 ring-amber-500/20 transition hover:bg-amber-100",
+        "disabled:cursor-not-allowed disabled:opacity-60"
+      )}
     >
-      ⏳ Очікує 1С
-    </Badge>
+      {sending ? (
+        <Loader2 className="h-3 w-3 animate-spin" />
+      ) : (
+        <Clock3 className="h-3 w-3 shrink-0 text-amber-700" strokeWidth={2.2} />
+      )}
+      Очікує 1С
+    </button>
   );
 }
 
@@ -210,18 +250,20 @@ function WialonControlCell({
   unitHasDut,
   onReverify,
   reverifyBusy,
+  compact = false,
 }: {
   tx: FuelTransaction;
   /** Чи в каталозі Wialon для цієї техніки є ДУТ (з вкладки Техніка) */
   unitHasDut?: boolean;
   onReverify?: (txId: string) => void;
   reverifyBusy?: boolean;
+  compact?: boolean;
 }) {
   if (tx.type !== "outbound") {
     return (
       <span
         className="inline-flex min-h-7 items-center text-sm font-medium text-zinc-400"
-        title="Контроль Wialon не застосовується"
+        title="Контроль GPS не застосовується"
       >
         —
       </span>
@@ -233,10 +275,10 @@ function WialonControlCell({
   if (check.kind === "manual") {
     const knownDut = unitHasDut === true;
     return (
-      <div className="flex flex-col items-start gap-1.5">
+      <div className="flex flex-col items-start gap-1">
         <div className="flex flex-wrap items-center gap-1.5">
-          <div className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-zinc-100 px-2.5 py-1 text-xs font-medium whitespace-nowrap text-zinc-600 shadow-sm">
-            <Settings2 className="h-3.5 w-3.5 text-zinc-500" />
+          <div className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-zinc-100 px-2 py-0.5 text-[11px] font-medium whitespace-nowrap text-zinc-600">
+            <Settings2 className="h-3 w-3 text-zinc-500" />
             {knownDut ? "Очікування GPS" : "Ручний облік"}
           </div>
           {knownDut && onReverify ? (
@@ -246,53 +288,51 @@ function WialonControlCell({
               disabled={reverifyBusy}
               onClick={() => onReverify(tx.id)}
               className={cn(
-                "inline-flex h-7 w-7 items-center justify-center rounded-md border border-sky-200 bg-sky-50 text-sky-700",
+                "inline-flex h-6 w-6 items-center justify-center rounded-md border border-sky-200 bg-sky-50 text-sky-700",
                 "outline-none transition hover:bg-sky-100",
-                "focus-visible:ring-2 focus-visible:ring-sky-500/25",
                 "disabled:cursor-not-allowed disabled:opacity-60"
               )}
             >
               <RefreshCw
-                className={cn("h-3.5 w-3.5", reverifyBusy && "animate-spin")}
+                className={cn("h-3 w-3", reverifyBusy && "animate-spin")}
                 strokeWidth={2}
               />
               <span className="sr-only">Оновити GPS-звірку</span>
             </button>
           ) : null}
         </div>
-        <span className="text-[11px] leading-snug text-zinc-500">
-          {knownDut
-            ? "ДУТ є, але немає даних заправки за період звірки"
-            : "Техніка без датчика палива"}
-        </span>
+        {!compact ? (
+          <span className="text-[11px] leading-snug text-zinc-500">
+            {knownDut
+              ? "ДУТ є, але немає даних заправки за період звірки"
+              : "Техніка без датчика палива"}
+          </span>
+        ) : null}
       </div>
     );
   }
 
   if (check.kind === "confirmed") {
     return (
-      <div className="flex flex-col items-start gap-1.5">
-        <div className="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium whitespace-nowrap text-emerald-700 shadow-sm">
-          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-          Підтверджено
-        </div>
-        <span className="text-[11px] leading-snug text-zinc-500">
-          Збігається з даними GPS
-        </span>
+      <div className="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium whitespace-nowrap text-emerald-700">
+        <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+        GPS OK
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col items-start gap-1.5">
-      <div className="inline-flex items-center gap-1.5 rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-medium whitespace-nowrap text-rose-700 shadow-sm">
-        <AlertTriangle className="h-3.5 w-3.5 text-rose-600" />
+    <div className="flex flex-col items-start gap-1">
+      <div className="inline-flex items-center gap-1.5 rounded-md border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-medium whitespace-nowrap text-rose-700">
+        <AlertTriangle className="h-3 w-3 text-rose-600" />
         Нестача {formatLiters(check.variance)} л
       </div>
-      <span className="text-[11px] leading-snug text-zinc-500">
-        Заявлено: {formatLiters(check.claimed)} л | Датчик:{" "}
-        {formatLiters(check.sensor)} л
-      </span>
+      {!compact ? (
+        <span className="text-[11px] leading-snug text-zinc-500">
+          Заявлено: {formatLiters(check.claimed)} л | Датчик:{" "}
+          {formatLiters(check.sensor)} л
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -407,10 +447,12 @@ function TankCard({
   storage,
   onOpen,
   onEdit,
+  onDelete,
 }: {
   storage: FuelStorage;
   onOpen: () => void;
   onEdit: () => void;
+  onDelete: () => void;
 }) {
   const percent = storageFillPercent(storage);
   const status = resolveStatus(percent, storage.type);
@@ -457,6 +499,14 @@ function TankCard({
             >
               <Fuel className="h-3.5 w-3.5" />
               Деталі залишку
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              variant="destructive"
+              className="cursor-pointer rounded-lg px-2.5 py-2 text-rose-600 focus:text-rose-700"
+              onClick={() => onDelete()}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Видалити
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -558,7 +608,12 @@ export function FuelView({
   const [fieldFuelToday, setFieldFuelToday] = useState<number | null>(null);
   const [fieldFuelHasData, setFieldFuelHasData] = useState(false);
   const [fieldFuelLoading, setFieldFuelLoading] = useState(true);
+  const [fieldFuelPeriod, setFieldFuelPeriod] =
+    useState<FieldFuelPeriod>("today");
   const [reverifyTxId, setReverifyTxId] = useState<string | null>(null);
+  const [send1cTxId, setSend1cTxId] = useState<string | null>(null);
+  const [deleteStorage, setDeleteStorage] = useState<FuelStorage | null>(null);
+  const [deletingStorage, setDeletingStorage] = useState(false);
 
   const unitNameById = useMemo(() => {
     const map = new Map<number, string>();
@@ -719,6 +774,77 @@ export function FuelView({
     [dateRange, refreshTransactions]
   );
 
+  const sendTransactionTo1c = useCallback(
+    async (tx: FuelTransaction) => {
+      setSend1cTxId(tx.id);
+      try {
+        const equipmentHint =
+          tx.wialonUnitId != null
+            ? unitNameById.get(tx.wialonUnitId) ?? null
+            : null;
+        const response = await fetch("/api/fuel/transactions/send-1c", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            transactionId: tx.id,
+            equipmentHint,
+          }),
+        });
+        const json = (await response.json()) as {
+          ok?: boolean;
+          message?: string;
+          error?: string;
+          status?: FuelSyncStatus;
+        };
+        if (!response.ok || !json.ok) {
+          throw new Error(json.error || "Не вдалося підготувати чернетку 1С");
+        }
+        if (json.status) {
+          setTransactions((prev) =>
+            prev.map((row) =>
+              row.id === tx.id
+                ? { ...row, syncStatus: json.status as FuelSyncStatus }
+                : row
+            )
+          );
+        }
+        alert(
+          json.message ??
+            "Чернетку підготовлено. Відправка в BAS поки вимкнена."
+        );
+      } catch (err) {
+        alert(err instanceof Error ? err.message : "Помилка 1С");
+      } finally {
+        setSend1cTxId(null);
+      }
+    },
+    [unitNameById]
+  );
+
+  const confirmDeleteStorage = useCallback(async () => {
+    if (!deleteStorage) return;
+    setDeletingStorage(true);
+    try {
+      const response = await fetch(`/api/fuel/storages/${deleteStorage.id}`, {
+        method: "DELETE",
+      });
+      const json = (await response.json()) as { ok?: boolean; error?: string };
+      if (!response.ok || !json.ok) {
+        throw new Error(json.error || "Не вдалося видалити склад");
+      }
+      setDeleteStorage(null);
+      if (selectedStorage?.id === deleteStorage.id) {
+        setSelectedStorage(null);
+        setFuelSheetOpen(false);
+      }
+      await refreshStorages();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Помилка видалення");
+    } finally {
+      setDeletingStorage(false);
+    }
+  }, [deleteStorage, refreshStorages, selectedStorage]);
+
   const refreshAll = useCallback(async () => {
     await Promise.all([refreshStorages(), refreshTransactions()]);
   }, [refreshStorages, refreshTransactions]);
@@ -790,11 +916,11 @@ export function FuelView({
     };
   }, [refreshStorages, refreshTransactions, refreshAll]);
 
-  /** Витрата на полях сьогодні (Wialon CRON → wialon_field_fuel_logs, Europe/Kyiv) */
+  /** Витрата на полях: live Wialon (сьогодні/вчора) → логи */
   useEffect(() => {
     let cancelled = false;
     setFieldFuelLoading(true);
-    void getTodayFieldFuelConsumed().then((res) => {
+    void getFieldFuelConsumed(fieldFuelPeriod).then((res) => {
       if (cancelled) return;
       if (res.ok) {
         setFieldFuelToday(res.data.liters);
@@ -808,7 +934,7 @@ export function FuelView({
     return () => {
       cancelled = true;
     };
-  }, [transactions]);
+  }, [fieldFuelPeriod]);
 
   /** Список техніки з Wialon для модалки заправки */
   useEffect(() => {
@@ -853,9 +979,11 @@ export function FuelView({
         totalLiters={totalLiters}
         totalValue={totalValue}
         live={live}
-        fieldFuelToday={fieldFuelToday}
+        fieldFuelLiters={fieldFuelToday}
         fieldFuelHasData={fieldFuelHasData}
         fieldFuelLoading={fieldFuelLoading}
+        fieldFuelPeriod={fieldFuelPeriod}
+        onFieldFuelPeriodChange={setFieldFuelPeriod}
         onPurchase={() => {
           setEditTransaction(null);
           setIsReceiveOpen(true);
@@ -875,8 +1003,8 @@ export function FuelView({
       />
 
       <div className="mx-auto w-full max-w-7xl px-4 pb-6 sm:px-6 lg:px-8">
-      <section className="mb-4 md:mb-5">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+      <section className="mb-3 md:mb-4">
+        <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 className="text-sm font-semibold tracking-tight text-zinc-900">
               Склади
@@ -936,6 +1064,7 @@ export function FuelView({
                   setEditingStorage(storage);
                   setStorageDialogOpen(true);
                 }}
+                onDelete={() => setDeleteStorage(storage)}
               />
             ))
           )}
@@ -950,7 +1079,7 @@ export function FuelView({
                 Журнал операцій
               </p>
               <p className="text-xs text-zinc-500/80">
-                Банківська виписка · авто-звірка Wialon для заправок
+                Банківська виписка · колонка 1С готує чернетку бухгалтеру
               </p>
             </div>
             <button
@@ -1065,8 +1194,8 @@ export function FuelView({
                   <th className="px-4 py-3 text-right text-[11px] font-semibold tracking-wide text-zinc-500 uppercase">
                     Літри
                   </th>
-                  <th className="min-w-[200px] px-4 py-3 text-left text-[11px] font-semibold tracking-wide text-zinc-500 uppercase">
-                    Контроль Wialon
+                  <th className="min-w-[140px] px-4 py-3 text-left text-[11px] font-semibold tracking-wide text-zinc-500 uppercase">
+                    1С
                   </th>
                   <th className="w-12" />
                 </tr>
@@ -1117,19 +1246,30 @@ export function FuelView({
                               />
                             </div>
                             <div className="min-w-0">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <p className="font-semibold text-zinc-900">
-                                  {meta.title}
-                                </p>
-                                {tx.type === "inbound" ||
-                                tx.type === "transfer" ? (
-                                  <BasSyncBadge status={tx.syncStatus} />
-                                ) : null}
-                              </div>
+                              <p className="font-semibold text-zinc-900">
+                                {meta.title}
+                              </p>
                               {meta.detail ? (
                                 <p className="mt-0.5 truncate text-xs text-zinc-500">
                                   {meta.detail}
                                 </p>
+                              ) : null}
+                              {tx.type === "outbound" ? (
+                                <div className="mt-1.5">
+                                  <WialonControlCell
+                                    tx={tx}
+                                    unitHasDut={
+                                      tx.wialonUnitId != null
+                                        ? unitHasDutById.get(tx.wialonUnitId)
+                                        : undefined
+                                    }
+                                    onReverify={(id) =>
+                                      void reverifySingleTransaction(id)
+                                    }
+                                    reverifyBusy={reverifyTxId === tx.id}
+                                    compact
+                                  />
+                                </div>
                               ) : null}
                             </div>
                           </div>
@@ -1147,17 +1287,16 @@ export function FuelView({
                         >
                           {litersLabel}
                         </td>
-                        <td className="min-w-[200px] px-4 py-4 text-left">
-                          <WialonControlCell
-                            tx={tx}
-                            unitHasDut={
-                              tx.wialonUnitId != null
-                                ? unitHasDutById.get(tx.wialonUnitId)
-                                : undefined
-                            }
-                            onReverify={(id) => void reverifySingleTransaction(id)}
-                            reverifyBusy={reverifyTxId === tx.id}
-                          />
+                        <td className="min-w-[140px] px-4 py-4 text-left">
+                          {tx.type === "inbound" || tx.type === "transfer" ? (
+                            <BasSyncBadge
+                              status={tx.syncStatus}
+                              sending={send1cTxId === tx.id}
+                              onSend={() => void sendTransactionTo1c(tx)}
+                            />
+                          ) : (
+                            <span className="text-xs text-zinc-400">—</span>
+                          )}
                         </td>
                         <td className="w-12 text-center">
                           <DropdownMenu>
@@ -1228,6 +1367,63 @@ export function FuelView({
         storage={editingStorage}
         onSuccess={refreshStorages}
       />
+
+      <Dialog
+        open={deleteStorage != null}
+        onOpenChange={(open) => {
+          if (!open && !deletingStorage) setDeleteStorage(null);
+        }}
+      >
+        <DialogContent
+          showCloseButton={false}
+          className={cn(
+            "gap-0 overflow-hidden rounded-3xl border border-zinc-200/80 bg-white p-8 text-zinc-900 shadow-2xl sm:max-w-md",
+            "[&_[data-slot=dialog-close]]:hidden"
+          )}
+        >
+          <div className="flex flex-col items-center text-center">
+            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-rose-100">
+              <Trash2 className="text-rose-600" size={24} />
+            </div>
+            <DialogHeader className="items-center text-center">
+              <DialogTitle className="text-xl font-bold text-zinc-900">
+                Видалити склад?
+              </DialogTitle>
+              <DialogDescription className="mt-2 text-base text-zinc-500">
+                «
+                <strong className="font-semibold text-zinc-900">
+                  {deleteStorage?.name}
+                </strong>
+                » зникне з обліку. Можна лише якщо залишок 0 л і немає операцій
+                в журналі.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="mt-6 flex w-full gap-3">
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={deletingStorage}
+                onClick={() => setDeleteStorage(null)}
+                className="h-11 flex-1 rounded-xl"
+              >
+                Скасувати
+              </Button>
+              <Button
+                type="button"
+                disabled={deletingStorage}
+                onClick={() => void confirmDeleteStorage()}
+                className="h-11 flex-1 rounded-xl bg-rose-600 text-white hover:bg-rose-700"
+              >
+                {deletingStorage ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  "Видалити"
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={deleteTx != null}

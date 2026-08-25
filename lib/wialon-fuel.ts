@@ -4,8 +4,11 @@
  * start − end + заправки (різкі прирости рівня).
  */
 
+import { extractTimedFuelSamples } from "@/lib/wialon-fuel-decode";
 import {
   extractFuelLevelsFromMessages,
+  getWialonUnitSensors,
+  listUnitSensors,
   loadWialonUnitMessages,
   type WialonTrackMessage,
   wialonLogin,
@@ -25,58 +28,16 @@ export type WialonFuelConsumptionResult = {
   sampleCount: number;
 };
 
-function readMessageTime(msg: WialonTrackMessage): number | null {
-  if (typeof msg.t === "number" && Number.isFinite(msg.t) && msg.t > 0) {
-    return msg.t;
-  }
-  return null;
-}
-
-function readMessageParams(
-  msg: WialonTrackMessage
-): Record<string, unknown> {
-  const p = msg.p;
-  if (p && typeof p === "object" && !Array.isArray(p)) {
-    return p as Record<string, unknown>;
-  }
-  return {};
-}
-
-function readFuelLiters(params: Record<string, unknown>): number | null {
-  for (const key of [
-    "fuel",
-    "fuel_level",
-    "rs",
-    "rs485fuel",
-    "adc1",
-    "lls",
-    "io_201",
-  ] as const) {
-    if (!(key in params)) continue;
-    const raw = Number(params[key]);
-    if (Number.isFinite(raw) && raw >= 0 && raw < 5000) return raw;
-  }
-  for (const [key, value] of Object.entries(params)) {
-    if (!/fuel|палив|топлив|lls|^rs$/i.test(key)) continue;
-    const raw = Number(value);
-    if (Number.isFinite(raw) && raw >= 0 && raw < 5000) return raw;
-  }
-  return null;
-}
-
 type FuelSample = { t: number; liters: number };
 
-function samplesFromMessages(messages: WialonTrackMessage[]): FuelSample[] {
-  const out: FuelSample[] = [];
-  for (const msg of messages) {
-    const t = readMessageTime(msg);
-    if (t == null) continue;
-    const liters = readFuelLiters(readMessageParams(msg));
-    if (liters == null) continue;
-    out.push({ t, liters });
-  }
-  out.sort((a, b) => a.t - b.t);
-  return out;
+function samplesFromMessages(
+  messages: WialonTrackMessage[],
+  sensors: ReturnType<typeof listUnitSensors> = []
+): FuelSample[] {
+  return extractTimedFuelSamples(messages, sensors).map((s) => ({
+    t: s.t,
+    liters: s.liters,
+  }));
 }
 
 function median(values: number[]): number | null {
@@ -197,12 +158,11 @@ export async function fetchWialonFuelConsumption(
   try {
     const eid = await wialonLogin();
 
-    let messages = await loadWialonUnitMessages(
-      eid,
-      unitId,
-      startTime,
-      endTime
-    );
+    const [messagesRaw, unitWithSensors] = await Promise.all([
+      loadWialonUnitMessages(eid, unitId, startTime, endTime),
+      getWialonUnitSensors(eid, unitId),
+    ]);
+    let messages = messagesRaw;
 
     if (!messages.length) {
       messages = await loadWialonUnitMessages(
@@ -214,11 +174,14 @@ export async function fetchWialonFuelConsumption(
       );
     }
 
-    let samples = samplesFromMessages(messages);
+    const sensors = unitWithSensors
+      ? listUnitSensors(unitWithSensors)
+      : [];
+    let samples = samplesFromMessages(messages, sensors);
 
     // Fallback: рівні без timestamp-прив’язки (рідкісний формат params)
     if (samples.length < 2) {
-      const levels = extractFuelLevelsFromMessages(messages);
+      const levels = extractFuelLevelsFromMessages(messages, sensors);
       if (levels.length >= 2) {
         samples = levels.map((liters, index) => ({
           t: startTime + index,

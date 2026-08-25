@@ -13,6 +13,14 @@ import {
 } from "lucide-react";
 
 import { getUnrecordedRefuelings } from "@/app/fuel/actions";
+import {
+  FuelSheetHeader,
+  fuelFieldLabelClass,
+  fuelPrimaryBtnClass,
+  fuelSelectTriggerClass,
+  fuelSheetBodyClass,
+  fuelSheetContentClass,
+} from "@/components/dashboard/fuel-sheet-chrome";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -24,9 +32,6 @@ import {
 import {
   Sheet,
   SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
 } from "@/components/ui/sheet";
 import type { UnrecordedRefueling } from "@/lib/fuel-unrecorded-refuelings";
 import type { FuelStorage } from "@/lib/fuel-storages";
@@ -215,31 +220,56 @@ export function FuelRefuelRadar({
       <SheetContent
         side="right"
         showOverlay={false}
-        className={cn(
-          "w-full gap-0 overflow-hidden border-l border-zinc-200/80 bg-background p-0 shadow-xl sm:max-w-md",
-          "[&_[data-slot=sheet-close]]:text-zinc-500"
-        )}
+        className={fuelSheetContentClass}
       >
-        <SheetHeader className="shrink-0 border-b border-border/50 px-5 py-4 pr-12">
-          <SheetTitle className="flex items-center gap-2 text-base font-bold text-zinc-900">
-            <Radar className="h-4 w-4 text-amber-600" />
-            Необліковані заправки
-          </SheetTitle>
-          <SheetDescription className="text-xs text-muted-foreground">
-            Wialon ДУТ · видно залишки складів під час схвалення
-          </SheetDescription>
-        </SheetHeader>
+        <FuelSheetHeader
+          icon={Radar}
+          accent="amber"
+          title="Необліковані заправки"
+          description="Стрибки ДУТ за останні 7 днів · схваліть і спишемо зі складу"
+          meta={
+            hasAlerts ? (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-800 ring-1 ring-rose-500/15">
+                <span className="relative flex h-1.5 w-1.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" />
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-rose-500" />
+                </span>
+                Знайдено {count}
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-800 ring-1 ring-emerald-500/15">
+                Чисто · немає розбіжностей
+              </span>
+            )
+          }
+        />
 
-        <div className="flex-1 overflow-y-auto px-4 py-4">
+        <div className={cn(fuelSheetBodyClass, "gap-3")}>
           {events.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 py-12 text-center">
-              <CheckCircle2 className="h-8 w-8 text-emerald-500" />
-              <p className="text-sm font-medium text-zinc-800">
+            <div className="flex flex-col items-center gap-3 rounded-2xl border border-zinc-200/70 bg-white/80 py-12 text-center shadow-sm">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 ring-1 ring-emerald-500/20">
+                <CheckCircle2 className="h-6 w-6" />
+              </div>
+              <p className="text-sm font-semibold text-zinc-800">
                 Список порожній
               </p>
-              <p className="text-xs text-zinc-500">
-                Усі виявлені заправки вже схвалені або обліковані
+              <p className="max-w-[14rem] text-xs leading-relaxed text-zinc-500">
+                Усі виявлені заправки вже схвалені або обліковані в журналі
               </p>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => void scan()}
+                disabled={loading}
+                className="mt-1 h-9 gap-2 rounded-xl text-xs font-semibold"
+              >
+                {loading ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5" />
+                )}
+                Сканувати ще раз
+              </Button>
             </div>
           ) : (
             <ul className="space-y-3">
@@ -254,54 +284,61 @@ export function FuelRefuelRadar({
                 return (
                   <li
                     key={key}
-                    className="rounded-2xl border border-zinc-200/90 bg-white p-4 shadow-sm"
+                    className="overflow-hidden rounded-2xl border border-zinc-200/80 bg-white shadow-[0_1px_2px_rgba(24,24,27,0.04),0_10px_28px_-14px_rgba(24,24,27,0.16)]"
                   >
-                    <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="flex items-start gap-3 border-b border-zinc-100 bg-gradient-to-br from-zinc-50/80 to-white px-4 py-3.5">
+                      <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-600 text-white shadow-md shadow-emerald-600/25">
+                        <Tractor className="h-5 w-5" strokeWidth={1.8} />
+                      </span>
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <Tractor className="h-4 w-4 shrink-0 text-emerald-600" />
-                          <p className="truncate text-sm font-semibold text-zinc-900">
-                            {event.equipmentName}
-                          </p>
-                        </div>
-                        <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500">
-                          <span>
-                            Час:{" "}
-                            <span className="font-semibold tabular-nums text-zinc-800">
-                              {formatEventTime(event.timeIso)}
-                            </span>
-                            {formatEventDay(event.timeIso) ? (
-                              <span className="text-zinc-400">
-                                {" "}
-                                · {formatEventDay(event.timeIso)}
-                              </span>
-                            ) : null}
-                          </span>
-                          <span>
-                            Обʼєм:{" "}
-                            <span className="font-semibold tabular-nums text-emerald-700">
-                              +{formatLiters(event.volume)} л
-                            </span>
-                          </span>
+                        <p className="truncate text-[15px] font-bold tracking-tight text-zinc-900">
+                          {event.equipmentName}
                         </p>
                         {event.location.label ||
                         (event.location.lat != null &&
                           event.location.lng != null) ? (
-                          <p className="mt-1 flex items-center gap-1 text-[11px] text-zinc-400">
-                            <MapPin className="h-3 w-3 shrink-0" />
+                          <p className="mt-1 flex items-center gap-1 text-[11px] text-zinc-500">
+                            <MapPin className="h-3 w-3 shrink-0 text-zinc-400" />
                             <span className="truncate">
                               {event.location.label ??
                                 `${event.location.lat?.toFixed(5)}, ${event.location.lng?.toFixed(5)}`}
                             </span>
                           </p>
-                        ) : null}
+                        ) : (
+                          <p className="mt-1 text-[11px] text-zinc-400">
+                            Локація GPS недоступна
+                          </p>
+                        )}
                       </div>
                     </div>
 
-                    <div className="mt-3 space-y-1.5">
-                      <label className="text-[11px] font-semibold tracking-wide text-zinc-500 uppercase">
-                        Джерело
-                      </label>
+                    <div className="grid grid-cols-2 gap-2 px-4 pt-3">
+                      <div className="rounded-xl border border-zinc-100 bg-zinc-50/80 px-3 py-2.5">
+                        <p className="text-[10px] font-semibold tracking-[0.08em] text-zinc-400 uppercase">
+                          Час
+                        </p>
+                        <p className="mt-0.5 text-sm font-bold tabular-nums text-zinc-900">
+                          {formatEventTime(event.timeIso)}
+                        </p>
+                        {formatEventDay(event.timeIso) ? (
+                          <p className="text-[11px] text-zinc-500">
+                            {formatEventDay(event.timeIso)}
+                          </p>
+                        ) : null}
+                      </div>
+                      <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 px-3 py-2.5">
+                        <p className="text-[10px] font-semibold tracking-[0.08em] text-emerald-700/70 uppercase">
+                          Обʼєм
+                        </p>
+                        <p className="mt-0.5 text-sm font-bold tabular-nums text-emerald-800">
+                          +{formatLiters(event.volume)} л
+                        </p>
+                        <p className="text-[11px] text-emerald-700/70">ДУТ</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5 px-4 pt-3">
+                      <label className={fuelFieldLabelClass}>Джерело</label>
                       <Select
                         items={storages.map((s) => ({
                           value: s.id,
@@ -314,13 +351,7 @@ export function FuelRefuelRadar({
                           }
                         }}
                       >
-                        <SelectTrigger
-                          className={cn(
-                            "h-11 w-full min-w-0 rounded-xl border border-zinc-200 bg-zinc-50 px-3",
-                            "text-sm font-medium text-zinc-900",
-                            "outline-none focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/10"
-                          )}
-                        >
+                        <SelectTrigger className={fuelSelectTriggerClass}>
                           <SelectValue placeholder="Оберіть склад">
                             {donor
                               ? `${donor.name}${donor.type === "mobile" ? " · бензовоз" : ""}`
@@ -358,40 +389,41 @@ export function FuelRefuelRadar({
                       </Select>
                     </div>
 
-                    {insufficient ? (
-                      <p className="mt-2 text-xs font-medium text-rose-600">
-                        Недостатньо палива в джерелі (
-                        {formatLiters(donor?.currentVolume ?? 0)} л)
-                      </p>
-                    ) : null}
-                    {rowError[key] ? (
-                      <p className="mt-2 text-xs font-medium text-rose-600">
-                        {rowError[key]}
-                      </p>
-                    ) : null}
+                    <div className="px-4 pt-2 pb-4">
+                      {insufficient ? (
+                        <p className="mb-2 text-xs font-medium text-rose-600">
+                          Недостатньо палива в джерелі (
+                          {formatLiters(donor?.currentVolume ?? 0)} л)
+                        </p>
+                      ) : null}
+                      {rowError[key] ? (
+                        <p className="mb-2 text-xs font-medium text-rose-600">
+                          {rowError[key]}
+                        </p>
+                      ) : null}
 
-                    <Button
-                      type="button"
-                      disabled={
-                        busy ||
-                        !sourceId ||
-                        insufficient ||
-                        storages.length === 0
-                      }
-                      onClick={() => void approve(event)}
-                      className={cn(
-                        "mt-3 h-10 w-full rounded-xl bg-emerald-600 text-sm font-semibold text-white",
-                        "hover:bg-emerald-700",
-                        "disabled:opacity-60"
-                      )}
-                    >
-                      {busy ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      ) : (
-                        <CheckCircle2 className="mr-2 h-4 w-4" />
-                      )}
-                      Схвалити
-                    </Button>
+                      <Button
+                        type="button"
+                        disabled={
+                          busy ||
+                          !sourceId ||
+                          insufficient ||
+                          storages.length === 0
+                        }
+                        onClick={() => void approve(event)}
+                        className={cn(
+                          fuelPrimaryBtnClass,
+                          "h-11 bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/30"
+                        )}
+                      >
+                        {busy ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="mr-2 h-4 w-4" />
+                        )}
+                        Схвалити
+                      </Button>
+                    </div>
                   </li>
                 );
               })}
@@ -404,41 +436,51 @@ export function FuelRefuelRadar({
 
   if (isCommandBar) {
     return (
-      <div className={cn("shrink-0", className)}>
+      <div className={cn("flex w-full flex-1 flex-col", className)}>
         <Button
           type="button"
-          variant="secondary"
           disabled={loading && !hasAlerts}
           onClick={() => {
             if (hasAlerts) setDrawerOpen(true);
             else void scan();
           }}
           className={cn(
-            "relative h-10 gap-2 rounded-xl px-3.5 text-sm font-semibold",
+            "h-auto min-h-14 w-full flex-1 flex-col items-start justify-center gap-0.5 rounded-2xl px-4 py-3",
+            "text-left shadow-sm",
             hasAlerts
-              ? "bg-rose-500/10 text-rose-800 hover:bg-rose-500/15 hover:text-rose-900"
-              : "text-muted-foreground hover:text-zinc-700"
+              ? "border border-rose-200/80 bg-gradient-to-br from-rose-50 to-white text-rose-950 hover:from-rose-100/90"
+              : "border border-zinc-200/80 bg-gradient-to-br from-zinc-50 to-white text-zinc-800 hover:from-zinc-100/80"
           )}
         >
-          <span className="relative inline-flex h-4 w-4 shrink-0 items-center justify-center">
-            <Radar className="h-4 w-4" strokeWidth={2} />
-            {hasAlerts ? (
-              <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-rose-500" />
-              </span>
-            ) : null}
-          </span>
-          {loading && !hasAlerts ? (
-            <span className="inline-flex items-center gap-1.5">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              Сканування…
+          <span className="inline-flex items-center gap-2 text-sm font-bold">
+            <span
+              className={cn(
+                "relative inline-flex h-7 w-7 items-center justify-center rounded-xl text-white shadow-sm",
+                hasAlerts ? "bg-rose-600" : "bg-zinc-700"
+              )}
+            >
+              <Radar className="h-3.5 w-3.5" strokeWidth={2} />
+              {hasAlerts ? (
+                <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-rose-300" />
+                </span>
+              ) : null}
             </span>
-          ) : hasAlerts ? (
-            `Радар: Знайдено ${count}`
-          ) : (
-            "Радар: Чисто"
-          )}
+            {loading && !hasAlerts
+              ? "Сканування…"
+              : hasAlerts
+                ? `Радар: ${count}`
+                : "Радар: Чисто"}
+          </span>
+          <span
+            className={cn(
+              "pl-9 text-[11px] font-medium",
+              hasAlerts ? "text-rose-800/70" : "text-zinc-500"
+            )}
+          >
+            {hasAlerts ? "Необліковані заправки" : "Останні 7 днів"}
+          </span>
         </Button>
         {error ? (
           <p className="mt-1 max-w-[12rem] text-right text-[10px] text-rose-600">

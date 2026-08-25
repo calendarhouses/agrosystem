@@ -14,13 +14,17 @@ import {
   type DieselPriceResult,
 } from "@/lib/fuel-price";
 import {
-  sumFieldFuelConsumedForDate,
-  todayKyivDateString,
+  ensureWialonFieldFuelFresh,
+  sumFieldFuelConsumedForPeriod,
+  type FieldFuelPeriod,
 } from "@/lib/wialon-field-fuel-sync";
+import { shiftKyivYmd, todayKyivYmd } from "@/lib/kyiv-date";
 
 export type ActionResult<T = null> =
   | { ok: true; data: T }
   | { ok: false; error: string };
+
+export type { FieldFuelPeriod };
 
 /** Актуальна ціна дизеля ₴/л (fuel_storages → inventory → fallback). */
 export async function getDieselPriceUah(): Promise<
@@ -40,24 +44,58 @@ export async function getDieselPriceUah(): Promise<
   }
 }
 
-/** Сума спаленого на полях сьогодні (Europe/Kyiv) з wialon_field_fuel_logs. */
-export async function getTodayFieldFuelConsumed(): Promise<
+/** Сума спаленого на полях за період (live Wialon для сьогодні/вчора). */
+export async function getFieldFuelConsumed(
+  period: FieldFuelPeriod = "today"
+): Promise<
   ActionResult<{
     liters: number;
-    date: string;
-    /** false = CRON ще не дав рядків за сьогодні */
+    period: FieldFuelPeriod;
+    fromDate: string;
+    toDate: string;
     hasData: boolean;
+    /** Чи підтягнули свіжі повідомлення з Wialon перед сумою */
+    liveSynced: boolean;
   }>
 > {
   try {
-    const date = todayKyivDateString();
-    const sum = await sumFieldFuelConsumedForDate(date);
+    const safe: FieldFuelPeriod =
+      period === "yesterday" || period === "week" ? period : "today";
+    const today = todayKyivYmd();
+    let liveSynced = false;
+
+    // Live з Wialon лише якщо кеш старше 5 хв (той самий шлях, що Карта полів)
+    try {
+      if (safe === "today") {
+        const r = await ensureWialonFieldFuelFresh(today, 5 * 60 * 1000);
+        liveSynced = r.synced;
+      } else if (safe === "yesterday") {
+        const r = await ensureWialonFieldFuelFresh(
+          shiftKyivYmd(today, -1),
+          30 * 60 * 1000
+        );
+        liveSynced = r.synced;
+      } else {
+        const r = await ensureWialonFieldFuelFresh(today, 5 * 60 * 1000);
+        liveSynced = r.synced;
+      }
+    } catch (syncErr) {
+      console.error(
+        "[field-fuel] live Wialon sync",
+        syncErr instanceof Error ? syncErr.message : syncErr
+      );
+    }
+
+    const sum = await sumFieldFuelConsumedForPeriod(safe);
     return {
       ok: true,
       data: {
         liters: sum.liters,
-        date: sum.date,
+        period: sum.period,
+        fromDate: sum.fromDate,
+        toDate: sum.toDate,
         hasData: sum.hasData,
+        liveSynced,
       },
     };
   } catch (error) {
@@ -69,6 +107,11 @@ export async function getTodayFieldFuelConsumed(): Promise<
           : "Не вдалося завантажити витрату на полях",
     };
   }
+}
+
+/** @deprecated використовуйте getFieldFuelConsumed('today') */
+export async function getTodayFieldFuelConsumed() {
+  return getFieldFuelConsumed("today");
 }
 
 /**
@@ -92,17 +135,16 @@ export async function getRefuelSmartContext(
 }
 
 /**
- * Zero-Data Entry: заправки з Wialon за 24/48 год, яких немає
- * в ручних outbound (±45 хв, ±10% обʼєму).
+ * Zero-Data Entry: необліковані заправки з Wialon.
+ * lookbackHours: 48 (за замовчуванням) або 168 (7 днів).
  */
 export async function getUnrecordedRefuelings(options?: {
-  /** 24 або 48 (за замовчуванням 48) */
   lookbackHours?: number;
 }): Promise<ActionResult<UnrecordedRefueling[]>> {
   try {
     const raw = options?.lookbackHours;
     const lookbackHours =
-      raw === 24 || raw === 48 ? raw : UNRECORDED_LOOKBACK_HOURS;
+      raw === 24 || raw === 48 || raw === 168 ? raw : UNRECORDED_LOOKBACK_HOURS;
     const data = await findUnrecordedRefuelings({ lookbackHours });
     return { ok: true, data };
   } catch (error) {

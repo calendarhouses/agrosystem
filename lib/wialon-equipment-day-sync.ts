@@ -7,6 +7,7 @@ import { booleanPointInPolygon, point } from "@turf/turf";
 import type { Feature, MultiPolygon, Polygon } from "geojson";
 
 import { EMPTY_DAY_ANALYTICS } from "@/lib/equipment-day-analytics";
+import type { DayAnalyticsPayload } from "@/lib/equipment-day-analytics";
 import { isFuelDeliveryUnit } from "@/lib/equipment-fuel-tanks";
 import type { FieldGeometry } from "@/lib/farm-fields";
 import {
@@ -36,6 +37,10 @@ export type EquipmentDayStatRow = {
   hours_idling: number;
   hours_on_field: number;
   drain_events: number;
+  fuel_start: number | null;
+  fuel_end: number | null;
+  fuel_delta: number | null;
+  has_fuel_sensor: boolean;
   sync_time: string;
 };
 
@@ -49,7 +54,7 @@ export type SyncEquipmentDayResult = {
 };
 
 /** Сьогоднішні KPI вважаємо застарілими після цього інтервалу */
-export const FLEET_DAY_STALE_MS = 15 * 60 * 1000;
+export const FLEET_DAY_STALE_MS = 2 * 60 * 1000;
 /** Бюджет user-request sync (Hobby ~60с) */
 export const FLEET_DAY_SYNC_BUDGET_MS = 50_000;
 
@@ -136,6 +141,33 @@ async function persistDayStatRows(
       throw new Error(
         "Таблиця wialon_equipment_day_stats відсутня. Виконай міграцію 026."
       );
+    }
+    // Міграція 032 ще не накатана — пишемо без fuel_* колонок
+    if (
+      error.message?.includes("fuel_start") ||
+      error.message?.includes("fuel_end") ||
+      error.message?.includes("fuel_delta") ||
+      error.message?.includes("has_fuel_sensor") ||
+      error.code === "42703"
+    ) {
+      const legacyRows = upserts.map(
+        ({
+          fuel_start: _fs,
+          fuel_end: _fe,
+          fuel_delta: _fd,
+          has_fuel_sensor: _hs,
+          ...rest
+        }) => rest
+      );
+      const retry = await supabase.from("wialon_equipment_day_stats").upsert(
+        legacyRows,
+        {
+          onConflict: "wialon_unit_id,date,season",
+          count: "exact",
+        }
+      );
+      if (retry.error) throw new Error(retry.error.message);
+      return retry.count ?? legacyRows.length;
     }
     if (
       error.message?.includes("onConflict") ||
@@ -267,6 +299,10 @@ async function runEquipmentDaySync(
             drain_events: isFuelDeliveryUnit(unit.name)
               ? 0
               : analytics.fuelEvents.length,
+            fuel_start: analytics.summary.fuelStart,
+            fuel_end: analytics.summary.fuelEnd,
+            fuel_delta: analytics.summary.fuelDelta,
+            has_fuel_sensor: analytics.summary.hasFuelSensor,
             sync_time: syncTime,
           } satisfies EquipmentDayStatRow;
         } catch (err) {
@@ -442,6 +478,191 @@ export async function loadFleetDaySummaryFromDb(
     source: rows.length > 0 ? "db" : "empty",
     unitStats,
   };
+}
+
+export type UnitDayStatsDto = {
+  wialonUnitId: number;
+  date: string;
+  distanceKm: number;
+  workHours: number;
+  hoursIdling: number;
+  hoursOnField: number;
+  drainEvents: number;
+  fuelStart: number | null;
+  fuelEnd: number | null;
+  fuelDelta: number | null;
+  hasFuelSensor: boolean;
+  syncTime: string | null;
+  source: "db" | "empty";
+};
+
+/**
+ * Денні метрики одного юніта з БД (після CRON / fleet sync).
+ * Використовується як fallback для «Зміна за день», якщо live-трек без палива.
+ */
+export async function loadUnitDayStatsFromDb(
+  wialonUnitId: number,
+  dateYmd: string
+): Promise<UnitDayStatsDto> {
+  const empty: UnitDayStatsDto = {
+    wialonUnitId,
+    date: dateYmd,
+    distanceKm: 0,
+    workHours: 0,
+    hoursIdling: 0,
+    hoursOnField: 0,
+    drainEvents: 0,
+    fuelStart: null,
+    fuelEnd: null,
+    fuelDelta: null,
+    hasFuelSensor: false,
+    syncTime: null,
+    source: "empty",
+  };
+
+  if (!Number.isFinite(wialonUnitId) || wialonUnitId <= 0) return empty;
+
+  const season = currentAgroSeason();
+  const supabase = createServiceSupabase();
+
+  let { data, error } = await supabase
+    .from("wialon_equipment_day_stats")
+    .select(
+      "distance_km, work_hours, hours_idling, hours_on_field, drain_events, fuel_start, fuel_end, fuel_delta, has_fuel_sensor, sync_time"
+    )
+    .eq("wialon_unit_id", wialonUnitId)
+    .eq("date", dateYmd)
+    .eq("season", season)
+    .maybeSingle();
+
+  if (error) {
+    // Колонки fuel_* ще немає — читаємо базові поля
+    if (
+      error.message?.includes("fuel_") ||
+      error.message?.includes("has_fuel_sensor") ||
+      (error.code === "42703" &&
+        /fuel_|has_fuel_sensor/i.test(error.message ?? ""))
+    ) {
+      const legacy = await supabase
+        .from("wialon_equipment_day_stats")
+        .select(
+          "distance_km, work_hours, hours_idling, hours_on_field, drain_events, sync_time"
+        )
+        .eq("wialon_unit_id", wialonUnitId)
+        .eq("date", dateYmd)
+        .eq("season", season)
+        .maybeSingle();
+      data = legacy.data
+        ? {
+            ...legacy.data,
+            fuel_start: null,
+            fuel_end: null,
+            fuel_delta: null,
+            has_fuel_sensor: false,
+          }
+        : null;
+      error = legacy.error;
+    } else if (
+      error.message?.includes("season") ||
+      error.code === "42703"
+    ) {
+      const noSeason = await supabase
+        .from("wialon_equipment_day_stats")
+        .select(
+          "distance_km, work_hours, hours_idling, hours_on_field, drain_events, sync_time"
+        )
+        .eq("wialon_unit_id", wialonUnitId)
+        .eq("date", dateYmd)
+        .maybeSingle();
+      data = noSeason.data
+        ? {
+            ...noSeason.data,
+            fuel_start: null,
+            fuel_end: null,
+            fuel_delta: null,
+            has_fuel_sensor: false,
+          }
+        : null;
+      error = noSeason.error;
+    }
+    if (
+      error &&
+      (error.code === "PGRST205" ||
+        error.code === "42P01" ||
+        error.message?.includes("wialon_equipment_day_stats"))
+    ) {
+      return empty;
+    }
+    if (error) throw new Error(error.message);
+  }
+
+  if (!data) return empty;
+
+  const numOrNull = (v: unknown): number | null => {
+    if (v == null || v === "") return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  return {
+    wialonUnitId,
+    date: dateYmd,
+    distanceKm: Number(data.distance_km) || 0,
+    workHours: Number(data.work_hours) || 0,
+    hoursIdling: Number(data.hours_idling) || 0,
+    hoursOnField: Number(data.hours_on_field) || 0,
+    drainEvents: Number(data.drain_events) || 0,
+    fuelStart: numOrNull(data.fuel_start),
+    fuelEnd: numOrNull(data.fuel_end),
+    fuelDelta: numOrNull(data.fuel_delta),
+    hasFuelSensor: Boolean(data.has_fuel_sensor),
+    syncTime: data.sync_time ? String(data.sync_time) : null,
+    source: "db",
+  };
+}
+
+export function enrichDayAnalyticsFromDbStats(
+  analytics: DayAnalyticsPayload,
+  db: UnitDayStatsDto
+): DayAnalyticsPayload {
+  if (db.source !== "db") return analytics;
+
+  const summary = { ...analytics.summary };
+  let changed = false;
+
+  if (db.hasFuelSensor && !summary.hasFuelSensor) {
+    summary.hasFuelSensor = true;
+    changed = true;
+  }
+
+  if (summary.fuelStart == null && db.fuelStart != null) {
+    summary.fuelStart = db.fuelStart;
+    changed = true;
+  }
+  if (summary.fuelEnd == null && db.fuelEnd != null) {
+    summary.fuelEnd = db.fuelEnd;
+    changed = true;
+  }
+  if (
+    summary.fuelDelta == null &&
+    db.fuelDelta != null &&
+    (summary.fuelStart != null || db.fuelStart != null) &&
+    (summary.fuelEnd != null || db.fuelEnd != null)
+  ) {
+    summary.fuelDelta = db.fuelDelta;
+    changed = true;
+  }
+
+  // Порожній live-день, але в БД вже є пробіг/мотогодини з попереднього sync
+  if (summary.sampleCount === 0 && db.distanceKm > 0) {
+    summary.distanceKm = db.distanceKm;
+    summary.workHours = db.workHours;
+    summary.hoursIdling = db.hoursIdling;
+    changed = true;
+  }
+
+  if (!changed) return analytics;
+  return { ...analytics, summary };
 }
 
 export { todayKyivYmd };

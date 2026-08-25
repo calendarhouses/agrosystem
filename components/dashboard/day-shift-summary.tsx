@@ -39,6 +39,8 @@ type DayShiftSummaryProps = {
   hoursAtBase: number;
   fuelEvents: FuelDrainEvent[];
   loading?: boolean;
+  /** Поточний рівень з live-телеметрії (якщо день ще без семплів) */
+  liveFuelLiters?: number | null;
   onFuelEventClick?: (event: FuelDrainEvent) => void;
 };
 
@@ -49,6 +51,7 @@ export function DayShiftSummary({
   hoursAtBase,
   fuelEvents,
   loading,
+  liveFuelLiters,
   onFuelEventClick,
 }: DayShiftSummaryProps) {
   if (loading) {
@@ -119,14 +122,24 @@ export function DayShiftSummary({
         ? "Немає датчика"
         : summary.fuelStart != null && summary.fuelEnd != null
           ? `${Math.round(summary.fuelStart)} → ${Math.round(summary.fuelEnd)} л`
-          : "—",
+          : liveFuelLiters != null && Number.isFinite(liveFuelLiters)
+            ? `зараз ${Math.round(liveFuelLiters)} л`
+            : summary.sampleCount === 0
+              ? "Немає даних за день"
+              : "—",
       tone: "text-zinc-900",
       hint:
         summary.fuelDelta == null
-          ? summary.hasFuelSensor
+          ? summary.hasFuelSensor &&
+            summary.fuelStart != null &&
+            summary.fuelEnd != null
             ? "дельта недостовірна"
-            : undefined
-            : summary.fuelDelta > 15
+            : liveFuelLiters != null &&
+                summary.fuelStart == null &&
+                summary.hasFuelSensor
+              ? "денна зміна з’явиться після руху / sync"
+              : undefined
+          : summary.fuelDelta > 15
             ? `заправка ≈ +${Math.round(summary.fuelDelta)} л`
             : summary.fuelDelta < -15
               ? `витрата ≈ ${Math.round(Math.abs(summary.fuelDelta))} л`

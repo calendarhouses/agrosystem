@@ -8,7 +8,10 @@
 
 import { isFuelDeliveryUnit } from "@/lib/equipment-fuel-tanks";
 import { createServiceSupabase } from "@/lib/supabase/server";
+import { extractTimedFuelSamples } from "@/lib/wialon-fuel-decode";
 import {
+  getWialonUnitSensors,
+  listUnitSensors,
   loadWialonUnitMessages,
   type WialonTrackMessage,
   wialonLogin,
@@ -55,67 +58,18 @@ type FuelSample = {
   lng: number | null;
 };
 
-function readMessageParams(
-  msg: WialonTrackMessage
-): Record<string, unknown> {
-  const p = msg.p;
-  if (p && typeof p === "object" && !Array.isArray(p)) {
-    return p as Record<string, unknown>;
-  }
-  return {};
-}
-
-function readFuelLiters(params: Record<string, unknown>): number | null {
-  for (const key of [
-    "fuel",
-    "fuel_level",
-    "rs",
-    "rs485fuel",
-    "adc1",
-    "lls",
-    "io_201",
-  ] as const) {
-    if (!(key in params)) continue;
-    const raw = Number(params[key]);
-    if (Number.isFinite(raw) && raw >= 0 && raw < 5000) return raw;
-  }
-  for (const [key, value] of Object.entries(params)) {
-    if (!/fuel|палив|топлив|lls|^rs$/i.test(key)) continue;
-    const raw = Number(value);
-    if (Number.isFinite(raw) && raw >= 0 && raw < 5000) return raw;
-  }
-  return null;
-}
-
-function readMessagePos(
-  msg: WialonTrackMessage
-): { lat: number; lng: number } | null {
-  const pos = msg.pos;
-  if (!pos || typeof pos !== "object") return null;
-  const lng = Number((pos as { x?: unknown }).x);
-  const lat = Number((pos as { y?: unknown }).y);
-  if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
-  if (lng <= 0 || lat <= 0) return null;
-  return { lat, lng };
-}
-
-function samplesFromMessages(messages: WialonTrackMessage[]): FuelSample[] {
-  const out: FuelSample[] = [];
-  for (const msg of messages) {
-    const t = typeof msg.t === "number" && Number.isFinite(msg.t) ? msg.t : null;
-    if (t == null || t <= 0) continue;
-    const liters = readFuelLiters(readMessageParams(msg));
-    if (liters == null) continue;
-    const pos = readMessagePos(msg);
-    out.push({
-      t,
-      liters,
-      lat: pos?.lat ?? null,
-      lng: pos?.lng ?? null,
-    });
-  }
-  out.sort((a, b) => a.t - b.t);
-  return out;
+function samplesFromMessages(
+  messages: WialonTrackMessage[],
+  sensors: ReturnType<typeof listUnitSensors> = []
+): FuelSample[] {
+  return extractTimedFuelSamples(messages, sensors, {
+    includePosition: true,
+  }).map((s) => ({
+    t: s.t,
+    liters: s.liters,
+    lat: s.lat ?? null,
+    lng: s.lng ?? null,
+  }));
 }
 
 /**
@@ -254,19 +208,21 @@ export async function getWialonRefuelings(
   const perUnit = await mapPool(unitIds, UNIT_CONCURRENCY, async (unitId) => {
     const equipment = equipmentByWialon.get(unitId) ?? null;
     try {
-      let messages = await loadWialonUnitMessages(
-        eid,
-        unitId,
-        startTime,
-        endTime
-      );
+      const [messagesRaw, unitWithSensors] = await Promise.all([
+        loadWialonUnitMessages(eid, unitId, startTime, endTime),
+        getWialonUnitSensors(eid, unitId),
+      ]);
+      let messages = messagesRaw;
       if (messages.length === 0) {
         messages = await loadWialonUnitMessages(eid, unitId, startTime, endTime, {
           flags: 1,
           flagsMask: 0,
         });
       }
-      const samples = samplesFromMessages(messages);
+      const sensors = unitWithSensors
+        ? listUnitSensors(unitWithSensors)
+        : [];
+      const samples = samplesFromMessages(messages, sensors);
       return detectFillingsFromSamples(
         samples,
         unitId,

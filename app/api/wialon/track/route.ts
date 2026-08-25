@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { EMPTY_DAY_ANALYTICS } from "@/lib/equipment-day-analytics";
+import { toKyivDayKey } from "@/lib/kyiv-date";
 import {
   EMPTY_TRACK_LINE,
   getWialonUnitTrack,
   getWialonUnitTrackBundle,
   wialonLogin,
 } from "@/lib/wialon";
+import {
+  enrichDayAnalyticsFromDbStats,
+  loadUnitDayStatsFromDb,
+} from "@/lib/wialon-equipment-day-sync";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -18,6 +23,7 @@ const JSON_UTF8 = {
 /**
  * GET /api/wialon/track?unitId=&from=&to=
  * READ-ONLY: трек (лише рух) + денна аналітика (паливо, idle, зливи).
+ * Паливо з БД підмішується, якщо live-трек без start/end (єдиний кеш з CRON).
  */
 export async function GET(request: NextRequest) {
   try {
@@ -69,12 +75,15 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const { track, analytics } = await getWialonUnitTrackBundle(
-      eid,
-      unitId,
-      timeFrom,
-      timeTo
-    );
+    const dateYmd = toKyivDayKey(new Date(timeFrom * 1000));
+    const [{ track, analytics: liveAnalytics }, dbStats] = await Promise.all([
+      getWialonUnitTrackBundle(eid, unitId, timeFrom, timeTo),
+      loadUnitDayStatsFromDb(unitId, dateYmd).catch(() => null),
+    ]);
+
+    const analytics = dbStats
+      ? enrichDayAnalyticsFromDbStats(liveAnalytics, dbStats)
+      : liveAnalytics;
 
     return NextResponse.json(
       {
@@ -82,6 +91,16 @@ export async function GET(request: NextRequest) {
         pointCount: track.properties.pointCount,
         track,
         analytics,
+        dbFuel:
+          dbStats?.source === "db"
+            ? {
+                fuelStart: dbStats.fuelStart,
+                fuelEnd: dbStats.fuelEnd,
+                fuelDelta: dbStats.fuelDelta,
+                hasFuelSensor: dbStats.hasFuelSensor,
+                syncTime: dbStats.syncTime,
+              }
+            : null,
       },
       { headers: JSON_UTF8 }
     );

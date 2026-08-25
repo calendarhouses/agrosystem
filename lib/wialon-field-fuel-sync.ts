@@ -7,13 +7,16 @@ import type { Feature, MultiPolygon, Polygon, Position } from "geojson";
 import { booleanPointInPolygon, point } from "@turf/turf";
 
 import type { FieldGeometry } from "@/lib/farm-fields";
-import { kyivDayBoundsUnix, todayKyivYmd } from "@/lib/kyiv-date";
+import { kyivDayBoundsUnix, shiftKyivYmd, todayKyivYmd } from "@/lib/kyiv-date";
 import { currentAgroSeason } from "@/lib/season";
 import { createServiceSupabase } from "@/lib/supabase/server";
 import {
   estimateFuelConsumedByFls,
 } from "@/lib/wialon-fuel";
+import { extractTimedFuelSamples } from "@/lib/wialon-fuel-decode";
 import {
+  getWialonUnitSensors,
+  listUnitSensors,
   loadWialonUnitMessages,
   type WialonTrackMessage,
   wialonLogin,
@@ -26,8 +29,8 @@ export {
 
 /** Мін. тривалість візиту (сек) — відсікає GPS-шум */
 const MIN_VISIT_SEC = 10 * 60;
-/** Ліміт юнітів за один CRON-прогін */
-const MAX_UNITS = 40;
+/** Ліміт юнітів за один CRON-прогін (зовнішній cron може ганяти частіше) */
+const MAX_UNITS = 80;
 
 export type WialonFieldFuelLogUpsert = {
   field_id: string;
@@ -129,36 +132,6 @@ function readMsgTime(msg: WialonTrackMessage): number | null {
   return null;
 }
 
-function readMsgParams(msg: WialonTrackMessage): Record<string, unknown> {
-  const p = msg.p;
-  if (p && typeof p === "object" && !Array.isArray(p)) {
-    return p as Record<string, unknown>;
-  }
-  return {};
-}
-
-function readFuelLiters(params: Record<string, unknown>): number | null {
-  for (const key of [
-    "fuel",
-    "fuel_level",
-    "rs",
-    "rs485fuel",
-    "adc1",
-    "lls",
-    "io_201",
-  ] as const) {
-    if (!(key in params)) continue;
-    const raw = Number(params[key]);
-    if (Number.isFinite(raw) && raw >= 0 && raw < 5000) return raw;
-  }
-  for (const [key, value] of Object.entries(params)) {
-    if (!/fuel|палив|топлив|lls|^rs$/i.test(key)) continue;
-    const raw = Number(value);
-    if (Number.isFinite(raw) && raw >= 0 && raw < 5000) return raw;
-  }
-  return null;
-}
-
 function readPosition(msg: WialonTrackMessage): Position | null {
   const pos = msg.pos;
   if (!pos) return null;
@@ -170,17 +143,14 @@ function readPosition(msg: WialonTrackMessage): Position | null {
   return [x, y];
 }
 
-function extractFuelSamples(messages: WialonTrackMessage[]): FuelSample[] {
-  const out: FuelSample[] = [];
-  for (const msg of messages) {
-    const t = readMsgTime(msg);
-    if (t == null) continue;
-    const liters = readFuelLiters(readMsgParams(msg));
-    if (liters == null) continue;
-    out.push({ t, liters });
-  }
-  out.sort((a, b) => a.t - b.t);
-  return out;
+function extractFuelSamples(
+  messages: WialonTrackMessage[],
+  sensors: ReturnType<typeof listUnitSensors> = []
+) {
+  return extractTimedFuelSamples(messages, sensors).map((s) => ({
+    t: s.t,
+    liters: s.liters,
+  }));
 }
 
 /**
@@ -303,12 +273,24 @@ async function loadMappings(): Promise<{
 }
 
 /**
- * Основний прогін CRON: зібрати витрату за сьогодні й upsert у БД.
+ * Основний прогін: зібрати витрату за календарний день Europe/Kyiv
+ * і upsert у wialon_field_fuel_logs. Для «сьогодні» toUnix = зараз.
  */
-export async function syncWialonFieldFuelForToday(
+export async function syncWialonFieldFuelForDate(
+  dateYmd: string,
   now = new Date()
 ): Promise<SyncWialonFieldFuelResult> {
-  const { date, fromUnix, toUnix } = kyivTodayParts(now);
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(dateYmd)
+    ? dateYmd
+    : todayKyivYmd(now);
+  const bounds = kyivDayBoundsUnix(date);
+  const fromUnix = bounds.fromUnix;
+  const today = todayKyivYmd(now);
+  const toUnix =
+    date === today
+      ? Math.min(Math.floor(now.getTime() / 1000), bounds.toUnix)
+      : bounds.toUnix;
+
   const errors: string[] = [];
   const { equipment, fields } = await loadMappings();
 
@@ -337,12 +319,11 @@ export async function syncWialonFieldFuelForToday(
 
   for (const unit of equipment) {
     try {
-      let messages = await loadWialonUnitMessages(
-        eid,
-        unit.wialon_id,
-        fromUnix,
-        toUnix
-      );
+      const [messagesRaw, unitWithSensors] = await Promise.all([
+        loadWialonUnitMessages(eid, unit.wialon_id, fromUnix, toUnix),
+        getWialonUnitSensors(eid, unit.wialon_id),
+      ]);
+      let messages = messagesRaw;
       if (!messages.length) {
         messages = await loadWialonUnitMessages(
           eid,
@@ -358,7 +339,10 @@ export async function syncWialonFieldFuelForToday(
         continue;
       }
 
-      const fuelSamples = extractFuelSamples(messages);
+      const sensors = unitWithSensors
+        ? listUnitSensors(unitWithSensors)
+        : [];
+      const fuelSamples = extractFuelSamples(messages, sensors);
 
       for (const field of fields) {
         if (!field.geometry) continue;
@@ -367,7 +351,6 @@ export async function syncWialonFieldFuelForToday(
 
         const fuel = fuelConsumedInWindows(fuelSamples, visits);
         if (fuel <= 0) {
-          // Візит був, але ДРП не віддав рівні — пишемо 0, щоб бачити sync
           upserts.push({
             field_id: field.id,
             equipment_id: unit.id,
@@ -406,7 +389,6 @@ export async function syncWialonFieldFuelForToday(
         count: "exact",
       });
 
-    // До міграції season — upsert без колонки
     if (error && error.message?.includes("season")) {
       const legacy = upserts.map(({ season: _s, ...rest }) => rest);
       const retry = await supabase.from("wialon_field_fuel_logs").upsert(legacy, {
@@ -433,6 +415,57 @@ export async function syncWialonFieldFuelForToday(
     skipped,
     errors,
   };
+}
+
+/**
+ * CRON / live: витрата за сьогодні (Europe/Kyiv).
+ */
+export async function syncWialonFieldFuelForToday(
+  now = new Date()
+): Promise<SyncWialonFieldFuelResult> {
+  return syncWialonFieldFuelForDate(todayKyivYmd(now), now);
+}
+
+/**
+ * Закритий вчорашній день Києва (повний інтервал) — для нічного CRON.
+ */
+export async function syncWialonFieldFuelForYesterday(
+  now = new Date()
+): Promise<SyncWialonFieldFuelResult> {
+  return syncWialonFieldFuelForDate(shiftKyivYmd(todayKyivYmd(now), -1), now);
+}
+
+/**
+ * Якщо останній sync_time за дату свіжіший за maxAgeMs — пропускаємо.
+ * Інакше тягнемо Wialon → БД (однакові цифри в Паливі та на Карті полів).
+ */
+export async function ensureWialonFieldFuelFresh(
+  dateYmd?: string,
+  maxAgeMs = 5 * 60 * 1000,
+  now = new Date()
+): Promise<{ synced: boolean; result?: SyncWialonFieldFuelResult }> {
+  const date = dateYmd && /^\d{4}-\d{2}-\d{2}$/.test(dateYmd)
+    ? dateYmd
+    : todayKyivYmd(now);
+  const supabase = createServiceSupabase();
+  const { data } = await supabase
+    .from("wialon_field_fuel_logs")
+    .select("sync_time")
+    .eq("date", date)
+    .order("sync_time", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const syncTime = data?.sync_time ? Date.parse(String(data.sync_time)) : NaN;
+  if (
+    Number.isFinite(syncTime) &&
+    now.getTime() - syncTime < maxAgeMs
+  ) {
+    return { synced: false };
+  }
+
+  const result = await syncWialonFieldFuelForDate(date, now);
+  return { synced: true, result };
 }
 
 export type FieldFuelDaySum = {
@@ -508,4 +541,77 @@ export async function sumFieldFuelConsumedForDate(
 
 export function todayKyivDateString(now = new Date()): string {
   return todayKyivYmd(now);
+}
+
+export type FieldFuelPeriod = "today" | "yesterday" | "week";
+
+/**
+ * Сума спаленого за період Europe/Kyiv:
+ * today / yesterday / week (останні 7 календарних днів включно з сьогодні).
+ */
+export async function sumFieldFuelConsumedForPeriod(
+  period: FieldFuelPeriod,
+  now = new Date()
+): Promise<{
+  period: FieldFuelPeriod;
+  fromDate: string;
+  toDate: string;
+  liters: number;
+  hasData: boolean;
+}> {
+  const today = todayKyivYmd(now);
+  let fromDate = today;
+  let toDate = today;
+  if (period === "yesterday") {
+    fromDate = shiftKyivYmd(today, -1);
+    toDate = fromDate;
+  } else if (period === "week") {
+    fromDate = shiftKyivYmd(today, -6);
+    toDate = today;
+  }
+
+  const supabase = createServiceSupabase();
+  const { fromUnix } = kyivDayBoundsUnix(fromDate);
+  const { toUnix } = kyivDayBoundsUnix(toDate);
+  const fromIso = new Date(fromUnix * 1000).toISOString();
+  const toIso = new Date(toUnix * 1000).toISOString();
+
+  let { data, error } = await supabase
+    .from("wialon_field_fuel_logs")
+    .select("fuel_consumed")
+    .gte("date", fromDate)
+    .lte("date", toDate);
+
+  if (!error && (data?.length ?? 0) === 0) {
+    const bySync = await supabase
+      .from("wialon_field_fuel_logs")
+      .select("fuel_consumed")
+      .gte("sync_time", fromIso)
+      .lte("sync_time", toIso);
+    if (!bySync.error) {
+      data = bySync.data;
+      error = bySync.error;
+    }
+  }
+
+  if (error) {
+    if (error.code === "PGRST205" || error.code === "42P01") {
+      return { period, fromDate, toDate, liters: 0, hasData: false };
+    }
+    throw new Error(error.message);
+  }
+
+  const rows = data ?? [];
+  const sum = rows.reduce(
+    (acc, row) => acc + (Number(row.fuel_consumed) || 0),
+    0
+  );
+
+  return {
+    period,
+    fromDate,
+    toDate,
+    liters: Math.round(sum * 10) / 10,
+    hasData: rows.length > 0,
+  };
 }

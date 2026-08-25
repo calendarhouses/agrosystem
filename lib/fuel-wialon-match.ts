@@ -1,6 +1,7 @@
 import {
   extractFuelLevelsFromMessages,
   getWialonUnitById,
+  listUnitSensors,
   loadWialonUnitMessages,
   parseWialonUnitTelemetry,
   unitHasFuelSensor,
@@ -68,7 +69,10 @@ export async function resolveWialonVariance(
       );
     }
 
-    let levels = extractFuelLevelsFromMessages(messages);
+    let levels = extractFuelLevelsFromMessages(
+      messages,
+      listUnitSensors(unit)
+    );
 
     if (levels.length === 0) {
       const telemetry = parseWialonUnitTelemetry(unit);

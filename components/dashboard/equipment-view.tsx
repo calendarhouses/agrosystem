@@ -92,7 +92,7 @@ import type {
   WialonUnit,
   WialonUnitTelemetry,
 } from "@/lib/wialon";
-import { EMPTY_TRACK_LINE, parseWialonUnitTelemetry } from "@/lib/wialon";
+import { EMPTY_TRACK_LINE, parseWialonUnitTelemetry, unitHasFuelSensor } from "@/lib/wialon";
 import { useLiveWialonUnits } from "@/lib/use-live-wialon-units";
 import { useEquipmentTrackPlayback } from "@/lib/use-equipment-track-playback";
 import {
@@ -2246,12 +2246,20 @@ export function EquipmentView() {
                 </p>
               ) : null}
               <DayShiftSummary
-                summary={dayAnalytics.summary}
+                summary={{
+                  ...dayAnalytics.summary,
+                  hasFuelSensor:
+                    unitHasFuelSensor(liveSelectedUnit) ||
+                    dayAnalytics.summary.hasFuelSensor,
+                }}
                 hoursOnField={sessionTimeHours.hoursOnField}
                 hoursOnRoad={sessionTimeHours.hoursOnRoad}
                 hoursAtBase={sessionTimeHours.hoursAtBase}
                 fuelEvents={displayFuelEvents}
                 loading={trackLoading}
+                liveFuelLiters={
+                  parseUnitSensors(liveSelectedUnit).fuelLiters
+                }
                 onFuelEventClick={(event: FuelDrainEvent) => {
                   setSelectedSessionId(null);
                   focusMainMap([event.lng, event.lat], null);

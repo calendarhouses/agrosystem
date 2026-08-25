@@ -11,9 +11,11 @@ import {
 import { uk } from "date-fns/locale";
 import {
   Calendar,
+  Factory,
   Fuel,
   Radar,
   TrendingDown,
+  Truck,
 } from "lucide-react";
 import {
   Area,
@@ -23,13 +25,16 @@ import {
 } from "recharts";
 
 import {
+  FuelSheetHeader,
+  fuelSheetBodyClass,
+  fuelSheetContentClass,
+} from "@/components/dashboard/fuel-sheet-chrome";
+import {
   Sheet,
   SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
 } from "@/components/ui/sheet";
 import {
+  storageFillPercent,
   storageValueUah,
   type FuelStorage,
 } from "@/lib/fuel-storages";
@@ -353,45 +358,65 @@ export function FuelDetailSheet({
   const storageTx = useMemo(() => history.slice(0, 12), [history]);
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet open={open} onOpenChange={onOpenChange} modal={false}>
       <SheetContent
         side="right"
-        className={cn(
-          "w-full gap-0 border-l border-border/60 bg-background p-0 text-zinc-900 shadow-sm sm:max-w-md",
-          "[&_[data-slot=sheet-close]]:text-zinc-500 [&_[data-slot=sheet-close]]:hover:bg-muted"
-        )}
+        showOverlay={false}
+        className={fuelSheetContentClass}
       >
         {storage ? (
           <>
-            <SheetHeader className="border-b border-border/50 px-6 py-5 pr-12">
-              <SheetTitle className="text-xl font-bold tracking-tight text-zinc-900">
-                {storage.name}
-              </SheetTitle>
-              <SheetDescription className="mt-0.5 text-sm text-muted-foreground">
-                {formatLiters(storage.currentVolume)} л · ≈{" "}
-                {formatMoney(valueUah)} ₴ · місткість{" "}
-                {formatLiters(storage.capacity)} л
-              </SheetDescription>
-            </SheetHeader>
+            <FuelSheetHeader
+              icon={storage.type === "mobile" ? Truck : Factory}
+              accent="fuel"
+              title={storage.name}
+              description={
+                <>
+                  {formatLiters(storage.currentVolume)} л · ≈{" "}
+                  {formatMoney(valueUah)} ₴ · місткість{" "}
+                  {formatLiters(storage.capacity)} л
+                </>
+              }
+              meta={
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2 text-[11px] font-medium text-zinc-500">
+                    <span>
+                      {storage.type === "mobile" ? "Бензовоз" : "Стаціонарний"}
+                    </span>
+                    <span className="tabular-nums text-zinc-700">
+                      {Math.round(storageFillPercent(storage))}% заповнення
+                    </span>
+                  </div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-zinc-200/80">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-amber-400 to-orange-500 transition-[width] duration-500"
+                      style={{
+                        width: `${Math.min(100, Math.max(0, storageFillPercent(storage)))}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              }
+            />
 
-            <div className="flex flex-1 flex-col gap-6 overflow-y-auto px-6 py-6">
+            <div className={fuelSheetBodyClass}>
               {/* Динаміка залишку */}
-              <section className="space-y-3">
+              <section className="space-y-3 rounded-2xl border border-zinc-200/70 bg-white/80 p-4 shadow-sm">
                 <div className="flex items-end justify-between gap-3">
                   <div>
-                    <p className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+                    <p className="text-[11px] font-semibold tracking-[0.08em] text-zinc-500 uppercase">
                       Динаміка залишку · 7 днів
                     </p>
                     <p className="mt-1 text-2xl font-bold tracking-tight tabular-nums text-zinc-900">
                       {formatLiters(storage.currentVolume)}{" "}
-                      <span className="text-sm font-semibold text-muted-foreground">
+                      <span className="text-sm font-semibold text-zinc-500">
                         л
                       </span>
                     </p>
                   </div>
                   <div className="flex gap-3 text-right">
                     <div>
-                      <p className="inline-flex items-center gap-1 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
+                      <p className="inline-flex items-center gap-1 text-[10px] font-semibold tracking-wide text-zinc-500 uppercase">
                         <TrendingDown className="h-3 w-3" />
                         Витрата
                       </p>
@@ -402,7 +427,7 @@ export function FuelDetailSheet({
                       </p>
                     </div>
                     <div>
-                      <p className="inline-flex items-center gap-1 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
+                      <p className="inline-flex items-center gap-1 text-[10px] font-semibold tracking-wide text-zinc-500 uppercase">
                         <Calendar className="h-3 w-3" />
                         Запас
                       </p>
@@ -417,7 +442,7 @@ export function FuelDetailSheet({
 
                 <div className="min-w-0 pt-1">
                   {historyLoading && sparkline.length === 0 ? (
-                    <div className="h-28 animate-pulse rounded-xl bg-muted/40" />
+                    <div className="h-28 animate-pulse rounded-xl bg-zinc-100" />
                   ) : (
                     <VolumeSparkline points={sparkline} />
                   )}
@@ -425,16 +450,16 @@ export function FuelDetailSheet({
               </section>
 
               {/* GPS KPI */}
-              <section className="flex items-center justify-between gap-4 rounded-2xl bg-muted/30 p-4">
+              <section className="flex items-center justify-between gap-4 rounded-2xl border border-zinc-200/70 bg-white/80 p-4 shadow-sm">
                 <div className="flex min-w-0 items-center gap-3">
-                  <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-500/10 text-amber-700">
+                  <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-700 ring-1 ring-amber-500/15">
                     <Radar className="h-4 w-4" strokeWidth={2} />
                   </span>
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-zinc-900">
                       Підтверджено Wialon
                     </p>
-                    <p className="truncate text-[11px] text-muted-foreground">
+                    <p className="truncate text-[11px] text-zinc-500">
                       {gpsAccuracy.total === 0
                         ? "Немає outbound за період"
                         : `${gpsAccuracy.confirmed}/${gpsAccuracy.total} заправок (±${WIALON_MATCH_TOLERANCE_L} л)`}
@@ -447,21 +472,21 @@ export function FuelDetailSheet({
               </section>
 
               {/* Виписка */}
-              <section className="space-y-1">
-                <p className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+              <section className="space-y-2">
+                <p className="text-[11px] font-semibold tracking-[0.08em] text-zinc-500 uppercase">
                   Останні операції
                 </p>
 
                 {historyLoading && storageTx.length === 0 ? (
-                  <p className="py-8 text-center text-sm text-muted-foreground">
+                  <p className="py-8 text-center text-sm text-zinc-500">
                     Завантаження…
                   </p>
                 ) : storageTx.length === 0 ? (
-                  <p className="py-8 text-center text-sm text-muted-foreground">
+                  <p className="py-8 text-center text-sm text-zinc-500">
                     Немає операцій для цього резервуара
                   </p>
                 ) : (
-                  <ul>
+                  <ul className="overflow-hidden rounded-2xl border border-zinc-200/70 bg-white/80 shadow-sm">
                     {storageTx.map((tx) => {
                       const isInboundToTank = tx.toStorageId === storage.id;
                       const isOutboundFromTank =
@@ -479,13 +504,13 @@ export function FuelDetailSheet({
                       return (
                         <li
                           key={tx.id}
-                          className="flex items-center justify-between gap-3 border-b border-border/50 py-3 last:border-0"
+                          className="flex items-center justify-between gap-3 border-b border-zinc-100 px-3.5 py-3 last:border-0"
                         >
                           <div className="min-w-0">
                             <p className="truncate text-sm font-medium text-zinc-900">
                               {txTitle(tx)}
                             </p>
-                            <p className="text-[11px] tabular-nums text-muted-foreground">
+                            <p className="text-[11px] tabular-nums text-zinc-500">
                               {tx.transactionDate
                                 ? format(
                                     new Date(tx.transactionDate),
@@ -513,7 +538,7 @@ export function FuelDetailSheet({
             </div>
           </>
         ) : (
-          <div className="flex flex-1 items-center justify-center gap-2 px-6 py-16 text-sm text-muted-foreground">
+          <div className="flex flex-1 items-center justify-center gap-2 px-6 py-16 text-sm text-zinc-500">
             <Fuel className="h-4 w-4" />
             Оберіть резервуар
           </div>

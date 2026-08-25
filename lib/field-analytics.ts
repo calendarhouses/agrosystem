@@ -10,6 +10,8 @@ import {
   getLatestFuelPurchasePriceUah,
 } from "@/lib/fuel-price";
 import { DEFAULT_SEASON, normalizeSeason } from "@/lib/season";
+import { todayKyivYmd } from "@/lib/kyiv-date";
+import { ensureWialonFieldFuelFresh } from "@/lib/wialon-field-fuel-sync";
 
 /** @deprecated Використовуйте DEFAULT_DIESEL_PRICE_UAH з lib/fuel-price */
 export { DEFAULT_DIESEL_PRICE_UAH as FUEL_PRICE_UAH } from "@/lib/fuel-price";
@@ -775,6 +777,13 @@ export async function fetchLiveFieldEconomics(
   const season = normalizeSeason(activeSeason);
 
   const supabase = createServiceSupabase();
+
+  // Той самий кеш, що й KPI «Спалено на полях» — підтягуємо, якщо старше 5 хв
+  try {
+    await ensureWialonFieldFuelFresh(todayKyivYmd(), 5 * 60 * 1000);
+  } catch (err) {
+    console.warn("[field-economics] field fuel sync skipped", err);
+  }
 
   const [moves, ops, fieldRes, wialonFuelLiters, fuelPriceUah] =
     await Promise.all([

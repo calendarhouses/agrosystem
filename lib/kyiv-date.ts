@@ -98,6 +98,12 @@ function addCalendarDaysYmd(ymd: string, days: number): string {
   return `${yy}-${mm}-${dd}`;
 }
 
+/** Зсув календарного дня YYYY-MM-DD (±N днів) */
+export function shiftKyivYmd(ymd: string, days: number): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return todayKyivYmd();
+  return addCalendarDaysYmd(ymd, days);
+}
+
 /** Межі доби YYYY-MM-DD у Europe/Kyiv → unix (включно з DST). */
 export function kyivDayBoundsUnix(dateYmd: string): {
   fromUnix: number;

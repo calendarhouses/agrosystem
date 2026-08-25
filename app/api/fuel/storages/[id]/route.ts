@@ -105,3 +105,77 @@ export async function PATCH(
     );
   }
 }
+
+/** DELETE /api/fuel/storages/:id — видалити склад (порожній, без історії) */
+export async function DELETE(
+  _request: Request,
+  context: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await context.params;
+    if (!id) return badRequest("Немає id");
+
+    const supabase = createServiceSupabase();
+    const { data: existing, error: loadError } = await supabase
+      .from("fuel_storages")
+      .select("id, name, current_volume")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (loadError || !existing) {
+      return NextResponse.json(
+        { ok: false, error: "Склад не знайдено" },
+        { status: 404, headers: JSON_UTF8 }
+      );
+    }
+
+    const volume = Number(
+      (existing as { current_volume: number }).current_volume
+    );
+    if (volume > 0.001) {
+      return badRequest(
+        `Спочатку спустіть склад (залишок ${Math.round(volume).toLocaleString("uk-UA")} л)`
+      );
+    }
+
+    const { count, error: txCountError } = await supabase
+      .from("fuel_transactions")
+      .select("id", { count: "exact", head: true })
+      .or(`from_storage_id.eq.${id},to_storage_id.eq.${id}`);
+
+    if (txCountError) {
+      return NextResponse.json(
+        { ok: false, error: txCountError.message },
+        { status: 500, headers: JSON_UTF8 }
+      );
+    }
+
+    if ((count ?? 0) > 0) {
+      return badRequest(
+        "Неможливо видалити: по складу є операції в журналі. Залиште паспорт для історії."
+      );
+    }
+
+    const { error: deleteError } = await supabase
+      .from("fuel_storages")
+      .delete()
+      .eq("id", id);
+
+    if (deleteError) {
+      return NextResponse.json(
+        { ok: false, error: deleteError.message },
+        { status: 500, headers: JSON_UTF8 }
+      );
+    }
+
+    return NextResponse.json({ ok: true, id }, { headers: JSON_UTF8 });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: error instanceof Error ? error.message : "Помилка видалення",
+      },
+      { status: 500, headers: JSON_UTF8 }
+    );
+  }
+}

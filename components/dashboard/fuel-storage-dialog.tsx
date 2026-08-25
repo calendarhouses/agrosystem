@@ -3,15 +3,20 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { AlertCircle, Loader2, Warehouse } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  FuelSheetFooter,
+  FuelSheetHeader,
+  FuelSheetHint,
+  fuelFieldLabelClass,
+  fuelHeroAmountClass,
+  fuelInputClass,
+  fuelPrimaryBtnClass,
+  fuelSelectItemClass,
+  fuelSelectTriggerClass,
+  fuelSheetBodyClass,
+  fuelSheetContentClass,
+} from "@/components/dashboard/fuel-sheet-chrome";
+import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -20,6 +25,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Sheet,
+  SheetContent,
+} from "@/components/ui/sheet";
 import type { FuelStorage } from "@/lib/fuel-storages";
 import { cn } from "@/lib/utils";
 
@@ -42,7 +51,7 @@ function parseNonNegative(raw: string): number | null {
   return Math.round(n * 100) / 100;
 }
 
-/** Створення / редагування паспорта складу палива */
+/** Створення / редагування паспорта складу — права Sheet як інші панелі /fuel */
 export function FuelStorageDialog({
   open,
   onOpenChange,
@@ -122,172 +131,151 @@ export function FuelStorageDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className={cn(
-          "gap-0 overflow-hidden rounded-3xl border border-zinc-200/80 bg-white p-0 text-zinc-900 shadow-2xl sm:max-w-md",
-          "[&_[data-slot=dialog-close]]:text-zinc-500"
-        )}
+    <Sheet open={open} onOpenChange={onOpenChange} modal={false}>
+      <SheetContent
+        side="right"
+        showOverlay={false}
+        className={fuelSheetContentClass}
       >
-        <DialogHeader className="border-b border-zinc-100 px-6 py-5 pr-12">
-          <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-zinc-900 text-white shadow-sm">
-              <Warehouse className="h-4 w-4" strokeWidth={1.8} />
-            </div>
-            <div className="min-w-0">
-              <DialogTitle className="text-lg font-bold tracking-tight">
-                {isEdit ? "Редагувати склад" : "Новий склад"}
-              </DialogTitle>
-              <DialogDescription className="mt-1 text-zinc-500">
-                {isEdit
-                  ? "Змініть паспорт ємності · залишок через операції"
-                  : "Додайте цистерну або бензовоз до обліку"}
-              </DialogDescription>
-            </div>
-          </div>
-        </DialogHeader>
+        <FuelSheetHeader
+          icon={Warehouse}
+          accent="fuel"
+          title={isEdit ? "Редагувати склад" : "Новий склад"}
+          description={
+            isEdit
+              ? "Паспорт ємності · залишок змінюється лише через операції"
+              : "Цистерна або бензовоз · одразу в обліку палива"
+          }
+        />
 
-        <form className="flex flex-col gap-5 px-6 py-5" onSubmit={handleSubmit}>
-          <div className="space-y-1.5">
-            <Label
-              htmlFor="storage-name"
-              className="text-xs font-semibold tracking-wide text-zinc-500 uppercase"
-            >
-              Назва складу
-            </Label>
-            <input
-              id="storage-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Паливо в цистернах"
-              className={cn(
-                "h-12 w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4",
-                "text-base font-medium text-zinc-900 outline-none transition-all",
-                "placeholder:text-zinc-400",
-                "focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/10"
-              )}
-              autoComplete="off"
-            />
-          </div>
+        <form
+          className="flex min-h-0 flex-1 flex-col overflow-hidden"
+          onSubmit={handleSubmit}
+        >
+          <div className={fuelSheetBodyClass}>
+            <div className="space-y-1.5">
+              <Label htmlFor="storage-name" className={fuelFieldLabelClass}>
+                Назва складу
+              </Label>
+              <input
+                id="storage-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Паливо в цистернах"
+                className={fuelInputClass}
+                autoComplete="off"
+              />
+            </div>
 
-          <div className="space-y-1.5">
-            <Label className="text-xs font-semibold tracking-wide text-zinc-500 uppercase">
-              Тип
-            </Label>
-            <Select
-              items={[
-                { value: "stationary", label: "Стаціонарний" },
-                { value: "mobile", label: "Мобільний (бензовоз)" },
-              ]}
-              value={type}
-              onValueChange={(v) => {
-                if (v == null) return;
-                setType(v === "mobile" ? "mobile" : "stationary");
-              }}
-            >
-              <SelectTrigger
-                className={cn(
-                  "h-12 w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4",
-                  "text-base font-medium text-zinc-900",
-                  "outline-none focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/10"
-                )}
+            <div className="space-y-1.5">
+              <Label className={fuelFieldLabelClass}>Тип</Label>
+              <Select
+                items={[
+                  { value: "stationary", label: "Стаціонарний" },
+                  { value: "mobile", label: "Мобільний (бензовоз)" },
+                ]}
+                value={type}
+                onValueChange={(v) => {
+                  if (v == null) return;
+                  setType(v === "mobile" ? "mobile" : "stationary");
+                }}
               >
-                <SelectValue>
-                  {type === "mobile"
-                    ? "Мобільний (бензовоз)"
-                    : "Стаціонарний"}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent className="z-[80] rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-lg">
-                <SelectItem value="stationary" className="rounded-xl px-3 py-2.5">
-                  Стаціонарний
-                </SelectItem>
-                <SelectItem value="mobile" className="rounded-xl px-3 py-2.5">
-                  Мобільний (бензовоз)
-                </SelectItem>
-              </SelectContent>
-            </Select>
+                <SelectTrigger className={fuelSelectTriggerClass}>
+                  <SelectValue>
+                    {type === "mobile"
+                      ? "Мобільний (бензовоз)"
+                      : "Стаціонарний"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent className="z-[80] rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-lg">
+                  <SelectItem
+                    value="stationary"
+                    className={fuelSelectItemClass}
+                  >
+                    Стаціонарний
+                  </SelectItem>
+                  <SelectItem value="mobile" className={fuelSelectItemClass}>
+                    Мобільний (бензовоз)
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="storage-capacity" className={fuelFieldLabelClass}>
+                Місткість
+              </Label>
+              <div className={fuelHeroAmountClass}>
+                <input
+                  id="storage-capacity"
+                  inputMode="decimal"
+                  value={capacity}
+                  onChange={(e) => setCapacity(e.target.value)}
+                  placeholder="51 000"
+                  className={cn(
+                    "h-14 w-full bg-transparent text-center text-2xl font-bold tracking-tight text-zinc-900 sm:text-3xl",
+                    "border-none outline-none focus:ring-0",
+                    "tabular-nums placeholder:font-semibold placeholder:text-zinc-300"
+                  )}
+                />
+                <span className="pointer-events-none absolute right-4 bottom-3.5 text-[10px] font-semibold tracking-wide text-zinc-400 uppercase">
+                  літрів
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="storage-price" className={fuelFieldLabelClass}>
+                Ціна за літр
+              </Label>
+              <div className={fuelHeroAmountClass}>
+                <input
+                  id="storage-price"
+                  inputMode="decimal"
+                  value={pricePerLiter}
+                  onChange={(e) => setPricePerLiter(e.target.value)}
+                  placeholder="52.50"
+                  className={cn(
+                    "h-14 w-full bg-transparent text-center text-2xl font-bold tracking-tight text-zinc-900 sm:text-3xl",
+                    "border-none outline-none focus:ring-0",
+                    "tabular-nums placeholder:font-semibold placeholder:text-zinc-300"
+                  )}
+                />
+                <span className="pointer-events-none absolute right-4 bottom-3.5 text-[10px] font-semibold tracking-wide text-zinc-400">
+                  ₴/л
+                </span>
+              </div>
+            </div>
+
+            {isEdit && storage ? (
+              <FuelSheetHint>
+                Поточний залишок:{" "}
+                <span className="font-semibold tabular-nums text-zinc-800">
+                  {Math.round(storage.currentVolume).toLocaleString("uk-UA")} л
+                </span>
+                {" · "}
+                змінюється лише через закупівлю / переміщення / заправку
+              </FuelSheetHint>
+            ) : (
+              <FuelSheetHint tone="amber">
+                Новий склад стартує з нульовим залишком. Першу партію додайте
+                через «Закупівля».
+              </FuelSheetHint>
+            )}
+
+            {error ? (
+              <div className="flex items-start gap-3 rounded-2xl border border-rose-200/80 bg-rose-50/90 p-3.5 text-rose-700">
+                <AlertCircle size={18} className="mt-0.5 shrink-0" />
+                <p className="text-sm font-medium leading-snug">{error}</p>
+              </div>
+            ) : null}
           </div>
 
-          <div className="space-y-1.5">
-            <Label
-              htmlFor="storage-capacity"
-              className="text-xs font-semibold tracking-wide text-zinc-500 uppercase"
-            >
-              Місткість
-            </Label>
-            <div className="relative flex items-center justify-center rounded-2xl border border-zinc-200 bg-zinc-50/80 p-3">
-              <input
-                id="storage-capacity"
-                inputMode="decimal"
-                value={capacity}
-                onChange={(e) => setCapacity(e.target.value)}
-                placeholder="51 000"
-                className={cn(
-                  "h-14 w-full bg-transparent text-center text-2xl font-bold tracking-tight text-zinc-900 sm:text-3xl",
-                  "border-none outline-none focus:ring-0",
-                  "tabular-nums placeholder:font-semibold placeholder:text-zinc-300"
-                )}
-              />
-              <span className="pointer-events-none absolute right-4 bottom-3.5 text-xs font-semibold text-zinc-400 uppercase">
-                літрів
-              </span>
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label
-              htmlFor="storage-price"
-              className="text-xs font-semibold tracking-wide text-zinc-500 uppercase"
-            >
-              Ціна за літр
-            </Label>
-            <div className="relative flex items-center justify-center rounded-2xl border border-zinc-200 bg-zinc-50/80 p-3">
-              <input
-                id="storage-price"
-                inputMode="decimal"
-                value={pricePerLiter}
-                onChange={(e) => setPricePerLiter(e.target.value)}
-                placeholder="52.50"
-                className={cn(
-                  "h-14 w-full bg-transparent text-center text-2xl font-bold tracking-tight text-zinc-900 sm:text-3xl",
-                  "border-none outline-none focus:ring-0",
-                  "tabular-nums placeholder:font-semibold placeholder:text-zinc-300"
-                )}
-              />
-              <span className="pointer-events-none absolute right-4 bottom-3.5 text-xs font-semibold text-zinc-400">
-                ₴/л
-              </span>
-            </div>
-          </div>
-
-          {isEdit && storage ? (
-            <p className="rounded-xl border border-zinc-100 bg-zinc-50 px-3.5 py-2.5 text-xs text-zinc-500">
-              Поточний залишок:{" "}
-              <span className="font-semibold tabular-nums text-zinc-800">
-                {Math.round(storage.currentVolume).toLocaleString("uk-UA")} л
-              </span>
-              {" · "}
-              змінюється лише через закупівлю / переміщення / заправку
-            </p>
-          ) : null}
-
-          {error ? (
-            <div className="flex items-center gap-3 rounded-xl border border-rose-100 bg-rose-50 p-4 text-rose-600">
-              <AlertCircle size={18} className="shrink-0" />
-              <p className="text-sm font-medium">{error}</p>
-            </div>
-          ) : null}
-
-          <DialogFooter className="mt-1 gap-2 border-0 bg-transparent p-0 sm:justify-stretch">
+          <FuelSheetFooter>
             <Button
               type="submit"
               disabled={submitting || !name.trim() || !capacity}
-              className={cn(
-                "h-12 w-full rounded-xl bg-zinc-900 text-sm font-semibold text-white",
-                "transition-transform hover:bg-zinc-800 active:scale-[0.98]",
-                "disabled:cursor-not-allowed disabled:opacity-50"
-              )}
+              className={fuelPrimaryBtnClass}
             >
               {submitting ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -297,9 +285,9 @@ export function FuelStorageDialog({
                 "Створити склад"
               )}
             </Button>
-          </DialogFooter>
+          </FuelSheetFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
   );
 }

@@ -12,8 +12,8 @@ import { createServiceSupabase } from "@/lib/supabase/server";
 export const REFUEL_MATCH_WINDOW_SEC = 45 * 60;
 /** Допуск обʼєму (±10%) */
 export const REFUEL_MATCH_VOLUME_TOLERANCE = 0.1;
-/** За замовчуванням дивимось 48 год */
-export const UNRECORDED_LOOKBACK_HOURS = 48;
+/** За замовчуванням дивимось 7 днів (168 год) */
+export const UNRECORDED_LOOKBACK_HOURS = 168;
 
 export type UnrecordedRefueling = WialonRefuelingEvent & {
   /** ISO час для UI */
