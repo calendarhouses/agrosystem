@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 
-import type { FuelTransactionType } from "@/lib/fuel-transactions";
+import { mapFuelTransactionRow, type FuelTransactionType } from "@/lib/fuel-transactions";
+import {
+  computeTotalCost,
+  computeWeightedAveragePrice,
+  reverseWeightedAveragePrice,
+  roundLiters,
+  roundPrice,
+} from "@/lib/fuel-wac";
 import { createServiceSupabase } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -14,6 +21,7 @@ type StorageRow = {
   name: string;
   capacity: number;
   current_volume: number;
+  price_per_liter: number;
 };
 
 type TxRow = {
@@ -23,6 +31,8 @@ type TxRow = {
   from_storage_id: string | null;
   to_storage_id: string | null;
   wialon_unit_id: number | null;
+  price_per_liter: number | null;
+  total_cost: number | null;
 };
 
 type PatchBody = {
@@ -32,6 +42,8 @@ type PatchBody = {
   toStorageId?: string | null;
   wialonUnitId?: number | null;
   hasFuelSensor?: boolean | null;
+  /** Для inbound — ціна нової партії (WAC) */
+  pricePerLiter?: number | null;
 };
 
 function badRequest(message: string) {
@@ -47,75 +59,135 @@ async function loadStorage(
 ) {
   const { data, error } = await supabase
     .from("fuel_storages")
-    .select("id, name, capacity, current_volume")
+    .select("id, name, capacity, current_volume, price_per_liter")
     .eq("id", id)
     .maybeSingle();
   if (error || !data) return null;
   return data as StorageRow;
 }
 
-async function bumpVolume(
-  supabase: ReturnType<typeof createServiceSupabase>,
-  storage: StorageRow,
-  delta: number
-) {
-  const next = Number(storage.current_volume) + delta;
-  if (next < -0.001) {
-    throw new Error(
-      `Недостатньо палива в «${storage.name}» (є ${storage.current_volume} л)`
-    );
-  }
-  if (next > Number(storage.capacity) + 0.001) {
-    throw new Error(
-      `Переповнення «${storage.name}» (місткість ${storage.capacity} л)`
-    );
-  }
-  const { error } = await supabase
-    .from("fuel_storages")
-    .update({ current_volume: Math.round(next * 100) / 100 })
-    .eq("id", storage.id);
-  if (error) throw new Error(error.message);
-  storage.current_volume = Math.round(next * 100) / 100;
-}
-
-/** Відкат ефекту транзакції на залишках */
+/** Відкат ефекту транзакції на залишках (+ WAC для inbound/transfer-in) */
 async function reverseTx(
   supabase: ReturnType<typeof createServiceSupabase>,
   tx: TxRow
 ) {
   const amount = Number(tx.amount_liters);
+  const txPrice = Number(tx.price_per_liter) || 0;
+
   if (tx.transaction_type === "inbound" && tx.to_storage_id) {
     const to = await loadStorage(supabase, tx.to_storage_id);
-    if (to) await bumpVolume(supabase, to, -amount);
+    if (!to) return;
+    const vol = Number(to.current_volume) || 0;
+    const price = Number(to.price_per_liter) || 0;
+    const nextVol = roundLiters(vol - amount);
+    const nextPrice =
+      nextVol <= 0.001
+        ? 0
+        : reverseWeightedAveragePrice(vol, price, amount, txPrice);
+    const { error } = await supabase
+      .from("fuel_storages")
+      .update({
+        current_volume: Math.max(0, nextVol),
+        price_per_liter: nextPrice,
+      })
+      .eq("id", to.id);
+    if (error) throw new Error(error.message);
   } else if (tx.transaction_type === "transfer") {
     if (tx.from_storage_id) {
       const from = await loadStorage(supabase, tx.from_storage_id);
-      if (from) await bumpVolume(supabase, from, amount);
+      if (from) {
+        const { error } = await supabase
+          .from("fuel_storages")
+          .update({
+            current_volume: roundLiters(
+              Number(from.current_volume) + amount
+            ),
+          })
+          .eq("id", from.id);
+        if (error) throw new Error(error.message);
+      }
     }
     if (tx.to_storage_id) {
       const to = await loadStorage(supabase, tx.to_storage_id);
-      if (to) await bumpVolume(supabase, to, -amount);
+      if (to) {
+        const vol = Number(to.current_volume) || 0;
+        const price = Number(to.price_per_liter) || 0;
+        const nextVol = roundLiters(vol - amount);
+        const nextPrice =
+          nextVol <= 0.001
+            ? 0
+            : reverseWeightedAveragePrice(vol, price, amount, txPrice);
+        const { error } = await supabase
+          .from("fuel_storages")
+          .update({
+            current_volume: Math.max(0, nextVol),
+            price_per_liter: nextPrice,
+          })
+          .eq("id", to.id);
+        if (error) throw new Error(error.message);
+      }
     }
   } else if (tx.transaction_type === "outbound" && tx.from_storage_id) {
     const from = await loadStorage(supabase, tx.from_storage_id);
-    if (from) await bumpVolume(supabase, from, amount);
+    if (from) {
+      const { error } = await supabase
+        .from("fuel_storages")
+        .update({
+          current_volume: roundLiters(Number(from.current_volume) + amount),
+        })
+        .eq("id", from.id);
+      if (error) throw new Error(error.message);
+    }
   }
 }
 
-/** Застосувати нову транзакцію до залишків */
+/**
+ * Застосувати нову операцію. Повертає price_per_liter і total_cost для журналу.
+ */
 async function applyTx(
   supabase: ReturnType<typeof createServiceSupabase>,
   type: FuelTransactionType,
   amount: number,
   fromStorageId: string | null,
-  toStorageId: string | null
-) {
+  toStorageId: string | null,
+  inboundBuyPrice: number | null
+): Promise<{ pricePerLiter: number; totalCost: number }> {
   if (type === "inbound") {
     if (!toStorageId) throw new Error("Оберіть ємність для приходу");
+    if (inboundBuyPrice == null || inboundBuyPrice <= 0) {
+      throw new Error("Вкажіть ціну за літр (₴)");
+    }
     const to = await loadStorage(supabase, toStorageId);
     if (!to) throw new Error("Ємність не знайдена");
-    await bumpVolume(supabase, to, amount);
-  } else if (type === "transfer") {
+
+    const currentVol = Number(to.current_volume) || 0;
+    const currentPrice = Number(to.price_per_liter) || 0;
+    const nextVol = roundLiters(currentVol + amount);
+    if (nextVol > Number(to.capacity) + 0.001) {
+      throw new Error(
+        `Переповнення «${to.name}» (місткість ${to.capacity} л)`
+      );
+    }
+    const wac = computeWeightedAveragePrice(
+      currentVol,
+      currentPrice,
+      amount,
+      inboundBuyPrice
+    );
+    const { error } = await supabase
+      .from("fuel_storages")
+      .update({ current_volume: nextVol, price_per_liter: wac })
+      .eq("id", to.id);
+    if (error) throw new Error(error.message);
+
+    const pricePerLiter = roundPrice(inboundBuyPrice);
+    return {
+      pricePerLiter,
+      totalCost: computeTotalCost(amount, pricePerLiter),
+    };
+  }
+
+  if (type === "transfer") {
     if (!fromStorageId || !toStorageId) {
       throw new Error("Оберіть ємності «звідки» і «куди»");
     }
@@ -125,22 +197,82 @@ async function applyTx(
     const from = await loadStorage(supabase, fromStorageId);
     const to = await loadStorage(supabase, toStorageId);
     if (!from || !to) throw new Error("Ємність не знайдена");
-    await bumpVolume(supabase, from, -amount);
-    try {
-      await bumpVolume(supabase, to, amount);
-    } catch (err) {
-      await bumpVolume(supabase, from, amount);
-      throw err;
+
+    const fromVol = Number(from.current_volume) || 0;
+    const donorPrice = Number(from.price_per_liter) || 0;
+    if (fromVol + 0.001 < amount) {
+      throw new Error(
+        `Недостатньо палива в «${from.name}» (є ${from.current_volume} л)`
+      );
     }
-  } else {
-    if (!fromStorageId) throw new Error("Оберіть ємність-донор");
-    const from = await loadStorage(supabase, fromStorageId);
-    if (!from) throw new Error("Ємність не знайдена");
-    await bumpVolume(supabase, from, -amount);
+    const toVol = Number(to.current_volume) || 0;
+    const toPrice = Number(to.price_per_liter) || 0;
+    const nextToVol = roundLiters(toVol + amount);
+    if (nextToVol > Number(to.capacity) + 0.001) {
+      throw new Error(
+        `Переповнення «${to.name}» (місткість ${to.capacity} л)`
+      );
+    }
+
+    const receiverWac = computeWeightedAveragePrice(
+      toVol,
+      toPrice,
+      amount,
+      donorPrice
+    );
+
+    const { error: fromErr } = await supabase
+      .from("fuel_storages")
+      .update({ current_volume: roundLiters(fromVol - amount) })
+      .eq("id", from.id);
+    if (fromErr) throw new Error(fromErr.message);
+
+    const { error: toErr } = await supabase
+      .from("fuel_storages")
+      .update({
+        current_volume: nextToVol,
+        price_per_liter: receiverWac,
+      })
+      .eq("id", to.id);
+    if (toErr) {
+      await supabase
+        .from("fuel_storages")
+        .update({ current_volume: fromVol })
+        .eq("id", from.id);
+      throw new Error(toErr.message);
+    }
+
+    const pricePerLiter = roundPrice(donorPrice);
+    return {
+      pricePerLiter,
+      totalCost: computeTotalCost(amount, pricePerLiter),
+    };
   }
+
+  if (!fromStorageId) throw new Error("Оберіть ємність-донор");
+  const from = await loadStorage(supabase, fromStorageId);
+  if (!from) throw new Error("Ємність не знайдена");
+  const fromVol = Number(from.current_volume) || 0;
+  const donorPrice = Number(from.price_per_liter) || 0;
+  if (fromVol + 0.001 < amount) {
+    throw new Error(
+      `Недостатньо палива в «${from.name}» (є ${from.current_volume} л)`
+    );
+  }
+  const { error } = await supabase
+    .from("fuel_storages")
+    .update({ current_volume: roundLiters(fromVol - amount) })
+    .eq("id", from.id);
+  if (error) throw new Error(error.message);
+
+  const pricePerLiter = roundPrice(donorPrice);
+  return {
+    pricePerLiter,
+    totalCost: computeTotalCost(amount, pricePerLiter),
+  };
 }
 
-/** PATCH /api/fuel/transactions/:id — редагування з перерахунком обʼємів */
+/** PATCH /api/fuel/transactions/:id — редагування з перерахунком обʼємів і WAC */
 export async function PATCH(
   request: Request,
   context: { params: Promise<{ id: string }> }
@@ -150,7 +282,7 @@ export async function PATCH(
     if (!id) return badRequest("Немає id");
 
     const body = (await request.json()) as PatchBody;
-    const amount = Number(body.amountLiters);
+    const amount = roundLiters(Number(body.amountLiters));
     const transactionType = body.transactionType;
 
     if (
@@ -188,9 +320,15 @@ export async function PATCH(
         ? Number(body.wialonUnitId)
         : null;
 
+    let inboundBuyPrice: number | null = null;
     if (transactionType === "inbound") {
       fromStorageId = null;
       wialonUnitId = null;
+      const price = Number(body.pricePerLiter);
+      if (!Number.isFinite(price) || price <= 0) {
+        return badRequest("Вкажіть ціну за літр (₴)");
+      }
+      inboundBuyPrice = roundPrice(price);
     } else if (transactionType === "transfer") {
       wialonUnitId = null;
     } else {
@@ -198,22 +336,26 @@ export async function PATCH(
       if (wialonUnitId == null) return badRequest("Оберіть техніку");
     }
 
+    let costing: { pricePerLiter: number; totalCost: number };
     try {
-      await applyTx(
+      costing = await applyTx(
         supabase,
         transactionType,
         amount,
         fromStorageId,
-        toStorageId
+        toStorageId,
+        inboundBuyPrice
       );
     } catch (err) {
-      // Відновити старий ефект, якщо новий не застосувався
       await applyTx(
         supabase,
         oldTx.transaction_type,
         Number(oldTx.amount_liters),
         oldTx.from_storage_id,
-        oldTx.to_storage_id
+        oldTx.to_storage_id,
+        oldTx.price_per_liter != null && Number(oldTx.price_per_liter) > 0
+          ? Number(oldTx.price_per_liter)
+          : null
       ).catch(() => undefined);
       throw err;
     }
@@ -235,6 +377,8 @@ export async function PATCH(
         to_storage_id: toStorageId,
         wialon_unit_id: wialonUnitId,
         wialon_variance: wialonVariance,
+        price_per_liter: costing.pricePerLiter,
+        total_cost: costing.totalCost,
       })
       .eq("id", id)
       .select("*")
@@ -248,7 +392,10 @@ export async function PATCH(
     }
 
     return NextResponse.json(
-      { ok: true, transaction: updated },
+      {
+        ok: true,
+        transaction: mapFuelTransactionRow(updated as Record<string, unknown>),
+      },
       { headers: JSON_UTF8 }
     );
   } catch (error) {
@@ -262,7 +409,7 @@ export async function PATCH(
   }
 }
 
-/** DELETE /api/fuel/transactions/:id — видалення з відкатом обʼємів */
+/** DELETE /api/fuel/transactions/:id — видалення з відкатом обʼємів і WAC */
 export async function DELETE(
   _request: Request,
   context: { params: Promise<{ id: string }> }

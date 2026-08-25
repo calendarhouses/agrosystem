@@ -17,11 +17,14 @@ type Body = {
   /** ISO — обмежити повторну звірку періодом журналу */
   from?: string;
   to?: string;
+  /** Примусова звірка однієї outbound-транзакції */
+  transactionId?: string;
 };
 
 /**
  * POST /api/fuel/transactions/reverify
  * Повторна звірка outbound з wialon_variance = null (стан «Очікування GPS»).
+ * Опційно: transactionId — лише ця операція.
  */
 export async function POST(request: Request) {
   try {
@@ -31,6 +34,11 @@ export async function POST(request: Request) {
     } catch {
       body = {};
     }
+
+    const transactionId =
+      typeof body.transactionId === "string" && body.transactionId.trim()
+        ? body.transactionId.trim()
+        : null;
 
     const supabase = createServiceSupabase();
     let query = supabase
@@ -42,10 +50,14 @@ export async function POST(request: Request) {
       .is("wialon_variance", null)
       .not("wialon_unit_id", "is", null)
       .order("transaction_date", { ascending: false })
-      .limit(50);
+      .limit(transactionId ? 1 : 50);
 
-    if (body.from) query = query.gte("transaction_date", body.from);
-    if (body.to) query = query.lte("transaction_date", body.to);
+    if (transactionId) {
+      query = query.eq("id", transactionId);
+    } else {
+      if (body.from) query = query.gte("transaction_date", body.from);
+      if (body.to) query = query.lte("transaction_date", body.to);
+    }
 
     const { data: pending, error } = await query;
 
@@ -58,6 +70,8 @@ export async function POST(request: Request) {
 
     const rows = pending ?? [];
     let updated = 0;
+    let updatedTransaction: ReturnType<typeof mapFuelTransactionRow> | null =
+      null;
 
     for (const row of rows) {
       const unitId = Number(row.wialon_unit_id);
@@ -75,16 +89,24 @@ export async function POST(request: Request) {
       if (match.calculatedVariance == null) continue;
 
       const wialonVerified = match.calculatedVariance <= 2;
-      const { error: updateError } = await supabase
+      const { data: updatedRow, error: updateError } = await supabase
         .from("fuel_transactions")
         .update({
           wialon_variance: match.calculatedVariance,
           wialon_verified: wialonVerified,
         })
-        .eq("id", row.id);
+        .eq("id", row.id)
+        .select(FUEL_TRANSACTIONS_SELECT)
+        .maybeSingle();
 
-      if (!updateError) updated += 1;
-      else {
+      if (!updateError) {
+        updated += 1;
+        if (updatedRow) {
+          updatedTransaction = mapFuelTransactionRow(
+            updatedRow as Record<string, unknown>
+          );
+        }
+      } else {
         console.error("[fuel/reverify] update failed", row.id, updateError);
       }
     }
@@ -96,8 +118,13 @@ export async function POST(request: Request) {
       .order("transaction_date", { ascending: false })
       .limit(200);
 
-    if (body.from) listQuery = listQuery.gte("transaction_date", body.from);
-    if (body.to) listQuery = listQuery.lte("transaction_date", body.to);
+    if (!transactionId) {
+      if (body.from) listQuery = listQuery.gte("transaction_date", body.from);
+      if (body.to) listQuery = listQuery.lte("transaction_date", body.to);
+    } else if (body.from || body.to) {
+      if (body.from) listQuery = listQuery.gte("transaction_date", body.from);
+      if (body.to) listQuery = listQuery.lte("transaction_date", body.to);
+    }
 
     const { data: list } = await listQuery;
 
@@ -106,6 +133,7 @@ export async function POST(request: Request) {
         ok: true,
         checked: rows.length,
         updated,
+        transaction: updatedTransaction,
         transactions: (list ?? []).map((row) =>
           mapFuelTransactionRow(row as Record<string, unknown>)
         ),

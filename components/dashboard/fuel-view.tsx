@@ -9,15 +9,16 @@ import {
   Calendar as CalendarIcon,
   CheckCircle2,
   Edit2,
+  Factory,
   Fuel,
   Loader2,
   MoreHorizontal,
   Plus,
   RefreshCw,
-  Satellite,
   Settings2,
   Tractor,
   Trash2,
+  Truck,
 } from "lucide-react";
 import type { DateRange } from "react-day-picker";
 
@@ -26,8 +27,9 @@ import {
   FuelActionDialogs,
   type FleetUnitOption,
 } from "@/components/dashboard/fuel-action-dialogs";
+import { FuelDashboardHeader } from "@/components/dashboard/fuel-dashboard-header";
 import { FuelDetailSheet } from "@/components/dashboard/fuel-detail-sheet";
-import { PageHeader } from "@/components/layout/page-header";
+import { FuelStorageDialog } from "@/components/dashboard/fuel-storage-dialog";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -44,15 +46,16 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { GlassCard } from "@/components/ui/glass-card";
+import { Badge } from "@/components/ui/badge";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   mapFuelStorageRow,
   storageFillPercent,
-  storageSubtitle,
   storageValueUah,
   totalFuelValue,
   totalFuelVolume,
@@ -62,6 +65,7 @@ import {
   FUEL_TRANSACTIONS_SELECT,
   mapFuelTransactionRow,
   type FuelTransaction,
+  type FuelSyncStatus,
 } from "@/lib/fuel-transactions";
 import { createBrowserSupabase } from "@/lib/supabase/client";
 import { unitHasFuelSensor, type WialonUnit } from "@/lib/wialon";
@@ -134,6 +138,37 @@ function formatRoute(tx: FuelTransaction): string {
   return tx.fromName ? `${tx.fromName} → техніка` : "→ техніка";
 }
 
+function BasSyncBadge({ status }: { status: FuelSyncStatus }) {
+  if (status === "synced") {
+    return (
+      <Badge
+        variant="outline"
+        className="border-emerald-200 bg-emerald-50 font-medium text-emerald-700"
+      >
+        ✅ Проведено в 1С
+      </Badge>
+    );
+  }
+  if (status === "error") {
+    return (
+      <Badge
+        variant="outline"
+        className="border-rose-200 bg-rose-50 font-medium text-rose-700"
+      >
+        ⚠ Помилка 1С
+      </Badge>
+    );
+  }
+  return (
+    <Badge
+      variant="outline"
+      className="border-amber-200 bg-amber-50 font-medium text-amber-800"
+    >
+      ⏳ Очікує 1С
+    </Badge>
+  );
+}
+
 /** Допуск звірки з ДУТ (±л) */
 const WIALON_MATCH_TOLERANCE_L = 2;
 
@@ -173,13 +208,24 @@ function resolveWialonCheck(tx: FuelTransaction): WialonCheckState {
 function WialonControlCell({
   tx,
   unitHasDut,
+  onReverify,
+  reverifyBusy,
 }: {
   tx: FuelTransaction;
   /** Чи в каталозі Wialon для цієї техніки є ДУТ (з вкладки Техніка) */
   unitHasDut?: boolean;
+  onReverify?: (txId: string) => void;
+  reverifyBusy?: boolean;
 }) {
   if (tx.type !== "outbound") {
-    return <span className="text-zinc-300">—</span>;
+    return (
+      <span
+        className="inline-flex min-h-7 items-center text-sm font-medium text-zinc-400"
+        title="Контроль Wialon не застосовується"
+      >
+        —
+      </span>
+    );
   }
 
   const check = resolveWialonCheck(tx);
@@ -188,9 +234,31 @@ function WialonControlCell({
     const knownDut = unitHasDut === true;
     return (
       <div className="flex flex-col items-start gap-1.5">
-        <div className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-zinc-100 px-2.5 py-1 text-xs font-medium whitespace-nowrap text-zinc-600 shadow-sm">
-          <Settings2 className="h-3.5 w-3.5 text-zinc-500" />
-          {knownDut ? "Очікування GPS" : "Ручний облік"}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <div className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-zinc-100 px-2.5 py-1 text-xs font-medium whitespace-nowrap text-zinc-600 shadow-sm">
+            <Settings2 className="h-3.5 w-3.5 text-zinc-500" />
+            {knownDut ? "Очікування GPS" : "Ручний облік"}
+          </div>
+          {knownDut && onReverify ? (
+            <button
+              type="button"
+              title="Підтягнути дані з ДУТ зараз"
+              disabled={reverifyBusy}
+              onClick={() => onReverify(tx.id)}
+              className={cn(
+                "inline-flex h-7 w-7 items-center justify-center rounded-md border border-sky-200 bg-sky-50 text-sky-700",
+                "outline-none transition hover:bg-sky-100",
+                "focus-visible:ring-2 focus-visible:ring-sky-500/25",
+                "disabled:cursor-not-allowed disabled:opacity-60"
+              )}
+            >
+              <RefreshCw
+                className={cn("h-3.5 w-3.5", reverifyBusy && "animate-spin")}
+                strokeWidth={2}
+              />
+              <span className="sr-only">Оновити GPS-звірку</span>
+            </button>
+          ) : null}
         </div>
         <span className="text-[11px] leading-snug text-zinc-500">
           {knownDut
@@ -286,13 +354,7 @@ function resolveStatus(percent: number, type: FuelStorage["type"]): {
   return { label: "В нормі", tone: "ok" };
 }
 
-const STATUS_BADGE: Record<TankStatus, string> = {
-  ok: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/15",
-  low: "bg-amber-50 text-amber-800 ring-1 ring-amber-600/15",
-  critical: "bg-rose-50 text-rose-700 ring-1 ring-rose-600/15",
-};
-
-/** Вертикальна цистерна — висота плавно стежить за % з БД */
+/** Вертикальна колба — вписана в правий край картки */
 function TankCistern({ percent }: { percent: number }) {
   const [fill, setFill] = useState(0);
   const firstPaint = useRef(true);
@@ -313,18 +375,18 @@ function TankCistern({ percent }: { percent: number }) {
   return (
     <div
       className={cn(
-        "absolute top-6 right-6 ml-auto flex h-48 w-24 items-end overflow-hidden",
-        "rounded-3xl border-4 border-white bg-zinc-100",
-        "shadow-[inset_0_4px_10px_rgba(0,0,0,0.1)]"
+        "pointer-events-none absolute inset-y-0 right-0 w-[4.5rem] overflow-hidden sm:w-20",
+        "rounded-r-3xl border-l border-white/30",
+        "bg-zinc-900/[0.03]"
       )}
       aria-hidden
     >
       <div
         className={cn(
-          "fuel-liquid relative w-full overflow-visible",
-          "bg-gradient-to-t from-amber-500 to-amber-300",
-          "shadow-[inset_0_4px_10px_rgba(255,255,255,0.35)]",
-          "transition-[height] duration-1000 ease-out"
+          "fuel-liquid absolute inset-x-0 bottom-0 overflow-visible",
+          "bg-gradient-to-t from-amber-600/90 via-amber-400/85 to-amber-200/75",
+          "shadow-[inset_0_4px_12px_rgba(255,255,255,0.28)]",
+          "transition-[height] duration-[1100ms] ease-in-out"
         )}
         style={{ height: `${fill}%` }}
       >
@@ -333,8 +395,8 @@ function TankCistern({ percent }: { percent: number }) {
 
       <div
         className={cn(
-          "pointer-events-none absolute inset-y-5 left-2.5 w-4",
-          "rotate-12 rounded-full bg-white/25"
+          "pointer-events-none absolute inset-y-8 left-2 w-2.5",
+          "rotate-[14deg] rounded-full bg-white/25"
         )}
       />
     </div>
@@ -344,67 +406,114 @@ function TankCistern({ percent }: { percent: number }) {
 function TankCard({
   storage,
   onOpen,
+  onEdit,
 }: {
   storage: FuelStorage;
   onOpen: () => void;
+  onEdit: () => void;
 }) {
   const percent = storageFillPercent(storage);
   const status = resolveStatus(percent, storage.type);
   const valueUah = storageValueUah(storage);
+  const isMobile = storage.type === "mobile";
+  const TypeIcon = isMobile ? Truck : Factory;
+  const typeLabel = isMobile ? "Бензовоз" : "Стаціонарний";
 
   return (
-    <button
-      type="button"
-      onClick={onOpen}
+    <div
       className={cn(
-        "relative min-h-[220px] overflow-hidden rounded-3xl border border-zinc-200/60 bg-white p-6 text-left shadow-sm",
-        "transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30"
+        "relative min-h-[220px] overflow-hidden rounded-3xl border p-6 text-left",
+        "bg-card/50 shadow-sm backdrop-blur-md",
+        "transition-all hover:shadow-md"
       )}
     >
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,rgba(245,158,11,0.07),transparent_55%)]"
+      <div className="absolute top-3 right-3 z-20">
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            className={cn(
+              "inline-flex h-8 w-8 items-center justify-center rounded-full",
+              "bg-background/40 text-zinc-500/80 backdrop-blur-sm",
+              "outline-none transition hover:bg-background/70 hover:text-zinc-800",
+              "focus-visible:ring-2 focus-visible:ring-zinc-900/15"
+            )}
+            aria-label="Дії зі складом"
+          >
+            <MoreHorizontal className="h-4 w-4" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="end"
+            className="min-w-[10.5rem] rounded-xl border border-zinc-200 bg-white p-1 text-zinc-900 shadow-lg"
+          >
+            <DropdownMenuItem
+              className="cursor-pointer rounded-lg px-2.5 py-2"
+              onClick={() => onEdit()}
+            >
+              <Edit2 className="h-3.5 w-3.5" />
+              Редагувати
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="cursor-pointer rounded-lg px-2.5 py-2"
+              onClick={() => onOpen()}
+            >
+              <Fuel className="h-3.5 w-3.5" />
+              Деталі залишку
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      <button
+        type="button"
+        onClick={onOpen}
+        className={cn(
+          "absolute inset-0 z-10 rounded-3xl",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900/15"
+        )}
+        aria-label={`Відкрити ${storage.name}`}
       />
 
       <TankCistern percent={percent} />
 
-      <div className="relative pr-28">
-        <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-base font-bold tracking-tight text-zinc-900 sm:text-lg">
+      <div className="relative z-[11] pointer-events-none pr-[5.25rem] sm:pr-24">
+        <div className="flex items-start gap-2 pr-6">
+          <h2 className="min-w-0 flex-1 text-base font-bold tracking-tight text-zinc-900 sm:text-lg">
             {storage.name}
           </h2>
+        </div>
+
+        <p className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+          <TypeIcon className="h-3.5 w-3.5 shrink-0 opacity-70" strokeWidth={1.9} />
+          <span>{typeLabel}</span>
+          <span className="text-zinc-300">·</span>
           <span
             className={cn(
-              "inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold",
-              STATUS_BADGE[status.tone]
+              status.tone === "critical" && "text-rose-600",
+              status.tone === "low" && "text-amber-700",
+              status.tone === "ok" && "text-muted-foreground"
             )}
           >
             {status.label}
           </span>
-        </div>
-        <p className="mt-1 text-xs text-zinc-500">
-          {storageSubtitle(storage)}
         </p>
 
-        <div className="mt-5 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-          <p className="text-4xl font-bold tracking-tight text-zinc-900 tabular-nums">
-            {formatLiters(storage.currentVolume)}{" "}
-            <span className="text-xl font-semibold text-zinc-400">л</span>
+        <div className="mt-6 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+          <p className="text-3xl font-bold tracking-tight tabular-nums text-zinc-900 sm:text-4xl">
+            {formatLiters(storage.currentVolume)}
+            <span className="ml-1 text-lg font-semibold text-zinc-400">л</span>
           </p>
-          <p className="text-sm font-medium text-zinc-500 tabular-nums">
-            з {formatLiters(storage.capacity)} л
+          <p className="text-sm tabular-nums text-muted-foreground/80">
+            / {formatLiters(storage.capacity)} л
           </p>
         </div>
 
-        <p className="mt-2 text-xl font-semibold text-emerald-600 tabular-nums">
+        <p className="mt-2 text-xs font-medium tabular-nums text-emerald-600">
           ≈ {formatMoney(valueUah)} ₴
         </p>
-        <p className="mt-0.5 text-xs text-zinc-500">
+        <p className="mt-0.5 text-[11px] text-muted-foreground">
           {Math.round(percent)}% · {storage.pricePerLiter} ₴ / л
         </p>
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -431,6 +540,10 @@ export function FuelView({
   const [isReceiveOpen, setIsReceiveOpen] = useState(false);
   const [isTransferOpen, setIsTransferOpen] = useState(false);
   const [isRefuelOpen, setIsRefuelOpen] = useState(false);
+  const [storageDialogOpen, setStorageDialogOpen] = useState(false);
+  const [editingStorage, setEditingStorage] = useState<FuelStorage | null>(
+    null
+  );
   const [editTransaction, setEditTransaction] =
     useState<FuelTransaction | null>(null);
   const [deleteTx, setDeleteTx] = useState<FuelTransaction | null>(null);
@@ -443,7 +556,9 @@ export function FuelView({
   const [units, setUnits] = useState<FleetUnitOption[]>(FALLBACK_UNITS);
   const [unitsLoading, setUnitsLoading] = useState(false);
   const [fieldFuelToday, setFieldFuelToday] = useState<number | null>(null);
+  const [fieldFuelHasData, setFieldFuelHasData] = useState(false);
   const [fieldFuelLoading, setFieldFuelLoading] = useState(true);
+  const [reverifyTxId, setReverifyTxId] = useState<string | null>(null);
 
   const unitNameById = useMemo(() => {
     const map = new Map<number, string>();
@@ -561,6 +676,49 @@ export function FuelView({
     }
   }, [dateRange, refreshTransactions]);
 
+  /** Точкова звірка однієї outbound («Очікування GPS») */
+  const reverifySingleTransaction = useCallback(
+    async (txId: string) => {
+      setReverifyTxId(txId);
+      try {
+        const response = await fetch("/api/fuel/transactions/reverify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            transactionId: txId,
+            from: dateRange.start.toISOString(),
+            to: dateRange.end.toISOString(),
+          }),
+        });
+        const json = (await response.json()) as {
+          ok?: boolean;
+          updated?: number;
+          transaction?: FuelTransaction | null;
+          transactions?: FuelTransaction[];
+          error?: string;
+        };
+        if (!response.ok || !json.ok) {
+          throw new Error(json.error || "Не вдалося оновити GPS-звірку");
+        }
+        if (json.transaction) {
+          setTransactions((prev) =>
+            prev.map((row) => (row.id === txId ? json.transaction! : row))
+          );
+        } else if (json.transactions) {
+          setTransactions(json.transactions);
+        } else {
+          await refreshTransactions();
+        }
+      } catch (err) {
+        console.error("[fuel] single reverify failed", err);
+        alert(err instanceof Error ? err.message : "Помилка GPS-звірки");
+      } finally {
+        setReverifyTxId(null);
+      }
+    },
+    [dateRange, refreshTransactions]
+  );
+
   const refreshAll = useCallback(async () => {
     await Promise.all([refreshStorages(), refreshTransactions()]);
   }, [refreshStorages, refreshTransactions]);
@@ -632,13 +790,19 @@ export function FuelView({
     };
   }, [refreshStorages, refreshTransactions, refreshAll]);
 
-  /** Витрата на полях сьогодні (Wialon CRON → wialon_field_fuel_logs) */
+  /** Витрата на полях сьогодні (Wialon CRON → wialon_field_fuel_logs, Europe/Kyiv) */
   useEffect(() => {
     let cancelled = false;
     setFieldFuelLoading(true);
     void getTodayFieldFuelConsumed().then((res) => {
       if (cancelled) return;
-      setFieldFuelToday(res.ok ? res.data.liters : 0);
+      if (res.ok) {
+        setFieldFuelToday(res.data.liters);
+        setFieldFuelHasData(res.data.hasData);
+      } else {
+        setFieldFuelToday(null);
+        setFieldFuelHasData(false);
+      }
       setFieldFuelLoading(false);
     });
     return () => {
@@ -683,146 +847,99 @@ export function FuelView({
   const totalValue = useMemo(() => totalFuelValue(storages), [storages]);
 
   return (
-    <main className="mx-auto h-full w-full max-w-7xl overflow-y-auto overscroll-none px-4 pt-3 pb-6 sm:px-6 lg:px-8">
-      <PageHeader
-        icon={Fuel}
-        title="Облік Палива"
-        description="Управління дизельними активами"
-        actions={
-          <div className="text-right">
-            <p className="text-[11px] font-semibold tracking-wide text-zinc-500 uppercase">
-              Усього в системі
-              {live ? (
-                <span className="ml-1.5 inline-flex items-center gap-1 font-medium normal-case tracking-normal text-emerald-600">
-                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
-                  live
-                </span>
-              ) : null}
-            </p>
-            {storages.length === 0 ? (
-              <p className="mt-1 inline-flex items-center gap-1.5 text-sm text-zinc-500">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Немає складів
-              </p>
-            ) : (
-              <>
-                <p className="text-lg font-bold tabular-nums text-zinc-900">
-                  {formatLiters(totalLiters)} л
-                </p>
-                <p className="text-sm font-semibold tabular-nums text-emerald-600">
-                  ≈ {formatMoney(totalValue)} ₴
-                </p>
-              </>
-            )}
-          </div>
-        }
+    <main className="h-full w-full overflow-y-auto overscroll-none">
+      <FuelDashboardHeader
+        storages={storages}
+        totalLiters={totalLiters}
+        totalValue={totalValue}
+        live={live}
+        fieldFuelToday={fieldFuelToday}
+        fieldFuelHasData={fieldFuelHasData}
+        fieldFuelLoading={fieldFuelLoading}
+        onPurchase={() => {
+          setEditTransaction(null);
+          setIsReceiveOpen(true);
+        }}
+        onTransfer={() => {
+          setEditTransaction(null);
+          setIsTransferOpen(true);
+        }}
+        onRefuel={() => {
+          setEditTransaction(null);
+          setIsRefuelOpen(true);
+        }}
+        onRadarApproved={() => {
+          void refreshStorages();
+          void refreshTransactions();
+        }}
       />
 
-      <section className="mb-6">
-        <div className="rounded-2xl border border-sky-200/80 bg-gradient-to-br from-sky-50 to-white px-4 py-4 shadow-sm sm:px-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-start gap-3">
-              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-sky-800">
-                <Satellite className="h-5 w-5" />
-              </span>
-              <div>
-                <p className="text-sm font-semibold text-zinc-900">
-                  Витрачено на полях сьогодні
-                </p>
-                <p className="mt-0.5 text-xs text-zinc-500">
-                  Авто з ДРП Wialon · оновлення щогодини (CRON)
-                </p>
-              </div>
-            </div>
-            <div className="text-right">
-              {fieldFuelLoading ? (
-                <Loader2 className="ml-auto h-5 w-5 animate-spin text-sky-600" />
-              ) : (
-                <p className="text-2xl font-bold tabular-nums tracking-tight text-sky-900">
-                  {formatLiters(fieldFuelToday ?? 0)}{" "}
-                  <span className="text-base font-semibold text-sky-700/80">
-                    л
-                  </span>
-                </p>
-              )}
-            </div>
+      <div className="mx-auto w-full max-w-7xl px-4 pb-6 sm:px-6 lg:px-8">
+      <section className="mb-4 md:mb-5">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-sm font-semibold tracking-tight text-zinc-900">
+              Склади
+            </h2>
+            <p className="text-xs text-zinc-500">
+              Цистерни та бензовози · залишок і середня ціна
+            </p>
           </div>
+          <button
+            type="button"
+            onClick={() => {
+              setEditingStorage(null);
+              setStorageDialogOpen(true);
+            }}
+            className={cn(
+              "inline-flex h-9 items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-800 shadow-sm",
+              "outline-none transition hover:bg-zinc-50 hover:text-zinc-900",
+              "focus-visible:ring-2 focus-visible:ring-emerald-500/20"
+            )}
+          >
+            <Plus className="h-3.5 w-3.5" strokeWidth={2.2} />
+            Додати склад
+          </button>
         </div>
-      </section>
 
-      <div className="mb-8 flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          onClick={() => {
-            setEditTransaction(null);
-            setIsReceiveOpen(true);
-          }}
-          className={cn(
-            "inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3",
-            "bg-zinc-900 text-sm font-semibold text-white shadow-sm",
-            "transition-all hover:bg-zinc-800 hover:shadow-md",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900/30"
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          {storages.length === 0 ? (
+            <div className="col-span-full rounded-3xl border border-dashed border-zinc-200 bg-white px-6 py-16 text-center shadow-sm">
+              <p className="text-sm font-semibold text-zinc-900">
+                Склади палива ще не налаштовані
+              </p>
+              <p className="mt-1 text-xs text-zinc-500">
+                Натисніть «Додати склад», щоб створити першу ємність
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingStorage(null);
+                  setStorageDialogOpen(true);
+                }}
+                className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-zinc-900 px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-zinc-800"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Додати склад
+              </button>
+            </div>
+          ) : (
+            storages.map((storage) => (
+              <TankCard
+                key={storage.id}
+                storage={storage}
+                onOpen={() => {
+                  setSelectedStorage(storage);
+                  setFuelSheetOpen(true);
+                }}
+                onEdit={() => {
+                  setEditingStorage(storage);
+                  setStorageDialogOpen(true);
+                }}
+              />
+            ))
           )}
-        >
-          <Plus className="h-4 w-4" strokeWidth={2} />
-          Закупівля
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setEditTransaction(null);
-            setIsTransferOpen(true);
-          }}
-          className={cn(
-            "inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3",
-            "border border-zinc-200/80 bg-white/70 text-sm font-semibold text-zinc-700 shadow-sm backdrop-blur-sm",
-            "transition-all hover:border-zinc-300 hover:bg-white",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900/15"
-          )}
-        >
-          <ArrowRightLeft className="h-4 w-4" strokeWidth={1.8} />
-          Переміщення
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setEditTransaction(null);
-            setIsRefuelOpen(true);
-          }}
-          className={cn(
-            "inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3",
-            "bg-emerald-500 text-sm font-semibold text-white shadow-sm",
-            "transition-all hover:bg-emerald-600 hover:shadow-md",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/35"
-          )}
-        >
-          <Tractor className="h-4 w-4" strokeWidth={1.8} />
-          Заправка
-        </button>
-      </div>
-
-      <section className="mb-4 grid grid-cols-1 gap-6 md:mb-5 md:grid-cols-2">
-        {storages.length === 0 ? (
-          <div className="col-span-full rounded-3xl border border-dashed border-zinc-200 bg-white px-6 py-16 text-center shadow-sm">
-            <p className="text-sm font-semibold text-zinc-900">
-              Склади палива ще не налаштовані
-            </p>
-            <p className="mt-1 text-xs text-zinc-500">
-              Додайте рядки в таблицю fuel_storages у Supabase
-            </p>
-          </div>
-        ) : (
-          storages.map((storage) => (
-            <TankCard
-              key={storage.id}
-              storage={storage}
-              onOpen={() => {
-                setSelectedStorage(storage);
-                setFuelSheetOpen(true);
-              }}
-            />
-          ))
-        )}
+        </div>
       </section>
 
       <GlassCard className="hover:scale-100">
@@ -857,33 +974,48 @@ export function FuelView({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex flex-wrap items-center gap-0.5 rounded-xl bg-zinc-100 p-1">
-              {PERIOD_OPTIONS.map((option) => {
-                const active = period === option;
-                return (
-                  <button
+            <Tabs
+              value={period === "custom" ? undefined : period}
+              onValueChange={(value) => {
+                if (
+                  value === "Сьогодні" ||
+                  value === "Вчора" ||
+                  value === "Тиждень" ||
+                  value === "Місяць" ||
+                  value === "Рік"
+                ) {
+                  setPeriod(value);
+                }
+              }}
+            >
+              <TabsList
+                className={cn(
+                  "h-auto flex-wrap gap-0.5 rounded-lg bg-muted p-1",
+                  "group-data-horizontal/tabs:h-auto"
+                )}
+              >
+                {PERIOD_OPTIONS.map((option) => (
+                  <TabsTrigger
                     key={option}
-                    type="button"
-                    onClick={() => setPeriod(option)}
+                    value={option}
                     className={cn(
-                      "rounded-md px-3 py-1.5 text-xs transition-all",
-                      active
-                        ? "bg-white font-medium text-zinc-900 shadow-sm"
-                        : "font-medium text-zinc-500 hover:text-zinc-700"
+                      "rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground",
+                      "hover:text-foreground",
+                      "data-active:bg-background data-active:text-foreground data-active:shadow-sm"
                     )}
                   >
                     {option}
-                  </button>
-                );
-              })}
-            </div>
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
 
             <Popover open={rangeOpen} onOpenChange={setRangeOpen}>
               <PopoverTrigger
                 className={cn(
                   "inline-flex h-9 items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-700 shadow-sm",
-                  "outline-none transition hover:bg-zinc-50 focus-visible:ring-2 focus-visible:ring-emerald-500/20",
-                  period === "custom" && "border-emerald-300 bg-emerald-50/40"
+                  "outline-none transition hover:bg-zinc-50 focus-visible:ring-2 focus-visible:ring-zinc-900/15",
+                  period === "custom" && "border-zinc-400 bg-zinc-50"
                 )}
               >
                 <CalendarIcon className="h-3.5 w-3.5 text-zinc-500" />
@@ -985,9 +1117,15 @@ export function FuelView({
                               />
                             </div>
                             <div className="min-w-0">
-                              <p className="font-semibold text-zinc-900">
-                                {meta.title}
-                              </p>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="font-semibold text-zinc-900">
+                                  {meta.title}
+                                </p>
+                                {tx.type === "inbound" ||
+                                tx.type === "transfer" ? (
+                                  <BasSyncBadge status={tx.syncStatus} />
+                                ) : null}
+                              </div>
                               {meta.detail ? (
                                 <p className="mt-0.5 truncate text-xs text-zinc-500">
                                   {meta.detail}
@@ -1017,6 +1155,8 @@ export function FuelView({
                                 ? unitHasDutById.get(tx.wialonUnitId)
                                 : undefined
                             }
+                            onReverify={(id) => void reverifySingleTransaction(id)}
+                            reverifyBusy={reverifyTxId === tx.id}
                           />
                         </td>
                         <td className="w-12 text-center">
@@ -1062,6 +1202,7 @@ export function FuelView({
           </div>
         </div>
       </GlassCard>
+      </div>
 
       <FuelActionDialogs
         storages={storages}
@@ -1076,6 +1217,16 @@ export function FuelView({
         editTransaction={editTransaction}
         onEditTransactionChange={setEditTransaction}
         onSuccess={refreshAll}
+      />
+
+      <FuelStorageDialog
+        open={storageDialogOpen}
+        onOpenChange={(open) => {
+          setStorageDialogOpen(open);
+          if (!open) setEditingStorage(null);
+        }}
+        storage={editingStorage}
+        onSuccess={refreshStorages}
       />
 
       <Dialog

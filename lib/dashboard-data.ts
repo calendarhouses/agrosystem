@@ -319,19 +319,6 @@ export const FLEET_STATUS_META: Record<
   },
 };
 
-/** Опції форми швидкого списання палива */
-export const FUEL_WRITEOFF_TRACTORS = [
-  "John Deere 8R",
-  "МТЗ-82",
-  "Комбайн Claas",
-] as const;
-
-export const FUEL_WRITEOFF_FIELDS = [
-  "Поле 1: Соя",
-  "Поле 2: Кукурудза",
-  "Поле 3: Пшениця",
-] as const;
-
 /** Фінансова аналітика за місяцями 2026 */
 export const FINANCIAL_CHART_2026 = [
   { month: "Січ", income: 28000, expense: 14000 },

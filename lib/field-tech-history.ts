@@ -135,6 +135,12 @@ export function formatVisitClock(unix: number): string {
   });
 }
 
+/** Завжди HH:mm для TimePicker / prefill наряду */
+export function formatVisitClockHm(unix: number): string {
+  const d = new Date(unix * 1000);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
 export function formatVisitDay(unix: number): string {
   return new Date(unix * 1000).toLocaleDateString("uk-UA", {
     day: "numeric",

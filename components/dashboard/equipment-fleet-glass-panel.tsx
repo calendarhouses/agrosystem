@@ -303,12 +303,20 @@ export function EquipmentFleetGlassPanel({
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
         <div className="space-y-2 px-3 py-3">
-          {loading
-            ? Array.from({ length: 5 }).map((_, i) => (
+            {loading
+            ? Array.from({ length: 6 }).map((_, i) => (
                 <div
                   key={i}
-                  className="h-20 animate-pulse rounded-2xl bg-white/40"
-                />
+                  className="rounded-2xl border border-white/40 bg-white/55 p-3.5"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="h-11 w-11 shrink-0 animate-pulse rounded-xl bg-white/80" />
+                    <div className="min-w-0 flex-1 space-y-2 pt-1">
+                      <div className="h-3.5 w-[70%] animate-pulse rounded bg-zinc-300/70" />
+                      <div className="h-3 w-[42%] animate-pulse rounded bg-zinc-300/50" />
+                    </div>
+                  </div>
+                </div>
               ))
             : sortedUnits.length === 0 ? (
                 <p className="px-2 py-8 text-center text-xs font-medium text-zinc-500">

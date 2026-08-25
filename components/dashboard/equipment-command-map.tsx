@@ -15,6 +15,10 @@ import type { MapRef } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { Radar, Tractor, Truck } from "lucide-react";
 
+import {
+  CommandCenterMapBootOverlay,
+  COMMAND_CENTER_MAP_CANVAS_BG,
+} from "@/components/dashboard/command-center-map-boot";
 import type { FleetTrackedUnit } from "@/lib/equipment-fleet";
 import {
   buildPlayedLineFeature,
@@ -30,7 +34,6 @@ import {
   type WialonTrackLineFeature,
 } from "@/lib/wialon";
 import { DEFAULT_WEATHER_LOCATION } from "@/lib/weather";
-import { COMMAND_CENTER_MAP_AREA_CLASS } from "@/lib/equipment-command-center-layout";
 import { cn } from "@/lib/utils";
 
 /** Дефолтний центр карти — база (Іванівка), не Київ */
@@ -335,7 +338,7 @@ export const EquipmentCommandMap = forwardRef<EquipmentCommandMapHandle, Props>(
 
       const onMoveEnd = () => {
         if (initialFitDoneRef.current) {
-          setViewSettled(true);
+          map.once("idle", () => setViewSettled(true));
         }
       };
       map.on("moveend", onMoveEnd);
@@ -445,44 +448,8 @@ export const EquipmentCommandMap = forwardRef<EquipmentCommandMapHandle, Props>(
       : null;
 
     return (
-      <div className={cn("absolute inset-0", className)}>
-        {!viewSettled ? (
-          <div className={cn(COMMAND_CENTER_MAP_AREA_CLASS, "z-20 flex flex-col items-center justify-center overflow-hidden bg-zinc-950")}>
-            <div
-              aria-hidden
-              className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(39,103,73,0.22),transparent_65%)]"
-            />
-            <div
-              aria-hidden
-              className="pointer-events-none absolute inset-0 opacity-30"
-              style={{
-                backgroundImage:
-                  "linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px)",
-                backgroundSize: "48px 48px",
-              }}
-            />
-            <div className="relative flex flex-col items-center gap-3 px-6 text-center">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/5 shadow-lg backdrop-blur-sm">
-                <Radar className="h-7 w-7 animate-pulse text-emerald-400" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-zinc-200">
-                  Підготовка карти
-                </p>
-                <p className="mt-1 text-xs text-zinc-500">
-                  Центруємо на вашому господарстві…
-                </p>
-              </div>
-            </div>
-          </div>
-        ) : null}
-
-        <div
-          className={cn(
-            "absolute inset-0 transition-opacity duration-700 ease-out",
-            viewSettled ? "opacity-100" : "opacity-0"
-          )}
-        >
+      <div className={cn("absolute inset-0 z-0 bg-zinc-950", className)}>
+        <div className="absolute inset-0 overflow-hidden bg-zinc-950">
           <MapboxMap
           ref={mapRef}
           mapboxAccessToken={token}
@@ -494,8 +461,19 @@ export const EquipmentCommandMap = forwardRef<EquipmentCommandMapHandle, Props>(
             pitch: 0,
           }}
           attributionControl={false}
-          onLoad={() => setMapReady(true)}
-          style={{ width: "100%", height: "100%" }}
+          onLoad={() => {
+            setMapReady(true);
+            const map = mapRef.current?.getMap();
+            if (!map) return;
+            map.getCanvas().style.backgroundColor = COMMAND_CENTER_MAP_CANVAS_BG;
+            map.getCanvasContainer().style.backgroundColor =
+              COMMAND_CENTER_MAP_CANVAS_BG;
+          }}
+          style={{
+            width: "100%",
+            height: "100%",
+            background: COMMAND_CENTER_MAP_CANVAS_BG,
+          }}
         >
           <NavigationControl position="bottom-right" showCompass showZoom />
 
@@ -653,6 +631,11 @@ export const EquipmentCommandMap = forwardRef<EquipmentCommandMapHandle, Props>(
           ) : null}
         </MapboxMap>
         </div>
+        <CommandCenterMapBootOverlay
+          visible={!viewSettled || dataLoading}
+          icon={Radar}
+          subtitle="Центруємо на вашому господарстві…"
+        />
       </div>
     );
   }

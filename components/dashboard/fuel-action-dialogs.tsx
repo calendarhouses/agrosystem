@@ -4,20 +4,15 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   AlertCircle,
   ArrowRightLeft,
+  CheckCircle2,
   Loader2,
+  MapPin,
   Plus,
   Tractor,
 } from "lucide-react";
 
+import { getRefuelSmartContext } from "@/app/fuel/actions";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -26,6 +21,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import type { RefuelActiveOpHint } from "@/lib/fuel-refuel-context";
 import type { FuelStorage } from "@/lib/fuel-storages";
 import type {
   FuelTransaction,
@@ -63,16 +67,26 @@ type FuelActionDialogsProps = {
 };
 
 const selectTriggerClass = cn(
-  "h-16 w-full min-w-0 max-w-full data-[size=default]:h-16 rounded-2xl border border-zinc-200 bg-zinc-50 px-4",
-  "text-lg font-medium text-zinc-900",
+  "h-12 w-full min-w-0 max-w-full data-[size=default]:h-12 rounded-2xl border border-zinc-200 bg-zinc-50/80 px-4",
+  "text-sm font-medium text-zinc-900",
   "overflow-hidden outline-none transition-all",
-  "focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20",
+  "focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/10",
   "data-placeholder:text-zinc-400"
 );
 
 const selectItemClass = cn(
-  "cursor-pointer rounded-xl px-3 py-3 text-base",
+  "cursor-pointer rounded-xl px-3 py-2.5 text-sm",
   "focus:bg-zinc-100"
+);
+
+const actionSheetClass = cn(
+  "w-full gap-0 border-l border-zinc-200/80 bg-background p-0 text-zinc-900 shadow-xl sm:max-w-md",
+  "[&_[data-slot=sheet-close]]:text-zinc-500"
+);
+
+const stickyFooterClass = cn(
+  "mt-auto shrink-0 border-t border-border/60 bg-background/95 p-4 backdrop-blur-md",
+  "supports-[backdrop-filter]:bg-background/85"
 );
 
 async function saveTransaction(
@@ -83,9 +97,10 @@ async function saveTransaction(
     toStorageId?: string | null;
     wialonUnitId?: number | null;
     hasFuelSensor?: boolean | null;
+    pricePerLiter?: number | null;
   },
   editId?: string | null
-): Promise<void> {
+): Promise<{ message?: string }> {
   const response = await fetch(
     editId ? `/api/fuel/transactions/${editId}` : "/api/fuel/transactions",
     {
@@ -94,10 +109,15 @@ async function saveTransaction(
       body: JSON.stringify(payload),
     }
   );
-  const data = (await response.json()) as { ok?: boolean; error?: string };
+  const data = (await response.json()) as {
+    ok?: boolean;
+    error?: string;
+    message?: string;
+  };
   if (!response.ok || !data.ok) {
     throw new Error(data.error || "Не вдалося зберегти операцію");
   }
+  return { message: data.message };
 }
 
 async function submitRefuel(payload: {
@@ -106,6 +126,7 @@ async function submitRefuel(payload: {
   amountLiters: number;
   operatorName?: string | null;
   hasFuelSensor: boolean;
+  fieldOperationId?: string | null;
 }): Promise<void> {
   const response = await fetch("/api/fuel/refuel", {
     method: "POST",
@@ -122,6 +143,20 @@ function parseAmount(raw: string): number | null {
   const n = Number(raw.replace(",", "."));
   if (!Number.isFinite(n) || n <= 0) return null;
   return Math.round(n * 100) / 100;
+}
+
+function parsePrice(raw: string): number | null {
+  const n = Number(raw.replace(",", "."));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.round(n * 100) / 100;
+}
+
+function formatPartyCost(liters: number, price: number): string {
+  const total = Math.round(liters * price * 100) / 100;
+  return total.toLocaleString("uk-UA", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
 }
 
 const MAX_TRACTOR_TANK_LITERS = 1500;
@@ -155,6 +190,40 @@ function donorAvailableVolume(
   return Math.round(available * 100) / 100;
 }
 
+/** Вільне місце в приймачі (л) з урахуванням edit rollback. */
+function receiverFreeSpace(
+  storages: FuelStorage[],
+  toStorageId: string,
+  editTransaction: FuelTransaction | null | undefined
+): number {
+  const target = storages.find((s) => s.id === toStorageId);
+  if (!target) return 0;
+  let occupied = target.currentVolume;
+  if (
+    editTransaction &&
+    (editTransaction.type === "inbound" ||
+      editTransaction.type === "transfer") &&
+    editTransaction.toStorageId === toStorageId
+  ) {
+    occupied -= editTransaction.amountLiters;
+  }
+  const free = target.capacity - Math.max(0, occupied);
+  return Math.max(0, Math.round(free * 100) / 100);
+}
+
+function overflowMessage(maxAddLiters: number): string {
+  return `Переповнення: Максимум можна додати ${Math.round(maxAddLiters).toLocaleString("uk-UA")} л`;
+}
+
+function OverflowHint({ maxAddLiters }: { maxAddLiters: number }) {
+  return (
+    <p className="flex items-start gap-2 text-sm font-medium text-rose-600">
+      <AlertCircle size={16} className="mt-0.5 shrink-0" />
+      <span>{overflowMessage(maxAddLiters)}</span>
+    </p>
+  );
+}
+
 function defaultStationaryId(storages: FuelStorage[]): string {
   return (
     storages.find((s) => s.type === "stationary")?.id ?? storages[0]?.id ?? ""
@@ -177,7 +246,7 @@ function storageMeta(storage: FuelStorage): string {
   return `${Math.round(storage.currentVolume).toLocaleString("uk-UA")} / ${Math.round(storage.capacity).toLocaleString("uk-UA")} л`;
 }
 
-/** Велике поле кількості літрів (банківський стиль, без spinner) */
+/** Велике поле кількості літрів (фінансовий термінал) */
 function LitersAmountField({
   id,
   value,
@@ -190,34 +259,77 @@ function LitersAmountField({
   placeholder: string;
 }) {
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2">
       <Label
         htmlFor={id}
-        className="text-xs font-semibold tracking-wide text-zinc-500 uppercase"
+        className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase"
       >
-        Кількість
+        Кількість (літрів)
       </Label>
-      <div className="relative flex items-center justify-center rounded-2xl border border-zinc-200 bg-zinc-50 p-4">
+      <div className="relative flex items-center justify-center rounded-2xl border border-zinc-200/80 bg-muted/20 px-3 py-2">
         <input
           id={id}
-          type="number"
-          min={1}
-          step="0.1"
+          type="text"
+          inputMode="decimal"
           required
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
           className={cn(
-            "h-20 w-full min-w-0 bg-transparent text-center text-5xl font-bold text-zinc-900",
+            "h-20 w-full min-w-0 bg-transparent text-center text-4xl font-light tracking-tight text-zinc-900",
             "border-none outline-none focus:ring-0 focus:outline-none",
-            "tabular-nums placeholder:text-zinc-300",
-            "[&::-webkit-inner-spin-button]:appearance-none",
-            "[&::-webkit-outer-spin-button]:appearance-none",
-            "[-moz-appearance:textfield]"
+            "tabular-nums placeholder:font-light placeholder:text-zinc-300"
           )}
         />
-        <span className="pointer-events-none absolute right-5 bottom-4 text-lg font-medium tracking-wide text-zinc-400 uppercase">
-          літрів
+        <span className="pointer-events-none absolute right-4 bottom-3 text-xs font-medium tracking-wide text-zinc-400 uppercase">
+          л
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/** Фінансове поле (ціна) — великі цифри по центру */
+function MoneyAmountField({
+  id,
+  label,
+  value,
+  onChange,
+  placeholder,
+  suffix = "₴/л",
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  suffix?: string;
+}) {
+  return (
+    <div className="space-y-2">
+      <Label
+        htmlFor={id}
+        className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase"
+      >
+        {label}
+      </Label>
+      <div className="relative flex items-center justify-center rounded-2xl border border-zinc-200/80 bg-muted/20 px-3 py-2">
+        <input
+          id={id}
+          type="text"
+          inputMode="decimal"
+          required
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          className={cn(
+            "h-20 w-full min-w-0 bg-transparent text-center text-4xl font-light tracking-tight text-zinc-900",
+            "border-none outline-none focus:ring-0 focus:outline-none",
+            "tabular-nums placeholder:font-light placeholder:text-zinc-300"
+          )}
+        />
+        <span className="pointer-events-none absolute right-4 bottom-3 text-xs font-semibold text-zinc-400">
+          {suffix}
         </span>
       </div>
     </div>
@@ -252,7 +364,9 @@ function StorageSelect({
         }}
       >
         <SelectTrigger className={selectTriggerClass}>
-          <SelectValue placeholder={placeholder} />
+          <SelectValue placeholder={placeholder}>
+            {storages.find((s) => s.id === value)?.name ?? null}
+          </SelectValue>
         </SelectTrigger>
         <SelectContent className="z-[80] rounded-2xl border border-zinc-200 bg-white p-1.5 text-zinc-900 shadow-lg">
           {storages.map((storage) => (
@@ -293,11 +407,22 @@ export function FuelActionDialogs({
   onSuccess,
 }: FuelActionDialogsProps) {
   const [amount, setAmount] = useState("");
+  const [pricePerLiter, setPricePerLiter] = useState("");
   const [fromStorage, setFromStorage] = useState("");
   const [toStorage, setToStorage] = useState("");
   const [unitId, setUnitId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Успіх закупівлі: повідомлення про запит у 1С */
+  const [purchaseSuccess, setPurchaseSuccess] = useState<string | null>(null);
+  /** Smart Context: локація + активний наряд */
+  const [refuelLocationLabel, setRefuelLocationLabel] = useState<string | null>(
+    null
+  );
+  const [refuelActiveOp, setRefuelActiveOp] =
+    useState<RefuelActiveOpHint | null>(null);
+  const [refuelContextLoading, setRefuelContextLoading] = useState(false);
+  const [linkActiveOp, setLinkActiveOp] = useState(true);
 
   const stationaryId = useMemo(
     () => defaultStationaryId(storages),
@@ -327,14 +452,36 @@ export function FuelActionDialogs({
 
   const amountValue = parseAmount(amount);
   const hasAmount = amountValue != null;
+  const priceValue = parsePrice(pricePerLiter);
+  const partyCost =
+    amountValue != null && priceValue != null
+      ? formatPartyCost(amountValue, priceValue)
+      : null;
+
+  const selectedReceiveStorage = useMemo(
+    () => storages.find((s) => s.id === toStorage) ?? null,
+    [storages, toStorage]
+  );
 
   const availableVolume = useMemo(
     () => donorAvailableVolume(storages, fromStorage, editTransaction),
     [storages, fromStorage, editTransaction]
   );
+  const receiveFreeSpace = useMemo(
+    () => receiverFreeSpace(storages, toStorage, editTransaction),
+    [storages, toStorage, editTransaction]
+  );
+  const transferFreeSpace = useMemo(
+    () => receiverFreeSpace(storages, toStorage, editTransaction),
+    [storages, toStorage, editTransaction]
+  );
   const donorName =
     storages.find((s) => s.id === fromStorage)?.name ?? "ємності";
 
+  const receiveOverflow =
+    hasAmount && Boolean(toStorage) && amountValue > receiveFreeSpace + 0.001;
+  const transferOverflow =
+    hasAmount && Boolean(toStorage) && amountValue > transferFreeSpace + 0.001;
   const isError =
     hasAmount && Boolean(fromStorage) && amountValue > availableVolume;
   const isAbsurdAmount =
@@ -343,7 +490,6 @@ export function FuelActionDialogs({
   const insufficientFuelError = isError
     ? `Недостатньо палива в «${donorName}» (є ${Math.round(availableVolume).toLocaleString("uk-UA")} л)`
     : null;
-  const transferValidationError = insufficientFuelError;
   const refuelValidationError = isAbsurdAmount
     ? "Перевищено максимальну місткість бака техніки"
     : insufficientFuelError;
@@ -351,14 +497,22 @@ export function FuelActionDialogs({
   useEffect(() => {
     if (!isReceiveOpen) return;
     setError(null);
+    setPurchaseSuccess(null);
     if (editTransaction?.type === "inbound") {
       setAmount(String(editTransaction.amountLiters));
-      setToStorage(editTransaction.toStorageId ?? stationaryId);
+      const targetId = editTransaction.toStorageId ?? stationaryId;
+      setToStorage(targetId);
+      const storagePrice =
+        storages.find((s) => s.id === targetId)?.pricePerLiter ?? 0;
+      setPricePerLiter(storagePrice > 0 ? String(storagePrice) : "");
       return;
     }
     setAmount("");
     setToStorage(stationaryId);
-  }, [isReceiveOpen, stationaryId, editTransaction]);
+    const storagePrice =
+      storages.find((s) => s.id === stationaryId)?.pricePerLiter ?? 0;
+    setPricePerLiter(storagePrice > 0 ? String(storagePrice) : "");
+  }, [isReceiveOpen, stationaryId, editTransaction, storages]);
 
   useEffect(() => {
     if (!isTransferOpen) return;
@@ -377,6 +531,9 @@ export function FuelActionDialogs({
   useEffect(() => {
     if (!isRefuelOpen) return;
     setError(null);
+    setRefuelLocationLabel(null);
+    setRefuelActiveOp(null);
+    setLinkActiveOp(true);
     if (editTransaction?.type === "outbound") {
       setAmount(String(editTransaction.amountLiters));
       setFromStorage(editTransaction.fromStorageId ?? mobileId);
@@ -394,9 +551,43 @@ export function FuelActionDialogs({
     setUnitId(units[0] ? String(units[0].id) : "");
   }, [isRefuelOpen, mobileId, units, editTransaction]);
 
+  /** Smart Context: локація Wialon + активний наряд при виборі техніки */
+  useEffect(() => {
+    if (!isRefuelOpen || !unitId) {
+      setRefuelLocationLabel(null);
+      setRefuelActiveOp(null);
+      return;
+    }
+    const parsed = Number(unitId);
+    if (!Number.isFinite(parsed) || parsed <= 0) return;
+
+    let cancelled = false;
+    setRefuelContextLoading(true);
+    setRefuelLocationLabel(null);
+    setRefuelActiveOp(null);
+    setLinkActiveOp(true);
+
+    void getRefuelSmartContext(parsed).then((res) => {
+      if (cancelled) return;
+      if (res.ok) {
+        setRefuelLocationLabel(res.data.locationLabel);
+        setRefuelActiveOp(res.data.activeOperation);
+        setLinkActiveOp(Boolean(res.data.activeOperation));
+      }
+      setRefuelContextLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isRefuelOpen, unitId]);
+
   function closeReceive(open: boolean) {
     onReceiveOpenChange(open);
-    if (!open) onEditTransactionChange?.(null);
+    if (!open) {
+      setPurchaseSuccess(null);
+      onEditTransactionChange?.(null);
+    }
   }
   function closeTransfer(open: boolean) {
     onTransferOpenChange(open);
@@ -419,6 +610,7 @@ export function FuelActionDialogs({
       await action();
       close();
       setAmount("");
+      setPricePerLiter("");
       onEditTransactionChange?.(null);
       await onSuccess();
     } catch (err) {
@@ -430,80 +622,172 @@ export function FuelActionDialogs({
 
   return (
     <>
-      {/* Прийомка */}
-      <Dialog open={isReceiveOpen} onOpenChange={closeReceive}>
-        <DialogContent
-          className={cn(
-            "gap-0 overflow-hidden rounded-3xl border border-zinc-200/80 bg-white p-0 text-zinc-900 shadow-2xl sm:max-w-md",
-            "[&_[data-slot=dialog-close]]:text-zinc-500"
-          )}
+      {/* Закупівля */}
+      <Sheet open={isReceiveOpen} onOpenChange={closeReceive} modal={false}>
+        <SheetContent
+          side="right"
+          showOverlay={false}
+          className={actionSheetClass}
         >
-          <DialogHeader className="border-b border-zinc-100 px-6 py-5 pr-12">
+          <SheetHeader className="shrink-0 border-b border-border/50 px-5 py-4 pr-12">
             <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-zinc-900 text-white shadow-sm">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-zinc-900 text-white shadow-sm">
                 <Plus className="h-4 w-4" strokeWidth={2} />
               </div>
               <div className="min-w-0">
-                <DialogTitle className="text-lg font-bold tracking-tight">
+                <SheetTitle className="text-base font-bold tracking-tight text-zinc-900">
                   {isEditing && editTransaction?.type === "inbound"
                     ? "Редагувати закупівлю"
-                    : "Закупівля (Прихід на Базу)"}
-                </DialogTitle>
-                <DialogDescription className="mt-1 text-zinc-500">
-                  Поповнення резервуара · запис у журнал операцій
-                </DialogDescription>
+                    : "Закупівля"}
+                </SheetTitle>
+                <SheetDescription className="mt-0.5 text-xs text-muted-foreground">
+                  Прихід на базу · видно залишки складів
+                </SheetDescription>
               </div>
             </div>
-          </DialogHeader>
+          </SheetHeader>
 
+          {purchaseSuccess ? (
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 py-10 text-center">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600">
+                  <CheckCircle2 className="h-7 w-7" strokeWidth={1.8} />
+                </div>
+                <div className="space-y-1.5">
+                  <p className="text-base font-semibold text-zinc-900">
+                    Партію збережено
+                  </p>
+                  <p className="text-sm leading-relaxed text-muted-foreground">
+                    {purchaseSuccess}
+                  </p>
+                </div>
+              </div>
+              <SheetFooter className={stickyFooterClass}>
+                <Button
+                  type="button"
+                  onClick={() => closeReceive(false)}
+                  className="h-12 w-full rounded-xl bg-zinc-900 text-sm font-semibold text-white hover:bg-zinc-800"
+                >
+                  Готово
+                </Button>
+              </SheetFooter>
+            </div>
+          ) : (
           <form
-            className="flex flex-col gap-6 px-6 py-5"
-            onSubmit={(event) =>
-              void runSubmit(
-                event,
-                async () => {
+            className="flex min-h-0 flex-1 flex-col overflow-hidden"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void (async () => {
+                setSubmitting(true);
+                setError(null);
+                try {
                   const liters = parseAmount(amount);
                   if (liters == null) throw new Error("Вкажіть кількість літрів");
                   if (!toStorage) throw new Error("Оберіть ємність");
-                  await saveTransaction(
+                  const price = parsePrice(pricePerLiter);
+                  if (price == null) {
+                    throw new Error("Вкажіть ціну за літр (₴)");
+                  }
+                  const free = receiverFreeSpace(
+                    storages,
+                    toStorage,
+                    editTransaction
+                  );
+                  if (liters > free + 0.001) {
+                    throw new Error(overflowMessage(free));
+                  }
+                  const result = await saveTransaction(
                     {
                       transactionType: "inbound",
                       amountLiters: liters,
                       toStorageId: toStorage,
+                      pricePerLiter: price,
                     },
                     editTransaction?.type === "inbound" ? editId : null
                   );
-                },
-                () => closeReceive(false)
-              )
-            }
+                  setAmount("");
+                  setPricePerLiter("");
+                  onEditTransactionChange?.(null);
+                  await onSuccess();
+                  setPurchaseSuccess(
+                    result.message ??
+                      "Партію збережено. Створено запит в 1С"
+                  );
+                } catch (err) {
+                  setError(
+                    err instanceof Error ? err.message : "Помилка збереження"
+                  );
+                } finally {
+                  setSubmitting(false);
+                }
+              })();
+            }}
           >
-            <StorageSelect
-              label="Куди зливаємо"
-              value={toStorage}
-              onChange={setToStorage}
-              storages={storages}
-              items={storageItems}
-              placeholder="Оберіть ємність"
-            />
+            <div className="flex-1 space-y-6 overflow-y-auto px-5 py-5">
+              <StorageSelect
+                label="Куди зливаємо"
+                value={toStorage}
+                onChange={(id) => {
+                  setToStorage(id);
+                  const next = storages.find((s) => s.id === id);
+                  if (next && next.pricePerLiter > 0 && !pricePerLiter.trim()) {
+                    setPricePerLiter(String(next.pricePerLiter));
+                  }
+                }}
+                storages={storages}
+                items={storageItems}
+                placeholder="Оберіть ємність"
+              />
 
-            <div className="space-y-4">
               <LitersAmountField
                 id="receive-amount"
                 value={amount}
                 onChange={setAmount}
-                placeholder="2000"
+                placeholder="2 000"
               />
+              {receiveOverflow ? (
+                <OverflowHint maxAddLiters={receiveFreeSpace} />
+              ) : null}
+
+              <MoneyAmountField
+                id="receive-price"
+                label="Ціна за літр"
+                value={pricePerLiter}
+                onChange={setPricePerLiter}
+                placeholder={
+                  selectedReceiveStorage?.pricePerLiter
+                    ? String(selectedReceiveStorage.pricePerLiter)
+                    : "52.50"
+                }
+              />
+
+              {partyCost ? (
+                <p className="rounded-xl border border-emerald-100 bg-emerald-50/80 px-3.5 py-2.5 text-sm text-emerald-900">
+                  Загальна вартість партії:{" "}
+                  <span className="font-bold tabular-nums">{partyCost} ₴</span>
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Вартість партії зʼявиться після кількості та ціни
+                </p>
+              )}
+
               {error ? <FormErrorBanner message={error} /> : null}
             </div>
 
-            <DialogFooter className="mt-2 gap-2 border-0 bg-transparent p-0 sm:justify-stretch">
+            <SheetFooter className={stickyFooterClass}>
               <Button
                 type="submit"
-                disabled={submitting || !amount || storages.length === 0}
+                disabled={
+                  submitting ||
+                  !amount ||
+                  !pricePerLiter ||
+                  receiveOverflow ||
+                  storages.length === 0
+                }
                 className={cn(
                   "h-12 w-full rounded-xl bg-zinc-900 text-sm font-semibold text-white",
-                  "transition-transform hover:bg-zinc-800 active:scale-[0.98]",
+                  "hover:bg-zinc-800 active:scale-[0.99]",
                   "disabled:cursor-not-allowed disabled:opacity-50"
                 )}
               >
@@ -515,39 +799,39 @@ export function FuelActionDialogs({
                   "Підтвердити прихід"
                 )}
               </Button>
-            </DialogFooter>
+            </SheetFooter>
           </form>
-        </DialogContent>
-      </Dialog>
+          )}
+        </SheetContent>
+      </Sheet>
 
       {/* Переміщення */}
-      <Dialog open={isTransferOpen} onOpenChange={closeTransfer}>
-        <DialogContent
-          className={cn(
-            "gap-0 overflow-hidden rounded-3xl border border-zinc-200/80 bg-white p-0 text-zinc-900 shadow-2xl sm:max-w-md",
-            "[&_[data-slot=dialog-close]]:text-zinc-500"
-          )}
+      <Sheet open={isTransferOpen} onOpenChange={closeTransfer} modal={false}>
+        <SheetContent
+          side="right"
+          showOverlay={false}
+          className={actionSheetClass}
         >
-          <DialogHeader className="border-b border-zinc-100 px-6 py-5 pr-12">
+          <SheetHeader className="shrink-0 border-b border-border/50 px-5 py-4 pr-12">
             <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-700 shadow-sm">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-700">
                 <ArrowRightLeft className="h-4 w-4" strokeWidth={1.8} />
               </div>
               <div className="min-w-0">
-                <DialogTitle className="text-lg font-bold tracking-tight">
+                <SheetTitle className="text-base font-bold tracking-tight text-zinc-900">
                   {isEditing && editTransaction?.type === "transfer"
                     ? "Редагувати переміщення"
-                    : "Переміщення (Цистерни → Бензовоз)"}
-                </DialogTitle>
-                <DialogDescription className="mt-1 text-zinc-500">
-                  Внутрішнє переливання між ємностями
-                </DialogDescription>
+                    : "Переміщення"}
+                </SheetTitle>
+                <SheetDescription className="mt-0.5 text-xs text-muted-foreground">
+                  Цистерни → бензовоз · видно залишки
+                </SheetDescription>
               </div>
             </div>
-          </DialogHeader>
+          </SheetHeader>
 
           <form
-            className="flex flex-col gap-6 px-6 py-5"
+            className="flex min-h-0 flex-1 flex-col overflow-hidden"
             onSubmit={(event) =>
               void runSubmit(
                 event,
@@ -561,6 +845,14 @@ export function FuelActionDialogs({
                     throw new Error(
                       `Недостатньо палива в «${donorName}» (є ${Math.round(availableVolume).toLocaleString("uk-UA")} л)`
                     );
+                  }
+                  const free = receiverFreeSpace(
+                    storages,
+                    toStorage,
+                    editTransaction
+                  );
+                  if (liters > free + 0.001) {
+                    throw new Error(overflowMessage(free));
                   }
                   await saveTransaction(
                     {
@@ -576,47 +868,53 @@ export function FuelActionDialogs({
               )
             }
           >
-            <StorageSelect
-              label="Звідки"
-              value={fromStorage}
-              onChange={setFromStorage}
-              storages={storages}
-              items={storageItems}
-              placeholder="Ємність-донор"
-            />
+            <div className="flex-1 space-y-6 overflow-y-auto px-5 py-5">
+              <StorageSelect
+                label="Звідки"
+                value={fromStorage}
+                onChange={setFromStorage}
+                storages={storages}
+                items={storageItems}
+                placeholder="Ємність-донор"
+              />
 
-            <StorageSelect
-              label="Куди"
-              value={toStorage}
-              onChange={setToStorage}
-              storages={storages}
-              items={storageItems}
-              placeholder="Ємність-отримувач"
-            />
+              <StorageSelect
+                label="Куди"
+                value={toStorage}
+                onChange={setToStorage}
+                storages={storages}
+                items={storageItems}
+                placeholder="Ємність-отримувач"
+              />
 
-            <div className="space-y-4">
               <LitersAmountField
                 id="transfer-amount"
                 value={amount}
                 onChange={setAmount}
                 placeholder="500"
               />
-              {transferValidationError || error ? (
-                <FormErrorBanner
-                  message={transferValidationError || error || ""}
-                />
+              {transferOverflow ? (
+                <OverflowHint maxAddLiters={transferFreeSpace} />
               ) : null}
+              {!transferOverflow && insufficientFuelError ? (
+                <FormErrorBanner message={insufficientFuelError} />
+              ) : null}
+              {error ? <FormErrorBanner message={error} /> : null}
             </div>
 
-            <DialogFooter className="mt-2 gap-2 border-0 bg-transparent p-0 sm:justify-stretch">
+            <SheetFooter className={stickyFooterClass}>
               <Button
                 type="submit"
                 disabled={
-                  submitting || !amount || isError || storages.length < 2
+                  submitting ||
+                  !amount ||
+                  isError ||
+                  transferOverflow ||
+                  storages.length < 2
                 }
                 className={cn(
                   "h-12 w-full rounded-xl border border-zinc-200 bg-white text-sm font-semibold text-zinc-800",
-                  "transition-transform hover:bg-zinc-50 active:scale-[0.98]",
+                  "hover:bg-zinc-50 active:scale-[0.99]",
                   "disabled:cursor-not-allowed disabled:opacity-50"
                 )}
               >
@@ -628,39 +926,38 @@ export function FuelActionDialogs({
                   "Перемістити паливо"
                 )}
               </Button>
-            </DialogFooter>
+            </SheetFooter>
           </form>
-        </DialogContent>
-      </Dialog>
+        </SheetContent>
+      </Sheet>
 
       {/* Заправка техніки */}
-      <Dialog open={isRefuelOpen} onOpenChange={closeRefuel}>
-        <DialogContent
-          className={cn(
-            "w-full max-w-[calc(100%-2rem)] gap-0 overflow-hidden rounded-3xl border border-zinc-200/80 bg-white p-0 text-zinc-900 shadow-2xl sm:max-w-md",
-            "[&_[data-slot=dialog-close]]:text-zinc-500"
-          )}
+      <Sheet open={isRefuelOpen} onOpenChange={closeRefuel} modal={false}>
+        <SheetContent
+          side="right"
+          showOverlay={false}
+          className={actionSheetClass}
         >
-          <DialogHeader className="border-b border-zinc-100 px-6 py-5 pr-12">
+          <SheetHeader className="shrink-0 border-b border-border/50 px-5 py-4 pr-12">
             <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-sm">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-sm">
                 <Tractor className="h-4 w-4" strokeWidth={1.8} />
               </div>
               <div className="min-w-0">
-                <DialogTitle className="text-lg font-bold tracking-tight">
+                <SheetTitle className="text-base font-bold tracking-tight text-zinc-900">
                   {isEditing && editTransaction?.type === "outbound"
                     ? "Редагувати заправку"
-                    : "Заправка Техніки"}
-                </DialogTitle>
-                <DialogDescription className="mt-1 text-zinc-500">
-                  Списання з бензовоза на обрану техніку
-                </DialogDescription>
+                    : "Заправка техніки"}
+                </SheetTitle>
+                <SheetDescription className="mt-0.5 text-xs text-muted-foreground">
+                  Списання з бензовоза · видно залишки
+                </SheetDescription>
               </div>
             </div>
-          </DialogHeader>
+          </SheetHeader>
 
           <form
-            className="flex min-w-0 flex-col gap-6 overflow-hidden px-6 py-5"
+            className="flex min-h-0 flex-1 flex-col overflow-hidden"
             onSubmit={(event) =>
               void runSubmit(
                 event,
@@ -704,6 +1001,10 @@ export function FuelActionDialogs({
                       amountLiters: liters,
                       operatorName: null,
                       hasFuelSensor,
+                      fieldOperationId:
+                        linkActiveOp && refuelActiveOp
+                          ? refuelActiveOp.id
+                          : null,
                     });
                   }
                 },
@@ -711,72 +1012,132 @@ export function FuelActionDialogs({
               )
             }
           >
-            <StorageSelect
-              label="Звідки"
-              value={fromStorage}
-              onChange={setFromStorage}
-              storages={storages}
-              items={storageItems}
-              placeholder="Ємність-донор"
-            />
+            <div className="flex-1 space-y-6 overflow-y-auto px-5 py-5">
+              <StorageSelect
+                label="Звідки"
+                value={fromStorage}
+                onChange={setFromStorage}
+                storages={storages}
+                items={storageItems}
+                placeholder="Ємність-донор"
+              />
 
-            <div className="min-w-0 space-y-1.5">
-              <Label className="text-xs font-semibold tracking-wide text-zinc-500 uppercase">
-                Техніка
-              </Label>
-              <Select
-                items={unitItems}
-                value={unitId || null}
-                onValueChange={(next) => {
-                  if (typeof next === "string" && next) setUnitId(next);
-                }}
-              >
-                <SelectTrigger className={selectTriggerClass}>
-                  <SelectValue
-                    placeholder={
-                      unitsLoading ? "Завантаження…" : "Оберіть техніку"
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent
-                  alignItemWithTrigger
-                  className="z-[80] max-w-[min(100vw-2rem,28rem)] rounded-2xl border border-zinc-200 bg-white p-1.5 text-zinc-900 shadow-lg"
+              <div className="min-w-0 space-y-1.5">
+                <Label className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+                  Техніка
+                </Label>
+                <Select
+                  items={unitItems}
+                  value={unitId || null}
+                  onValueChange={(next) => {
+                    if (typeof next === "string" && next) setUnitId(next);
+                  }}
                 >
-                  {units.map((unit) => {
-                    const hasFuelSensor = unit.hasFuelSensor;
-                    return (
-                      <SelectItem
-                        key={unit.id}
-                        value={String(unit.id)}
-                        className={selectItemClass}
-                      >
-                        <div className="flex min-w-0 flex-col gap-0.5 overflow-hidden">
-                          <span className="truncate font-semibold text-zinc-900">
-                            {hasFuelSensor
-                              ? `${unit.name} (GPS-контроль)`
-                              : `${unit.name} (Без датчика)`}
-                          </span>
-                          <span
-                            className={cn(
-                              "truncate text-sm font-medium",
-                              hasFuelSensor
-                                ? "text-emerald-600"
-                                : "text-zinc-500"
-                            )}
-                          >
-                            {hasFuelSensor
-                              ? "Звірка з датчиком палива Wialon"
-                              : "Ручний облік · без ДУТ"}
-                          </span>
-                        </div>
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-            </div>
+                  <SelectTrigger className={selectTriggerClass}>
+                    <SelectValue
+                      placeholder={
+                        unitsLoading ? "Завантаження…" : "Оберіть техніку"
+                      }
+                    >
+                      {units.find((u) => String(u.id) === unitId)
+                        ? unitSelectLabel(
+                            units.find((u) => String(u.id) === unitId)!
+                          )
+                        : null}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent
+                    alignItemWithTrigger
+                    className="z-[80] max-w-[min(100vw-2rem,28rem)] rounded-2xl border border-zinc-200 bg-white p-1.5 text-zinc-900 shadow-lg"
+                  >
+                    {units.map((unit) => {
+                      const hasFuelSensor = unit.hasFuelSensor;
+                      return (
+                        <SelectItem
+                          key={unit.id}
+                          value={String(unit.id)}
+                          className={selectItemClass}
+                        >
+                          <div className="flex min-w-0 flex-col gap-0.5 overflow-hidden">
+                            <span className="truncate font-semibold text-zinc-900">
+                              {hasFuelSensor
+                                ? `${unit.name} (GPS-контроль)`
+                                : `${unit.name} (Без датчика)`}
+                            </span>
+                            <span
+                              className={cn(
+                                "truncate text-sm font-medium",
+                                hasFuelSensor
+                                  ? "text-emerald-600"
+                                  : "text-zinc-500"
+                              )}
+                            >
+                              {hasFuelSensor
+                                ? "Звірка з датчиком палива Wialon"
+                                : "Ручний облік · без ДУТ"}
+                            </span>
+                          </div>
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
 
-            <div className="space-y-4">
+              {unitId ? (
+                <div className="space-y-2.5 rounded-2xl border border-emerald-200/70 bg-emerald-50/50 px-3.5 py-3">
+                  {refuelContextLoading ? (
+                    <p className="flex items-center gap-2 text-sm text-emerald-800/80">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Шукаємо техніку в полі…
+                    </p>
+                  ) : (
+                    <>
+                      {refuelLocationLabel ? (
+                        <p className="flex items-start gap-2 text-sm font-medium text-emerald-900">
+                          <MapPin
+                            className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600"
+                            strokeWidth={2}
+                          />
+                          <span>
+                            Трактор зараз: {refuelLocationLabel}
+                          </span>
+                        </p>
+                      ) : (
+                        <p className="flex items-start gap-2 text-sm text-zinc-500">
+                          <MapPin
+                            className="mt-0.5 h-4 w-4 shrink-0"
+                            strokeWidth={2}
+                          />
+                          <span>Локація за GPS зараз невідома</span>
+                        </p>
+                      )}
+
+                      {refuelActiveOp ? (
+                        <label className="flex cursor-pointer items-start gap-2.5 rounded-xl bg-white/70 px-2.5 py-2.5 text-sm text-zinc-800 shadow-sm ring-1 ring-emerald-100">
+                          <input
+                            type="checkbox"
+                            checked={linkActiveOp}
+                            onChange={(event) =>
+                              setLinkActiveOp(event.target.checked)
+                            }
+                            className="mt-0.5 h-4 w-4 shrink-0 accent-emerald-600"
+                          />
+                          <span className="leading-snug">
+                            Привʼязати заправку до активного наряду (
+                            {refuelActiveOp.workType}
+                            {refuelActiveOp.fieldName
+                              ? ` · ${refuelActiveOp.fieldName}`
+                              : ""}
+                            )
+                          </span>
+                        </label>
+                      ) : null}
+                    </>
+                  )}
+                </div>
+              ) : null}
+
               <LitersAmountField
                 id="refuel-amount"
                 value={amount}
@@ -790,7 +1151,7 @@ export function FuelActionDialogs({
               ) : null}
             </div>
 
-            <DialogFooter className="mt-2 gap-2 border-0 bg-transparent p-0 sm:justify-stretch">
+            <SheetFooter className={stickyFooterClass}>
               <Button
                 type="submit"
                 disabled={
@@ -801,8 +1162,8 @@ export function FuelActionDialogs({
                   units.length === 0
                 }
                 className={cn(
-                  "h-12 w-full rounded-xl bg-emerald-500 text-sm font-semibold text-white",
-                  "transition-transform hover:bg-emerald-600 active:scale-[0.98]",
+                  "h-12 w-full rounded-xl bg-emerald-600 text-sm font-semibold text-white",
+                  "hover:bg-emerald-700 active:scale-[0.99]",
                   "disabled:cursor-not-allowed disabled:opacity-50"
                 )}
               >
@@ -814,10 +1175,10 @@ export function FuelActionDialogs({
                   "Заправити техніку"
                 )}
               </Button>
-            </DialogFooter>
+            </SheetFooter>
           </form>
-        </DialogContent>
-      </Dialog>
+        </SheetContent>
+      </Sheet>
     </>
   );
 }

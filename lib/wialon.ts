@@ -681,11 +681,12 @@ export async function getWialonUnits(eid: string): Promise<WialonUnit[]> {
 }
 
 /**
- * Одна одиниця техніки за sys_id (датчики + calc_last_message).
+ * Одна одиниця техніки за sys_id (датчики + опційно calc_last_message).
  */
 export async function getWialonUnitById(
   eid: string,
-  unitId: number
+  unitId: number,
+  options?: { withSensorCalc?: boolean }
 ): Promise<WialonUnit | null> {
   if (!eid?.trim()) {
     throw new Error("Потрібен eid (session id)");
@@ -713,6 +714,10 @@ export async function getWialonUnitById(
 
   const unit = Array.isArray(data.items) ? data.items[0] : undefined;
   if (!unit || unit.id !== unitId) return null;
+
+  if (options?.withSensorCalc === false) {
+    return unit;
+  }
 
   const sensorCalc = await calcUnitLastMessageSensors(eid, unit.id);
   return { ...unit, sensorCalc };

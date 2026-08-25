@@ -3,17 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Feature, FeatureCollection, Geometry, Polygon } from "geojson";
 import { useSearchParams } from "next/navigation";
-import {
-  Activity,
-  Droplets,
-  Focus,
-  Loader2,
-  Map as MapIcon,
-  MapPin,
-  Settings2,
-  Wind,
-  X,
-} from "lucide-react";
 
 import {
   FieldDetailSheet,
@@ -24,21 +13,15 @@ import {
   FIELD_CROP_OPTIONS,
 } from "@/components/dashboard/field-passport-form";
 import {
+  FieldsGlassPanel,
+  FieldsDetailGlassFrame,
+} from "@/components/dashboard/fields-glass-panel";
+import { FieldsMapChrome } from "@/components/dashboard/fields-map-chrome";
+import {
   FieldsMap,
   type FieldsMapHandle,
 } from "@/components/dashboard/fields-map";
 import { getCompanyFinancialOverview } from "@/app/finance/actions";
-import { GlassCard } from "@/components/ui/glass-card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { PageHeader } from "@/components/layout/page-header";
-import {
-  Popover,
-  PopoverContent,
-  PopoverHeader,
-  PopoverTitle,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import { fieldCentroid } from "@/lib/field-centroid";
 import {
   createFarmField,
@@ -68,18 +51,16 @@ import type {
   WialonUnit,
 } from "@/lib/wialon";
 import {
-  DEFAULT_WEATHER_LOCATION,
-  fetchWeather,
   fetchWeatherWithHourly,
-  readStoredWeatherLocation,
-  writeStoredWeatherLocation,
   type HourlyForecastHour,
-  type WeatherLocation,
   type WeatherSnapshot,
 } from "@/lib/weather";
-import { searchPlaces, type GeoSearchResult } from "@/lib/geocode";
 import { useFieldRealtime } from "@/lib/use-field-realtime";
 import { useLiveWialonUnits } from "@/lib/use-live-wialon-units";
+import {
+  COMMAND_CENTER_MAP_AREA_CLASS,
+  COMMAND_CENTER_MAP_AREA_RIGHT_CLASS,
+} from "@/lib/equipment-command-center-layout";
 import { cn } from "@/lib/utils";
 
 const EMPTY_DRAWN: FeatureCollection = {
@@ -99,323 +80,6 @@ function normalizeCrop(value: string | null | undefined): string {
 }
 
 type PassportMode = "create" | "edit";
-
-/** Компактна шапка: заголовок + жива погода Open-Meteo */
-function FieldsTopBar({
-  plotCount,
-  totalHa,
-  fieldsLoading,
-  liveConnected = false,
-  livePulse = false,
-}: {
-  plotCount: number;
-  totalHa: number;
-  fieldsLoading?: boolean;
-  liveConnected?: boolean;
-  livePulse?: boolean;
-}) {
-  const [location, setLocation] = useState<WeatherLocation>(
-    DEFAULT_WEATHER_LOCATION
-  );
-  const [weather, setWeather] = useState<WeatherSnapshot | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [placeQuery, setPlaceQuery] = useState("");
-  const [placeLoading, setPlaceLoading] = useState(false);
-  const [placeError, setPlaceError] = useState<string | null>(null);
-  const [placeResults, setPlaceResults] = useState<GeoSearchResult[]>([]);
-  const [latDraft, setLatDraft] = useState(String(DEFAULT_WEATHER_LOCATION.latitude));
-  const [lngDraft, setLngDraft] = useState(
-    String(DEFAULT_WEATHER_LOCATION.longitude)
-  );
-
-  useEffect(() => {
-    const stored = readStoredWeatherLocation();
-    setLocation(stored);
-    setLatDraft(String(stored.latitude));
-    setLngDraft(String(stored.longitude));
-  }, []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true);
-    setError(null);
-
-    fetchWeather(location.latitude, location.longitude, controller.signal)
-      .then((data) => {
-        setWeather(data);
-        setLoading(false);
-      })
-      .catch((err: unknown) => {
-        if (controller.signal.aborted) return;
-        setWeather(null);
-        setLoading(false);
-        setError(err instanceof Error ? err.message : "Помилка погоди");
-      });
-
-    return () => controller.abort();
-  }, [location.latitude, location.longitude]);
-
-  useEffect(() => {
-    if (!settingsOpen) return;
-    const q = placeQuery.trim();
-    if (q.length < 2) {
-      setPlaceResults([]);
-      setPlaceError(null);
-      setPlaceLoading(false);
-      return;
-    }
-
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => {
-      setPlaceLoading(true);
-      setPlaceError(null);
-      searchPlaces(q, controller.signal)
-        .then((results) => {
-          setPlaceResults(results);
-          setPlaceLoading(false);
-        })
-        .catch((err: unknown) => {
-          if (controller.signal.aborted) return;
-          setPlaceResults([]);
-          setPlaceLoading(false);
-          setPlaceError(err instanceof Error ? err.message : "Помилка пошуку");
-        });
-    }, 320);
-
-    return () => {
-      controller.abort();
-      window.clearTimeout(timer);
-    };
-  }, [placeQuery, settingsOpen]);
-
-  function applyLocation(next: WeatherLocation) {
-    setLocation(next);
-    writeStoredWeatherLocation(next);
-    setLatDraft(String(next.latitude));
-    setLngDraft(String(next.longitude));
-    setPlaceQuery("");
-    setPlaceResults([]);
-    setSettingsOpen(false);
-  }
-
-  function applyCustomCoords() {
-    const latitude = Number(latDraft.replace(",", "."));
-    const longitude = Number(lngDraft.replace(",", "."));
-    if (
-      !Number.isFinite(latitude) ||
-      !Number.isFinite(longitude) ||
-      Math.abs(latitude) > 90 ||
-      Math.abs(longitude) > 180
-    ) {
-      setError("Некоректні координати");
-      return;
-    }
-    applyLocation({
-      id: "custom",
-      label: "Власна локація",
-      latitude,
-      longitude,
-    });
-  }
-
-  const placeLabel = location.label.trim() || "—";
-
-  const weatherActions = (
-    <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
-      <div
-        className={cn(
-          "inline-flex h-[2.75rem] shrink-0 items-center gap-1.5 self-center rounded-lg border px-2 transition-colors",
-          liveConnected
-            ? "border-emerald-200/70 bg-emerald-50/80"
-            : "border-zinc-200 bg-zinc-100"
-        )}
-        title={
-          liveConnected
-            ? "Синхронізація з базою в реальному часі"
-            : "Підключення до Realtime…"
-        }
-      >
-        <span className="relative flex h-2 w-2">
-          <span
-            className={cn(
-              "absolute inline-flex h-full w-full rounded-full opacity-75",
-              liveConnected ? "bg-emerald-500" : "bg-zinc-300",
-              livePulse && liveConnected && "animate-ping"
-            )}
-          />
-          <span
-            className={cn(
-              "relative inline-flex h-2 w-2 rounded-full",
-              liveConnected ? "bg-emerald-500" : "bg-zinc-400"
-            )}
-          />
-        </span>
-        <Activity
-          className={cn(
-            "h-3.5 w-3.5",
-            liveConnected ? "text-emerald-700" : "text-zinc-400",
-            livePulse && liveConnected && "animate-pulse"
-          )}
-        />
-        <span
-          className={cn(
-            "text-[10px] font-semibold tracking-[0.14em] uppercase",
-            liveConnected ? "text-emerald-800" : "text-zinc-500"
-          )}
-        >
-          Live
-        </span>
-      </div>
-
-      <div className="min-w-0 text-right sm:text-left">
-        <div className="flex flex-wrap items-baseline justify-end gap-x-2 gap-y-0 sm:justify-start">
-          <span className="inline-flex items-baseline gap-1.5 text-2xl font-extrabold leading-none tracking-tight text-zinc-900 tabular-nums sm:text-[1.65rem]">
-            {loading && !weather ? (
-              <Loader2 className="h-5 w-5 animate-spin text-zinc-400" />
-            ) : weather ? (
-              `${weather.tempC}°`
-            ) : (
-              "—"
-            )}
-          </span>
-          <span className="max-w-[9rem] truncate text-xs font-medium text-zinc-600 sm:max-w-[12rem] sm:text-sm">
-            {error
-              ? "Немає даних"
-              : loading && !weather
-                ? "Завантаження…"
-                : weather?.condition ?? "Погода"}
-          </span>
-        </div>
-        <div className="mt-0.5 flex flex-wrap items-center justify-end gap-x-2.5 gap-y-0.5 text-[11px] leading-tight text-zinc-500 sm:justify-start">
-          <span
-            className="inline-flex max-w-[11rem] items-center gap-1 truncate font-medium text-zinc-700 sm:max-w-[14rem]"
-            title={location.label}
-          >
-            <MapPin className="h-3 w-3 shrink-0 text-[#C05621]" />
-            {placeLabel}
-          </span>
-          <span className="inline-flex items-center gap-1 tabular-nums">
-            <Wind className="h-3 w-3 shrink-0" />
-            {weather ? `${weather.windMs} м/с` : "—"}
-          </span>
-          <span className="inline-flex items-center gap-1 tabular-nums">
-            <Droplets className="h-3 w-3 shrink-0 text-[#C05621]" />
-            {weather ? `${weather.humidityPercent}%` : "—"}
-          </span>
-        </div>
-      </div>
-
-      <Popover open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <PopoverTrigger
-          type="button"
-          aria-label="Налаштування погоди"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#E5DFD3] bg-zinc-100 text-zinc-500 transition-colors hover:bg-[#E5DFD3]/70 hover:text-zinc-800"
-        >
-          <Settings2 className="h-4 w-4" />
-        </PopoverTrigger>
-        <PopoverContent
-          align="end"
-          className="w-80 border border-[#E5DFD3] bg-[#F4F1EA] p-3 text-zinc-900 shadow-lg"
-        >
-          <PopoverHeader>
-            <PopoverTitle className="flex items-center gap-2 text-sm font-bold text-zinc-900">
-              <MapPin className="h-4 w-4 text-[#276749]" />
-              Локація погоди
-            </PopoverTitle>
-          </PopoverHeader>
-
-          <Input
-            value={placeQuery}
-            onChange={(event) => setPlaceQuery(event.target.value)}
-            placeholder="Село, місто або вулиця…"
-            className="mt-2 h-9 rounded-lg border-[#E5DFD3] bg-zinc-100 text-sm"
-          />
-          <p className="mt-1 text-[11px] text-zinc-500">
-            Пошук по всій Україні · або координати нижче
-          </p>
-
-          {placeLoading ? (
-            <p className="mt-2 inline-flex items-center gap-2 text-xs text-zinc-500">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              Шукаємо…
-            </p>
-          ) : null}
-          {placeError ? (
-            <p className="mt-2 text-xs text-[#C05621]">{placeError}</p>
-          ) : null}
-
-          {placeResults.length > 0 ? (
-            <ul className="mt-2 max-h-44 space-y-1 overflow-y-auto">
-              {placeResults.map((result) => (
-                <li key={result.id}>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      applyLocation({
-                        id: result.id,
-                        label: result.label,
-                        latitude: result.latitude,
-                        longitude: result.longitude,
-                      })
-                    }
-                    className="w-full rounded-lg px-2.5 py-2 text-left text-xs text-zinc-800 transition-colors hover:bg-white"
-                  >
-                    {result.label}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-
-          <div className="mt-3 grid grid-cols-2 gap-2 border-t border-[#E5DFD3] pt-3">
-            <div className="space-y-1">
-              <Label className="text-[10px] tracking-wider text-zinc-500 uppercase">
-                Lat
-              </Label>
-              <Input
-                value={latDraft}
-                onChange={(event) => setLatDraft(event.target.value)}
-                className="h-9 rounded-lg border-[#E5DFD3] bg-zinc-100 text-sm"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-[10px] tracking-wider text-zinc-500 uppercase">
-                Lng
-              </Label>
-              <Input
-                value={lngDraft}
-                onChange={(event) => setLngDraft(event.target.value)}
-                className="h-9 rounded-lg border-[#E5DFD3] bg-zinc-100 text-sm"
-              />
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={applyCustomCoords}
-            className="mt-2 inline-flex h-9 w-full items-center justify-center rounded-lg bg-[#276749] text-xs font-bold text-white transition-colors hover:bg-[#22543d]"
-          >
-            Застосувати координати
-          </button>
-        </PopoverContent>
-      </Popover>
-    </div>
-  );
-
-  return (
-    <PageHeader
-      icon={MapIcon}
-      title="Карта полів"
-      description={
-        fieldsLoading
-          ? "Завантаження ділянок…"
-          : `${plotCount} ділянок · ${totalHa} га`
-      }
-      actions={weatherActions}
-    />
-  );
-}
 
 /** Головний розділ: жива карта полів з повним CRUD */
 export function FieldsView() {
@@ -452,6 +116,7 @@ export function FieldsView() {
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastPreviewedIdRef = useRef<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [mobileListExpanded, setMobileListExpanded] = useState(false);
   const [hubInitialTab, setHubInitialTab] = useState<FieldHubTab>("overview");
   const [hubConfirmDelete, setHubConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -899,9 +564,10 @@ export function FieldsView() {
       setHubInitialTab(options?.tab ?? "overview");
       setSheetOpen(true);
       setPendingFeature(null);
+      setMobileListExpanded(false);
 
       if (options?.fly === false || !item.geometry) return;
-      fieldsMapRef.current?.focusFieldForInspector(item.geometry);
+      fieldsMapRef.current?.focusFieldForInspector(item.geometry, "detail");
     },
     []
   );
@@ -917,7 +583,7 @@ export function FieldsView() {
   const scheduleListHover = useCallback((fieldId: string | null) => {
     hoverIntentRef.current = fieldId;
     clearHoverTimer();
-    const delay = fieldId ? 340 : 120;
+    const delay = fieldId ? 1340 : 180;
     hoverTimerRef.current = setTimeout(() => {
       const next = hoverIntentRef.current;
       setHoveredFieldId(next);
@@ -946,9 +612,14 @@ export function FieldsView() {
 
   const openFieldById = useCallback(
     (fieldId: string) => {
+      const needle = fieldId.trim();
+      if (!needle) return;
       const item =
-        mapFields.find((field) => field.id === fieldId) ??
-        mapFields.find((field) => field.farmField?.id === fieldId);
+        mapFields.find((field) => field.id === needle) ??
+        mapFields.find((field) => field.farmField?.id === needle) ??
+        mapFields.find(
+          (field) => field.farmField?.wialonZoneId?.trim() === needle
+        );
       if (!item) return;
       selectField(item, { fly: true });
     },
@@ -1328,210 +999,138 @@ export function FieldsView() {
       : null;
 
   return (
-    <main className="mx-auto flex h-full w-full max-w-[1600px] flex-col px-4 pt-2 pb-3 sm:px-6 lg:px-8">
-      <FieldsTopBar
-        plotCount={mapFields.length}
-        totalHa={totalHa}
-        fieldsLoading={wialonLoading}
-        liveConnected={liveConnected}
-        livePulse={livePulse}
-      />
-
-      <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-5 lg:gap-4">
-        <GlassCard className="flex min-h-0 flex-col overflow-hidden p-4 hover:scale-100 lg:col-span-1">
-          <div className="mb-2.5 flex items-center justify-between gap-2">
-            <p className="text-sm font-medium text-zinc-500">Список ділянок</p>
-            <button
-              type="button"
-              title="Показати всі на карті"
-              onClick={() => fieldsMapRef.current?.fitAllFields()}
-              className="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-[#E5DFD3]/60 hover:text-zinc-700"
-            >
-              <Focus className="h-3.5 w-3.5" />
-            </button>
-          </div>
-
-          <ul
-            className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto pr-1"
-            onMouseLeave={() => scheduleListHover(null)}
-          >
-            {wialonLoading ? (
-              <>
-                <li className="flex items-center gap-2 px-1 py-1.5 text-xs font-medium text-zinc-500">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  Завантаження ділянок…
-                </li>
-                {Array.from({ length: 6 }).map((_, index) => (
-                  <li
-                    key={`field-skeleton-${index}`}
-                    className="flex items-center gap-3 rounded-xl border border-[#E5DFD3] bg-zinc-100/80 px-3 py-2.5"
-                    aria-hidden
-                  >
-                    <span className="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-zinc-300" />
-                    <div className="min-w-0 flex-1 space-y-1.5">
-                      <div className="h-3.5 w-[70%] animate-pulse rounded bg-zinc-200/90" />
-                      <div className="h-2.5 w-16 animate-pulse rounded bg-zinc-200/70" />
-                    </div>
-                  </li>
-                ))}
-              </>
-            ) : (
-              mapFields.map((field) => {
-                const active =
-                  selectedId === field.id || editingFieldId === field.id;
-                const hovered = hoveredFieldId === field.id;
-                return (
-                  <li key={field.id}>
-                    <button
-                      type="button"
-                      onClick={() => selectField(field)}
-                      onDoubleClick={() => selectField(field, { fly: true })}
-                      onMouseEnter={() => scheduleListHover(field.id)}
-                      onFocus={() => scheduleListHover(field.id)}
-                      onBlur={() => scheduleListHover(null)}
-                      className={cn(
-                        "group flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-[border-color,background-color,box-shadow] duration-300 ease-out",
-                        active
-                          ? "border-[#276749] bg-emerald-50/50 shadow-sm"
-                          : hovered
-                            ? "border-[#276749]/35 bg-emerald-50/25"
-                            : "border-[#E5DFD3] bg-zinc-100"
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "h-2.5 w-2.5 shrink-0 rounded-full transition-transform",
-                          active && "scale-125 ring-2 ring-white"
-                        )}
-                        style={{ backgroundColor: field.color }}
-                      />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold text-zinc-900">
-                          {field.name}
-                        </p>
-                        <p className="text-xs tabular-nums text-zinc-500">
-                          {field.areaHa.toLocaleString("uk-UA", {
-                            maximumFractionDigits: 1,
-                            minimumFractionDigits: 0,
-                          })}{" "}
-                          Га
-                          {field.crop?.trim()
-                            ? ` · ${field.crop.trim()}`
-                            : ""}
-                          {editingFieldId === field.id
-                            ? " · редагування"
-                            : ""}
-                        </p>
-                      </div>
-                    </button>
-                  </li>
-                );
-              })
-            )}
-          </ul>
-
-          {(saveHint || statusHint) && (
-            <div className="mt-3 shrink-0 border-t border-[#E5DFD3] pt-2.5">
-              {saveHint ? (
-                <p className="text-[11px] leading-snug text-[#C05621]">
-                  {saveHint}
-                </p>
-              ) : statusHint ? (
-                <p className="text-[11px] leading-snug text-[#276749]">
-                  {statusHint}
-                </p>
-              ) : null}
-            </div>
-          )}
-        </GlassCard>
-
-        <GlassCard className="relative min-h-[420px] overflow-visible p-0 hover:translate-y-0 hover:shadow-sm lg:col-span-4 lg:min-h-0">
-          <div ref={mapHostRef} className="absolute inset-0">
-            <FieldsMap
-              ref={fieldsMapRef}
-              className="h-full w-full rounded-xl"
-              onFieldClick={openFieldById}
-              onDrawnFeaturesChange={handleDrawnFeaturesChange}
-              savedFieldsGeoJson={savedGeoJson}
-              wialonUnits={wialonUnits}
-              wialonGeofences={mapWialonGeofences}
-              wialonLoading={wialonLoading}
-              editingFieldId={editingFieldId}
-              selectedFieldId={selectedId}
-              hoveredFieldId={hoveredFieldId}
-              geometryEditMode={Boolean(editingFieldId)}
-              drawSave={drawSaveActions}
-              overlayActive={sheetOpen}
-              onRequestDeleteSelection={requestDeleteFromToolbar}
-              onEscape={handleEscape}
-            />
-          </div>
-        </GlassCard>
+    <div className="absolute inset-0 overflow-hidden">
+      <div ref={mapHostRef} className="absolute inset-0 z-0 bg-zinc-950">
+        <FieldsMap
+          ref={fieldsMapRef}
+          className="h-full w-full"
+          chrome={sheetOpen ? "detail" : "list"}
+          onFieldClick={openFieldById}
+          onDrawnFeaturesChange={handleDrawnFeaturesChange}
+          savedFieldsGeoJson={savedGeoJson}
+          wialonUnits={wialonUnits}
+          wialonGeofences={mapWialonGeofences}
+          wialonLoading={wialonLoading}
+          editingFieldId={editingFieldId}
+          selectedFieldId={selectedId}
+          hoveredFieldId={hoveredFieldId}
+          geometryEditMode={Boolean(editingFieldId)}
+          drawSave={drawSaveActions}
+          overlayActive={sheetOpen}
+          onRequestDeleteSelection={requestDeleteFromToolbar}
+          onEscape={handleEscape}
+        />
       </div>
 
-      <FieldDetailSheet
-        field={sheetField}
-        fieldKey={sheetFieldKey}
-        legacyFieldKeys={sheetLegacyFieldKeys}
-        farmFieldId={selectedItem?.farmField?.id ?? null}
-        fieldGeometry={selectedItem?.geometry ?? draftGeometry}
-        fieldColor={selectedItem?.color ?? color}
-        mapSource={selectedItem?.source ?? "saved"}
-        open={sheetOpen}
-        onOpenChange={(open) => {
-          setSheetOpen(open);
-          if (!open) {
-            setHubConfirmDelete(false);
-            if (pendingFeature && !selectedItem) {
-              closePassportDraft();
-            } else {
-              restoreMapOverview();
-            }
-          }
-        }}
-        initialTab={hubInitialTab}
-        initialConfirmDelete={hubConfirmDelete}
-        units={wialonUnits}
-        weather={fieldWeather}
-        hourly={fieldHourly}
-        weatherLoading={fieldWeatherLoading}
-        weatherError={fieldWeatherError}
-        passportMode={passportMode}
-        passportBusy={busy}
-        passportSavedFlash={savedFlash}
-        passportSaveHint={saveHint}
-        passportName={fieldName}
-        passportCrop={crop}
-        passportAreaHa={areaHa}
-        passportColor={color}
-        onPassportNameChange={setFieldName}
-        onPassportCropChange={(value) => setCrop(normalizeCrop(value))}
-        onPassportAreaHaChange={setAreaHa}
-        onPassportColorChange={setColor}
-        onPassportSave={() => void handleConfirmPassport()}
-        onPassportDelete={() => void handleDeleteSelected()}
-        canDeleteField={
-          Boolean(selectedItem?.farmField?.id) ||
-          Boolean(pendingFeature && sheetOpen)
-        }
-        onEditGeometry={
-          selectedItem ? () => startGeometryEdit(selectedItem) : undefined
-        }
-        onPlanWork={() => {
-          flashStatus("Роботу заплановано · див. історію операцій");
-        }}
-        realtimeVersion={realtimeVersion}
-        wialonZoneId={sheetWialonZoneId}
-        wialonGeofences={wialonGeofences}
-        wialonLoading={wialonLoading}
-        occupiedWialonZones={occupiedWialonZones}
-        onIntegrationsFieldUpdated={(updated) => {
-          setSavedFields((prev) =>
-            prev.map((field) => (field.id === updated.id ? updated : field))
-          );
-          setAreaHa(updated.areaHa);
-        }}
-      />
-    </main>
+      <div
+        className={cn(
+          "pointer-events-none z-30 p-3",
+          sheetOpen
+            ? COMMAND_CENTER_MAP_AREA_RIGHT_CLASS
+            : COMMAND_CENTER_MAP_AREA_CLASS
+        )}
+      >
+        <div
+          className={cn(
+            "flex",
+            sheetOpen ? "justify-start" : "justify-end"
+          )}
+        >
+          <FieldsMapChrome align={sheetOpen ? "start" : "end"} />
+        </div>
+      </div>
+
+      {!sheetOpen ? (
+        <FieldsGlassPanel
+          fields={mapFields}
+          loading={wialonLoading}
+          selectedId={selectedId}
+          hoveredId={hoveredFieldId}
+          editingFieldId={editingFieldId}
+          budgetByFieldId={fieldBudgetPct}
+          totalHa={totalHa}
+          liveConnected={liveConnected}
+          livePulse={livePulse}
+          statusHint={statusHint}
+          saveHint={saveHint}
+          mobileExpanded={mobileListExpanded}
+          onMobileExpandedChange={setMobileListExpanded}
+          onSelect={(field) => selectField(field, { fly: true })}
+          onHover={scheduleListHover}
+          onFitAll={() => fieldsMapRef.current?.fitAllFields()}
+        />
+      ) : (
+        <>
+          <FieldsDetailGlassFrame>
+            <FieldDetailSheet
+              variant="panel"
+              field={sheetField}
+              fieldKey={sheetFieldKey}
+              legacyFieldKeys={sheetLegacyFieldKeys}
+              farmFieldId={selectedItem?.farmField?.id ?? null}
+              fieldGeometry={selectedItem?.geometry ?? draftGeometry}
+              fieldColor={selectedItem?.color ?? color}
+              mapSource={selectedItem?.source ?? "saved"}
+              open={sheetOpen}
+              onOpenChange={(open) => {
+                setSheetOpen(open);
+                if (!open) {
+                  setHubConfirmDelete(false);
+                  if (pendingFeature && !selectedItem) {
+                    closePassportDraft();
+                  } else {
+                    restoreMapOverview();
+                  }
+                }
+              }}
+              initialTab={hubInitialTab}
+              initialConfirmDelete={hubConfirmDelete}
+              units={wialonUnits}
+              weather={fieldWeather}
+              hourly={fieldHourly}
+              weatherLoading={fieldWeatherLoading}
+              weatherError={fieldWeatherError}
+              passportMode={passportMode}
+              passportBusy={busy}
+              passportSavedFlash={savedFlash}
+              passportSaveHint={saveHint}
+              passportName={fieldName}
+              passportCrop={crop}
+              passportAreaHa={areaHa}
+              passportColor={color}
+              onPassportNameChange={setFieldName}
+              onPassportCropChange={(value) => setCrop(normalizeCrop(value))}
+              onPassportAreaHaChange={setAreaHa}
+              onPassportColorChange={setColor}
+              onPassportSave={() => void handleConfirmPassport()}
+              onPassportDelete={() => void handleDeleteSelected()}
+              canDeleteField={
+                Boolean(selectedItem?.farmField?.id) ||
+                Boolean(pendingFeature && sheetOpen)
+              }
+              onEditGeometry={
+                selectedItem ? () => startGeometryEdit(selectedItem) : undefined
+              }
+              onPlanWork={() => {
+                flashStatus("Роботу заплановано · див. історію операцій");
+              }}
+              realtimeVersion={realtimeVersion}
+              wialonZoneId={sheetWialonZoneId}
+              wialonGeofences={wialonGeofences}
+              wialonLoading={wialonLoading}
+              occupiedWialonZones={occupiedWialonZones}
+              onIntegrationsFieldUpdated={(updated) => {
+                setSavedFields((prev) =>
+                  prev.map((field) =>
+                    field.id === updated.id ? updated : field
+                  )
+                );
+                setAreaHa(updated.areaHa);
+              }}
+            />
+          </FieldsDetailGlassFrame>
+        </>
+      )}
+    </div>
   );
 }

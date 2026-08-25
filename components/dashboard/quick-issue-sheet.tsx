@@ -7,6 +7,7 @@ import {
   Bug,
   Check,
   ChevronDown,
+  ChevronLeft,
   Leaf,
   Loader2,
   MapPin,
@@ -107,6 +108,10 @@ type QuickIssueSheetProps = {
   presetItemRefKey?: string | null;
   /** Якщо задано — одразу обрати поле для списання */
   presetFieldId?: string | null;
+  /** Не показувати вибір поля (поле вже відоме з хаба) */
+  lockField?: boolean;
+  variant?: "sheet" | "panel";
+  onBack?: () => void;
   onSuccess?: (payload: QuickIssueSuccessPayload) => void;
 };
 
@@ -115,6 +120,9 @@ export function QuickIssueSheet({
   onOpenChange,
   presetItemRefKey = null,
   presetFieldId = null,
+  lockField = false,
+  variant = "sheet",
+  onBack,
   onSuccess,
 }: QuickIssueSheetProps) {
   const [loading, setLoading] = useState(false);
@@ -204,8 +212,9 @@ export function QuickIssueSheet({
 
   useEffect(() => {
     if (!open) return;
+    if (lockField) return;
     if (itemKey && !fieldId) setFieldPickerOpen(true);
-  }, [open, itemKey, fieldId]);
+  }, [open, itemKey, fieldId, lockField]);
 
   useEffect(() => {
     if (!open) return;
@@ -362,16 +371,39 @@ export function QuickIssueSheet({
     });
   }
 
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="right"
-        className={cn(
-          "flex w-full flex-col gap-0 border-l border-zinc-200 bg-white p-0 text-zinc-900 shadow-sm sm:max-w-md",
-          "[&_[data-slot=sheet-close]]:text-zinc-500 [&_[data-slot=sheet-close]]:hover:bg-zinc-100"
-        )}
-      >
-        <SheetHeader className="shrink-0 border-b border-zinc-100 px-6 py-5 pr-12 text-left">
+  const issueHeader = (
+    <div
+      className={cn(
+        "shrink-0 border-b text-left",
+        variant === "panel"
+          ? "border-[#E5DFD3] bg-white/40 px-5 py-4"
+          : "border-zinc-100 px-6 py-5 pr-12"
+      )}
+    >
+      {variant === "panel" ? (
+        <>
+          <button
+            type="button"
+            onClick={() => {
+              onBack?.();
+              onOpenChange(false);
+            }}
+            className="mb-2 inline-flex items-center gap-1 text-xs font-semibold text-zinc-500 transition-colors hover:text-zinc-900"
+          >
+            <ChevronLeft className="h-3.5 w-3.5" />
+            Назад до поля
+          </button>
+          <h2 className="text-xl font-extrabold tracking-tight text-zinc-900">
+            Списати ТМЦ
+          </h2>
+          <p className="mt-1 text-sm text-zinc-500">
+            {selectedField
+              ? `${selectedField.name} · тіньовий склад, без 1С`
+              : "Тіньовий склад · збережеться локально, без 1С"}
+          </p>
+        </>
+      ) : (
+        <SheetHeader className="p-0 text-left">
           <SheetTitle className="text-2xl font-bold tracking-tight text-zinc-900">
             Списання на поле
           </SheetTitle>
@@ -379,14 +411,18 @@ export function QuickIssueSheet({
             Тіньовий склад · збережеться локально, без 1С
           </SheetDescription>
         </SheetHeader>
+      )}
+    </div>
+  );
 
+  const issueForm = (
         <form
           onSubmit={handleSubmit}
           className="flex min-h-0 flex-1 flex-col"
         >
           <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-5">
             {/* Hero summary */}
-            <div className="relative overflow-hidden rounded-2xl bg-zinc-900 p-5 text-white">
+              <div className="relative overflow-hidden rounded-2xl bg-zinc-900 p-5 text-white">
               <PackageMinus
                 className="pointer-events-none absolute -right-3 -bottom-3 h-24 w-24 text-white/5"
                 strokeWidth={1}
@@ -641,6 +677,7 @@ export function QuickIssueSheet({
                 </section>
 
                 {/* Fields */}
+                {!lockField ? (
                 <section className="space-y-2.5">
                   <p className="text-xs font-semibold tracking-wide text-zinc-500 uppercase">
                     3. Куди (поле)
@@ -742,11 +779,12 @@ export function QuickIssueSheet({
                     </>
                   )}
                 </section>
+                ) : null}
 
                 {/* Qty */}
                 <section className="space-y-2.5">
                   <p className="text-xs font-semibold tracking-wide text-zinc-500 uppercase">
-                    4. Скільки
+                    {lockField ? "3. Скільки" : "4. Скільки"}
                   </p>
                   <div
                     className={cn(
@@ -831,7 +869,7 @@ export function QuickIssueSheet({
               disabled={isSubmitDisabled}
               className={cn(
                 "h-12 w-full rounded-xl text-base font-semibold text-white",
-                "bg-[#276749] hover:bg-[#1f5339]",
+                "bg-gradient-to-r from-[#1a3d2c] via-[#276749] to-[#3a8f5e] hover:from-[#163326] hover:via-[#22543d] hover:to-[#2f7a52]",
                 "disabled:cursor-not-allowed disabled:bg-gray-400 disabled:text-gray-200",
                 "disabled:opacity-50 disabled:hover:bg-gray-400 disabled:hover:text-gray-200"
               )}
@@ -850,6 +888,29 @@ export function QuickIssueSheet({
             </Button>
           </div>
         </form>
+  );
+
+  if (variant === "panel") {
+    if (!open) return null;
+    return (
+      <div className="flex h-full min-h-0 flex-col overflow-hidden bg-gradient-to-b from-[#F7F4EE] to-[#EDE8DF]/70">
+        {issueHeader}
+        {issueForm}
+      </div>
+    );
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="right"
+        className={cn(
+          "flex w-full flex-col gap-0 border-l border-[#E5DFD3] bg-[#F4F1EA] p-0 text-zinc-900 shadow-sm sm:max-w-md",
+          "[&_[data-slot=sheet-close]]:text-zinc-500 [&_[data-slot=sheet-close]]:hover:bg-[#E5DFD3]/40"
+        )}
+      >
+        {issueHeader}
+        {issueForm}
       </SheetContent>
     </Sheet>
   );

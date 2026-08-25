@@ -6,6 +6,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -17,17 +18,7 @@ import type {
   Geometry,
   Polygon,
 } from "geojson";
-import {
-  Focus,
-  Landmark,
-  Loader2,
-  Pentagon,
-  Save,
-  Search,
-  Tractor,
-  X,
-} from "lucide-react";
-import { bbox, center as turfCenter } from "@turf/turf";
+import { Focus, Landmark, Map as MapIcon, Pentagon, Save, Search, Tractor, X } from "lucide-react";
 import Map, { Layer, Marker, Source } from "react-map-gl/mapbox";
 import type {
   MapMouseEvent,
@@ -41,12 +32,12 @@ import { VehicleMapPopup } from "@/components/dashboard/vehicle-map-popup";
 import { Input } from "@/components/ui/input";
 import {
   FIELDS_GEOJSON,
-  FIELDS_MAP_INITIAL_VIEW,
   UKRAINE_MAX_BOUNDS,
 } from "@/lib/fields-geojson";
 import { searchPlaces, type GeoSearchResult } from "@/lib/geocode";
 import {
   boundsFromGeometry,
+  centerFromBounds,
   mergeBounds,
   type LngLatBoundsTuple,
 } from "@/lib/geo-area";
@@ -54,7 +45,16 @@ import type {
   WialonGeofenceProperties,
   WialonUnit,
 } from "@/lib/wialon";
+import { DEFAULT_WEATHER_LOCATION } from "@/lib/weather";
 import { useSeasonStore } from "@/lib/season-store";
+import {
+  CommandCenterMapBootOverlay,
+  COMMAND_CENTER_MAP_CANVAS_BG,
+} from "@/components/dashboard/command-center-map-boot";
+import {
+  COMMAND_CENTER_DETAIL_FLOAT_INSET_CLASS,
+  commandCenterFitPadding,
+} from "@/lib/equipment-command-center-layout";
 import { cn } from "@/lib/utils";
 
 export type MapViewMode = "standard" | "economics";
@@ -329,8 +329,11 @@ export type FieldsMapHandle = {
     options?: { padding?: FitPadding; maxZoom?: number; duration?: number }
   ) => void;
   focusGeometry: (geometry: Geometry) => void;
-  /** Фокус для інспектора: поле правіше, менше зум, місце під popup зліва */
-  focusFieldForInspector: (geometry: Geometry) => void;
+  /** Фокус для інспектора. chromeOverride — коли панель ще не встигла перерендеритись */
+  focusFieldForInspector: (
+    geometry: Geometry,
+    chromeOverride?: "list" | "detail"
+  ) => void;
   /** Плавний превʼю з hover списку — ближче, довша анімація */
   previewFieldFocus: (geometry: Geometry) => void;
   fitAllFields: () => void;
@@ -373,43 +376,81 @@ type FieldsMapProps = {
   };
   /** Чи відкрита бокова панель поля (ховає попап трактора тощо) */
   overlayActive?: boolean;
+  /** Зсув floating chrome під ліву / праву glass-панель */
+  chrome?: "list" | "detail";
   onRequestDeleteSelection?: () => void;
   onEscape?: () => void;
 };
 
-/** Стартовий кадр над усіма геозонами без анімації flyTo */
-function bootViewFromGeofences(
-  geofences: FeatureCollection<Polygon, WialonGeofenceProperties>
+/** Стартовий кадр над усіма джерелами полів (Wialon + збережені + демо) */
+function bootViewFromFieldSources(
+  wialonGeofences: FeatureCollection<Polygon, WialonGeofenceProperties>,
+  savedFieldsGeoJson: FeatureCollection | undefined,
+  includeDemo: boolean
 ): MapBootView {
-  if (!geofences.features.length) {
-    return { ...FIELDS_MAP_INITIAL_VIEW };
+  const wialonBounds = wialonGeofences.features.map((feature) =>
+    boundsFromGeometry(feature.geometry)
+  );
+  const demoBounds = includeDemo
+    ? FIELDS_GEOJSON.features.map((feature) =>
+        boundsFromGeometry(feature.geometry)
+      )
+    : [];
+  const savedBounds = (savedFieldsGeoJson?.features ?? []).map((feature) =>
+    boundsFromGeometry(feature.geometry)
+  );
+  const merged = mergeBounds([
+    ...wialonBounds,
+    ...demoBounds,
+    ...savedBounds,
+  ]);
+
+  if (!merged) {
+    return {
+      longitude: DEFAULT_WEATHER_LOCATION.longitude,
+      latitude: DEFAULT_WEATHER_LOCATION.latitude,
+      zoom: 11,
+    };
   }
 
-  try {
-    const point = turfCenter(geofences);
-    const [longitude, latitude] = point.geometry.coordinates;
-    const [minX, minY, maxX, maxY] = bbox(geofences);
-    const span = Math.max(maxX - minX, maxY - minY);
-    let zoom = 12;
-    if (span > 0.8) zoom = 8.5;
-    else if (span > 0.4) zoom = 9.5;
-    else if (span > 0.2) zoom = 10.5;
-    else if (span > 0.08) zoom = 11.5;
-    else if (span > 0.03) zoom = 12.5;
-    else zoom = 13.5;
+  const { longitude, latitude } = centerFromBounds(merged);
+  const span = Math.max(merged[2] - merged[0], merged[3] - merged[1]);
+  let zoom = 12;
+  if (span > 0.8) zoom = 8.5;
+  else if (span > 0.4) zoom = 9.5;
+  else if (span > 0.2) zoom = 10.5;
+  else if (span > 0.08) zoom = 11.5;
+  else if (span > 0.03) zoom = 12.5;
+  else zoom = 13.5;
 
-    if (
-      !Number.isFinite(longitude) ||
-      !Number.isFinite(latitude) ||
-      !Number.isFinite(minX)
-    ) {
-      return { ...FIELDS_MAP_INITIAL_VIEW };
-    }
-
-    return { longitude, latitude, zoom };
-  } catch {
-    return { ...FIELDS_MAP_INITIAL_VIEW };
+  if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) {
+    return {
+      longitude: DEFAULT_WEATHER_LOCATION.longitude,
+      latitude: DEFAULT_WEATHER_LOCATION.latitude,
+      zoom: 11,
+    };
   }
+
+  return { longitude, latitude, zoom };
+}
+
+function collectFieldBounds(
+  wialonGeofences: FeatureCollection<Polygon, WialonGeofenceProperties>,
+  savedFieldsGeoJson: FeatureCollection | undefined,
+  includeDemo: boolean
+): LngLatBoundsTuple | null {
+  const wialonBounds = wialonGeofences.features.map((feature) =>
+    boundsFromGeometry(feature.geometry)
+  );
+  const demoBounds = includeDemo
+    ? FIELDS_GEOJSON.features.map((feature) =>
+        boundsFromGeometry(feature.geometry)
+      )
+    : [];
+  const savedBounds = (savedFieldsGeoJson?.features ?? []).map((feature) =>
+    boundsFromGeometry(feature.geometry)
+  );
+  return mergeBounds([...wialonBounds, ...demoBounds, ...savedBounds]);
 }
 
 function tractorScaleFromZoom(zoom: number) {
@@ -503,6 +544,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       geometryEditMode = false,
       drawSave,
       overlayActive = false,
+      chrome = "list",
       onRequestDeleteSelection,
       onEscape,
     },
@@ -513,11 +555,8 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
     const mapContainerRef = useRef<HTMLDivElement | null>(null);
     const drawRef = useRef<MapboxDraw | null>(null);
 
-    const [isLoading, setIsLoading] = useState(true);
-    const [bootView, setBootView] = useState<MapBootView>({
-      ...FIELDS_MAP_INITIAL_VIEW,
-    });
     const [mapReady, setMapReady] = useState(false);
+    const [viewSettled, setViewSettled] = useState(false);
     const [drawReady, setDrawReady] = useState(false);
     const [selectedTractor, setSelectedTractor] = useState<WialonUnit | null>(
       null
@@ -531,9 +570,21 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       });
     }, [wialonUnits]);
     const hasWialonGeofences = wialonGeofences.features.length > 0;
+
+    /** Синхронно з даними — без race зі stale FIELDS_MAP_INITIAL_VIEW (Київ) */
+    const mountBootView = useMemo(
+      () =>
+        bootViewFromFieldSources(
+          wialonGeofences,
+          savedFieldsGeoJson,
+          !hasWialonGeofences
+        ),
+      [wialonGeofences, savedFieldsGeoJson, hasWialonGeofences]
+    );
+
     const [activeTool, setActiveTool] = useState<DrawTool>("edit");
     const [hasSelection, setHasSelection] = useState(false);
-    const [zoom, setZoom] = useState<number>(FIELDS_MAP_INITIAL_VIEW.zoom);
+    const [zoom, setZoom] = useState<number>(mountBootView.zoom);
     const [hover, setHover] = useState<FieldHoverInfo | null>(null);
     const [searchOpen, setSearchOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
@@ -543,10 +594,10 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
     const activeSeason = useSeasonStore((s) => s.activeSeason);
     const [mapViewMode, setMapViewMode] = useState<MapViewMode>("standard");
     const mapCenterRef = useRef<{ lng: number; lat: number }>({
-      lng: FIELDS_MAP_INITIAL_VIEW.longitude,
-      lat: FIELDS_MAP_INITIAL_VIEW.latitude,
+      lng: mountBootView.longitude,
+      lat: mountBootView.latitude,
     });
-    const zoomRef = useRef<number>(FIELDS_MAP_INITIAL_VIEW.zoom);
+    const zoomRef = useRef<number>(mountBootView.zoom);
 
     const onDrawnFeaturesChangeRef = useRef(onDrawnFeaturesChange);
     onDrawnFeaturesChangeRef.current = onDrawnFeaturesChange;
@@ -641,18 +692,27 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       [focusBounds]
     );
 
+    const chromePadding = useCallback((mode: "list" | "detail") => {
+      const isDesktop =
+        typeof window !== "undefined" ? window.innerWidth >= 768 : true;
+      return commandCenterFitPadding(
+        isDesktop,
+        mode === "detail" ? "right" : "left"
+      );
+    }, []);
+
     const focusFieldForInspector = useCallback(
-      (geometry: Geometry) => {
+      (geometry: Geometry, chromeOverride?: "list" | "detail") => {
         const bounds = boundsFromGeometry(geometry);
         if (!bounds) return;
-        // Padding під повновисотний попап зліва
+        const mode = chromeOverride ?? chrome;
         focusBounds(bounds, {
-          padding: { top: 48, bottom: 48, left: 440, right: 56 },
-          maxZoom: 13.4,
-          duration: 1400,
+          padding: chromePadding(mode),
+          maxZoom: 14.2,
+          duration: 1100,
         });
       },
-      [focusBounds]
+      [chrome, chromePadding, focusBounds]
     );
 
     const previewFieldFocus = useCallback(
@@ -660,12 +720,12 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         const bounds = boundsFromGeometry(geometry);
         if (!bounds) return;
         focusBounds(bounds, {
-          padding: { top: 80, bottom: 80, left: 108, right: 108 },
+          padding: chromePadding(chrome),
           maxZoom: 15.1,
           duration: 1400,
         });
       },
-      [focusBounds]
+      [chrome, chromePadding, focusBounds]
     );
 
     const startDraw = useCallback(() => {
@@ -717,8 +777,14 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         ...demoBounds,
         ...savedBounds,
       ]);
-      if (merged) focusBounds(merged, { padding: 64 });
+      if (merged) {
+        focusBounds(merged, {
+          padding: chromePadding(chrome),
+        });
+      }
     }, [
+      chrome,
+      chromePadding,
       focusBounds,
       hasWialonGeofences,
       savedFieldsGeoJson?.features,
@@ -742,15 +808,23 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
     // Не монтуємо Map, поки Wialon не відповів; стартуємо вже над полями
     useEffect(() => {
       if (wialonLoading) {
-        setIsLoading(true);
+        setViewSettled(false);
+        setMapReady(false);
         return;
       }
+      setZoom(mountBootView.zoom);
+      mapCenterRef.current = {
+        lng: mountBootView.longitude,
+        lat: mountBootView.latitude,
+      };
+      zoomRef.current = mountBootView.zoom;
+    }, [wialonLoading, mountBootView]);
 
-      const nextView = bootViewFromGeofences(wialonGeofences);
-      setBootView(nextView);
-      setZoom(nextView.zoom);
-      setIsLoading(false);
-    }, [wialonLoading, wialonGeofences]);
+    useEffect(() => {
+      if (wialonLoading || viewSettled || !mapReady) return;
+      const fallback = window.setTimeout(() => setViewSettled(true), 3500);
+      return () => window.clearTimeout(fallback);
+    }, [wialonLoading, viewSettled, mapReady]);
 
     useEffect(() => {
       if (!searchOpen) return;
@@ -1027,15 +1101,11 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
 
     const handleMapClick = useCallback(
       (event: MapMouseEvent) => {
-        if (searchOpen) {
-          setSearchOpen(false);
-        }
-
+        if (searchOpen) setSearchOpen(false);
         const draw = drawRef.current;
         const mode = isDrawAlive(draw) ? draw.getMode() : null;
 
         if (
-          selectedTractor ||
           mode === "draw_polygon" ||
           mode === "direct_select" ||
           isDrawing
@@ -1044,10 +1114,14 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         }
 
         const feature = event.features?.[0];
-        const fieldId = feature?.properties?.id;
-        if (fieldId != null && onFieldClick) {
-          onFieldClick(String(fieldId));
+        const rawId = feature?.properties?.id ?? feature?.id;
+        if (rawId != null && onFieldClick) {
+          setSelectedTractor(null);
+          onFieldClick(String(rawId));
+          return;
         }
+
+        if (selectedTractor) setSelectedTractor(null);
       },
       [isDrawing, onFieldClick, searchOpen, selectedTractor]
     );
@@ -1106,7 +1180,6 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
     const toggleEconomicsLayer = useCallback(() => {
       if (focusMode) return;
       setMapViewMode((prev) => (prev === "economics" ? "standard" : "economics"));
-      setSearchOpen(false);
     }, [focusMode]);
 
     /** Mapbox інколи не перемальовує fill-color при зміні mode — синхронізуємо вручну. */
@@ -1158,41 +1231,23 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       );
     }
 
-    if (isLoading) {
-      return (
-        <div
-          className={cn(
-            "flex h-full min-h-[320px] w-full animate-pulse items-center justify-center rounded-xl bg-[#EBE5D9]",
-            className
-          )}
-        >
-          <div className="flex flex-col items-center gap-2 px-4 text-center">
-            <Loader2 className="h-5 w-5 animate-spin text-[#C05621]" />
-            <p className="text-sm font-medium text-zinc-600">
-              Синхронізація з геозонами…
-            </p>
-          </div>
-        </div>
-      );
-    }
-
+    const showBootOverlay = wialonLoading || !viewSettled;
     const showTractor = zoom >= 7 && !focusMode;
     const tractorScale = tractorScaleFromZoom(zoom);
 
     return (
       <div
         ref={mapContainerRef}
-        className={cn(
-          "relative h-full min-h-[320px] w-full rounded-xl",
-          className
-        )}
+        className={cn("relative h-full min-h-0 w-full bg-zinc-950", className)}
       >
-        <div className="absolute inset-0 overflow-hidden rounded-xl">
+        {!wialonLoading ? (
+        <>
+        <div className="absolute inset-0 overflow-hidden bg-zinc-950">
           <Map
             ref={mapRef}
             mapboxAccessToken={token}
             mapStyle="mapbox://styles/mapbox/satellite-streets-v12"
-            initialViewState={bootView}
+            initialViewState={mountBootView}
             maxBounds={UKRAINE_MAX_BOUNDS}
             dragRotate={false}
             pitchWithRotate={false}
@@ -1213,8 +1268,52 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
             onMove={handleMove}
             onLoad={() => {
               setMapReady(true);
+              const map = mapRef.current?.getMap();
+              if (!map) {
+                setViewSettled(true);
+                return;
+              }
+              map.getCanvas().style.backgroundColor =
+                COMMAND_CENTER_MAP_CANVAS_BG;
+              map.getCanvasContainer().style.backgroundColor =
+                COMMAND_CENTER_MAP_CANVAS_BG;
+
+              const merged = collectFieldBounds(
+                wialonGeofences,
+                savedFieldsGeoJson,
+                !hasWialonGeofences
+              );
+              if (merged) {
+                const [west, south, east, north] = merged;
+                const isDesktop =
+                  typeof window !== "undefined"
+                    ? window.innerWidth >= 768
+                    : true;
+                try {
+                  map.fitBounds(
+                    [
+                      [west, south],
+                      [east, north],
+                    ],
+                    {
+                      padding: commandCenterFitPadding(isDesktop, "left"),
+                      duration: 0,
+                      maxZoom: 14,
+                      essential: true,
+                    }
+                  );
+                } catch {
+                  // ignore invalid bounds
+                }
+              }
+
+              map.once("idle", () => setViewSettled(true));
             }}
-            style={{ width: "100%", height: "100%" }}
+            style={{
+              width: "100%",
+              height: "100%",
+              background: COMMAND_CENTER_MAP_CANVAS_BG,
+            }}
             cursor={
               isDrawing
                 ? "crosshair"
@@ -1364,8 +1463,60 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         </div>
 
         {/* —— Плаваючі панелі —— */}
-        <div className="absolute top-3 left-3 z-40 flex max-w-[calc(100%-1.5rem)] flex-col gap-2 sm:max-w-none">
-          <div className={FLOAT_BAR_CLASS} role="toolbar" aria-label="Інструменти карти">
+        <div
+          className={cn(
+            "absolute bottom-3 z-40 flex flex-col items-end gap-2",
+            chrome === "detail"
+              ? cn("right-3", COMMAND_CENTER_DETAIL_FLOAT_INSET_CLASS)
+              : "right-3"
+          )}
+        >
+          {searchOpen ? (
+            <div className="w-[min(calc(100vw-2rem),340px)] rounded-2xl border border-border bg-background/80 p-3 shadow-lg backdrop-blur-xl">
+              <Input
+                autoFocus
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Адреса або 50.45, 30.52"
+                className="h-10 rounded-xl border-border bg-background/60 text-sm"
+              />
+              <p className="mt-1.5 text-[11px] text-muted-foreground">
+                Населений пункт або координати lat, lng
+              </p>
+              {searchLoading ? (
+                <p className="mt-3 text-xs text-muted-foreground">Шукаємо…</p>
+              ) : null}
+              {searchError ? (
+                <p className="mt-3 text-xs text-destructive">{searchError}</p>
+              ) : null}
+              {searchResults.length > 0 ? (
+                <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto">
+                  {searchResults.map((result) => (
+                    <li key={result.id}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          flyTo(result.longitude, result.latitude, 13.8);
+                          setSearchOpen(false);
+                          setSearchQuery("");
+                          setSearchResults([]);
+                        }}
+                        className="w-full rounded-xl px-2.5 py-2 text-left text-sm transition-colors hover:bg-foreground/5"
+                      >
+                        {result.label}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          ) : null}
+
+          <div
+            className={FLOAT_BAR_CLASS}
+            role="toolbar"
+            aria-label="Інструменти карти"
+          >
             <MapToolButton
               active={searchOpen}
               title="Пошук"
@@ -1373,7 +1524,6 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
             >
               <Search className="h-[18px] w-[18px]" />
             </MapToolButton>
-
             {!geometryEditMode ? (
               <MapToolButton
                 active={isDrawing}
@@ -1384,7 +1534,6 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
                 <Pentagon className="h-[18px] w-[18px]" />
               </MapToolButton>
             ) : null}
-
             {drawSave?.visible ? (
               <>
                 <MapBarDivider />
@@ -1412,80 +1561,33 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
                 </button>
               </>
             ) : null}
+            {!focusMode ? (
+              <>
+                <MapBarDivider />
+                <MapToolButton title="Усі поля" onClick={fitAllFields}>
+                  <Focus className="h-[18px] w-[18px]" />
+                </MapToolButton>
+                <MapToolButton
+                  active={mapViewMode === ECONOMICS_LAYER.id}
+                  title={ECONOMICS_LAYER.label}
+                  onClick={toggleEconomicsLayer}
+                >
+                  <ECONOMICS_LAYER.icon className="h-[18px] w-[18px]" />
+                </MapToolButton>
+              </>
+            ) : null}
           </div>
-
-          {searchOpen ? (
-            <div className="w-[min(100vw-2rem,340px)] rounded-2xl border border-border bg-background/80 p-3 shadow-lg backdrop-blur-xl">
-              <Input
-                autoFocus
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Адреса або 50.45, 30.52"
-                className="h-10 rounded-xl border-border bg-background/60 text-sm"
-              />
-              <p className="mt-1.5 text-[11px] text-muted-foreground">
-                Населений пункт або координати lat, lng
-              </p>
-
-              {searchLoading ? (
-                <p className="mt-3 inline-flex items-center gap-2 text-xs text-muted-foreground">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  Шукаємо…
-                </p>
-              ) : null}
-
-              {searchError ? (
-                <p className="mt-3 text-xs text-destructive">{searchError}</p>
-              ) : null}
-
-              {searchResults.length > 0 ? (
-                <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto">
-                  {searchResults.map((result) => (
-                    <li key={result.id}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          flyTo(result.longitude, result.latitude, 13.8);
-                          setSearchOpen(false);
-                          setSearchQuery("");
-                          setSearchResults([]);
-                        }}
-                        className="w-full rounded-xl px-2.5 py-2 text-left text-sm transition-colors hover:bg-foreground/5"
-                      >
-                        {result.label}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-            </div>
-          ) : null}
         </div>
 
-        {!focusMode ? (
-          <div
-            className="absolute right-3 bottom-3 z-40 flex max-w-[calc(100%-1.5rem)] flex-col items-end gap-2 sm:max-w-none"
-            role="toolbar"
-            aria-label="Шари та вигляд"
-          >
-            <div className={FLOAT_BAR_CLASS}>
-              <MapToolButton title="Усі поля" onClick={fitAllFields}>
-                <Focus className="h-[18px] w-[18px]" />
-              </MapToolButton>
-              <MapBarDivider />
-              <MapToolButton
-                active={mapViewMode === ECONOMICS_LAYER.id}
-                title={ECONOMICS_LAYER.label}
-                onClick={toggleEconomicsLayer}
-              >
-                <ECONOMICS_LAYER.icon className="h-[18px] w-[18px]" />
-              </MapToolButton>
-            </div>
-          </div>
-        ) : null}
-
         {isDrawing ? (
-          <div className="pointer-events-none absolute inset-x-0 top-4 z-50 flex justify-center px-4">
+          <div
+            className={cn(
+              "pointer-events-none absolute top-4 z-50 flex justify-center px-4",
+              chrome === "detail"
+                ? "inset-x-0 md:right-[calc(0.75rem+min(580px,calc(100%-1.5rem)))]"
+                : "inset-x-0 md:left-[calc(0.75rem+min(400px,calc(100%-1.5rem)))]"
+            )}
+          >
             <div className="max-w-lg rounded-2xl border border-border bg-background/80 px-4 py-2.5 text-center text-sm font-medium text-foreground shadow-lg backdrop-blur-xl">
               Клікайте по карті для створення контуру. Натисніть Enter для
               завершення
@@ -1497,8 +1599,18 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         ) : null}
 
         {mapViewMode === "economics" && !focusMode ? (
-          <div className="pointer-events-auto absolute right-3 bottom-[4.75rem] left-3 z-30 mx-auto max-w-lg sm:left-1/2 sm:right-auto sm:w-[min(100%-1.5rem,32rem)] sm:-translate-x-1/2">
-            <div className="rounded-2xl border border-[#E5DFD3] bg-[#F4F1EA]/95 px-4 py-3.5 shadow-lg backdrop-blur-xl">
+          <div
+            className={cn(
+              "pointer-events-auto absolute bottom-[5.25rem] z-30 flex justify-center px-3",
+              chrome === "detail"
+                ? cn(
+                    "left-3 right-3",
+                    COMMAND_CENTER_DETAIL_FLOAT_INSET_CLASS
+                  )
+                : "left-3 right-3 md:left-[calc(0.75rem+min(400px,calc(100%-1.5rem))+12px)]"
+            )}
+          >
+            <div className="w-full max-w-lg rounded-2xl border border-[#E5DFD3] bg-[#F4F1EA]/95 px-4 py-3.5 shadow-lg backdrop-blur-xl">
               <p className="text-sm font-bold text-zinc-900">
                 Колір = скільки витрачено від бюджету
               </p>
@@ -1597,6 +1709,13 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
             onClose={() => setSelectedTractor(null)}
           />
         ) : null}
+        </>
+        ) : null}
+        <CommandCenterMapBootOverlay
+          visible={showBootOverlay}
+          icon={MapIcon}
+          subtitle="Синхронізуємо геозони господарства…"
+        />
       </div>
     );
   }

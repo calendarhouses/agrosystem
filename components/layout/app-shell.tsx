@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 import { Sidebar } from "@/components/layout/sidebar";
 import { TopBar } from "@/components/layout/top-bar";
+import { isCommandCenterPath } from "@/lib/equipment-command-center-layout";
 import { cn } from "@/lib/utils";
 
 const SIDEBAR_COLLAPSED_KEY = "agrosystem-sidebar-collapsed";
@@ -40,7 +41,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const isCommandCenter = pathname === "/equipment";
+  const isCommandCenter = isCommandCenterPath(pathname);
 
   if (isAuthScreen) {
     return <>{children}</>;

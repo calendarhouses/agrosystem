@@ -11,17 +11,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { isCommandCenterPath } from "@/lib/equipment-command-center-layout";
 import { seasonLabel } from "@/lib/season";
 import { useSeasonStore } from "@/lib/season-store";
 import { cn } from "@/lib/utils";
 
 /**
  * Верхня панель: Command Menu + глобальний перемикач агросезону.
- * На /equipment — прозора плаваюча шапка без пошуку та сезону.
+ * На Command Center (/ та /equipment) — прозора плаваюча шапка без пошуку та сезону.
+ * На /fuel — той самий мінімалізм (без пошуку/сезону), sticky bar лишається.
  */
 export function TopBar() {
   const pathname = usePathname();
-  const isCommandCenter = pathname === "/equipment";
+  const isCommandCenter = isCommandCenterPath(pathname);
+  const hideSearchAndSeason =
+    isCommandCenter || pathname === "/fuel" || pathname?.startsWith("/fuel/");
   const activeSeason = useSeasonStore((s) => s.activeSeason);
   const availableSeasons = useSeasonStore((s) => s.availableSeasons);
   const setActiveSeason = useSeasonStore((s) => s.setActiveSeason);
@@ -31,7 +35,9 @@ export function TopBar() {
       className={cn(
         isCommandCenter
           ? "pointer-events-none absolute top-0 left-0 z-50 w-full border-none bg-transparent"
-          : "sticky top-0 z-30 border-b border-zinc-200/80 bg-zinc-100/90 backdrop-blur-sm"
+          : hideSearchAndSeason
+            ? "hidden"
+            : "sticky top-0 z-30 border-b border-zinc-200/80 bg-zinc-100/90 backdrop-blur-sm"
       )}
     >
       <div
@@ -40,7 +46,7 @@ export function TopBar() {
           isCommandCenter && "pointer-events-auto justify-end"
         )}
       >
-        {!isCommandCenter ? (
+        {!hideSearchAndSeason ? (
           <>
             <CommandMenu className="min-w-[180px] max-w-xl flex-1" />
 

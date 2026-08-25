@@ -236,84 +236,73 @@ export function FieldMicroclimate({
             <p className="text-sm text-[#C05621]">{error}</p>
           ) : weather ? (
             <div className="space-y-4">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div className={glassCardClass}>
-                  <p className="mb-3 text-[10px] font-semibold tracking-[0.1em] text-sky-700/80 uppercase">
+              <div className="flex items-start gap-4">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-sky-50 ring-1 ring-sky-100">
+                  <HourIcon
+                    code={weather.weatherCode}
+                    precipMm={0}
+                    className="!h-7 !w-7"
+                  />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] font-semibold tracking-[0.12em] text-zinc-400 uppercase">
                     Атмосфера
                   </p>
-                  <div className="flex items-start gap-3">
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-50/90 ring-1 ring-sky-100">
-                      <HourIcon
-                        code={weather.weatherCode}
-                        precipMm={0}
-                        className="!h-5 !w-5"
-                      />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-3xl font-extrabold tracking-tight text-zinc-900 tabular-nums leading-none">
-                        {weather.tempC}°
-                      </p>
-                      <p className="mt-1 truncate text-xs font-medium text-zinc-600">
-                        {weather.condition}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="mt-3 grid grid-cols-2 gap-2">
-                    <div className="rounded-lg bg-white/70 px-2.5 py-2">
-                      <p className="inline-flex items-center gap-1 text-[9px] font-semibold tracking-wider text-zinc-400 uppercase">
-                        <Wind className="h-3 w-3" />
-                        Вітер
-                      </p>
-                      <p className="mt-0.5 text-sm font-bold text-zinc-900 tabular-nums">
-                        {weather.windMs}
-                        <span className="ml-0.5 text-[10px] font-semibold text-zinc-400">
-                          м/с
-                        </span>
-                      </p>
-                    </div>
-                    <div className="rounded-lg bg-white/70 px-2.5 py-2">
-                      <p className="inline-flex items-center gap-1 text-[9px] font-semibold tracking-wider text-zinc-400 uppercase">
-                        <Droplet className="h-3 w-3 text-sky-500" />
-                        Вологість
-                      </p>
-                      <p className="mt-0.5 text-sm font-bold text-zinc-900 tabular-nums">
-                        {weather.humidityPercent}
-                        <span className="ml-0.5 text-[10px] font-semibold text-zinc-400">
-                          %
-                        </span>
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className={glassCardClass}>
-                  <p className="mb-3 text-[10px] font-semibold tracking-[0.1em] text-amber-800/80 uppercase">
-                    Ґрунт
+                  <p className="mt-1 text-4xl font-extrabold tracking-tight text-zinc-900 tabular-nums leading-none">
+                    {weather.tempC}°
                   </p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="rounded-lg bg-white/70 px-2.5 py-2">
-                      <p className="inline-flex items-center gap-1 text-[9px] font-semibold tracking-wider text-zinc-400 uppercase">
-                        <Thermometer className="h-3 w-3 text-amber-600" />
-                        T ґрунту
-                      </p>
-                      <p className="mt-0.5 text-sm font-bold text-zinc-900 tabular-nums">
-                        {formatSoilTemp(weather.soilTempC)}
-                      </p>
-                      <p className="mt-0.5 text-[9px] text-zinc-400">18 см</p>
-                    </div>
-                    <div className="rounded-lg bg-white/70 px-2.5 py-2">
-                      <p className="inline-flex items-center gap-1 text-[9px] font-semibold tracking-wider text-zinc-400 uppercase">
-                        <Droplet className="h-3 w-3 text-emerald-600" />
-                        Волога
-                      </p>
-                      <p className="mt-0.5 text-sm font-bold text-zinc-900 tabular-nums">
-                        {weather.soilMoisturePercent != null
-                          ? `${weather.soilMoisturePercent}%`
-                          : "—"}
-                      </p>
-                      <p className="mt-0.5 text-[9px] text-zinc-400">3–9 см</p>
-                    </div>
-                  </div>
+                  <p className="mt-1.5 text-sm font-medium text-zinc-600">
+                    {weather.condition}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div className={glassCardClass}>
+                  <p className="inline-flex items-center gap-1 text-[10px] font-semibold tracking-wider text-zinc-400 uppercase">
+                    <Wind className="h-3 w-3" />
+                    Вітер
+                  </p>
+                  <p className="mt-1.5 text-lg font-bold text-zinc-900 tabular-nums">
+                    {weather.windMs}
+                    <span className="ml-1 text-[11px] font-semibold text-zinc-400">
+                      м/с
+                    </span>
+                  </p>
+                </div>
+                <div className={glassCardClass}>
+                  <p className="inline-flex items-center gap-1 text-[10px] font-semibold tracking-wider text-zinc-400 uppercase">
+                    <Droplet className="h-3 w-3 text-sky-500" />
+                    Вологість
+                  </p>
+                  <p className="mt-1.5 text-lg font-bold text-zinc-900 tabular-nums">
+                    {weather.humidityPercent}
+                    <span className="ml-1 text-[11px] font-semibold text-zinc-400">
+                      %
+                    </span>
+                  </p>
+                </div>
+                <div className={glassCardClass}>
+                  <p className="inline-flex items-center gap-1 text-[10px] font-semibold tracking-wider text-zinc-400 uppercase">
+                    <Thermometer className="h-3 w-3 text-amber-600" />
+                    T ґрунту
+                  </p>
+                  <p className="mt-1.5 text-lg font-bold text-zinc-900 tabular-nums">
+                    {formatSoilTemp(weather.soilTempC)}
+                  </p>
+                  <p className="mt-0.5 text-[10px] text-zinc-400">18 см</p>
+                </div>
+                <div className={glassCardClass}>
+                  <p className="inline-flex items-center gap-1 text-[10px] font-semibold tracking-wider text-zinc-400 uppercase">
+                    <Droplet className="h-3 w-3 text-emerald-600" />
+                    Волога ґрунту
+                  </p>
+                  <p className="mt-1.5 text-lg font-bold text-zinc-900 tabular-nums">
+                    {weather.soilMoisturePercent != null
+                      ? `${weather.soilMoisturePercent}%`
+                      : "—"}
+                  </p>
+                  <p className="mt-0.5 text-[10px] text-zinc-400">3–9 см</p>
                 </div>
               </div>
 

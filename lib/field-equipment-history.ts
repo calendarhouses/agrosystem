@@ -6,6 +6,8 @@
 
 import { createServiceSupabase } from "@/lib/supabase/server";
 import { DEFAULT_SEASON, normalizeSeason } from "@/lib/season";
+import { estimateAreaHaFromTrack } from "@/lib/field-operations";
+import type { FieldTechVisit } from "@/lib/field-tech-history";
 
 export type FieldEquipmentHistorySource = "manual" | "gps_only" | "hybrid";
 
@@ -25,11 +27,16 @@ export type FieldEquipmentHistoryEntry = {
   crop?: string;
   status?: string;
   areaHa?: number;
+  /** Ширина захвату з наряду (м) — для оцінки га з пробігу */
+  implementWidthM?: number | null;
   fuelUsedL?: number;
   wageUah?: number;
   trackerDistanceKm?: number | null;
   trackerWorkHours?: number | null;
   trackerFuelL?: number | null;
+  /** Початок / кінець візиту (UNIX sec) — для точного часу в наряді */
+  visitStartUnix?: number | null;
+  visitEndUnix?: number | null;
   /** Паливо з Wialon (л), якщо є GPS-лог на цей день */
   gpsFuelConsumedL?: number;
 };
@@ -60,6 +67,7 @@ type OpRow = {
   tracker_distance_km: number | string | null;
   tracker_work_hours: number | string | null;
   tracker_fuel_l: number | string | null;
+  implement_width_m: number | string | null;
 };
 
 type GpsRow = {
@@ -185,8 +193,16 @@ function resolveEquipmentForOp(
 
 function preferArea(row: OpRow): number {
   const fact = num(row.area_fact);
+  if (fact > 0) return round2(fact);
+
   const plan = num(row.area_plan);
-  return round2(fact > 0 ? fact : Math.max(0, plan));
+  const dist = optionalNum(row.tracker_distance_km);
+  const width = optionalNum(row.implement_width_m);
+  if (dist != null && width != null && dist > 0 && width > 0) {
+    return estimateAreaHaFromTrack(dist, width, plan > 0 ? plan : null);
+  }
+
+  return round2(Math.max(0, plan));
 }
 
 function preferFuel(row: OpRow): number {
@@ -228,6 +244,7 @@ function opToManualEntry(
     crop: (row.crop ?? "").trim() || undefined,
     status: String(row.status ?? "") || undefined,
     areaHa: preferArea(row),
+    implementWidthM: optionalNum(row.implement_width_m),
     fuelUsedL: preferFuel(row),
     wageUah: preferWage(row),
     trackerDistanceKm: optionalNum(row.tracker_distance_km),
@@ -328,7 +345,7 @@ export function summarizeEquipmentHistory(entries: FieldEquipmentHistoryEntry[])
     entries.map((e) => e.equipmentId ?? `name:${e.equipmentName.toLowerCase()}`)
   );
 
-  /** Заплановані наряди ще не зробили роботу — не в години/пробіг */
+  /** Заплановані наряди ще не зробили роботу — не в години/пробіг/га */
   const workDone = entries.filter((e) => {
     if (e.source === "gps_only") return true;
     const status = String(e.status ?? "").toLowerCase();
@@ -343,6 +360,10 @@ export function summarizeEquipmentHistory(entries: FieldEquipmentHistoryEntry[])
     (sum, e) => sum + Math.max(0, e.trackerDistanceKm ?? 0),
     0
   );
+  const totalAreaHa = workDone.reduce(
+    (sum, e) => sum + Math.max(0, e.areaHa ?? 0),
+    0
+  );
   const gpsOnlyCount = entries.filter((e) => e.source === "gps_only").length;
   const confirmedCount = entries.filter((e) => {
     if (e.source !== "manual" && e.source !== "hybrid") return false;
@@ -355,9 +376,132 @@ export function summarizeEquipmentHistory(entries: FieldEquipmentHistoryEntry[])
     uniqueUnits: uniqueEquipment.size,
     totalHours: Math.round(totalHours * 10) / 10,
     totalDistanceKm: Math.round(totalDistanceKm * 10) / 10,
+    totalAreaHa: Math.round(totalAreaHa * 10) / 10,
     gpsOnlyCount,
     confirmedCount,
   };
+}
+
+/** Локальна дата YYYY-MM-DD (не UTC — інакше зсув дня для України) */
+function localDateYmd(unix: number): string {
+  const d = new Date(unix * 1000);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** GPS-візит з треку → запис історії (для вкладки «Техніка») */
+export function trackVisitToHistoryEntry(
+  visit: FieldTechVisit,
+  options?: { implementWidthM?: number | null; areaCapHa?: number | null }
+): FieldEquipmentHistoryEntry {
+  const date = localDateYmd(visit.startUnix);
+  const hours = Math.max(0, (visit.endUnix - visit.startUnix) / 3600);
+  const width = options?.implementWidthM ?? null;
+  const areaHa =
+    width != null && width > 0 && visit.distanceKm > 0
+      ? estimateAreaHaFromTrack(
+          visit.distanceKm,
+          width,
+          options?.areaCapHa ?? null
+        )
+      : undefined;
+
+  return {
+    id: visit.isLive ? `live:${visit.unitId}` : `track:${visit.id}`,
+    date,
+    equipmentId: null,
+    equipmentName: visit.unitName,
+    wialonUnitId: visit.unitId,
+    source: "gps_only",
+    status: visit.isLive ? "in_progress" : undefined,
+    workType: visit.isLive ? "Зараз на полі" : undefined,
+    trackerDistanceKm: visit.distanceKm > 0 ? visit.distanceKm : null,
+    trackerWorkHours: hours > 0 ? Math.round(hours * 10) / 10 : null,
+    visitStartUnix: visit.isLive ? null : visit.startUnix,
+    visitEndUnix: visit.isLive ? null : visit.endUnix,
+    implementWidthM: width,
+    areaHa,
+  };
+}
+
+/**
+ * Додає GPS-візити з треків до історії нарядів/fuel-логів.
+ * Якщо вже є наряд на той день/техніку — збагачує пробігом і годинами.
+ */
+export function mergeTrackVisitsIntoHistory(
+  history: FieldEquipmentHistoryEntry[],
+  visits: FieldTechVisit[],
+  options?: { implementWidthM?: number | null; areaCapHa?: number | null }
+): FieldEquipmentHistoryEntry[] {
+  const map = new Map<string, FieldEquipmentHistoryEntry>();
+
+  for (const entry of history) {
+    const key = equipmentHistoryMergeKey(
+      entry.date,
+      entry.equipmentId,
+      entry.wialonUnitId,
+      entry.equipmentName
+    );
+    map.set(key, entry);
+  }
+
+  for (const visit of visits) {
+    if (visit.isLive) continue;
+    const entry = trackVisitToHistoryEntry(visit, options);
+    const key = equipmentHistoryMergeKey(
+      entry.date,
+      entry.equipmentId,
+      entry.wialonUnitId,
+      entry.equipmentName
+    );
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, entry);
+      continue;
+    }
+
+    const dist = Math.max(
+      existing.trackerDistanceKm ?? 0,
+      entry.trackerDistanceKm ?? 0
+    );
+    const hours = Math.max(
+      existing.trackerWorkHours ?? 0,
+      entry.trackerWorkHours ?? 0
+    );
+    const width = existing.implementWidthM ?? entry.implementWidthM ?? null;
+    let areaHa = existing.areaHa ?? 0;
+    if (areaHa <= 0 && dist > 0 && width != null && width > 0) {
+      areaHa = estimateAreaHaFromTrack(dist, width, options?.areaCapHa ?? null);
+    } else if ((entry.areaHa ?? 0) > areaHa) {
+      areaHa = entry.areaHa ?? 0;
+    }
+
+    map.set(key, {
+      ...existing,
+      source:
+        existing.source === "manual" || existing.source === "hybrid"
+          ? "hybrid"
+          : "gps_only",
+      trackerDistanceKm: dist > 0 ? Math.round(dist * 10) / 10 : existing.trackerDistanceKm,
+      trackerWorkHours: hours > 0 ? Math.round(hours * 10) / 10 : existing.trackerWorkHours,
+      visitStartUnix: existing.visitStartUnix ?? entry.visitStartUnix ?? null,
+      visitEndUnix: existing.visitEndUnix ?? entry.visitEndUnix ?? null,
+      implementWidthM: width,
+      areaHa: areaHa > 0 ? areaHa : existing.areaHa,
+      equipmentName:
+        existing.equipmentName && existing.equipmentName !== "Техніка"
+          ? existing.equipmentName
+          : entry.equipmentName,
+      wialonUnitId: existing.wialonUnitId ?? entry.wialonUnitId,
+    });
+  }
+
+  return Array.from(map.values()).sort((a, b) => {
+    if (a.date !== b.date) return b.date.localeCompare(a.date);
+    return a.equipmentName.localeCompare(b.equipmentName, "uk");
+  });
 }
 
 async function resolveFieldOperationKeys(
@@ -394,7 +538,8 @@ const OP_SELECT = `
   wage_plan,
   tracker_distance_km,
   tracker_work_hours,
-  tracker_fuel_l
+  tracker_fuel_l,
+  implement_width_m
 `;
 
 async function fetchManualOps(
@@ -461,6 +606,7 @@ async function fetchManualOps(
         tracker_distance_km: null,
         tracker_work_hours: null,
         tracker_fuel_l: null,
+        implement_width_m: null,
       }));
       error = null;
     } else {

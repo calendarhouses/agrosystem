@@ -1,5 +1,7 @@
 export type FuelTransactionType = "inbound" | "transfer" | "outbound";
 
+export type FuelSyncStatus = "pending_1c" | "synced" | "error";
+
 export type FuelTransactionInput = {
   transactionType: FuelTransactionType;
   amountLiters: number;
@@ -21,6 +23,12 @@ export type FuelTransactionRow = {
   wialon_verified: boolean;
   /** null = техніка без ДУТ */
   wialon_variance: number | null;
+  /** ₴/л на момент операції (WAC / закупівля) */
+  price_per_liter?: number | null;
+  /** amount_liters × price_per_liter */
+  total_cost?: number | null;
+  /** Статус синхронізації з BAS 1С */
+  sync_status?: FuelSyncStatus | string | null;
   from?: { name: string } | null;
   to?: { name: string } | null;
 };
@@ -39,6 +47,12 @@ export type FuelTransaction = {
   wialonVerified: boolean;
   /** null = немає датчика палива (ручний облік) */
   wialonVariance: number | null;
+  /** ₴/л на момент операції */
+  pricePerLiter: number | null;
+  /** Загальна вартість операції, ₴ */
+  totalCost: number | null;
+  /** pending_1c | synced | error */
+  syncStatus: FuelSyncStatus;
 };
 
 function asType(raw: unknown): FuelTransactionType {
@@ -46,6 +60,13 @@ function asType(raw: unknown): FuelTransactionType {
     return raw;
   }
   return "outbound";
+}
+
+function asSyncStatus(raw: unknown): FuelSyncStatus {
+  if (raw === "synced" || raw === "error" || raw === "pending_1c") {
+    return raw;
+  }
+  return "pending_1c";
 }
 
 function relationName(value: unknown): string | null {
@@ -82,6 +103,17 @@ export function mapFuelTransactionRow(
       const n = Number(row.wialon_variance);
       return Number.isFinite(n) ? n : null;
     })(),
+    pricePerLiter: (() => {
+      if (row.price_per_liter == null || row.price_per_liter === "") return null;
+      const n = Number(row.price_per_liter);
+      return Number.isFinite(n) ? n : null;
+    })(),
+    totalCost: (() => {
+      if (row.total_cost == null || row.total_cost === "") return null;
+      const n = Number(row.total_cost);
+      return Number.isFinite(n) ? n : null;
+    })(),
+    syncStatus: asSyncStatus(row.sync_status),
   };
 }
 

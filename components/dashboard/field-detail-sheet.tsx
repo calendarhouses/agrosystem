@@ -41,6 +41,7 @@ import { TimePicker } from "@/components/ui/time-picker";
 import { Button } from "@/components/ui/button";
 import {
   deleteFieldOperation,
+  estimateAreaHaFromTrack,
   listFieldOperations,
   upsertFieldOperation,
   type FieldOperation,
@@ -61,10 +62,6 @@ import {
 import {
   Sheet,
   SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
 } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LiveFieldEconomicsPanel, useLiveFieldEconomics } from "@/components/dashboard/live-field-economics-panel";
@@ -102,6 +99,7 @@ import {
 } from "@/lib/field-operation-norms";
 import { formatUahCurrency } from "@/lib/fuel-price";
 import { isFieldPassportComplete } from "@/lib/field-passport";
+import { formatVisitClockHm } from "@/lib/field-tech-history";
 import type { WialonGeofenceProperties, WialonUnit } from "@/lib/wialon";
 import type { HourlyForecastHour, WeatherSnapshot } from "@/lib/weather";
 import type { FeatureCollection, Polygon } from "geojson";
@@ -126,6 +124,8 @@ type FieldDetailSheetProps = {
   mapSource?: MapFieldSource;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** sheet — класичний оверлей; panel — вбудована права glass-панель */
+  variant?: "sheet" | "panel";
   initialTab?: FieldHubTab;
   /** Відкрити вкладку «Налаштування» з підтвердженням видалення (Delete на карті) */
   initialConfirmDelete?: boolean;
@@ -526,6 +526,11 @@ type PlanWorkPrefill = {
   wialonUnitId?: number | null;
   fuelUsed?: number | null;
   areaDone?: number | null;
+  /** Пробіг у полі з GPS (км) — для оцінки га після вибору ширини захвату */
+  trackerDistanceKm?: number | null;
+  /** Точний час візиту з GPS-треку HH:mm */
+  timeFrom?: string | null;
+  timeTo?: string | null;
 };
 
 type PlanWorkPanelProps = {
@@ -693,23 +698,44 @@ function PlanWorkPanel({
     const workType = OPERATION_TYPES[0];
     setType(workType);
     setCrop(field.crop || "");
+    const defaultWidth = IMPLEMENT_WIDTH_DEFAULTS[workType] ?? 6;
+    const fromTrack =
+      prefill?.trackerDistanceKm != null &&
+      Number.isFinite(prefill.trackerDistanceKm) &&
+      prefill.trackerDistanceKm > 0
+        ? estimateAreaHaFromTrack(
+            prefill.trackerDistanceKm,
+            defaultWidth,
+            area > 0 ? area : null
+          )
+        : 0;
     const prefillArea =
       prefill?.areaDone != null &&
       Number.isFinite(prefill.areaDone) &&
       prefill.areaDone > 0
         ? prefill.areaDone
-        : area;
+        : fromTrack > 0
+          ? fromTrack
+          : area;
     setAreaDone(prefillArea > 0 ? String(prefillArea) : "");
     setDate(
       prefill?.occurredAt && /^\d{4}-\d{2}-\d{2}$/.test(prefill.occurredAt)
         ? prefill.occurredAt
         : format(new Date(), "yyyy-MM-dd")
     );
-    setTimeFrom("08:00");
-    setTimeTo("18:00");
+    setTimeFrom(
+      prefill?.timeFrom && /^\d{2}:\d{2}$/.test(prefill.timeFrom)
+        ? prefill.timeFrom
+        : "08:00"
+    );
+    setTimeTo(
+      prefill?.timeTo && /^\d{2}:\d{2}$/.test(prefill.timeTo)
+        ? prefill.timeTo
+        : "18:00"
+    );
     setImplement(IMPLEMENT_PRESETS[workType] ?? "");
     setImplementId(null);
-    setImplementWidth(String(IMPLEMENT_WIDTH_DEFAULTS[workType] ?? 6));
+    setImplementWidth(String(defaultWidth));
     const fuelFromGps =
       prefill?.fuelUsed != null &&
       Number.isFinite(prefill.fuelUsed) &&
@@ -738,15 +764,37 @@ function PlanWorkPanel({
     setUnitId((prev) => prev ?? (unitOptions[0] ? String(unitOptions[0].id) : null));
   }, [unitOptions, initial, prefill?.wialonUnitId]);
 
+  function applyAreaFromTrack(widthM: number) {
+    const dist = prefill?.trackerDistanceKm;
+    if (dist == null || !Number.isFinite(dist) || dist <= 0) return;
+    if (!Number.isFinite(widthM) || widthM <= 0) return;
+    const area = estimateAreaHaFromTrack(
+      dist,
+      widthM,
+      Number(field.areaHa) > 0 ? Number(field.areaHa) : null
+    );
+    if (area <= 0) return;
+    setAreaDone(String(area));
+    if (!isEdit) {
+      setFuelUsed(String(estimatePlanFuelLiters(type, area)));
+      setWage(String(estimatePlanWageUah(area)));
+    }
+  }
+
   function handleTypeChange(next: string | null) {
     if (!next) return;
     setType(next);
     if (!isEdit) {
       setImplement(IMPLEMENT_PRESETS[next] ?? "");
       setImplementId(null);
-      setImplementWidth(String(IMPLEMENT_WIDTH_DEFAULTS[next] ?? 6));
-      const area = Number(areaDone.replace(",", ".")) || areaDefault;
-      setFuelUsed(String(estimatePlanFuelLiters(next, area)));
+      const width = IMPLEMENT_WIDTH_DEFAULTS[next] ?? 6;
+      setImplementWidth(String(width));
+      if (prefill?.trackerDistanceKm) {
+        applyAreaFromTrack(width);
+      } else {
+        const area = Number(areaDone.replace(",", ".")) || areaDefault;
+        setFuelUsed(String(estimatePlanFuelLiters(next, area)));
+      }
     }
   }
 
@@ -756,7 +804,17 @@ function PlanWorkPanel({
     if (!item) return;
     setImplementId(item.id);
     setImplement(item.name);
-    setImplementWidth(String(item.workingWidthM || 0));
+    const width = item.workingWidthM || 0;
+    setImplementWidth(String(width));
+    applyAreaFromTrack(width);
+  }
+
+  function handleImplementWidthChange(value: string) {
+    setImplementWidth(value);
+    const width = Number(value.replace(",", "."));
+    if (Number.isFinite(width) && width > 0) {
+      applyAreaFromTrack(width);
+    }
   }
 
   function handleAreaChange(value: string) {
@@ -833,6 +891,12 @@ function PlanWorkPanel({
         : (initial?.status ?? "planned"),
       wialonUnitId: selectedUnit.id,
       implementWidthM: Math.round(width * 100) / 100,
+      trackerDistanceKm:
+        prefill?.trackerDistanceKm != null &&
+        Number.isFinite(prefill.trackerDistanceKm) &&
+        prefill.trackerDistanceKm > 0
+          ? Math.round(prefill.trackerDistanceKm * 10) / 10
+          : initial?.trackerDistanceKm ?? null,
       exportStatus: initial?.exportStatus ?? "none",
     };
 
@@ -1059,14 +1123,15 @@ function PlanWorkPanel({
                 <Label className={labelClass}>Ширина знаряддя, м</Label>
                 <Input
                   value={implementWidth}
-                  onChange={(e) => setImplementWidth(e.target.value)}
+                  onChange={(e) => handleImplementWidthChange(e.target.value)}
                   inputMode="decimal"
                   className={cn(fieldControlClass, "tabular-nums font-semibold")}
                   placeholder="6"
                 />
                 <p className="text-[10px] text-zinc-400">
-                  з довідника обладнання · можна змінити · км × ширина / 10 =
-                  га
+                  {prefill?.trackerDistanceKm
+                    ? `GPS ${prefill.trackerDistanceKm} км × ширина / 10 = га`
+                    : "з довідника обладнання · можна змінити · км × ширина / 10 = га"}
                 </p>
               </div>
             </div>
@@ -1220,6 +1285,7 @@ export function FieldDetailSheet({
   mapSource = "wialon",
   open,
   onOpenChange,
+  variant = "sheet",
   initialTab = "overview",
   initialConfirmDelete = false,
   units = [],
@@ -1261,6 +1327,10 @@ export function FieldDetailSheet({
   const [rangeOpen, setRangeOpen] = useState(false);
   const [seasonOpen, setSeasonOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<FieldHubTab>("overview");
+  /** Після першого заходу на «Техніка» тримаємо панель змонтованою (кеш GPS без рефетчу) */
+  const [techPanelMounted, setTechPanelMounted] = useState(
+    () => initialTab === "tech"
+  );
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
   const [planPastWork, setPlanPastWork] = useState(false);
@@ -1291,8 +1361,14 @@ export function FieldDetailSheet({
     if (open) {
       setActiveTab(initialTab);
       setConfirmDelete(initialConfirmDelete);
+      // Не тримаємо GPS-панель з попереднього поля — вона валила відкриття деталей
+      setTechPanelMounted(initialTab === "tech");
     }
   }, [open, initialTab, initialConfirmDelete, field?.id]);
+
+  useEffect(() => {
+    if (activeTab === "tech") setTechPanelMounted(true);
+  }, [activeTab]);
 
   const liveEconomics = useLiveFieldEconomics(
     farmFieldId,
@@ -1513,30 +1589,19 @@ export function FieldDetailSheet({
     return operations.find((row) => row.id === key) ?? null;
   }
 
-  return (
-    <Sheet
-      open={open}
-      onOpenChange={(next) => {
-        onOpenChange(next);
-        if (!next) {
-          setPlanOpen(false);
-          setPlanPastWork(false);
-          setPlanPrefill(null);
-          setQuickIssueOpen(false);
-          setEditingOp(null);
-          setCompleteOp(null);
-          setCorrectOp(null);
-        }
-      }}
-    >
-      <SheetContent
-        side="right"
-        className={cn(
-          "flex w-full flex-col gap-0 border-l border-[#E5DFD3] bg-[#F4F1EA] p-0 text-zinc-900 shadow-sm",
-          "sm:max-w-2xl",
-          "[&_[data-slot=sheet-close]]:text-zinc-500 [&_[data-slot=sheet-close]]:hover:bg-[#E5DFD3]/40"
-        )}
-      >
+  function closeHub() {
+    onOpenChange(false);
+    setPlanOpen(false);
+    setPlanPastWork(false);
+    setPlanPrefill(null);
+    setQuickIssueOpen(false);
+    setEditingOp(null);
+    setCompleteOp(null);
+    setCorrectOp(null);
+  }
+
+  const hubInner = (
+      <>
         {field ? (
           <>
             {correctOp ? (
@@ -1622,16 +1687,57 @@ export function FieldDetailSheet({
                     });
                 }}
               />
+            ) : quickIssueOpen ? (
+              <QuickIssueSheet
+                variant="panel"
+                open
+                lockField={Boolean(farmFieldId)}
+                presetFieldId={farmFieldId}
+                onOpenChange={(next) => {
+                  if (!next) setQuickIssueOpen(false);
+                }}
+                onBack={() => setQuickIssueOpen(false)}
+                onSuccess={(payload) => {
+                  setPeriod("Сезон");
+                  prependQuickIssueEvent(payload);
+                  void liveEconomics.reload();
+                  void reloadFieldEvents();
+                  setQuickIssueOpen(false);
+                  setActiveTab("history");
+                }}
+              />
             ) : (
               <>
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-              <div className="relative shrink-0 overflow-hidden border-b border-[#E5DFD3] bg-gradient-to-br from-[#E8F0EA] via-[#F4F1EA] to-[#EDE8DF] px-6 py-5">
+              <div
+                className={cn(
+                  "relative shrink-0 overflow-hidden border-b px-5 py-4",
+                  variant === "panel"
+                    ? "border-white/35 bg-gradient-to-br from-white/55 via-[#F4F1EA]/40 to-emerald-50/30 px-6 py-5"
+                    : "border-[#E5DFD3] bg-gradient-to-br from-[#E8F0EA] via-[#F4F1EA] to-[#EDE8DF] px-6 py-5"
+                )}
+              >
                 <div
                   className="pointer-events-none absolute -top-14 -right-8 h-32 w-32 rounded-full bg-[#276749]/10 blur-3xl"
                   aria-hidden
                 />
-                <div className="relative flex flex-wrap items-start justify-between gap-3 pr-8">
+                <div
+                  className={cn(
+                    "relative flex flex-wrap items-start justify-between gap-3",
+                    variant === "sheet" && "pr-8"
+                  )}
+                >
                   <div className="min-w-0 flex-1">
+                    {variant === "panel" ? (
+                      <button
+                        type="button"
+                        onClick={closeHub}
+                        className="mb-3 inline-flex items-center gap-1 text-xs font-semibold text-zinc-500 transition-colors hover:text-zinc-900"
+                      >
+                        <ChevronLeft className="h-3.5 w-3.5" />
+                        До списку
+                      </button>
+                    ) : null}
                     <div className="flex items-center gap-3">
                       {fieldColor ? (
                         <span
@@ -1645,21 +1751,21 @@ export function FieldDetailSheet({
                         </span>
                       )}
                       <div className="min-w-0">
-                        <SheetTitle className="truncate text-xl font-extrabold tracking-tight text-zinc-900">
+                        <h2 className="truncate text-[1.65rem] leading-tight font-extrabold tracking-tight text-zinc-900">
                           {field.name}
-                        </SheetTitle>
-                        <SheetDescription className="mt-2 flex flex-wrap items-center gap-2">
-                          <span className="inline-flex items-center gap-1.5 rounded-xl border border-[#276749]/20 bg-white/80 px-2.5 py-1 text-xs font-semibold text-[#276749] shadow-sm">
+                        </h2>
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          <span className="inline-flex items-center gap-1.5 rounded-full border border-[#276749]/15 bg-white/80 px-3 py-1 text-xs font-semibold text-[#276749] shadow-sm">
                             <Leaf className="h-3.5 w-3.5" />
                             {field.crop || "Без культури"}
                           </span>
-                          <span className="inline-flex items-center gap-1 rounded-xl border border-zinc-200/90 bg-white/70 px-2.5 py-1 text-xs font-bold tabular-nums text-zinc-800 shadow-sm">
+                          <span className="inline-flex items-center gap-1 rounded-full border border-zinc-200/80 bg-white/75 px-3 py-1 text-xs font-bold tabular-nums text-zinc-800 shadow-sm">
                             {field.areaHa}
                             <span className="font-semibold text-zinc-400">
                               га
                             </span>
                           </span>
-                        </SheetDescription>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1686,9 +1792,9 @@ export function FieldDetailSheet({
                     <TabsList
                       variant="default"
                       className={cn(
-                        "mb-0 grid h-11 w-full grid-cols-4 gap-0.5 rounded-2xl p-1",
+                        "mb-0 grid h-12 w-full grid-cols-4 gap-1 rounded-2xl p-1",
                         "border border-[#E0DBD0] bg-[#EDE8DF] shadow-[inset_0_1px_2px_rgba(39,33,24,0.06)]",
-                        "group-data-horizontal/tabs:h-11"
+                        "group-data-horizontal/tabs:h-12"
                       )}
                     >
                       {TAB_ITEMS.map((tab) => {
@@ -1698,7 +1804,7 @@ export function FieldDetailSheet({
                             key={tab.value}
                             value={tab.value}
                             className={cn(
-                              "group/hubtab h-9 min-w-0 gap-1.5 rounded-[14px] border-0 bg-transparent px-1.5 text-[11px] font-semibold tracking-tight shadow-none sm:gap-2 sm:px-2 sm:text-[12px]",
+                              "group/hubtab h-10 min-w-0 gap-1.5 rounded-[14px] border-0 bg-transparent px-2 text-[12px] font-semibold tracking-tight shadow-none",
                               "text-zinc-500 transition-all duration-200",
                               "hover:bg-white/55 hover:text-zinc-800",
                               "focus-visible:ring-2 focus-visible:ring-[#276749]/25",
@@ -2100,31 +2206,46 @@ export function FieldDetailSheet({
                     </div>
                   </HubTabPanel>
 
-                  <HubTabPanel
-                    tab="tech"
-                    activeTab={activeTab}
-                    className="px-6 py-5 outline-none"
+                  <div
+                    className={cn(
+                      "px-6 py-5 outline-none",
+                      activeTab !== "tech" && "hidden"
+                    )}
+                    hidden={activeTab !== "tech"}
+                    aria-hidden={activeTab !== "tech"}
                   >
-                    <FieldTechHistoryPanel
-                      enabled={open && activeTab === "tech"}
-                      farmFieldId={farmFieldId}
-                      fieldGeometry={fieldGeometry}
-                      units={units}
-                      realtimeVersion={realtimeVersion}
-                      onCreateOrderFromGps={(entry) => {
-                        setEditingOp(null);
-                        setPlanPrefill({
-                          occurredAt: entry.date,
-                          machinery: entry.equipmentName,
-                          wialonUnitId: entry.wialonUnitId,
-                          fuelUsed: entry.gpsFuelConsumedL ?? null,
-                          areaDone: entry.areaHa ?? null,
-                        });
-                        setPlanPastWork(true);
-                        setPlanOpen(true);
-                      }}
-                    />
-                  </HubTabPanel>
+                    {techPanelMounted ? (
+                      <FieldTechHistoryPanel
+                        enabled={open && activeTab === "tech"}
+                        farmFieldId={farmFieldId}
+                        fieldGeometry={fieldGeometry}
+                        fieldAreaHa={passportAreaHa || field.areaHa}
+                        units={units}
+                        realtimeVersion={realtimeVersion}
+                        onCreateOrderFromGps={(entry) => {
+                          setEditingOp(null);
+                          setPlanPrefill({
+                            occurredAt: entry.date,
+                            machinery: entry.equipmentName,
+                            wialonUnitId: entry.wialonUnitId,
+                            fuelUsed: entry.gpsFuelConsumedL ?? null,
+                            areaDone: entry.areaHa ?? null,
+                            trackerDistanceKm: entry.trackerDistanceKm ?? null,
+                            timeFrom:
+                              entry.visitStartUnix != null
+                                ? formatVisitClockHm(entry.visitStartUnix)
+                                : null,
+                            timeTo:
+                              entry.visitEndUnix != null
+                                ? formatVisitClockHm(entry.visitEndUnix)
+                                : null,
+                          });
+                          setPlanPastWork(true);
+                          setPlanOpen(true);
+                        }}
+                      />
+                    ) : null}
+                  </div>
 
                   <HubTabPanel
                     tab="settings"
@@ -2178,53 +2299,101 @@ export function FieldDetailSheet({
             </div>
 
             {showStickyActionFooter ? (
-              <SheetFooter className="sticky bottom-0 z-20 shrink-0 border-t border-[#E5DFD3] bg-gradient-to-t from-[#EDE8DF] via-[#F4F1EA]/95 to-[#F4F1EA]/80 px-6 py-4 backdrop-blur-sm supports-[backdrop-filter]:bg-[#F4F1EA]/75">
+              <footer className="sticky bottom-0 z-20 shrink-0 border-t border-[#E5DFD3]/80 bg-[#F4F1EA]/92 px-5 py-4 backdrop-blur-md">
                 <div className="grid w-full grid-cols-2 gap-3">
-                  <Button
+                  <button
                     type="button"
                     onClick={() => setQuickIssueOpen(true)}
                     className={cn(
-                      "h-12 gap-2 rounded-2xl border-0 px-3 text-sm font-bold text-white shadow-[0_12px_32px_-8px_rgba(39,103,73,0.55)]",
-                      "bg-gradient-to-r from-[#1f5239] via-[#276749] to-[#2f7a52]",
-                      "transition-all duration-200 hover:-translate-y-0.5 hover:bg-gradient-to-r hover:from-[#1f5239] hover:via-[#276749] hover:to-[#2f7a52] hover:shadow-[0_18px_36px_-10px_rgba(39,103,73,0.6)]",
-                      "active:translate-y-0 active:scale-[0.99]"
+                      "flex h-[4.25rem] items-center gap-3 rounded-2xl px-3.5 text-left text-white",
+                      "bg-gradient-to-br from-[#1a3d2c] via-[#276749] to-[#3a8f5e]",
+                      "shadow-[0_16px_36px_-12px_rgba(39,103,73,0.65)]",
+                      "transition-transform duration-200 hover:-translate-y-0.5"
                     )}
                   >
-                    <PackageMinus className="h-[18px] w-[18px]" />
-                    Списати ТМЦ
-                  </Button>
-                  <Button
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/12 ring-1 ring-white/20">
+                      <PackageMinus className="h-5 w-5" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-bold tracking-tight">
+                        Списати ТМЦ
+                      </span>
+                      <span className="mt-0.5 block text-[11px] font-medium text-white/70">
+                        Насіння · ЗЗР · добрива
+                      </span>
+                    </span>
+                  </button>
+                  <button
                     type="button"
-                    variant="outline"
                     onClick={() => {
                       setEditingOp(null);
                       setPlanPrefill(null);
                       setPlanPastWork(false);
                       setPlanOpen(true);
                     }}
-                    className="h-12 gap-2 rounded-2xl border-[#C9D4CA] bg-white/90 px-3 text-sm font-bold text-zinc-800 shadow-sm hover:bg-white"
+                    className="flex h-[4.25rem] items-center gap-3 rounded-2xl border border-[#D8D2C6] bg-white/85 px-3.5 text-left shadow-sm transition-colors hover:bg-white"
                   >
-                    <Tractor className="h-[18px] w-[18px]" />
-                    Додати роботу
-                  </Button>
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#276749]/10 text-[#276749]">
+                      <Tractor className="h-5 w-5" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-bold tracking-tight text-zinc-900">
+                        Додати роботу
+                      </span>
+                      <span className="mt-0.5 block text-[11px] font-medium text-zinc-500">
+                        Наряд або виконану операцію
+                      </span>
+                    </span>
+                  </button>
                 </div>
-              </SheetFooter>
+              </footer>
             ) : null}
               </>
             )}
           </>
         ) : null}
-        <QuickIssueSheet
-          open={quickIssueOpen}
-          onOpenChange={setQuickIssueOpen}
-          presetFieldId={farmFieldId}
-          onSuccess={(payload) => {
-            setPeriod("Сезон");
-            prependQuickIssueEvent(payload);
-            void liveEconomics.reload();
-            void reloadFieldEvents();
-          }}
-        />
+        {variant === "sheet" ? (
+          <QuickIssueSheet
+            open={quickIssueOpen}
+            onOpenChange={setQuickIssueOpen}
+            presetFieldId={farmFieldId}
+            onSuccess={(payload) => {
+              setPeriod("Сезон");
+              prependQuickIssueEvent(payload);
+              void liveEconomics.reload();
+              void reloadFieldEvents();
+            }}
+          />
+        ) : null}
+      </>
+  );
+
+  if (variant === "panel") {
+    if (!open) return null;
+    return (
+      <div className="flex h-full min-h-0 flex-col overflow-hidden bg-transparent">
+        {hubInner}
+      </div>
+    );
+  }
+
+  return (
+    <Sheet
+      open={open}
+      onOpenChange={(next) => {
+        if (next) onOpenChange(true);
+        else closeHub();
+      }}
+    >
+      <SheetContent
+        side="right"
+        className={cn(
+          "flex w-full flex-col gap-0 border-l border-[#E5DFD3] bg-[#F4F1EA] p-0 text-zinc-900 shadow-sm",
+          "sm:max-w-2xl",
+          "[&_[data-slot=sheet-close]]:text-zinc-500 [&_[data-slot=sheet-close]]:hover:bg-[#E5DFD3]/40"
+        )}
+      >
+        {hubInner}
       </SheetContent>
     </Sheet>
   );

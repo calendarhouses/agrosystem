@@ -7,6 +7,7 @@ import type { Feature, MultiPolygon, Polygon, Position } from "geojson";
 import { booleanPointInPolygon, point } from "@turf/turf";
 
 import type { FieldGeometry } from "@/lib/farm-fields";
+import { kyivDayBoundsUnix, todayKyivYmd } from "@/lib/kyiv-date";
 import { currentAgroSeason } from "@/lib/season";
 import { createServiceSupabase } from "@/lib/supabase/server";
 import {
@@ -434,28 +435,77 @@ export async function syncWialonFieldFuelForToday(
   };
 }
 
-/** Сума спаленого на полях за календарний день (Київ). */
+export type FieldFuelDaySum = {
+  /** YYYY-MM-DD Europe/Kyiv */
+  date: string;
+  /** Початок доби Києва (unix, включно) */
+  fromUnix: number;
+  /** Кінець доби Києва (unix, включно) */
+  toUnix: number;
+  /** Сума fuel_consumed, л */
+  liters: number;
+  /**
+   * false = CRON ще не записав жодного рядка за цей день
+   * (не плутати з реальною нульовою витратою).
+   */
+  hasData: boolean;
+};
+
+/**
+ * Сума спаленого на полях за календарний день Europe/Kyiv.
+ * Інтервал [00:00, 23:59:59] Києва; колонка `date` — фермерський день CRON.
+ */
 export async function sumFieldFuelConsumedForDate(
   dateYmd: string
-): Promise<number> {
+): Promise<FieldFuelDaySum> {
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(dateYmd) ? dateYmd : todayKyivYmd();
+  const { fromUnix, toUnix } = kyivDayBoundsUnix(date);
+  const fromIso = new Date(fromUnix * 1000).toISOString();
+  const toIso = new Date(toUnix * 1000).toISOString();
+
   const supabase = createServiceSupabase();
-  const { data, error } = await supabase
+
+  // 1) Основний ключ CRON: date = YYYY-MM-DD у Києві
+  let { data, error } = await supabase
     .from("wialon_field_fuel_logs")
     .select("fuel_consumed")
-    .eq("date", dateYmd);
+    .eq("date", date);
+
+  // 2) Fallback: sync_time в межах доби Києва (якщо date зсунуто TZ)
+  if (!error && (data?.length ?? 0) === 0) {
+    const bySync = await supabase
+      .from("wialon_field_fuel_logs")
+      .select("fuel_consumed")
+      .gte("sync_time", fromIso)
+      .lte("sync_time", toIso);
+    if (!bySync.error) {
+      data = bySync.data;
+      error = bySync.error;
+    }
+  }
 
   if (error) {
-    if (error.code === "PGRST205" || error.code === "42P01") return 0;
+    if (error.code === "PGRST205" || error.code === "42P01") {
+      return { date, fromUnix, toUnix, liters: 0, hasData: false };
+    }
     throw new Error(error.message);
   }
 
-  const sum = (data ?? []).reduce(
+  const rows = data ?? [];
+  const sum = rows.reduce(
     (acc, row) => acc + (Number(row.fuel_consumed) || 0),
     0
   );
-  return Math.round(sum * 10) / 10;
+
+  return {
+    date,
+    fromUnix,
+    toUnix,
+    liters: Math.round(sum * 10) / 10,
+    hasData: rows.length > 0,
+  };
 }
 
 export function todayKyivDateString(now = new Date()): string {
-  return kyivTodayParts(now).date;
+  return todayKyivYmd(now);
 }
