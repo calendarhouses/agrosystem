@@ -137,7 +137,9 @@ export function DayShiftSummary({
             : liveFuelLiters != null &&
                 summary.fuelStart == null &&
                 summary.hasFuelSensor
-              ? "денна зміна з’явиться після руху / sync"
+              ? summary.distanceKm < 0.05
+                ? "стоїть · зміни за день ще немає"
+                : "немає семплів ДУТ за цей день"
               : undefined
           : summary.fuelDelta > 15
             ? `заправка ≈ +${Math.round(summary.fuelDelta)} л`

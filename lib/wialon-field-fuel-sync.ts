@@ -17,10 +17,12 @@ import { extractTimedFuelSamples } from "@/lib/wialon-fuel-decode";
 import {
   getWialonUnitSensors,
   listUnitSensors,
+  listWialonUnitBasics,
   loadWialonUnitMessages,
   type WialonTrackMessage,
   wialonLogin,
 } from "@/lib/wialon";
+import { isFuelDeliveryUnit } from "@/lib/equipment-fuel-tanks";
 
 export {
   getLatestFuelPurchasePriceUah,
@@ -34,7 +36,9 @@ const MAX_UNITS = 80;
 
 export type WialonFieldFuelLogUpsert = {
   field_id: string;
-  equipment_id: string;
+  /** null якщо техніка ще не зіставлена в equipment */
+  equipment_id: string | null;
+  wialon_unit_id: number;
   date: string;
   fuel_consumed: number;
   sync_time: string;
@@ -52,10 +56,10 @@ export type SyncWialonFieldFuelResult = {
   errors: string[];
 };
 
-type EquipmentRow = {
-  id: string;
-  name: string;
+type SyncUnit = {
   wialon_id: number;
+  name: string;
+  equipment_id: string | null;
 };
 
 type FieldRow = {
@@ -220,7 +224,7 @@ function fuelConsumedInWindows(
 }
 
 async function loadMappings(): Promise<{
-  equipment: EquipmentRow[];
+  units: SyncUnit[];
   fields: FieldRow[];
 }> {
   const supabase = createServiceSupabase();
@@ -229,9 +233,7 @@ async function loadMappings(): Promise<{
     supabase
       .from("equipment")
       .select("id, name, wialon_id")
-      .eq("is_active", true)
-      .not("wialon_id", "is", null)
-      .limit(MAX_UNITS),
+      .eq("is_active", true),
     supabase
       .from("farm_fields")
       .select("id, name, wialon_zone_id, geometry")
@@ -241,13 +243,30 @@ async function loadMappings(): Promise<{
   if (eqRes.error) throw new Error(`equipment: ${eqRes.error.message}`);
   if (fieldRes.error) throw new Error(`farm_fields: ${fieldRes.error.message}`);
 
-  const equipment: EquipmentRow[] = (eqRes.data ?? [])
-    .map((row) => ({
+  const eqByWialon = new Map<number, { id: string; name: string }>();
+  for (const row of eqRes.data ?? []) {
+    const wid = Number(row.wialon_id);
+    if (!Number.isFinite(wid) || wid <= 0) continue;
+    eqByWialon.set(wid, {
       id: String(row.id),
       name: String(row.name ?? ""),
-      wialon_id: Number(row.wialon_id),
-    }))
-    .filter((row) => Number.isFinite(row.wialon_id) && row.wialon_id > 0);
+    });
+  }
+
+  // Флот = усі юніти Wialon (як у Техніці), не лише 1 mapped equipment
+  const eid = await wialonLogin();
+  const wialonUnits = await listWialonUnitBasics(eid);
+  const units: SyncUnit[] = wialonUnits
+    .slice(0, MAX_UNITS)
+    .filter((u) => !isFuelDeliveryUnit(u.nm))
+    .map((u) => {
+      const eq = eqByWialon.get(u.id);
+      return {
+        wialon_id: u.id,
+        name: u.nm,
+        equipment_id: eq?.id ?? null,
+      };
+    });
 
   const fields: FieldRow[] = [];
   for (const row of fieldRes.data ?? []) {
@@ -269,7 +288,7 @@ async function loadMappings(): Promise<{
     });
   }
 
-  return { equipment, fields };
+  return { units, fields };
 }
 
 /**
@@ -292,9 +311,9 @@ export async function syncWialonFieldFuelForDate(
       : bounds.toUnix;
 
   const errors: string[] = [];
-  const { equipment, fields } = await loadMappings();
+  const { units, fields } = await loadMappings();
 
-  if (equipment.length === 0 || fields.length === 0) {
+  if (units.length === 0 || fields.length === 0) {
     return {
       ok: true,
       date,
@@ -304,8 +323,8 @@ export async function syncWialonFieldFuelForDate(
       upserted: 0,
       skipped: 0,
       errors: [
-        equipment.length === 0
-          ? "Немає активної техніки з wialon_id"
+        units.length === 0
+          ? "Немає юнітів Wialon"
           : "Немає полів з geometry",
       ],
     };
@@ -317,7 +336,7 @@ export async function syncWialonFieldFuelForDate(
   const upserts: WialonFieldFuelLogUpsert[] = [];
   let skipped = 0;
 
-  for (const unit of equipment) {
+  for (const unit of units) {
     try {
       const [messagesRaw, unitWithSensors] = await Promise.all([
         loadWialonUnitMessages(eid, unit.wialon_id, fromUnix, toUnix),
@@ -350,23 +369,12 @@ export async function syncWialonFieldFuelForDate(
         if (visits.length === 0) continue;
 
         const fuel = fuelConsumedInWindows(fuelSamples, visits);
-        if (fuel <= 0) {
-          upserts.push({
-            field_id: field.id,
-            equipment_id: unit.id,
-            date,
-            fuel_consumed: 0,
-            sync_time: syncTime,
-            season,
-          });
-          continue;
-        }
-
         upserts.push({
           field_id: field.id,
-          equipment_id: unit.id,
+          equipment_id: unit.equipment_id,
+          wialon_unit_id: unit.wialon_id,
           date,
-          fuel_consumed: fuel,
+          fuel_consumed: Math.max(0, fuel),
           sync_time: syncTime,
           season,
         });
@@ -381,28 +389,7 @@ export async function syncWialonFieldFuelForDate(
 
   let upserted = 0;
   if (upserts.length > 0) {
-    const supabase = createServiceSupabase();
-    let { error, count } = await supabase
-      .from("wialon_field_fuel_logs")
-      .upsert(upserts, {
-        onConflict: "field_id,equipment_id,date,season",
-        count: "exact",
-      });
-
-    if (error && error.message?.includes("season")) {
-      const legacy = upserts.map(({ season: _s, ...rest }) => rest);
-      const retry = await supabase.from("wialon_field_fuel_logs").upsert(legacy, {
-        onConflict: "field_id,equipment_id,date",
-        count: "exact",
-      });
-      error = retry.error;
-      count = retry.count;
-    }
-
-    if (error) {
-      throw new Error(`upsert wialon_field_fuel_logs: ${error.message}`);
-    }
-    upserted = count ?? upserts.length;
+    upserted = await persistFieldFuelLogs(upserts);
   }
 
   return {
@@ -410,11 +397,76 @@ export async function syncWialonFieldFuelForDate(
     date,
     fromUnix,
     toUnix,
-    unitsProcessed: equipment.length,
+    unitsProcessed: units.length,
     upserted,
     skipped,
     errors,
   };
+}
+
+async function persistFieldFuelLogs(
+  upserts: WialonFieldFuelLogUpsert[]
+): Promise<number> {
+  const supabase = createServiceSupabase();
+
+  // Новий ключ (міграція 033): field + wialon_unit + date + season
+  let { error, count } = await supabase.from("wialon_field_fuel_logs").upsert(
+    upserts,
+    {
+      onConflict: "field_id,wialon_unit_id,date,season",
+      count: "exact",
+    }
+  );
+
+  // Міграція 033 ще не накатана — лише mapped equipment (старий unique)
+  if (
+    error &&
+    (error.message?.includes("wialon_unit_id") ||
+      error.message?.includes("onConflict") ||
+      error.code === "42703" ||
+      error.code === "42P10")
+  ) {
+    const legacy = upserts
+      .filter((r) => r.equipment_id != null)
+      .map(({ wialon_unit_id: _w, ...rest }) => rest);
+    if (legacy.length === 0) {
+      throw new Error(
+        "Потрібна міграція 033 (wialon_unit_id). Зараз зіставлено 0 одиниць у equipment."
+      );
+    }
+    const retry = await supabase.from("wialon_field_fuel_logs").upsert(legacy, {
+      onConflict: "field_id,equipment_id,date,season",
+      count: "exact",
+    });
+    if (retry.error && retry.error.message?.includes("season")) {
+      const noSeason = legacy.map(({ season: _s, ...r }) => r);
+      const r2 = await supabase.from("wialon_field_fuel_logs").upsert(noSeason, {
+        onConflict: "field_id,equipment_id,date",
+        count: "exact",
+      });
+      if (r2.error) throw new Error(`upsert wialon_field_fuel_logs: ${r2.error.message}`);
+      return r2.count ?? noSeason.length;
+    }
+    if (retry.error) {
+      throw new Error(`upsert wialon_field_fuel_logs: ${retry.error.message}`);
+    }
+    return retry.count ?? legacy.length;
+  }
+
+  if (error && error.message?.includes("season")) {
+    const legacy = upserts.map(({ season: _s, ...rest }) => rest);
+    const retry = await supabase.from("wialon_field_fuel_logs").upsert(legacy, {
+      onConflict: "field_id,wialon_unit_id,date",
+      count: "exact",
+    });
+    error = retry.error;
+    count = retry.count;
+  }
+
+  if (error) {
+    throw new Error(`upsert wialon_field_fuel_logs: ${error.message}`);
+  }
+  return count ?? upserts.length;
 }
 
 /**
