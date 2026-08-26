@@ -4,7 +4,10 @@
  * start − end + заправки (різкі прирости рівня).
  */
 
-import { extractTimedFuelSamples } from "@/lib/wialon-fuel-decode";
+import {
+  extractTimedFuelSamples,
+  fuelConsumedFromSamples,
+} from "@/lib/wialon-fuel-decode";
 import {
   extractFuelLevelsFromMessages,
   getWialonUnitSensors,
@@ -14,10 +17,6 @@ import {
   wialonLogin,
 } from "@/lib/wialon";
 
-/** Різкий приріст рівня (л) = заправка, не «відкат» датчика */
-const REFILL_JUMP_L = 15;
-/** Один стрибок більше — сміття датчика, не заправка */
-const MAX_REFILL_JUMP_L = 400;
 /** Немовірна витрата за інтервал — сміття датчика */
 const MAX_PLAUSIBLE_CONSUMED_L = 800;
 
@@ -42,85 +41,29 @@ function samplesFromMessages(
   }));
 }
 
-function median(values: number[]): number | null {
-  if (values.length === 0) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  if (sorted.length % 2 === 0) {
-    return (sorted[mid - 1]! + sorted[mid]!) / 2;
-  }
-  return sorted[mid]!;
-}
-
 /**
  * Fuel consumed by FLS ≈ (рівень_старт − рівень_фініш) + сума заправок.
- * Заправка = стрибок рівня ≥ REFILL_JUMP_L між сусідніми семплами.
+ * Заправки — спільний детектор `detectFuelFills`, щоб цифра збігалась
+ * з журналом палива і карткою техніки.
  */
 export function estimateFuelConsumedByFls(
   samples: FuelSample[]
 ): WialonFuelConsumptionResult {
-  if (samples.length < 2) {
-    return {
-      consumedLiters: null,
-      fuelStart: null,
-      fuelEnd: null,
-      filledLiters: 0,
-      sampleCount: samples.length,
-    };
-  }
+  const { consumed, start, end, filled } = fuelConsumedFromSamples(samples);
 
-  const edge = Math.min(5, Math.max(1, Math.floor(samples.length / 4)));
-  const fuelStart = median(samples.slice(0, edge).map((s) => s.liters));
-  const fuelEnd = median(samples.slice(-edge).map((s) => s.liters));
-
-  let filledLiters = 0;
-  for (let i = 1; i < samples.length; i++) {
-    const delta = samples[i]!.liters - samples[i - 1]!.liters;
-    if (delta >= REFILL_JUMP_L && delta <= MAX_REFILL_JUMP_L) {
-      filledLiters += delta;
-    }
-  }
-  filledLiters = Math.round(filledLiters * 10) / 10;
-
-  if (fuelStart == null || fuelEnd == null) {
-    return {
-      consumedLiters: null,
-      fuelStart,
-      fuelEnd,
-      filledLiters,
-      sampleCount: samples.length,
-    };
-  }
-
-  const raw = fuelStart - fuelEnd + filledLiters;
-  if (!Number.isFinite(raw) || raw < 0) {
-    return {
-      consumedLiters: raw < 0 ? 0 : null,
-      fuelStart: Math.round(fuelStart * 10) / 10,
-      fuelEnd: Math.round(fuelEnd * 10) / 10,
-      filledLiters,
-      sampleCount: samples.length,
-    };
-  }
-
-  const consumed = Math.round(raw * 10) / 10;
-  if (consumed > MAX_PLAUSIBLE_CONSUMED_L) {
-    return {
-      consumedLiters: null,
-      fuelStart: Math.round(fuelStart * 10) / 10,
-      fuelEnd: Math.round(fuelEnd * 10) / 10,
-      filledLiters,
-      sampleCount: samples.length,
-    };
-  }
-
-  return {
-    consumedLiters: consumed,
-    fuelStart: Math.round(fuelStart * 10) / 10,
-    fuelEnd: Math.round(fuelEnd * 10) / 10,
-    filledLiters,
+  const base = {
+    fuelStart: start,
+    fuelEnd: end,
+    filledLiters: filled,
     sampleCount: samples.length,
   };
+
+  if (consumed == null) return { ...base, consumedLiters: null };
+  if (consumed < 0) return { ...base, consumedLiters: 0 };
+  if (consumed > MAX_PLAUSIBLE_CONSUMED_L) {
+    return { ...base, consumedLiters: null };
+  }
+  return { ...base, consumedLiters: consumed };
 }
 
 /**

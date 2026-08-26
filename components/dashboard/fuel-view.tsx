@@ -608,6 +608,7 @@ export function FuelView({
   const [units, setUnits] = useState<FleetUnitOption[]>(FALLBACK_UNITS);
   const [unitsLoading, setUnitsLoading] = useState(false);
   const [fieldFuelToday, setFieldFuelToday] = useState<number | null>(null);
+  const [fieldFuelTotal, setFieldFuelTotal] = useState<number | null>(null);
   const [fieldFuelHasData, setFieldFuelHasData] = useState(false);
   const [fieldFuelLoading, setFieldFuelLoading] = useState(true);
   const [fieldFuelPeriod, setFieldFuelPeriod] =
@@ -956,6 +957,7 @@ export function FuelView({
       if (cancelled) return;
       if (burned.ok) {
         setFieldFuelToday(burned.data.liters);
+        setFieldFuelTotal(burned.data.totalLiters);
         setFieldFuelHasData(burned.data.hasData);
         setFieldFuelBreakdown(burned.data.breakdown);
         setFieldFuelCoverage({
@@ -971,6 +973,7 @@ export function FuelView({
         }
       } else {
         setFieldFuelToday(null);
+        setFieldFuelTotal(null);
         setFieldFuelHasData(false);
         setFieldFuelBreakdown([]);
         setFieldFuelCoverage(null);
@@ -1037,6 +1040,7 @@ export function FuelView({
         totalValue={totalValue}
         live={live}
         fieldFuelLiters={fieldFuelToday}
+        fieldFuelTotalLiters={fieldFuelTotal}
         fieldFuelHasData={fieldFuelHasData}
         fieldFuelLoading={fieldFuelLoading}
         fieldFuelPeriod={fieldFuelPeriod}

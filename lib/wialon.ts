@@ -257,29 +257,49 @@ async function wialonRequest<T>(
   const data = (await response.json()) as T & Partial<WialonErrorResponse>;
 
   if (typeof data === "object" && data != null && "error" in data && data.error) {
+    // 1 — сесія протухла, 8 — токен відхилено (часто через шквал логінів)
+    if (sid && (data.error === 1 || data.error === 8)) {
+      sessionCache = null;
+    }
     const reason = data.reason ? `: ${data.reason}` : "";
     throw new Error(`Wialon error ${data.error}${reason}`);
+  }
+
+  if (sid && sessionCache?.eid === sid) {
+    sessionCache.expiresAt = Date.now() + SESSION_TTL_MS;
   }
 
   return data;
 }
 
-/** Логін по токену → Session ID (`eid`) */
+/** Wialon рве сесію після ~5 хв без запитів */
+const SESSION_TTL_MS = 4 * 60 * 1000;
+
+let sessionCache: { eid: string; expiresAt: number } | null = null;
+let sessionInflight: Promise<string> | null = null;
+
+/**
+ * Логін по токену → Session ID (`eid`).
+ * Сесія кешується: Wialon відхиляє токен, якщо ганяти token/login на кожен запит.
+ */
 export async function wialonLogin(): Promise<string> {
-  try {
+  const cached = sessionCache;
+  if (cached && cached.expiresAt > Date.now()) return cached.eid;
+  if (sessionInflight) return sessionInflight;
+
+  sessionInflight = (async () => {
     const data = await wialonRequest<WialonLoginResponse>("token/login", {
       token: getToken(),
     });
+    const eid = data.eid?.trim();
+    if (!eid) throw new Error("Wialon login: порожній eid");
+    sessionCache = { eid, expiresAt: Date.now() + SESSION_TTL_MS };
+    return eid;
+  })().finally(() => {
+    sessionInflight = null;
+  });
 
-    if (!data.eid?.trim()) {
-      throw new Error("Wialon login: порожній eid");
-    }
-
-    return data.eid;
-  } catch (error) {
-    if (error instanceof Error) throw error;
-    throw new Error("Wialon login не вдався");
-  }
+  return sessionInflight;
 }
 
 /** Мін. швидкість (км/год) для точки треку — відсікає GPS-дрейф на стоянці */

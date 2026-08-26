@@ -1,6 +1,8 @@
 import { length as turfLength, lineString } from "@turf/turf";
 import type { Position } from "geojson";
 
+import { fuelConsumedFromSamples } from "@/lib/wialon-fuel-decode";
+
 /** Семпл повідомлення для денної аналітики */
 export type DayAnalyticsSample = {
   t: number;
@@ -38,6 +40,10 @@ export type DayAnalyticsSummary = {
   fuelStart: number | null;
   fuelEnd: number | null;
   fuelDelta: number | null;
+  /** Залито за день (детектовані заправки ДУТ), л */
+  fuelFilled: number;
+  /** Спалено за день = старт − фініш + заправки, л */
+  fuelConsumed: number | null;
   hasFuelSensor: boolean;
   hasIgnitionSensor: boolean;
   sampleCount: number;
@@ -370,22 +376,16 @@ export function detectFuelDrainEvents(
   return events;
 }
 
-/** Стабільний старт/фініш бака: медіана країв, без одиночного «битого» семпла Wialon */
+/** Перевірка правдоподібності країв бака проти номіналу */
 function stableFuelEndpoints(
-  fuelValues: number[],
+  startMed: number | null,
+  endMed: number | null,
   tankVolumeLiters?: number | null
 ): {
   fuelStart: number | null;
   fuelEnd: number | null;
   fuelDelta: number | null;
 } {
-  if (fuelValues.length === 0) {
-    return { fuelStart: null, fuelEnd: null, fuelDelta: null };
-  }
-
-  const edge = Math.min(5, Math.max(1, Math.floor(fuelValues.length / 4)));
-  const startMed = median(fuelValues.slice(0, edge));
-  const endMed = median(fuelValues.slice(-edge));
   if (startMed == null || endMed == null) {
     return { fuelStart: null, fuelEnd: null, fuelDelta: null };
   }
@@ -434,13 +434,26 @@ export function buildDayAnalyticsFromSamples(
     options?.hasFuelSensorConfigured ?? hasFuelSamples;
   const hasIgnitionSensor = samples.some((s) => s.ignition != null);
 
-  const fuelValues = samples
-    .map((s) => s.fuelLiters)
-    .filter((v): v is number => v != null && Number.isFinite(v));
+  // Паливо рахуємо по повному ряду (не по проріджених семплах) — інакше
+  // картка техніки і витрата по полях дають різні літри на той самий день.
+  const fuelSamples = rawSamples
+    .filter(
+      (s): s is DayAnalyticsSample & { fuelLiters: number } =>
+        s.fuelLiters != null && Number.isFinite(s.fuelLiters)
+    )
+    .map((s) => ({ t: s.t, liters: s.fuelLiters }));
+
+  const fuelSeries = fuelConsumedFromSamples(fuelSamples);
   const { fuelStart, fuelEnd, fuelDelta } = stableFuelEndpoints(
-    fuelValues,
+    fuelSeries.start,
+    fuelSeries.end,
     options?.tankVolumeLiters
   );
+  const fuelFilled = fuelSeries.filled;
+  const fuelConsumed =
+    fuelStart != null && fuelEnd != null
+      ? Math.max(0, Math.round((fuelStart - fuelEnd + fuelFilled) * 10) / 10)
+      : null;
 
   const hoursIdling = sumConditionHours(
     samples,
@@ -465,6 +478,8 @@ export function buildDayAnalyticsFromSamples(
     fuelStart,
     fuelEnd,
     fuelDelta,
+    fuelFilled,
+    fuelConsumed,
     hasFuelSensor,
     hasIgnitionSensor,
     sampleCount: samples.length,
@@ -570,6 +585,8 @@ export const EMPTY_DAY_ANALYTICS: DayAnalyticsPayload = {
     fuelStart: null,
     fuelEnd: null,
     fuelDelta: null,
+    fuelFilled: 0,
+    fuelConsumed: null,
     hasFuelSensor: false,
     hasIgnitionSensor: false,
     sampleCount: 0,

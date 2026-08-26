@@ -69,6 +69,8 @@ type FuelDashboardHeaderProps = {
   totalValue: number;
   live: boolean;
   fieldFuelLiters: number | null;
+  /** Спалено всією технікою: поля + дорога + база */
+  fieldFuelTotalLiters: number | null;
   fieldFuelHasData: boolean;
   fieldFuelLoading: boolean;
   fieldFuelPeriod: FieldFuelPeriod;
@@ -270,6 +272,7 @@ export function FuelDashboardHeader({
   totalValue,
   live,
   fieldFuelLiters,
+  fieldFuelTotalLiters,
   fieldFuelHasData,
   fieldFuelLoading,
   fieldFuelPeriod,
@@ -289,11 +292,30 @@ export function FuelDashboardHeader({
     FIELD_FUEL_PERIODS.find((p) => p.id === fieldFuelPeriod)?.label ??
     "Сьогодні";
 
-  const burnedRows = fieldFuelBreakdown.map((row) => ({
-    title: row.equipmentName,
-    subtitle: row.fieldName,
-    liters: row.liters,
-  }));
+  // Показуємо всю витрату флоту: інакше «Спалено» непорівнянне із «Заправлено»,
+  // бо заправляють і те паливо, що йде на переїзди та роботу на базі.
+  const burnedTotal = fieldFuelTotalLiters ?? fieldFuelLiters;
+  const offFieldLiters =
+    fieldFuelTotalLiters != null && fieldFuelLiters != null
+      ? Math.max(0, Math.round((fieldFuelTotalLiters - fieldFuelLiters) * 10) / 10)
+      : null;
+
+  const burnedRows = [
+    ...fieldFuelBreakdown.map((row) => ({
+      title: row.equipmentName,
+      subtitle: row.fieldName,
+      liters: row.liters,
+    })),
+    ...(offFieldLiters != null && offFieldLiters > 0
+      ? [
+          {
+            title: "Поза полями",
+            subtitle: "переїзди, база, холостий хід",
+            liters: offFieldLiters,
+          },
+        ]
+      : []),
+  ];
   const refuelRows = refuelBreakdown.map((row) => ({
     title: row.equipmentName,
     subtitle:
@@ -383,15 +405,15 @@ export function FuelDashboardHeader({
           <div className="flex min-h-[7.25rem] flex-col justify-between gap-3 p-5 sm:p-6">
             <p className="inline-flex items-center gap-2 text-[11px] font-semibold tracking-[0.08em] text-zinc-500 uppercase">
               <Tractor className="h-3.5 w-3.5 text-amber-600" strokeWidth={2} />
-              Спалено на полях
+              Спалено технікою
             </p>
             <div>
               <KpiValue
-                liters={fieldFuelLiters}
+                liters={burnedTotal}
                 loading={fieldFuelLoading}
                 empty={!fieldFuelHasData}
                 interactive={fieldFuelHasData && !fieldFuelLoading}
-                popoverTitle="Хто спалив на полях"
+                popoverTitle="Хто скільки спалив"
                 popoverDescription={`Техніка × поле · ${periodLabel.toLowerCase()}`}
                 breakdownEmpty={`Немає даних за ${fieldFuelPeriodCaption(fieldFuelPeriod)}`}
                 breakdownRows={burnedRows}
@@ -399,6 +421,11 @@ export function FuelDashboardHeader({
               />
               <p className="mt-2 text-[12px] font-medium text-zinc-400">
                 {periodLabel}
+                {fieldFuelLiters != null && burnedTotal != null ? (
+                  <span className="ml-1.5 text-zinc-500">
+                    · на полях {formatLiters(fieldFuelLiters)} л
+                  </span>
+                ) : null}
                 {coverageHint ? (
                   <span className="ml-1.5 text-amber-700">· {coverageHint}</span>
                 ) : null}

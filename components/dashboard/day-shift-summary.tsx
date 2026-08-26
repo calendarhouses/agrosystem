@@ -80,6 +80,19 @@ export function DayShiftSummary({
   ];
   const timeTotal = timePieces.reduce((s, p) => s + p.hours, 0) || 1;
 
+  // Спалено = старт − фініш + заправки. Без заправок день з дозаправкою
+  // показував би «+239 л» замість реальних 391 л витрати.
+  const fuelHint = (() => {
+    const parts: string[] = [];
+    if (summary.fuelConsumed != null) {
+      parts.push(`спалено ${Math.round(summary.fuelConsumed)} л`);
+    }
+    if (summary.fuelFilled > 0) {
+      parts.push(`заправлено +${Math.round(summary.fuelFilled)} л`);
+    }
+    return parts.length > 0 ? parts.join(" · ") : undefined;
+  })();
+
   const metrics: Array<{
     icon: typeof Route;
     label: string;
@@ -128,23 +141,11 @@ export function DayShiftSummary({
               ? "Немає даних за день"
               : "—",
       tone: "text-zinc-900",
-      hint: !summary.hasFuelSensor
-        ? undefined
-        : summary.fuelStart != null &&
-            summary.fuelEnd != null &&
-            summary.fuelDelta != null
-          ? summary.fuelDelta > 15
-            ? `заправка ≈ +${Math.round(summary.fuelDelta)} л`
-            : summary.fuelDelta < -15
-              ? `витрата ≈ ${Math.round(Math.abs(summary.fuelDelta))} л`
-              : undefined
-          : undefined,
+      hint: !summary.hasFuelSensor ? undefined : fuelHint,
       hintTone:
-        summary.fuelDelta != null && summary.fuelDelta < -20
+        summary.fuelConsumed != null && summary.fuelConsumed > 20
           ? "text-rose-600"
-          : summary.fuelDelta != null && summary.fuelDelta > 15
-            ? "text-emerald-700"
-            : "text-zinc-500",
+          : "text-zinc-500",
     },
   ];
 

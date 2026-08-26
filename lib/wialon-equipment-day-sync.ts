@@ -23,7 +23,8 @@ import {
 } from "@/lib/wialon";
 
 const MAX_UNITS = 120;
-const CONCURRENCY = 5;
+/** Wialon рве паралельні запити (LIMIT api_concurrent) — тримаємо низько */
+const CONCURRENCY = 2;
 const MIN_ACTIVE_KM = 0.05;
 const MIN_ACTIVE_WORK_H = 0.05;
 
@@ -40,6 +41,8 @@ export type EquipmentDayStatRow = {
   fuel_start: number | null;
   fuel_end: number | null;
   fuel_delta: number | null;
+  fuel_filled: number;
+  fuel_consumed: number | null;
   has_fuel_sensor: boolean;
   sync_time: string;
 };
@@ -142,6 +145,21 @@ async function persistDayStatRows(
         "Таблиця wialon_equipment_day_stats відсутня. Виконай міграцію 026."
       );
     }
+    // Міграція 036 ще не накатана — пишемо без нових колонок витрати
+    if (
+      error.message?.includes("fuel_filled") ||
+      error.message?.includes("fuel_consumed")
+    ) {
+      const rows = upserts.map(
+        ({ fuel_filled: _ff, fuel_consumed: _fc, ...rest }) => rest
+      );
+      const retry = await supabase.from("wialon_equipment_day_stats").upsert(
+        rows,
+        { onConflict: "wialon_unit_id,date,season", count: "exact" }
+      );
+      if (retry.error) throw new Error(retry.error.message);
+      return retry.count ?? rows.length;
+    }
     // Міграція 032 ще не накатана — пишемо без fuel_* колонок
     if (
       error.message?.includes("fuel_start") ||
@@ -155,6 +173,8 @@ async function persistDayStatRows(
           fuel_start: _fs,
           fuel_end: _fe,
           fuel_delta: _fd,
+          fuel_filled: _ff,
+          fuel_consumed: _fc,
           has_fuel_sensor: _hs,
           ...rest
         }) => rest
@@ -308,6 +328,12 @@ async function runEquipmentDaySync(
             fuel_delta: analytics.summary.hasFuelSensor
               ? analytics.summary.fuelDelta
               : null,
+            fuel_filled: analytics.summary.hasFuelSensor
+              ? analytics.summary.fuelFilled
+              : 0,
+            fuel_consumed: analytics.summary.hasFuelSensor
+              ? analytics.summary.fuelConsumed
+              : null,
             has_fuel_sensor: analytics.summary.hasFuelSensor,
             sync_time: syncTime,
           } satisfies EquipmentDayStatRow;
@@ -355,6 +381,35 @@ export type FleetDaySummaryDto = {
     drainEvents: number;
   }>;
 };
+
+/**
+ * Спалено всім флотом за період (л) — з денного кешу техніки.
+ * Це та сама цифра, що в картці «Зміна за день», лише підсумована.
+ */
+export async function sumFleetFuelConsumedForPeriod(
+  fromDate: string,
+  toDate: string
+): Promise<{ liters: number; hasData: boolean }> {
+  const supabase = createServiceSupabase();
+  const { data, error } = await supabase
+    .from("wialon_equipment_day_stats")
+    .select("fuel_consumed")
+    .gte("date", fromDate)
+    .lte("date", toDate)
+    .not("fuel_consumed", "is", null);
+
+  // Міграція 036 ще не накатана
+  if (error) return { liters: 0, hasData: false };
+
+  const liters = (data ?? []).reduce(
+    (acc, row) => acc + (Number(row.fuel_consumed) || 0),
+    0
+  );
+  return {
+    liters: Math.round(liters * 10) / 10,
+    hasData: (data?.length ?? 0) > 0,
+  };
+}
 
 export async function loadFleetDaySummaryFromDb(
   dateYmd: string,

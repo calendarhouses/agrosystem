@@ -13,7 +13,10 @@ import { createServiceSupabase } from "@/lib/supabase/server";
 import {
   estimateFuelConsumedByFls,
 } from "@/lib/wialon-fuel";
-import { extractTimedFuelSamples } from "@/lib/wialon-fuel-decode";
+import {
+  extractTimedFuelSamples,
+  fuelConsumedFromSamples,
+} from "@/lib/wialon-fuel-decode";
 import {
   getWialonUnitSensors,
   listUnitSensors,
@@ -31,6 +34,12 @@ export {
 
 /** Мін. тривалість візиту (сек) — відсікає GPS-шум */
 const MIN_VISIT_SEC = 10 * 60;
+/** Пропуск зв'язку більший за це не рахуємо в час роботи */
+const MAX_GAP_SEC = 10 * 60;
+/** Швидкість, з якої вважаємо техніку працюючою */
+const ACTIVE_MIN_SPEED_KMH = 2;
+/** Немовірна витрата за добу на одиницю — сміття ДУТ */
+const MAX_DAY_CONSUMED_L = 1200;
 /** Ліміт юнітів за один CRON-прогін (зовнішній cron може ганяти частіше) */
 const MAX_UNITS = 80;
 
@@ -147,14 +156,17 @@ function readPosition(msg: WialonTrackMessage): Position | null {
   return [x, y];
 }
 
+/**
+ * Семпли палива тільки з повідомлень із координатами — той самий набір,
+ * що й у денній аналітиці техніки, інакше літри за день не збігаються.
+ */
 function extractFuelSamples(
   messages: WialonTrackMessage[],
   sensors: ReturnType<typeof listUnitSensors> = []
 ) {
-  return extractTimedFuelSamples(messages, sensors).map((s) => ({
-    t: s.t,
-    liters: s.liters,
-  }));
+  return extractTimedFuelSamples(messages, sensors, { includePosition: true })
+    .filter((s) => s.lat != null && s.lng != null)
+    .map((s) => ({ t: s.t, liters: s.liters }));
 }
 
 /**
@@ -204,34 +216,66 @@ export function detectGeofenceVisits(
   return raw.filter((v) => v.endUnix - v.startUnix >= MIN_VISIT_SEC);
 }
 
+/**
+ * Витрата ДУТ у вікнах візитів.
+ * null — жодне вікно не дало достовірної цифри (тоді розкладаємо за часом).
+ */
 function fuelConsumedInWindows(
   samples: FuelSample[],
   windows: VisitWindow[]
-): number {
-  if (samples.length < 2 || windows.length === 0) return 0;
+): number | null {
+  if (samples.length < 2 || windows.length === 0) return null;
 
   let total = 0;
+  let measured = false;
   for (const win of windows) {
     const inWin = samples.filter(
       (s) => s.t >= win.startUnix && s.t <= win.endUnix
     );
     const { consumedLiters } = estimateFuelConsumedByFls(inWin);
-    if (consumedLiters == null || consumedLiters <= 0) continue;
+    if (consumedLiters == null) continue;
 
     // Анти-шум: під час заправки ДУТ «скаче» і FLS малює тисячі літрів
     const hours = Math.max((win.endUnix - win.startUnix) / 3600, 1 / 60);
     const maxPlausible = Math.min(600, hours * 90 + 40);
-    if (consumedLiters > maxPlausible) {
-      console.warn("[field-fuel] відхилено неправдоподібну витрату", {
-        consumedLiters,
-        maxPlausible,
-        hours: Math.round(hours * 100) / 100,
-      });
-      continue;
-    }
+    if (consumedLiters > maxPlausible) continue;
+
     total += consumedLiters;
+    measured = true;
   }
-  return Math.round(total * 10) / 10;
+  return measured ? Math.round(total * 10) / 10 : null;
+}
+
+/** Секунди з працюючим двигуном у заданих вікнах (пропуски зв'язку не рахуємо). */
+function activeSecondsInWindows(
+  messages: WialonTrackMessage[],
+  windows: VisitWindow[]
+): number {
+  if (windows.length === 0) return 0;
+
+  const points = messages
+    .map((msg) => {
+      const t = readMsgTime(msg);
+      if (t == null) return null;
+      const speed = Number(msg.pos?.s ?? 0);
+      return { t, speed: Number.isFinite(speed) ? speed : 0 };
+    })
+    .filter((p): p is { t: number; speed: number } => p != null)
+    .sort((a, b) => a.t - b.t);
+
+  let seconds = 0;
+  for (let i = 1; i < points.length; i++) {
+    const prev = points[i - 1]!;
+    const cur = points[i]!;
+    const dt = cur.t - prev.t;
+    if (dt <= 0 || dt > MAX_GAP_SEC) continue;
+    if (cur.speed < ACTIVE_MIN_SPEED_KMH) continue;
+    const inside = windows.some(
+      (w) => cur.t >= w.startUnix && cur.t <= w.endUnix
+    );
+    if (inside) seconds += dt;
+  }
+  return seconds;
 }
 
 async function loadMappings(): Promise<{
@@ -374,18 +418,59 @@ export async function syncWialonFieldFuelForDate(
         : [];
       const fuelSamples = extractFuelSamples(messages, sensors);
 
-      for (const field of fields) {
-        if (!field.geometry) continue;
-        const visits = detectGeofenceVisits(messages, field.geometry);
-        if (visits.length === 0) continue;
+      // Денна витрата — опорна цифра (та сама, що в картці техніки).
+      // Сума по полях не може її перевищити, інакше Техніка і Паливо розійдуться.
+      const day = fuelConsumedFromSamples(fuelSamples);
+      const dayConsumed =
+        day.consumed != null &&
+        day.consumed >= 0 &&
+        day.consumed <= MAX_DAY_CONSUMED_L
+          ? day.consumed
+          : null;
+      const dayActiveSec = activeSecondsInWindows(messages, [
+        { startUnix: fromUnix, endUnix: toUnix },
+      ]);
 
-        const fuel = fuelConsumedInWindows(fuelSamples, visits);
+      const visited = fields
+        .filter((field) => field.geometry != null)
+        .map((field) => {
+          const visits = detectGeofenceVisits(messages, field.geometry!);
+          return {
+            field,
+            visits,
+            activeSec: activeSecondsInWindows(messages, visits),
+            fls: fuelConsumedInWindows(fuelSamples, visits),
+          };
+        })
+        .filter((row) => row.visits.length > 0);
+
+      // ДУТ по візиту, а де він не дав достовірної цифри — частка денної
+      // витрати за часом роботи в полі.
+      const allocated = visited.map((row) => {
+        if (row.fls != null) return { ...row, liters: row.fls };
+        if (dayConsumed == null || dayActiveSec <= 0) {
+          return { ...row, liters: 0 };
+        }
+        const share = row.activeSec / dayActiveSec;
+        return {
+          ...row,
+          liters: Math.round(dayConsumed * share * 10) / 10,
+        };
+      });
+
+      const allocatedTotal = allocated.reduce((acc, r) => acc + r.liters, 0);
+      const scale =
+        dayConsumed != null && allocatedTotal > dayConsumed && allocatedTotal > 0
+          ? dayConsumed / allocatedTotal
+          : 1;
+
+      for (const row of allocated) {
         upserts.push({
-          field_id: field.id,
+          field_id: row.field.id,
           equipment_id: unit.equipment_id,
           wialon_unit_id: unit.wialon_id,
           date,
-          fuel_consumed: Math.max(0, fuel),
+          fuel_consumed: Math.max(0, Math.round(row.liters * scale * 10) / 10),
           sync_time: syncTime,
           season,
         });

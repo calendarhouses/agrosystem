@@ -14,6 +14,7 @@ import {
   type DieselPriceResult,
 } from "@/lib/fuel-price";
 import { sumOutboundRefueledForPeriod } from "@/lib/fuel-refuel-period";
+import { sumFleetFuelConsumedForPeriod } from "@/lib/wialon-equipment-day-sync";
 import {
   ensureFieldFuelPeriodCoverage,
   listFieldFuelBreakdownForPeriod,
@@ -51,6 +52,8 @@ export async function getFieldFuelConsumed(
     toDate: string;
     hasData: boolean;
     liveSynced: boolean;
+    /** Спалено всією технікою (поля + дорога + база), л */
+    totalLiters: number;
     /** Скільки календарних днів періоду вже є в БД */
     daysCovered: number;
     daysExpected: number;
@@ -81,10 +84,10 @@ export async function getFieldFuelConsumed(
       listFieldFuelBreakdownForPeriod(safe),
     ]);
 
-    const stillMissing = await listUnsyncedFieldFuelDates(
-      sum.fromDate,
-      sum.toDate
-    );
+    const [stillMissing, fleet] = await Promise.all([
+      listUnsyncedFieldFuelDates(sum.fromDate, sum.toDate),
+      sumFleetFuelConsumedForPeriod(sum.fromDate, sum.toDate),
+    ]);
     const daysExpected =
       Math.round(
         (Date.parse(`${sum.toDate}T12:00:00Z`) -
@@ -102,6 +105,10 @@ export async function getFieldFuelConsumed(
         toDate: sum.toDate,
         hasData: sum.hasData,
         liveSynced,
+        // Без міграції 036 денного кешу витрати ще немає — не показуємо 0
+        totalLiters: fleet.hasData
+          ? Math.max(fleet.liters, sum.liters)
+          : sum.liters,
         daysCovered,
         daysExpected,
         coverageIncomplete: stillMissing.length > 0,
