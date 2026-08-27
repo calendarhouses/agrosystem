@@ -12,9 +12,9 @@ import {
 import { toast } from "sonner";
 
 import {
-  listDraftMovesForExport,
-  markMovesSentTo1c,
-  type DraftExportMove,
+  listAccountantQueue,
+  markAccountantQueuePrepared,
+  type AccountantQueueItem,
 } from "@/app/export/actions";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,7 +32,9 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { downloadDraftMovesExcel } from "@/lib/inventory-excel-export";
+import { getSeasonRange, toIsoRange } from "@/lib/finance-period";
+import { downloadAccountantPackageExcel } from "@/lib/inventory-excel-export";
+import { useSeasonStore } from "@/lib/season-store";
 import { cn } from "@/lib/utils";
 
 function formatQty(qty: number, unit: string): string {
@@ -48,6 +50,14 @@ function formatMoveDate(iso: string): string {
   return format(d, "d MMM", { locale: uk });
 }
 
+function kindLabel(kind: AccountantQueueItem["kind"]): string {
+  if (kind === "inbound") return "Прихід";
+  if (kind === "sale") return "Продаж";
+  if (kind === "fuel_inbound") return "Закупівля ДТ";
+  if (kind === "fuel_transfer") return "Переміщення";
+  return "Списання";
+}
+
 export function AccountantExportSheet({
   open,
   onOpenChange,
@@ -57,9 +67,12 @@ export function AccountantExportSheet({
   onOpenChange: (open: boolean) => void;
   onChanged?: () => void;
 }) {
+  const activeSeason = useSeasonStore((s) => s.activeSeason);
+  const seasonYear = Number(activeSeason) || 2026;
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [moves, setMoves] = useState<DraftExportMove[]>([]);
+  const [items, setItems] = useState<AccountantQueueItem[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -67,26 +80,32 @@ export function AccountantExportSheet({
   async function load() {
     setLoading(true);
     setError(null);
-    const res = await listDraftMovesForExport();
+    const range = toIsoRange(getSeasonRange(seasonYear));
+    const res = await listAccountantQueue({
+      season: String(seasonYear),
+      startIso: range.startIso,
+      endIso: range.endIso,
+    });
     setLoading(false);
     if (!res.ok) {
       setError(res.error);
-      setMoves([]);
+      setItems([]);
       setSelected(new Set());
       return;
     }
-    setMoves(res.data);
-    setSelected(new Set(res.data.map((m) => m.id)));
+    setItems(res.data.items);
+    setSelected(new Set(res.data.items.map((m) => m.id)));
   }
 
   useEffect(() => {
     if (!open) return;
     void load();
-  }, [open]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, seasonYear]);
 
-  const selectedMoves = useMemo(
-    () => moves.filter((m) => selected.has(m.id)),
-    [moves, selected]
+  const selectedItems = useMemo(
+    () => items.filter((m) => selected.has(m.id)),
+    [items, selected]
   );
 
   function toggle(id: string) {
@@ -99,21 +118,19 @@ export function AccountantExportSheet({
   }
 
   function toggleAll() {
-    if (selected.size === moves.length) {
+    if (selected.size === items.length) {
       setSelected(new Set());
     } else {
-      setSelected(new Set(moves.map((m) => m.id)));
+      setSelected(new Set(items.map((m) => m.id)));
     }
   }
 
   function handleDownload() {
-    const rows = selectedMoves.length > 0 ? selectedMoves : moves;
+    const rows = selectedItems.length > 0 ? selectedItems : items;
     if (rows.length === 0) return;
     try {
-      const filename = downloadDraftMovesExcel(rows);
-      toast.success("Excel збережено", {
-        description: filename,
-      });
+      const filename = downloadAccountantPackageExcel(rows);
+      toast.success("Excel збережено", { description: filename });
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : "Не вдалося сформувати Excel"
@@ -121,30 +138,29 @@ export function AccountantExportSheet({
     }
   }
 
-  function confirmMarkSent() {
-    const ids = [...selected];
-    if (ids.length === 0) {
-      toast.error("Оберіть хоча б одну операцію");
-      return;
-    }
+  function confirmMark() {
+    const rows = selectedItems.length > 0 ? selectedItems : items;
+    if (rows.length === 0) return;
     startTransition(async () => {
-      const res = await markMovesSentTo1c(ids);
+      const res = await markAccountantQueuePrepared(
+        rows.map((r) => ({ id: r.id, source: r.source }))
+      );
       if (!res.ok) {
         toast.error(res.error);
         return;
       }
       toast.success(
-        `Позначено ${res.data.updated} операцій як передані бухгалтеру`
+        `Позначено ${res.data.inventory + res.data.fuel} операцій`
       );
       setConfirmOpen(false);
-      await load();
       onChanged?.();
+      await load();
     });
   }
 
-  const count = moves.length;
-  const selectedCount = selected.size;
-  const empty = !loading && !error && count === 0;
+  const count = items.length;
+  const selectedCount = selectedItems.length;
+  const empty = !loading && count === 0;
 
   return (
     <>
@@ -169,7 +185,7 @@ export function AccountantExportSheet({
             {loading ? (
               <div className="flex items-center justify-center gap-2 py-16 text-sm text-zinc-500">
                 <Loader2 className="h-5 w-5 animate-spin" />
-                Завантаження чернеток…
+                Завантаження черги…
               </div>
             ) : error ? (
               <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -219,98 +235,62 @@ export function AccountantExportSheet({
                     ) : (
                       <CheckCircle2 className="mr-2 h-4 w-4 text-[#276749]" />
                     )}
-                    Позначити як передані бухгалтеру
+                    Позначити як передані
                   </Button>
                 </div>
 
                 {empty ? (
                   <p className="mt-8 text-center text-sm text-zinc-500">
-                    Немає чернеток. Усі операції вже позначені як передані.
+                    Немає операцій у черзі за сезон
                   </p>
                 ) : (
-                  <div className="mt-6 space-y-2">
-                    <button
-                      type="button"
-                      onClick={toggleAll}
-                      className="text-[11px] font-semibold text-zinc-500 hover:text-zinc-800"
-                    >
-                      {selected.size === moves.length
-                        ? "Зняти всі"
-                        : "Обрати всі"}
-                    </button>
+                  <div className="mt-6">
+                    <div className="mb-2 flex items-center justify-between">
+                      <p className="text-[11px] font-semibold tracking-wider text-zinc-400 uppercase">
+                        Черга
+                      </p>
+                      <button
+                        type="button"
+                        onClick={toggleAll}
+                        className="text-[11px] font-semibold text-[#276749] hover:underline"
+                      >
+                        {selected.size === items.length
+                          ? "Зняти всі"
+                          : "Обрати всі"}
+                      </button>
+                    </div>
                     <ul className="space-y-2">
-                      {moves.map((move) => {
+                      {items.map((move) => {
                         const checked = selected.has(move.id);
                         return (
-                          <li key={move.id}>
+                          <li key={`${move.source}-${move.id}`}>
                             <label
                               className={cn(
                                 "flex cursor-pointer items-start gap-3 rounded-xl border px-3 py-2.5 transition",
                                 checked
                                   ? "border-[#276749]/30 bg-white"
-                                  : "border-[#E5DFD3]/80 bg-white/60 opacity-70"
+                                  : "border-[#E5DFD3] bg-white/60 opacity-70"
                               )}
                             >
                               <input
                                 type="checkbox"
                                 checked={checked}
                                 onChange={() => toggle(move.id)}
-                                className="mt-1 h-4 w-4 rounded border-zinc-300"
+                                className="mt-1 h-4 w-4 rounded border-zinc-300 text-[#276749]"
                               />
                               <div className="min-w-0 flex-1">
                                 <p className="truncate text-sm font-semibold text-zinc-900">
-                                  {move.itemName}
-                                  {move.isLocalItem ? (
-                                    <span className="ml-1.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">
-                                      нова
-                                    </span>
-                                  ) : null}
+                                  {move.title}
                                 </p>
-                                <p className="mt-0.5 truncate text-[11px] text-zinc-500">
-                                  {move.type === "inbound"
-                                    ? "Прихід"
-                                    : move.type === "sale"
-                                      ? "Продаж"
-                                      : "Списання"}
-                                  {move.type === "sale" && move.buyerName
-                                    ? ` · ${move.buyerName}`
-                                    : ""}
-                                  {move.season ? ` · ${move.season}` : ""}
-                                  {" · "}
-                                  {move.type === "sale"
-                                    ? formatMoveDate(move.date)
-                                    : `${move.fieldName ?? "Без поля"} · ${formatMoveDate(move.date)}`}
-                                  {move.hasAttachment ? " · накл." : ""}
+                                <p className="mt-0.5 text-[11px] text-zinc-500">
+                                  {kindLabel(move.kind)} ·{" "}
+                                  {formatMoveDate(move.date)}
+                                  {move.party ? ` · ${move.party}` : ""}
                                 </p>
                               </div>
-                              <div className="shrink-0 text-right">
-                                <p
-                                  className={cn(
-                                    "text-sm font-bold tabular-nums",
-                                    move.type === "inbound"
-                                      ? "text-emerald-700"
-                                      : "text-zinc-800"
-                                  )}
-                                >
-                                  {move.type === "inbound"
-                                    ? "+"
-                                    : move.type === "sale"
-                                      ? "→"
-                                      : "−"}
-                                  {formatQty(move.qty, move.unit)}
-                                </p>
-                                {move.type === "sale" &&
-                                move.unitPriceUah != null ? (
-                                  <p className="text-[10px] font-medium text-zinc-400 tabular-nums">
-                                    {(
-                                      move.qty * move.unitPriceUah
-                                    ).toLocaleString("uk-UA", {
-                                      maximumFractionDigits: 2,
-                                    })}{" "}
-                                    ₴
-                                  </p>
-                                ) : null}
-                              </div>
+                              <p className="shrink-0 font-mono text-xs font-semibold tabular-nums text-zinc-800">
+                                {formatQty(move.qty, move.unit)}
+                              </p>
                             </label>
                           </li>
                         );
@@ -327,10 +307,10 @@ export function AccountantExportSheet({
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent className="rounded-2xl border border-[#E5DFD3] bg-white sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Позначити як передані бухгалтеру?</DialogTitle>
+            <DialogTitle>Позначити як передані?</DialogTitle>
             <DialogDescription>
-              {selectedCount} обраних операцій отримають статус «передано» і
-              зникнуть зі списку. Редагувати їх уже не можна.
+              {selectedCount} обраних операцій зникнуть з черги. Редагувати їх
+              уже не можна.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:justify-end">
@@ -345,7 +325,7 @@ export function AccountantExportSheet({
             <Button
               type="button"
               disabled={pending}
-              onClick={confirmMarkSent}
+              onClick={confirmMark}
               className="rounded-xl bg-[#276749] text-white hover:bg-[#1f5239]"
             >
               {pending ? (

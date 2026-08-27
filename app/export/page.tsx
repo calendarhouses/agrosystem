@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { BasExportView } from "@/components/dashboard/bas-export-view";
+import { AccountantHubView } from "@/components/dashboard/accountant-hub-view";
 
 export const metadata: Metadata = {
   title: "Бухгалтерія",
@@ -9,5 +9,5 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default function ExportPage() {
-  return <BasExportView />;
+  return <AccountantHubView />;
 }
