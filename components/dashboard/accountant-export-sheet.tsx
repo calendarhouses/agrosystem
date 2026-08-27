@@ -161,8 +161,7 @@ export function AccountantExportSheet({
               Експорт для бухгалтерії
             </SheetTitle>
             <SheetDescription className="text-sm text-zinc-500">
-              Excel для бухгалтера · у BAS нічого не пишемо. «Передано» ≠
-              проведено в 1С.
+              Завантаження Excel і позначення переданих операцій
             </SheetDescription>
           </SheetHeader>
 
@@ -195,8 +194,7 @@ export function AccountantExportSheet({
 
                 <p className="mt-4 text-[12px] leading-relaxed text-zinc-500">
                   1) Завантажте Excel і передайте бухгалтеру.
-                  2) Коли файл забрано — позначте обрані як передані (не
-                  проводиться в 1С автоматично).
+                  2) Коли файл забрано — позначте обрані як передані.
                 </p>
 
                 <div className="mt-5 space-y-2.5">
@@ -331,9 +329,8 @@ export function AccountantExportSheet({
           <DialogHeader>
             <DialogTitle>Позначити як передані бухгалтеру?</DialogTitle>
             <DialogDescription>
-              {selectedCount} обраних чернеток отримають статус «передано». Це
-              не проведення в 1С — лише підтвердження, що Excel забрано.
-              Редагувати їх уже не можна.
+              {selectedCount} обраних операцій отримають статус «передано» і
+              зникнуть зі списку. Редагувати їх уже не можна.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:justify-end">

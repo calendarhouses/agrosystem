@@ -113,7 +113,7 @@ export function BasExportView() {
       <PageHeader
         icon={FileSpreadsheet}
         title="Експорт для бухгалтерії"
-        description="Чернетки для бухгалтера · Excel без запису в BAS · «передано» ≠ проведено в 1С"
+        description="Чернетки операцій · завантаження Excel · позначення переданих"
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Button
@@ -137,7 +137,7 @@ export function BasExportView() {
               className="h-9 bg-[#276749] px-4 font-bold text-white hover:bg-[#1f5239]"
             >
               <Download className="h-4 w-4" />
-              Завантажити Excel для 1С
+              Завантажити Excel
             </Button>
           </div>
         }
@@ -146,7 +146,7 @@ export function BasExportView() {
       <section className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <GlassCard className="p-4 hover:translate-y-0">
           <p className="text-[11px] font-semibold tracking-wider text-zinc-500 uppercase">
-            Чернеток
+            До передачі
           </p>
           <p className="mt-1 text-3xl font-extrabold tabular-nums text-zinc-900">
             {loading ? "—" : moves.length}
@@ -157,21 +157,21 @@ export function BasExportView() {
             Статус
           </p>
           <p className="mt-1 text-sm font-semibold text-amber-800">
-            draft · ще не в 1С
+            Очікують передачі
           </p>
           <p className="mt-0.5 text-xs text-zinc-500">
-            Після Excel можна позначити sent_to_1c
+            Після Excel позначте передані
           </p>
         </GlassCard>
         <GlassCard className="p-4 hover:translate-y-0">
           <p className="text-[11px] font-semibold tracking-wider text-zinc-500 uppercase">
-            BAS
+            Формат
           </p>
           <p className="mt-1 text-sm font-semibold text-zinc-800">
-            Read-only міст
+            Excel
           </p>
           <p className="mt-0.5 text-xs text-zinc-500">
-            У 1С нічого не пишемо через API
+            Для ручного проведення бухгалтером
           </p>
         </GlassCard>
       </section>
@@ -292,7 +292,7 @@ export function BasExportView() {
           ) : (
             <Download className="h-5 w-5" />
           )}
-          Завантажити Excel для 1С
+          Завантажити Excel
           {moves.length > 0 ? (
             <span className="ml-1 rounded-full bg-white/20 px-2 py-0.5 text-xs font-semibold">
               {moves.length}
@@ -304,12 +304,11 @@ export function BasExportView() {
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent className="max-w-md rounded-2xl border-[#E5DFD3] bg-[#FDFBF7]">
           <DialogHeader>
-            <DialogTitle>Позначити як передані в 1С?</DialogTitle>
+            <DialogTitle>Позначити як передані бухгалтеру?</DialogTitle>
             <DialogDescription>
-              Excel уже завантажено ({pendingIds.length} рядків). Якщо
-              позначити рухи як{" "}
-              <span className="font-semibold text-zinc-700">sent_to_1c</span>,
-              вони зникнуть з цього екрану і не потраплять у наступний експорт.
+              Excel уже завантажено ({pendingIds.length} рядків). Після
+              позначення вони зникнуть з цього списку і не потраплять у
+              наступний експорт.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:justify-stretch">
@@ -320,7 +319,7 @@ export function BasExportView() {
               onClick={() => setConfirmOpen(false)}
               className="flex-1"
             >
-              Ні, лишити draft
+              Скасувати
             </Button>
             <Button
               type="button"

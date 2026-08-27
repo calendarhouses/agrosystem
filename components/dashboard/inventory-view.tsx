@@ -1602,7 +1602,7 @@ function InventoryItemCard({
                 {displayName}
                 {isLocalSku ? (
                   <span className="ml-1.5 align-middle text-[10px] font-bold tracking-wide text-sky-700 uppercase">
-                    локальна
+                    нова
                   </span>
                 ) : null}
               </p>

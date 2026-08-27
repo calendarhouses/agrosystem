@@ -762,8 +762,8 @@ export function FuelActionDialogs({
                   await onSuccess();
                   setPurchaseSuccess(
                     result.message ??
-                      "Партію збережено локально. Чернетка 1С — після узгодження з бухгалтером"
-                  );
+                      "Партію збережено"
+                    );
                 } catch (err) {
                   setError(
                     err instanceof Error ? err.message : "Помилка збереження"

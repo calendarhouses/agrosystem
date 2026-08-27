@@ -414,9 +414,9 @@ export async function createLocalOutboundMove(input: {
 export async function createLocalInboundMove(input: {
   itemRefKey: string;
   qty: number;
-  /** Ціна закупівлі ₴/од. — обовʼязкова для фінансів / Excel */
+  /** Ціна ₴/од. (закупівля або оцінка собівартості врожаю) */
   unitPriceUah: number;
-  /** Постачальник / контрагент (вільний текст або з BAS) */
+  /** Постачальник (закупка) або порожньо для власного врожаю */
   buyerName?: string | null;
   fieldId?: string | null;
   note?: string | null;
@@ -466,7 +466,7 @@ export async function createLocalInboundMove(input: {
         return {
           ok: false,
           error:
-            "Потрібна міграція 038 (inbound). Виконай SQL у Supabase, потім повтори.",
+            "Не вдалося зберегти прихід. Перевірте дані і спробуйте ще раз.",
         };
       }
       if (error.message?.includes("unit_price")) {
@@ -734,8 +734,9 @@ export async function createLocalInventoryItem(input: {
     return { ok: false, error: "Невірна категорія" };
   }
   const price = Number(input.plannedPriceUah);
+  // Колонка NOT NULL DEFAULT 0 — null ламає insert нових локальних позицій
   const plannedPriceUah =
-    Number.isFinite(price) && price > 0 ? price : null;
+    Number.isFinite(price) && price >= 0 ? price : 0;
 
   try {
     const supabase = createServiceSupabase();

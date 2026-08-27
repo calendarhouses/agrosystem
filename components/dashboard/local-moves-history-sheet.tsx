@@ -249,11 +249,21 @@ function LocalMoveListItem({
               <Lock className="h-3 w-3 shrink-0 text-muted-foreground/70" />
             )}
             <span className="truncate">
-              {isSale ? "Продаж" : isInbound ? "Прихід" : "Списання"}
+              {isSale
+                ? "Продаж"
+                : isInbound && move.itemCategory === "harvest"
+                  ? "Врожай"
+                  : isInbound
+                    ? "Прихід"
+                    : "Списання"}
               {" · "}
               {dateLabel}
               {isSale && move.buyerName ? ` · ${move.buyerName}` : ""}
-              {isInbound && move.buyerName ? ` · ${move.buyerName}` : ""}
+              {isInbound &&
+              move.itemCategory !== "harvest" &&
+              move.buyerName
+                ? ` · ${move.buyerName}`
+                : ""}
               {move.fieldName ? ` · ${move.fieldName}` : ""}
               {move.note ? ` · ${move.note}` : ""}
               {move.unitPriceUah != null
@@ -353,6 +363,7 @@ export function EditLocalMoveInline({
 
   const isInbound = move.type === "inbound";
   const isSale = move.type === "sale";
+  const isHarvestInbound = isInbound && move.itemCategory === "harvest";
   const fieldRequired =
     !isInbound &&
     !isSale &&
@@ -424,7 +435,10 @@ export function EditLocalMoveInline({
         ...(isSale
           ? { buyerName: buyer, unitPriceUah: price }
           : isInbound
-            ? { buyerName: buyer ?? null, unitPriceUah: price }
+            ? {
+                buyerName: isHarvestInbound ? null : buyer ?? null,
+                unitPriceUah: price,
+              }
             : {}),
       });
       if (!res.ok) {
@@ -432,7 +446,9 @@ export function EditLocalMoveInline({
         return;
       }
       toast.success(
-        isInbound
+        isHarvestInbound
+          ? "Врожай оновлено"
+          : isInbound
           ? "Прихід оновлено"
           : isSale
             ? "Продаж оновлено"
@@ -513,20 +529,70 @@ export function EditLocalMoveInline({
           </>
         ) : isInbound ? (
           <>
+            {isHarvestInbound ? (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-[11px] font-medium text-zinc-500">
+                    Поле (звідки зібрано)
+                  </label>
+                  {fieldId ? (
+                    <button
+                      type="button"
+                      onClick={() => setFieldId("")}
+                      className="text-[11px] font-semibold text-zinc-400 hover:text-zinc-700"
+                    >
+                      Очистити
+                    </button>
+                  ) : null}
+                </div>
+                <Input
+                  value={fieldQuery}
+                  onChange={(e) => setFieldQuery(e.target.value)}
+                  placeholder={
+                    fields.find((f) => f.id === fieldId)?.name ?? "Пошук поля…"
+                  }
+                  className="h-10 bg-white"
+                />
+                {fieldQuery.trim() || !fieldId ? (
+                  <div className="max-h-36 overflow-y-auto rounded-xl border border-zinc-200 bg-white">
+                    {filteredFields.map((f) => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => {
+                          setFieldId(f.id);
+                          setFieldQuery("");
+                        }}
+                        className={cn(
+                          "flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-zinc-50",
+                          fieldId === f.id && "bg-sky-50 font-medium"
+                        )}
+                      >
+                        <span className="truncate">{f.name}</span>
+                        <span className="text-[11px] text-zinc-400">
+                          {f.crop}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-zinc-500">
+                  Постачальник
+                </label>
+                <Input
+                  value={buyerName}
+                  onChange={(e) => setBuyerName(e.target.value)}
+                  className="h-10 bg-white"
+                  placeholder="Контрагент"
+                />
+              </div>
+            )}
             <div className="space-y-1">
               <label className="text-[11px] font-medium text-zinc-500">
-                Постачальник
-              </label>
-              <Input
-                value={buyerName}
-                onChange={(e) => setBuyerName(e.target.value)}
-                className="h-10 bg-white"
-                placeholder="Контрагент"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[11px] font-medium text-zinc-500">
-                Ціна ₴ / од.
+                {isHarvestInbound ? "Оцінка собівартості ₴ / од." : "Ціна ₴ / од."}
               </label>
               <Input
                 value={unitPrice}

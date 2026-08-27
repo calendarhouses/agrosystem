@@ -509,7 +509,7 @@ export function buildCompanyFinancialOverview(
       id: "drafts",
       tone: "info",
       title: `${draftMovesCount} чернеток для бухгалтера`,
-      detail: "Excel → передати в 1С вручну (без POST з AgroSystem)",
+      detail: "Експорт для бухгалтера",
     });
   }
   if (unpricedTmcLines > 0) {

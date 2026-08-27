@@ -248,7 +248,7 @@ export function InventorySaleSheet({
         <FuelSheetHeader
           icon={ShoppingCart}
           title="Продаж врожаю"
-          description="Локальний облік · Excel для бухгалтера"
+          description="Продаж зі складу"
           accent="amber"
         />
 
@@ -350,7 +350,7 @@ export function InventorySaleSheet({
                       <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900">
                         {buyer || (
                           <span className="font-normal text-zinc-400">
-                            З реалізацій BAS або вписати…
+                            Оберіть або впишіть…
                           </span>
                         )}
                       </span>

@@ -256,11 +256,16 @@ export function InventoryInboundSheet({
       setFormError("Вкажіть назву нової позиції");
       return;
     }
+    const priceFromForm = Number(String(unitPrice).replace(",", "."));
     startTransition(async () => {
       const res = await createLocalInventoryItem({
         name: newName.trim(),
         category,
-        unit: newUnit.trim() || "шт",
+        unit: newUnit.trim() || (category === "harvest" ? "т" : "шт"),
+        plannedPriceUah:
+          Number.isFinite(priceFromForm) && priceFromForm >= 0
+            ? priceFromForm
+            : 0,
       });
       if (!res.ok) {
         setFormError(res.error);
@@ -271,9 +276,7 @@ export function InventoryInboundSheet({
       setItemKey(res.basRefKey);
       setCreatingItem(false);
       setNewName("");
-      toast.success("Позицію додано локально", {
-        description: "Потрапить у Excel для бухгалтера → завести в 1С",
-      });
+      toast.success("Позицію додано");
     });
   }
 
@@ -301,7 +304,7 @@ export function InventoryInboundSheet({
         itemRefKey: itemKey,
         qty: qtyNum,
         unitPriceUah: priceNum,
-        buyerName: supplier.trim() || null,
+        buyerName: category === "harvest" ? null : supplier.trim() || null,
         fieldId: category === "harvest" ? fieldId : null,
         note: note.trim() || null,
         season: activeSeason,
@@ -318,7 +321,9 @@ export function InventoryInboundSheet({
         );
       }
       toast.success(
-        `Прихід ${qtyNum}${selectedItem?.unit ? ` ${selectedItem.unit}` : ""} · ${partyTotal?.toLocaleString("uk-UA")} ₴`
+        category === "harvest"
+          ? `Врожай ${qtyNum}${selectedItem?.unit ? ` ${selectedItem.unit}` : ""} на склад`
+          : `Прихід ${qtyNum}${selectedItem?.unit ? ` ${selectedItem.unit}` : ""} · ${partyTotal?.toLocaleString("uk-UA")} ₴`
       );
       resetForm();
       onSuccess?.();
@@ -328,6 +333,7 @@ export function InventoryInboundSheet({
 
   const categoryLabel =
     CATEGORIES.find((c) => c.id === category)?.label ?? null;
+  const isHarvest = category === "harvest";
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -336,10 +342,14 @@ export function InventoryInboundSheet({
         className={cn("flex flex-col", fuelSheetContentClass)}
       >
         <FuelSheetHeader
-          icon={PackagePlus}
-          title="Прихід на склад"
-          description="Локальний облік · Excel для бухгалтера (без запису в BAS)"
-          accent="sky"
+          icon={isHarvest ? Wheat : PackagePlus}
+          title={isHarvest ? "Прийом врожаю" : "Прихід на склад"}
+          description={
+            isHarvest
+              ? "З поля на склад"
+              : "Закупівля / надходження на склад"
+          }
+          accent={isHarvest ? "amber" : "sky"}
         />
 
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
@@ -368,7 +378,11 @@ export function InventoryInboundSheet({
                       if (typeof v !== "string" || !v) return;
                       setCategory(v as Cat);
                       setItemKey(null);
+                      setSupplier("");
                       setFormError(null);
+                      if (v === "harvest") {
+                        setNewUnit((u) => (u === "л" || !u ? "т" : u));
+                      }
                     }}
                   >
                     <SelectTrigger className={fuelSelectTriggerClass}>
@@ -415,14 +429,18 @@ export function InventoryInboundSheet({
                       <input
                         value={newName}
                         onChange={(e) => setNewName(e.target.value)}
-                        placeholder="Назва (як у накладній)"
+                        placeholder={
+                          isHarvest
+                            ? "Культура / сорт (напр. Кукурудза)"
+                            : "Назва товару"
+                        }
                         className={fuelInputClass}
                       />
                       <div className="flex gap-2">
                         <input
                           value={newUnit}
                           onChange={(e) => setNewUnit(e.target.value)}
-                          placeholder="Од. (л, кг, шт)"
+                          placeholder={isHarvest ? "Од. (т, кг)" : "Од. (л, кг, шт)"}
                           className={cn(fuelInputClass, "flex-1")}
                         />
                         <Button
@@ -434,9 +452,6 @@ export function InventoryInboundSheet({
                           Додати
                         </Button>
                       </div>
-                      <p className="text-[11px] text-zinc-500">
-                        Локальна позиція — бухгалтер заведе в 1С з Excel.
-                      </p>
                     </div>
                   ) : (
                     <Popover open={itemOpen} onOpenChange={setItemOpen}>
@@ -516,14 +531,14 @@ export function InventoryInboundSheet({
                         selectedItem.virtualBalance,
                         selectedItem.unit
                       )}
-                      {selectedItem.isLocal ? " · локальна" : ""}
+                      {selectedItem.isLocal ? " · нова" : ""}
                     </p>
                   ) : null}
                 </section>
 
-                {category === "harvest" ? (
+                {isHarvest ? (
                   <section className="space-y-2">
-                    <p className={fuelFieldLabelClass}>Поле (звідки випуск)</p>
+                    <p className={fuelFieldLabelClass}>Поле (звідки зібрано)</p>
                     <Popover open={fieldOpen} onOpenChange={setFieldOpen}>
                       <PopoverTrigger className={comboboxTriggerClass}>
                         <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900">
@@ -531,7 +546,7 @@ export function InventoryInboundSheet({
                             selectedField.name
                           ) : (
                             <span className="font-normal text-zinc-400">
-                              Опційно…
+                              Оберіть поле…
                             </span>
                           )}
                         </span>
@@ -563,6 +578,7 @@ export function InventoryInboundSheet({
                                     </span>
                                     <span className="text-[11px] text-zinc-400">
                                       {formatAreaHa(field.areaHa)} га
+                                      {field.crop ? ` · ${field.crop}` : ""}
                                     </span>
                                   </span>
                                   {fieldId === field.id ? (
@@ -599,7 +615,9 @@ export function InventoryInboundSheet({
 
                 <section className="space-y-2">
                   <p className={fuelFieldLabelClass}>
-                    Ціна ₴ / {selectedItem?.unit || newUnit || "од."}
+                    {isHarvest
+                      ? `Оцінка собівартості ₴ / ${selectedItem?.unit || newUnit || "од."}`
+                      : `Ціна ₴ / ${selectedItem?.unit || newUnit || "од."}`}
                   </p>
                   <input
                     type="number"
@@ -613,7 +631,7 @@ export function InventoryInboundSheet({
                   />
                   {partyTotal != null ? (
                     <p className="rounded-xl border border-sky-100 bg-sky-50/80 px-3.5 py-2.5 text-sm text-sky-950">
-                      Сума партії:{" "}
+                      {isHarvest ? "Оцінка партії" : "Сума партії"}:{" "}
                       <span className="font-bold tabular-nums">
                         {partyTotal.toLocaleString("uk-UA", {
                           maximumFractionDigits: 2,
@@ -621,13 +639,10 @@ export function InventoryInboundSheet({
                         ₴
                       </span>
                     </p>
-                  ) : (
-                    <p className="text-xs text-zinc-400">
-                      Обовʼязково — піде в Excel і в собівартість списань
-                    </p>
-                  )}
+                  ) : null}
                 </section>
 
+                {!isHarvest ? (
                 <section className="space-y-2">
                   <p className={fuelFieldLabelClass}>Постачальник</p>
                   <Popover open={supplierOpen} onOpenChange={setSupplierOpen}>
@@ -635,7 +650,7 @@ export function InventoryInboundSheet({
                       <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900">
                         {supplier || (
                           <span className="font-normal text-zinc-400">
-                            З надходжень BAS або вписати…
+                            Оберіть або впишіть…
                           </span>
                         )}
                       </span>
@@ -689,19 +704,24 @@ export function InventoryInboundSheet({
                     className={fuelInputClass}
                   />
                 </section>
+                ) : null}
 
                 <section className="space-y-2">
                   <p className={fuelFieldLabelClass}>Примітка</p>
                   <input
                     value={note}
                     onChange={(e) => setNote(e.target.value)}
-                    placeholder="№ накладної…"
+                    placeholder={
+                      isHarvest ? "Опційно…" : "№ накладної (опційно)"
+                    }
                     className={fuelInputClass}
                   />
                 </section>
 
                 <section className="space-y-2">
-                  <p className={fuelFieldLabelClass}>Накладна</p>
+                  <p className={fuelFieldLabelClass}>
+                    {isHarvest ? "Фото / документи" : "Накладна"}
+                  </p>
                   <AttachmentDropzone
                     entityType="inventory_move"
                     pending={pendingFiles}
@@ -731,8 +751,12 @@ export function InventoryInboundSheet({
                 </>
               ) : (
                 <>
-                  <PackagePlus className="h-4 w-4" />
-                  Зафіксувати прихід
+                  {isHarvest ? (
+                    <Wheat className="h-4 w-4" />
+                  ) : (
+                    <PackagePlus className="h-4 w-4" />
+                  )}
+                  {isHarvest ? "Зафіксувати випуск" : "Зафіксувати прихід"}
                 </>
               )}
             </Button>

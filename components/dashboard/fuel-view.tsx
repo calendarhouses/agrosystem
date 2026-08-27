@@ -198,10 +198,10 @@ function BasSyncBadge({
           "bg-zinc-100 text-[11px] font-semibold tracking-wide text-zinc-600",
           "ring-1 ring-zinc-500/10"
         )}
-        title="Заправка зберігається локально; чернетка 1С лише для закупівлі та переміщення"
+        title="Заправка"
       >
         <CheckCircle2 className="h-3 w-3 shrink-0 text-zinc-400" strokeWidth={2.2} />
-        Локально
+        Збережено
       </span>
     );
   }
@@ -223,7 +223,7 @@ function BasSyncBadge({
         ) : (
           <AlertTriangle className="h-3 w-3 shrink-0" strokeWidth={2.2} />
         )}
-        Повторити 1С
+        Повторити
       </button>
     );
   }
@@ -232,7 +232,7 @@ function BasSyncBadge({
       type="button"
       disabled={sending || !onSend}
       onClick={onSend}
-      title="Підготувати чернетку для бухгалтера (відправка в BAS зараз вимкнена)"
+      title="Підготувати для бухгалтера"
       className={cn(
         "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1",
         "bg-amber-50 text-[11px] font-semibold tracking-wide text-amber-900",
@@ -245,7 +245,7 @@ function BasSyncBadge({
       ) : (
         <Clock3 className="h-3 w-3 shrink-0 text-amber-700" strokeWidth={2.2} />
       )}
-      Локально · черга 1С
+      Для бухгалтера
     </button>
   );
 }
@@ -884,7 +884,7 @@ export function FuelView({
           status?: FuelSyncStatus;
         };
         if (!response.ok || !json.ok) {
-          throw new Error(json.error || "Не вдалося підготувати чернетку 1С");
+          throw new Error(json.error || "Не вдалося підготувати для бухгалтера");
         }
         if (json.status) {
           setTransactions((prev) =>
@@ -897,10 +897,10 @@ export function FuelView({
         }
         alert(
           json.message ??
-            "Чернетку підготовлено. Відправка в BAS поки вимкнена."
+            "Підготовлено для бухгалтера."
         );
       } catch (err) {
-        alert(err instanceof Error ? err.message : "Помилка 1С");
+        alert(err instanceof Error ? err.message : "Помилка підготовки");
       } finally {
         setSend1cTxId(null);
       }
@@ -1227,7 +1227,7 @@ export function FuelView({
                 Журнал операцій
               </p>
               <p className="text-xs text-zinc-500/80">
-                Банківська виписка · колонка 1С готує чернетку бухгалтеру
+                Банківська виписка · статус підготовки для бухгалтера
               </p>
             </div>
             <button

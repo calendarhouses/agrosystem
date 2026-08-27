@@ -59,7 +59,7 @@ const NAV_ITEMS = [
   {
     href: "/export",
     label: "Бухгалтерія",
-    hint: "Excel для бухгалтера · чернетки списань",
+    hint: "Експорт операцій для бухгалтера",
     icon: FileSpreadsheet,
   },
   // Детокс: /reports тимчасово сховано — лише OPERATION_RECORDS mock

@@ -886,11 +886,11 @@ export function FinanceView({
                   />
                   <p className="mt-2 text-[11px] text-emerald-800/60">
                     {basDataError
-                      ? "лише локальні продажі"
+                      ? "лише продажі зі складу"
                       : revenueUah === 0
                         ? "Немає реалізацій за період"
                         : localSalesUah > 0
-                          ? `BAS ${formatHeroUah(basSalesUah)} · чернетки ${formatHeroUah(localSalesUah)}`
+                          ? `Реалізації ${formatHeroUah(basSalesUah)} · свої ${formatHeroUah(localSalesUah)}`
                           : `${basView?.docs.filter((d) => d.type === "sale").length ?? 0} реалізацій`}
                   </p>
                   <KpiClickHint icon={TrendingUp} />

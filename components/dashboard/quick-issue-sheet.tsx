@@ -219,7 +219,7 @@ export function QuickIssueSheet({
           setLoading(false);
           setLoadError(
             sync.error ||
-              "Довідник ТМЦ порожній. Не вдалося синхронізувати з BAS."
+              "Довідник ТМЦ порожній. Не вдалося синхронізувати номенклатуру."
           );
           setItems([]);
           setFields(res.fields);
@@ -240,7 +240,7 @@ export function QuickIssueSheet({
       setFields(res.fields);
       if (res.items.length === 0) {
         setLoadError(
-          "Довідник ТМЦ порожній. Перевір міграцію 014 і доступ до BAS."
+          "Довідник ТМЦ порожній. Додайте позицію на складі або синхронізуйте номенклатуру."
         );
         return;
       }

@@ -291,8 +291,8 @@ function RevenuePanel({
     },
     {
       key: "local",
-      label: "Чернетки продажів",
-      hint: "Ще не в 1С (sent_to_1c не дублюємо)",
+      label: "Продажі зі складу",
+      hint: "Ще не передані бухгалтеру",
       value: localSalesUah,
       icon: ArrowUpRight,
       color: "text-sky-700 bg-sky-500/10",
