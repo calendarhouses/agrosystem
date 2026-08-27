@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { getSeasonRange, kyivYmd } from "@/lib/finance-period";
+import { getSeasonRange } from "@/lib/finance-period";
 import { createServiceSupabase } from "@/lib/supabase/server";
 import { DEFAULT_SEASON, normalizeSeason } from "@/lib/season";
 
@@ -728,41 +728,4 @@ export async function markAccountantQueuePrepared(
   }
 
   return { ok: true, data: { inventory, fuel } };
-}
-
-export function accountantQueueItemToDraftMove(
-  item: AccountantQueueItem
-): DraftExportMove | null {
-  if (item.source !== "inventory") return null;
-  if (
-    item.kind !== "outbound" &&
-    item.kind !== "inbound" &&
-    item.kind !== "sale"
-  ) {
-    return null;
-  }
-  return {
-    id: item.id,
-    date: item.date,
-    qty: item.qty,
-    type: item.kind,
-    basRefKey: item.basRefKey ?? "",
-    itemName: item.title,
-    unit: item.unit,
-    category: item.category,
-    season: item.season,
-    fieldId: item.fieldId,
-    fieldName: item.fieldName,
-    note: item.note,
-    buyerName: item.buyerName,
-    unitPriceUah: item.unitPriceUah,
-    isLocalItem: item.isLocalItem,
-    hasAttachment: item.hasAttachment,
-  };
-}
-
-/** Хелпер: сьогоднішня дата Kyiv як ISO. */
-export async function getAccountantTodayIso(): Promise<string> {
-  const { year, month, day } = kyivYmd();
-  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
