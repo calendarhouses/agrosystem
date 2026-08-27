@@ -12,6 +12,7 @@ import {
   roundLiters,
   roundPrice,
 } from "@/lib/fuel-wac";
+import { countAttachmentsByEntityIds } from "@/lib/operation-attachments";
 import { createServiceSupabase } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -25,6 +26,7 @@ type Body = {
   amountLiters?: number;
   fromStorageId?: string | null;
   toStorageId?: string | null;
+  equipmentId?: string | null;
   wialonUnitId?: number | null;
   operatorName?: string | null;
   /** false → wialon_variance = null (ручний облік без ДУТ) */
@@ -90,12 +92,20 @@ export async function GET(request: Request) {
       );
     }
 
+    const mapped = (data ?? []).map((row) =>
+      mapFuelTransactionRow(row as Record<string, unknown>)
+    );
+    const counts = await countAttachmentsByEntityIds(
+      "fuel_transaction",
+      mapped.map((tx) => tx.id)
+    );
     return NextResponse.json(
       {
         ok: true,
-        transactions: (data ?? []).map((row) =>
-          mapFuelTransactionRow(row as Record<string, unknown>)
-        ),
+        transactions: mapped.map((tx) => ({
+          ...tx,
+          attachmentCount: counts[tx.id] ?? 0,
+        })),
       },
       { headers: JSON_UTF8 }
     );
@@ -146,6 +156,13 @@ export async function POST(request: Request) {
     let wialonUnitId: number | null =
       body.wialonUnitId != null && Number.isFinite(Number(body.wialonUnitId))
         ? Number(body.wialonUnitId)
+        : null;
+    let equipmentId: string | null =
+      typeof body.equipmentId === "string" &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        body.equipmentId.trim()
+      )
+        ? body.equipmentId.trim()
         : null;
 
     /** Ціна й сума, що потрапляють у історію транзакції */
@@ -222,6 +239,7 @@ export async function POST(request: Request) {
 
       fromStorageId = null;
       wialonUnitId = null;
+      equipmentId = null;
     } else if (transactionType === "transfer") {
       if (!fromStorageId || !toStorageId) {
         return badRequest("Оберіть ємності «звідки» і «куди»");
@@ -283,9 +301,12 @@ export async function POST(request: Request) {
       }
 
       wialonUnitId = null;
+      equipmentId = null;
     } else {
       if (!fromStorageId) return badRequest("Оберіть ємність-донор");
-      if (wialonUnitId == null) return badRequest("Оберіть техніку");
+      if (wialonUnitId == null && !equipmentId) {
+        return badRequest("Оберіть техніку");
+      }
       const from = await loadStorage(fromStorageId);
       if (!from) return badRequest("Ємність не знайдена");
 
@@ -340,6 +361,7 @@ export async function POST(request: Request) {
         from_storage_id: fromStorageId,
         to_storage_id: toStorageId,
         wialon_unit_id: wialonUnitId,
+        equipment_id: equipmentId,
         operator_name: body.operatorName?.trim() || null,
         wialon_variance: wialonVariance,
         wialon_verified: wialonVerified,
@@ -351,21 +373,59 @@ export async function POST(request: Request) {
       .select("*")
       .single();
 
-    if (txError) {
-      await restoreAll();
-      return NextResponse.json(
-        { ok: false, error: txError.message },
-        { status: 500, headers: JSON_UTF8 }
-      );
+    let savedRow: Record<string, unknown> | null = tx
+      ? (tx as Record<string, unknown>)
+      : null;
+
+    if (txError || !savedRow) {
+      // До міграції 040 — без equipment_id
+      if (
+        equipmentId &&
+        txError &&
+        (txError.message?.includes("equipment_id") || txError.code === "42703")
+      ) {
+        const retry = await supabase
+          .from("fuel_transactions")
+          .insert({
+            transaction_type: transactionType,
+            amount_liters: amount,
+            from_storage_id: fromStorageId,
+            to_storage_id: toStorageId,
+            wialon_unit_id: wialonUnitId,
+            operator_name: body.operatorName?.trim() || null,
+            wialon_variance: wialonVariance,
+            wialon_verified: wialonVerified,
+            price_per_liter: txPricePerLiter,
+            total_cost: txTotalCost,
+            sync_status: "pending_1c",
+            ...(transactionDate ? { transaction_date: transactionDate } : {}),
+          })
+          .select("*")
+          .single();
+        if (retry.error || !retry.data) {
+          await restoreAll();
+          return NextResponse.json(
+            { ok: false, error: retry.error?.message ?? txError.message },
+            { status: 500, headers: JSON_UTF8 }
+          );
+        }
+        savedRow = retry.data as Record<string, unknown>;
+      } else {
+        await restoreAll();
+        return NextResponse.json(
+          { ok: false, error: txError?.message ?? "Не вдалося зберегти" },
+          { status: 500, headers: JSON_UTF8 }
+        );
+      }
     }
 
     // Закупівля / переміщення → черга на чернетку 1С (зараз stub)
     if (
       (transactionType === "inbound" || transactionType === "transfer") &&
-      tx?.id
+      savedRow.id
     ) {
       const nextStatus = await enqueueFuelBasDraft({
-        transactionId: String(tx.id),
+        transactionId: String(savedRow.id),
         transactionType,
         amountLiters: amount,
         pricePerLiter: txPricePerLiter,
@@ -377,20 +437,20 @@ export async function POST(request: Request) {
         await supabase
           .from("fuel_transactions")
           .update({ sync_status: nextStatus })
-          .eq("id", tx.id);
-        (tx as { sync_status?: string }).sync_status = nextStatus;
+          .eq("id", savedRow.id);
+        savedRow.sync_status = nextStatus;
       }
     }
 
     return NextResponse.json(
       {
         ok: true,
-        transaction: mapFuelTransactionRow(tx as Record<string, unknown>),
+        transaction: mapFuelTransactionRow(savedRow),
         message:
           transactionType === "inbound"
-            ? "Партію збережено. Створено запит в 1С"
+            ? "Партію збережено локально. Чернетка 1С — після узгодження з бухгалтером"
             : transactionType === "transfer"
-              ? "Переміщення збережено. Створено запит в 1С"
+              ? "Переміщення збережено локально. Чернетка 1С — після узгодження з бухгалтером"
               : undefined,
       },
       { headers: JSON_UTF8 }

@@ -16,6 +16,8 @@ import { createServiceSupabase } from "@/lib/supabase/server";
 const FOLDER_ZZR_FERT = "ЗЗР, мін.добриво";
 /** У BAS немає окремої «Насіння» — це «Посівні матеріали» */
 const FOLDER_SEEDS = "Посівні матеріали";
+const FOLDER_PARTS = "Запчастини";
+const FOLDER_HARVEST = ["Продукція С/Г рослиництво", "Продукція"];
 
 export type CacheCategory = "zzr" | "fertilizer" | "seed" | "harvest" | "parts";
 
@@ -30,7 +32,12 @@ export type InventoryCacheRow = {
 export type SyncNomenclatureResult = {
   upserted: number;
   byCategory: Record<CacheCategory, number>;
-  folders: { zzrFert: number; seeds: number };
+  folders: {
+    zzrFert: number;
+    seeds: number;
+    parts: number;
+    harvest: number;
+  };
 };
 
 function itemsInFolders(
@@ -52,9 +59,36 @@ function itemsInFolders(
   );
 }
 
+function pushRows(
+  rows: InventoryCacheRow[],
+  byCategory: Record<CacheCategory, number>,
+  raw: BasNomenclature[],
+  unitMap: Map<string, string>,
+  now: string,
+  resolveCategory: (name: string) => CacheCategory
+) {
+  for (const row of raw) {
+    const basRef = normalizeBasRefKey(row.Ref_Key);
+    if (!basRef) continue;
+    const name = row.Description?.trim() || "Без назви";
+    const category = resolveCategory(name);
+    rows.push({
+      bas_ref_key: basRef,
+      name,
+      category,
+      unit:
+        unitMap.get((row.БазоваяЕдиницаИзмерения_Key ?? "").toLowerCase()) ||
+        "",
+      updated_at: now,
+    });
+    byCategory[category] += 1;
+  }
+}
+
 /**
- * Витягує з OData Catalog_Номенклатура (ЗЗР/добрива + посівні матеріали)
+ * Витягує з OData Catalog_Номенклатура (ЗЗР/добрива, насіння, запчастини, врожай)
  * і робить upsert у inventory_items_cache.
+ * Локальні позиції (is_local) не чіпає — інший bas_ref_key (UUID).
  */
 export async function syncNomenclatureToSupabase(): Promise<SyncNomenclatureResult> {
   const [nomenclature, units] = await Promise.all([
@@ -71,6 +105,8 @@ export async function syncNomenclatureToSupabase(): Promise<SyncNomenclatureResu
 
   const zzrFertRaw = itemsInFolders(nomenclature, [FOLDER_ZZR_FERT]);
   const seedsRaw = itemsInFolders(nomenclature, [FOLDER_SEEDS]);
+  const partsRaw = itemsInFolders(nomenclature, [FOLDER_PARTS]);
+  const harvestRaw = itemsInFolders(nomenclature, FOLDER_HARVEST);
 
   const now = new Date().toISOString();
   const rows: InventoryCacheRow[] = [];
@@ -82,45 +118,18 @@ export async function syncNomenclatureToSupabase(): Promise<SyncNomenclatureResu
     parts: 0,
   };
 
-  for (const row of zzrFertRaw) {
-    const basRef = normalizeBasRefKey(row.Ref_Key);
-    if (!basRef) continue;
-    const name = row.Description?.trim() || "Без назви";
-    const category: CacheCategory = isFertilizerName(name)
-      ? "fertilizer"
-      : "zzr";
-    rows.push({
-      bas_ref_key: basRef,
-      name,
-      category,
-      unit:
-        unitMap.get((row.БазоваяЕдиницаИзмерения_Key ?? "").toLowerCase()) ||
-        "",
-      updated_at: now,
-    });
-    byCategory[category] += 1;
-  }
-
-  for (const row of seedsRaw) {
-    const basRef = normalizeBasRefKey(row.Ref_Key);
-    if (!basRef) continue;
-    rows.push({
-      bas_ref_key: basRef,
-      name: row.Description?.trim() || "Без назви",
-      category: "seed",
-      unit:
-        unitMap.get((row.БазоваяЕдиницаИзмерения_Key ?? "").toLowerCase()) ||
-        "",
-      updated_at: now,
-    });
-    byCategory.seed += 1;
-  }
+  pushRows(rows, byCategory, zzrFertRaw, unitMap, now, (name) =>
+    isFertilizerName(name) ? "fertilizer" : "zzr"
+  );
+  pushRows(rows, byCategory, seedsRaw, unitMap, now, () => "seed");
+  pushRows(rows, byCategory, partsRaw, unitMap, now, () => "parts");
+  pushRows(rows, byCategory, harvestRaw, unitMap, now, () => "harvest");
 
   if (rows.length === 0) {
     return {
       upserted: 0,
       byCategory,
-      folders: { zzrFert: 0, seeds: 0 },
+      folders: { zzrFert: 0, seeds: 0, parts: 0, harvest: 0 },
     };
   }
 
@@ -147,6 +156,8 @@ export async function syncNomenclatureToSupabase(): Promise<SyncNomenclatureResu
     folders: {
       zzrFert: zzrFertRaw.length,
       seeds: seedsRaw.length,
+      parts: partsRaw.length,
+      harvest: harvestRaw.length,
     },
   };
 }

@@ -5,6 +5,8 @@ import {
   analyzeTrackVisitsInField,
   type FieldTechVisit,
 } from "@/lib/field-tech-history";
+import { toKyivDayKey } from "@/lib/kyiv-date";
+import { createServiceSupabase } from "@/lib/supabase/server";
 import { getWialonUnitTrack, wialonLogin } from "@/lib/wialon";
 
 export const runtime = "nodejs";
@@ -26,7 +28,40 @@ type Body = {
   units?: UnitRef[];
   from?: number;
   to?: number;
+  /** З ним повернемо ще й спалені літри по цьому полю за інтервал */
+  fieldId?: string | null;
 };
+
+/**
+ * Спалено на полі за ДУТ — та сама цифра, що в розділі Паливо.
+ * Наряд не повинен пропонувати інші літри, ніж бачить бухгалтерія.
+ */
+async function loadFieldFuelLiters(
+  fieldId: string,
+  unitIds: number[],
+  timeFrom: number,
+  timeTo: number
+): Promise<number | null> {
+  if (unitIds.length === 0) return null;
+  const fromDate = toKyivDayKey(new Date(timeFrom * 1000));
+  const toDate = toKyivDayKey(new Date(timeTo * 1000));
+
+  const supabase = createServiceSupabase();
+  const { data, error } = await supabase
+    .from("wialon_field_fuel_logs")
+    .select("fuel_consumed")
+    .eq("field_id", fieldId)
+    .in("wialon_unit_id", unitIds)
+    .gte("date", fromDate)
+    .lte("date", toDate);
+
+  if (error || !data || data.length === 0) return null;
+  const liters = data.reduce(
+    (acc, row) => acc + (Number(row.fuel_consumed) || 0),
+    0
+  );
+  return liters > 0 ? Math.round(liters * 10) / 10 : null;
+}
 
 /**
  * POST /api/wialon/field-history
@@ -134,11 +169,22 @@ export async function POST(request: NextRequest) {
 
     visits.sort((a, b) => b.startUnix - a.startUnix);
 
+    const fieldId = body.fieldId?.trim() || null;
+    const fieldFuelLiters = fieldId
+      ? await loadFieldFuelLiters(
+          fieldId,
+          units.map((u) => u.id),
+          timeFrom,
+          timeTo
+        ).catch(() => null)
+      : null;
+
     return NextResponse.json(
       {
         ok: true,
         visits,
         visitCount: visits.length,
+        fieldFuelLiters,
         partial,
         from: timeFrom,
         to: timeTo,

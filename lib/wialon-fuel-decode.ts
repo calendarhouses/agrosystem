@@ -307,7 +307,30 @@ export function detectFuelFills(
     const volume = Math.round((after - before) * 10) / 10;
 
     if (volume >= MIN_FILL_L && volume <= MAX_FILL_L) {
-      fills.push({ index: topIdx, startT, endT, volume });
+      const prev = fills[fills.length - 1];
+      // Заправка «сходинками»: вікна до/після перекриваються і та сама
+      // заливка інакше потрапляє в список двічі.
+      if (prev && startT - prev.endT <= FILL_LEVEL_WINDOW_SEC) {
+        const merged =
+          Math.round(
+            (after -
+              (medianInWindow(
+                smoothed,
+                prev.startT - FILL_LEVEL_WINDOW_SEC,
+                prev.startT
+              ) ??
+                after - prev.volume - volume)) *
+              10
+          ) / 10;
+        prev.endT = endT;
+        prev.index = topIdx;
+        prev.volume = Math.min(
+          MAX_FILL_L,
+          Math.max(prev.volume, merged)
+        );
+      } else {
+        fills.push({ index: topIdx, startT, endT, volume });
+      }
       i = topIdx + 1;
       continue;
     }

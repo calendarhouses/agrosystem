@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/sync-wialon-equipment-day",
       "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/sync-inventory-nomenclature",
+      "schedule": "0 5 * * *"
     }
   ]
 }

@@ -210,6 +210,7 @@ export async function updateFieldPlannedBudget(
     }
 
     revalidatePath("/");
+    revalidatePath("/finance");
     revalidatePath("/inventory");
     revalidatePath("/admin/fields");
     return { ok: true, data: { plannedBudgetPerHa: value } };

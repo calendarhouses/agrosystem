@@ -13,6 +13,11 @@ import {
 
 import { getRefuelSmartContext } from "@/app/fuel/actions";
 import {
+  AttachmentDropzone,
+  flushPendingAttachments,
+  type PendingAttachment,
+} from "@/components/dashboard/attachment-dropzone";
+import {
   FuelSheetFooter,
   FuelSheetHeader,
   fuelFieldLabelClass,
@@ -27,7 +32,9 @@ import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -41,16 +48,24 @@ import type {
   FuelTransaction,
   FuelTransactionType,
 } from "@/lib/fuel-transactions";
+import {
+  findEquipmentOpsOption,
+  type EquipmentOpsOption,
+} from "@/lib/equipment-ops-options";
 import { cn } from "@/lib/utils";
 
 export type FleetUnitOption = {
-  id: number;
+  key: string;
   name: string;
+  equipmentId?: string | null;
+  wialonUnitId?: number | null;
   /** Чи є ДУТ / паливний сенсор для GPS-звірки */
   hasFuelSensor: boolean;
+  hasTracker: boolean;
 };
 
 export function unitSelectLabel(unit: FleetUnitOption): string {
+  if (!unit.hasTracker) return `${unit.name} (Без трекера)`;
   return unit.hasFuelSensor
     ? `${unit.name} (GPS-контроль)`
     : `${unit.name} (Без датчика)`;
@@ -82,12 +97,13 @@ async function saveTransaction(
     amountLiters: number;
     fromStorageId?: string | null;
     toStorageId?: string | null;
+    equipmentId?: string | null;
     wialonUnitId?: number | null;
     hasFuelSensor?: boolean | null;
     pricePerLiter?: number | null;
   },
   editId?: string | null
-): Promise<{ message?: string }> {
+): Promise<{ message?: string; transactionId?: string }> {
   const response = await fetch(
     editId ? `/api/fuel/transactions/${editId}` : "/api/fuel/transactions",
     {
@@ -100,16 +116,21 @@ async function saveTransaction(
     ok?: boolean;
     error?: string;
     message?: string;
+    transaction?: { id?: string };
   };
   if (!response.ok || !data.ok) {
     throw new Error(data.error || "Не вдалося зберегти операцію");
   }
-  return { message: data.message };
+  return {
+    message: data.message,
+    transactionId: data.transaction?.id ?? editId ?? undefined,
+  };
 }
 
 async function submitRefuel(payload: {
   fromStorageId: string;
-  wialonUnitId: number;
+  equipmentId?: string | null;
+  wialonUnitId?: number | null;
   amountLiters: number;
   operatorName?: string | null;
   hasFuelSensor: boolean;
@@ -409,8 +430,12 @@ export function FuelActionDialogs({
   const [unitId, setUnitId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  /** Успіх закупівлі: повідомлення про запит у 1С */
+  /** Успіх закупівлі: локально + черга 1С (без POST у BAS) */
   const [purchaseSuccess, setPurchaseSuccess] = useState<string | null>(null);
+  const [pendingFiles, setPendingFiles] = useState<PendingAttachment[]>([]);
+  const [transferPendingFiles, setTransferPendingFiles] = useState<
+    PendingAttachment[]
+  >([]);
   /** Smart Context: локація + активний наряд */
   const [refuelLocationLabel, setRefuelLocationLabel] = useState<string | null>(
     null
@@ -440,10 +465,24 @@ export function FuelActionDialogs({
   const unitItems = useMemo(
     () =>
       units.map((unit) => ({
-        value: String(unit.id),
+        value: unit.key,
         label: unitSelectLabel(unit),
       })),
     [units]
+  );
+
+  const trackedUnits = useMemo(
+    () => units.filter((u) => u.hasTracker),
+    [units]
+  );
+  const nonTrackedUnits = useMemo(
+    () => units.filter((u) => !u.hasTracker),
+    [units]
+  );
+
+  const selectedUnit = useMemo(
+    () => units.find((u) => u.key === unitId) ?? null,
+    [units, unitId]
   );
 
   const amountValue = parseAmount(amount);
@@ -494,6 +533,7 @@ export function FuelActionDialogs({
     if (!isReceiveOpen) return;
     setError(null);
     setPurchaseSuccess(null);
+    setPendingFiles([]);
     if (editTransaction?.type === "inbound") {
       setAmount(String(editTransaction.amountLiters));
       const targetId = editTransaction.toStorageId ?? stationaryId;
@@ -513,6 +553,7 @@ export function FuelActionDialogs({
   useEffect(() => {
     if (!isTransferOpen) return;
     setError(null);
+    setTransferPendingFiles([]);
     if (editTransaction?.type === "transfer") {
       setAmount(String(editTransaction.amountLiters));
       setFromStorage(editTransaction.fromStorageId ?? stationaryId);
@@ -533,29 +574,38 @@ export function FuelActionDialogs({
     if (editTransaction?.type === "outbound") {
       setAmount(String(editTransaction.amountLiters));
       setFromStorage(editTransaction.fromStorageId ?? mobileId);
-      setUnitId(
-        editTransaction.wialonUnitId != null
-          ? String(editTransaction.wialonUnitId)
-          : units[0]
-            ? String(units[0].id)
-            : ""
+      const match = findEquipmentOpsOption(
+        units.map(
+          (u): EquipmentOpsOption => ({
+            key: u.key,
+            label: u.name,
+            equipmentId: u.equipmentId ?? null,
+            wialonUnitId: u.wialonUnitId ?? null,
+            hasTracker: u.hasTracker,
+            group: u.hasTracker ? "tracked" : "non_tracked",
+          })
+        ),
+        {
+          equipmentId: editTransaction.equipmentId,
+          wialonUnitId: editTransaction.wialonUnitId,
+        }
       );
+      setUnitId(match?.key ?? units[0]?.key ?? "");
       return;
     }
     setAmount("");
     setFromStorage(mobileId);
-    setUnitId(units[0] ? String(units[0].id) : "");
+    setUnitId(units[0]?.key ?? "");
   }, [isRefuelOpen, mobileId, units, editTransaction]);
 
-  /** Smart Context: локація Wialon + активний наряд при виборі техніки */
+  /** Smart Context: локація Wialon + активний наряд при виборі техніки з GPS */
   useEffect(() => {
-    if (!isRefuelOpen || !unitId) {
+    if (!isRefuelOpen || !selectedUnit?.wialonUnitId) {
       setRefuelLocationLabel(null);
       setRefuelActiveOp(null);
       return;
     }
-    const parsed = Number(unitId);
-    if (!Number.isFinite(parsed) || parsed <= 0) return;
+    const parsed = selectedUnit.wialonUnitId;
 
     let cancelled = false;
     setRefuelContextLoading(true);
@@ -576,18 +626,22 @@ export function FuelActionDialogs({
     return () => {
       cancelled = true;
     };
-  }, [isRefuelOpen, unitId]);
+  }, [isRefuelOpen, selectedUnit?.wialonUnitId]);
 
   function closeReceive(open: boolean) {
     onReceiveOpenChange(open);
     if (!open) {
       setPurchaseSuccess(null);
+      setPendingFiles([]);
       onEditTransactionChange?.(null);
     }
   }
   function closeTransfer(open: boolean) {
     onTransferOpenChange(open);
-    if (!open) onEditTransactionChange?.(null);
+    if (!open) {
+      setTransferPendingFiles([]);
+      onEditTransactionChange?.(null);
+    }
   }
   function closeRefuel(open: boolean) {
     onRefuelOpenChange(open);
@@ -694,13 +748,21 @@ export function FuelActionDialogs({
                     },
                     editTransaction?.type === "inbound" ? editId : null
                   );
+                  if (result.transactionId && pendingFiles.length > 0) {
+                    await flushPendingAttachments(
+                      "fuel_transaction",
+                      result.transactionId,
+                      pendingFiles
+                    );
+                    setPendingFiles([]);
+                  }
                   setAmount("");
                   setPricePerLiter("");
                   onEditTransactionChange?.(null);
                   await onSuccess();
                   setPurchaseSuccess(
                     result.message ??
-                      "Партію збережено. Створено запит в 1С"
+                      "Партію збережено локально. Чернетка 1С — після узгодження з бухгалтером"
                   );
                 } catch (err) {
                   setError(
@@ -760,6 +822,18 @@ export function FuelActionDialogs({
                   Вартість партії зʼявиться після кількості та ціни
                 </p>
               )}
+
+              <div className="space-y-2">
+                <p className={fuelFieldLabelClass}>Накладна</p>
+                <AttachmentDropzone
+                  entityType="fuel_transaction"
+                  entityId={
+                    editTransaction?.type === "inbound" ? editId : null
+                  }
+                  pending={pendingFiles}
+                  onPendingChange={setPendingFiles}
+                />
+              </div>
 
               {error ? <FormErrorBanner message={error} /> : null}
             </div>
@@ -832,7 +906,7 @@ export function FuelActionDialogs({
                   if (liters > free + 0.001) {
                     throw new Error(overflowMessage(free));
                   }
-                  await saveTransaction(
+                  const result = await saveTransaction(
                     {
                       transactionType: "transfer",
                       amountLiters: liters,
@@ -841,6 +915,14 @@ export function FuelActionDialogs({
                     },
                     editTransaction?.type === "transfer" ? editId : null
                   );
+                  if (result.transactionId && transferPendingFiles.length > 0) {
+                    await flushPendingAttachments(
+                      "fuel_transaction",
+                      result.transactionId,
+                      transferPendingFiles
+                    );
+                    setTransferPendingFiles([]);
+                  }
                 },
                 () => closeTransfer(false)
               )
@@ -877,6 +959,19 @@ export function FuelActionDialogs({
               {!transferOverflow && insufficientFuelError ? (
                 <FormErrorBanner message={insufficientFuelError} />
               ) : null}
+
+              <div className="space-y-2">
+                <p className={fuelFieldLabelClass}>Накладна</p>
+                <AttachmentDropzone
+                  entityType="fuel_transaction"
+                  entityId={
+                    editTransaction?.type === "transfer" ? editId : null
+                  }
+                  pending={transferPendingFiles}
+                  onPendingChange={setTransferPendingFiles}
+                />
+              </div>
+
               {error ? <FormErrorBanner message={error} /> : null}
             </div>
 
@@ -942,12 +1037,11 @@ export function FuelActionDialogs({
                       `Недостатньо палива в «${donorName}» (є ${Math.round(availableVolume).toLocaleString("uk-UA")} л)`
                     );
                   }
-                  const parsedUnit = Number(unitId);
-                  if (!Number.isFinite(parsedUnit) || parsedUnit <= 0) {
+                  const selected = units.find((u) => u.key === unitId);
+                  if (!selected) {
                     throw new Error("Оберіть техніку");
                   }
-                  const selectedUnit = units.find((u) => u.id === parsedUnit);
-                  const hasFuelSensor = selectedUnit?.hasFuelSensor ?? false;
+                  const hasFuelSensor = selected.hasFuelSensor;
                   const editOutboundId =
                     editTransaction?.type === "outbound" ? editId : null;
                   if (editOutboundId) {
@@ -956,7 +1050,8 @@ export function FuelActionDialogs({
                         transactionType: "outbound",
                         amountLiters: liters,
                         fromStorageId: fromStorage,
-                        wialonUnitId: parsedUnit,
+                        equipmentId: selected.equipmentId ?? null,
+                        wialonUnitId: selected.wialonUnitId ?? null,
                         hasFuelSensor,
                       },
                       editOutboundId
@@ -964,7 +1059,8 @@ export function FuelActionDialogs({
                   } else {
                     await submitRefuel({
                       fromStorageId: fromStorage,
-                      wialonUnitId: parsedUnit,
+                      equipmentId: selected.equipmentId ?? null,
+                      wialonUnitId: selected.wialonUnitId ?? null,
                       amountLiters: liters,
                       operatorName: null,
                       hasFuelSensor,
@@ -1006,47 +1102,66 @@ export function FuelActionDialogs({
                         unitsLoading ? "Завантаження…" : "Оберіть техніку"
                       }
                     >
-                      {units.find((u) => String(u.id) === unitId)
-                        ? unitSelectLabel(
-                            units.find((u) => String(u.id) === unitId)!
-                          )
-                        : null}
+                      {selectedUnit ? unitSelectLabel(selectedUnit) : null}
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent
                     alignItemWithTrigger
                     className="z-[80] max-w-[min(100vw-2rem,28rem)] rounded-2xl border border-zinc-200 bg-white p-1.5 text-zinc-900 shadow-lg"
                   >
-                    {units.map((unit) => {
-                      const hasFuelSensor = unit.hasFuelSensor;
-                      return (
-                        <SelectItem
-                          key={unit.id}
-                          value={String(unit.id)}
-                          className={selectItemClass}
-                        >
-                          <div className="flex min-w-0 flex-col gap-0.5 overflow-hidden">
-                            <span className="truncate font-semibold text-zinc-900">
-                              {hasFuelSensor
-                                ? `${unit.name} (GPS-контроль)`
-                                : `${unit.name} (Без датчика)`}
-                            </span>
-                            <span
-                              className={cn(
-                                "truncate text-sm font-medium",
-                                hasFuelSensor
-                                  ? "text-emerald-600"
-                                  : "text-zinc-500"
-                              )}
-                            >
-                              {hasFuelSensor
-                                ? "Звірка з датчиком палива Wialon"
-                                : "Ручний облік · без ДУТ"}
-                            </span>
-                          </div>
-                        </SelectItem>
-                      );
-                    })}
+                    {trackedUnits.length > 0 ? (
+                      <SelectGroup>
+                        <SelectLabel>З GPS</SelectLabel>
+                        {trackedUnits.map((unit) => (
+                          <SelectItem
+                            key={unit.key}
+                            value={unit.key}
+                            className={selectItemClass}
+                          >
+                            <div className="flex min-w-0 flex-col gap-0.5 overflow-hidden">
+                              <span className="truncate font-semibold text-zinc-900">
+                                {unit.hasFuelSensor
+                                  ? `${unit.name} (GPS-контроль)`
+                                  : `${unit.name} (Без датчика)`}
+                              </span>
+                              <span
+                                className={cn(
+                                  "truncate text-sm font-medium",
+                                  unit.hasFuelSensor
+                                    ? "text-emerald-600"
+                                    : "text-zinc-500"
+                                )}
+                              >
+                                {unit.hasFuelSensor
+                                  ? "Звірка з датчиком палива Wialon"
+                                  : "Ручний облік · без ДУТ"}
+                              </span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    ) : null}
+                    {nonTrackedUnits.length > 0 ? (
+                      <SelectGroup>
+                        <SelectLabel>Без трекера</SelectLabel>
+                        {nonTrackedUnits.map((unit) => (
+                          <SelectItem
+                            key={unit.key}
+                            value={unit.key}
+                            className={selectItemClass}
+                          >
+                            <div className="flex min-w-0 flex-col gap-0.5 overflow-hidden">
+                              <span className="truncate font-semibold text-zinc-900">
+                                {unit.name}
+                              </span>
+                              <span className="truncate text-sm font-medium text-zinc-500">
+                                Ручний облік · без GPS
+                              </span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    ) : null}
                   </SelectContent>
                 </Select>
               </div>

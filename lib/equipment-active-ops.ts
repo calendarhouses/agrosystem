@@ -67,6 +67,7 @@ type OpRow = {
   machinery: string | null;
   implement: string | null;
   wialon_unit_id: number | null;
+  equipment_id?: string | null;
   work_type: string | null;
   area_plan: number | string | null;
   area_fact: number | string | null;
@@ -105,7 +106,7 @@ export async function loadTodayActiveOperations(): Promise<
   let query = supabase
     .from("field_operations")
     .select(
-      "id, field_id, field_key, machinery, implement, wialon_unit_id, work_type, area_plan, area_fact, farm_fields ( id, name )"
+      "id, field_id, field_key, machinery, implement, wialon_unit_id, equipment_id, work_type, area_plan, area_fact, farm_fields ( id, name )"
     )
     .eq("status", "in_progress")
     .eq("occurred_at", today);
@@ -116,12 +117,28 @@ export async function loadTodayActiveOperations(): Promise<
     const legacy = await supabase
       .from("field_operations")
       .select(
-        "id, field_id, field_key, machinery, implement, wialon_unit_id, work_type, area_plan, area_fact, farm_fields ( id, name )"
+        "id, field_id, field_key, machinery, implement, wialon_unit_id, equipment_id, work_type, area_plan, area_fact, farm_fields ( id, name )"
       )
       .eq("status", "in_progress")
       .eq("occurred_at", today);
     data = legacy.data as typeof data;
     error = legacy.error;
+  }
+
+  // До міграції 040 — без equipment_id
+  if (
+    error &&
+    (error.message?.includes("equipment_id") || error.code === "42703")
+  ) {
+    const noEq = await supabase
+      .from("field_operations")
+      .select(
+        "id, field_id, field_key, machinery, implement, wialon_unit_id, work_type, area_plan, area_fact, farm_fields ( id, name )"
+      )
+      .eq("status", "in_progress")
+      .eq("occurred_at", today);
+    data = noEq.data as typeof data;
+    error = noEq.error;
   }
 
   if (error) {
@@ -166,13 +183,23 @@ export async function loadTodayActiveOperations(): Promise<
         ? Number(row.wialon_unit_id)
         : null;
 
-    let equipmentId: string | null = null;
-    if (wialonUnitId != null) {
+    let equipmentId: string | null =
+      row.equipment_id != null && String(row.equipment_id).trim()
+        ? String(row.equipment_id).trim()
+        : null;
+    if (!equipmentId && wialonUnitId != null) {
       equipmentId = eqByWialon.get(wialonUnitId)?.id ?? null;
     }
     if (!equipmentId && machinery) {
       const hit = eqList.find((eq) => namesMatch(eq.name, machinery));
       equipmentId = hit?.id ?? null;
+    }
+
+    // Якщо є equipment_id, але немає wialon — підтягнути з довідника
+    let resolvedWialon = wialonUnitId;
+    if (resolvedWialon == null && equipmentId) {
+      const eq = eqList.find((e) => e.id === equipmentId);
+      resolvedWialon = eq?.wialon_id ?? null;
     }
 
     let implementId: string | null = null;
@@ -188,7 +215,7 @@ export async function loadTodayActiveOperations(): Promise<
       fieldKey: row.field_key ? String(row.field_key) : null,
       machinery: machinery || "—",
       implement: implement || "—",
-      wialonUnitId,
+      wialonUnitId: resolvedWialon,
       equipmentId,
       implementId,
       workType: String(row.work_type ?? "").trim() || "Операція",

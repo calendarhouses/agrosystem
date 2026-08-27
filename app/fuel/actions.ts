@@ -1,6 +1,7 @@
 "use server";
 
 import {
+  dismissRefueling,
   findUnrecordedRefuelings,
   UNRECORDED_LOOKBACK_HOURS,
   type UnrecordedRefueling,
@@ -235,6 +236,27 @@ export async function getUnrecordedRefuelings(options?: {
         error instanceof Error
           ? error.message
           : "Не вдалося завантажити необліковані заправки",
+    };
+  }
+}
+
+/** Відхилити подію радара — хибне спрацювання ДУТ. */
+export async function dismissRadarRefueling(input: {
+  unitId: number;
+  timeIso: string;
+  volumeLiters: number;
+  reason?: string;
+}): Promise<ActionResult> {
+  try {
+    await dismissRefueling(input);
+    return { ok: true, data: null };
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Не вдалося відхилити заправку",
     };
   }
 }

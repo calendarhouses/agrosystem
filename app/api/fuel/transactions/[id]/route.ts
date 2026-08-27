@@ -40,6 +40,7 @@ type PatchBody = {
   amountLiters?: number;
   fromStorageId?: string | null;
   toStorageId?: string | null;
+  equipmentId?: string | null;
   wialonUnitId?: number | null;
   hasFuelSensor?: boolean | null;
   /** Для inbound — ціна нової партії (WAC) */
@@ -311,7 +312,6 @@ export async function PATCH(
     }
 
     const oldTx = existing as TxRow;
-    await reverseTx(supabase, oldTx);
 
     let fromStorageId: string | null = body.fromStorageId ?? null;
     let toStorageId: string | null = body.toStorageId ?? null;
@@ -319,11 +319,19 @@ export async function PATCH(
       body.wialonUnitId != null && Number.isFinite(Number(body.wialonUnitId))
         ? Number(body.wialonUnitId)
         : null;
+    let equipmentId: string | null =
+      typeof body.equipmentId === "string" &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        body.equipmentId.trim()
+      )
+        ? body.equipmentId.trim()
+        : null;
 
     let inboundBuyPrice: number | null = null;
     if (transactionType === "inbound") {
       fromStorageId = null;
       wialonUnitId = null;
+      equipmentId = null;
       const price = Number(body.pricePerLiter);
       if (!Number.isFinite(price) || price <= 0) {
         return badRequest("Вкажіть ціну за літр (₴)");
@@ -331,10 +339,34 @@ export async function PATCH(
       inboundBuyPrice = roundPrice(price);
     } else if (transactionType === "transfer") {
       wialonUnitId = null;
+      equipmentId = null;
     } else {
       toStorageId = null;
-      if (wialonUnitId == null) return badRequest("Оберіть техніку");
+      if (wialonUnitId == null && !equipmentId) {
+        return badRequest("Оберіть техніку");
+      }
     }
+
+    // Валідація пройшла → відкат старої + застосування нової.
+    // На будь-якій помилці відновлюємо oldTx.
+    await reverseTx(supabase, oldTx);
+
+    const restoreOld = async () => {
+      try {
+        await applyTx(
+          supabase,
+          oldTx.transaction_type,
+          Number(oldTx.amount_liters),
+          oldTx.from_storage_id,
+          oldTx.to_storage_id,
+          oldTx.price_per_liter != null && Number(oldTx.price_per_liter) > 0
+            ? Number(oldTx.price_per_liter)
+            : null
+        );
+      } catch {
+        /* best-effort restore */
+      }
+    };
 
     let costing: { pricePerLiter: number; totalCost: number };
     try {
@@ -347,16 +379,7 @@ export async function PATCH(
         inboundBuyPrice
       );
     } catch (err) {
-      await applyTx(
-        supabase,
-        oldTx.transaction_type,
-        Number(oldTx.amount_liters),
-        oldTx.from_storage_id,
-        oldTx.to_storage_id,
-        oldTx.price_per_liter != null && Number(oldTx.price_per_liter) > 0
-          ? Number(oldTx.price_per_liter)
-          : null
-      ).catch(() => undefined);
+      await restoreOld();
       throw err;
     }
 
@@ -368,25 +391,61 @@ export async function PATCH(
             0)
         : null;
 
-    const { data: updated, error: updateError } = await supabase
+    const patchPayload = {
+      transaction_type: transactionType,
+      amount_liters: amount,
+      from_storage_id: fromStorageId,
+      to_storage_id: toStorageId,
+      wialon_unit_id: wialonUnitId,
+      equipment_id: equipmentId,
+      wialon_variance: wialonVariance,
+      price_per_liter: costing.pricePerLiter,
+      total_cost: costing.totalCost,
+    };
+
+    let { data: updated, error: updateError } = await supabase
       .from("fuel_transactions")
-      .update({
-        transaction_type: transactionType,
-        amount_liters: amount,
-        from_storage_id: fromStorageId,
-        to_storage_id: toStorageId,
-        wialon_unit_id: wialonUnitId,
-        wialon_variance: wialonVariance,
-        price_per_liter: costing.pricePerLiter,
-        total_cost: costing.totalCost,
-      })
+      .update(patchPayload)
       .eq("id", id)
       .select("*")
       .single();
 
-    if (updateError) {
+    if (
+      updateError &&
+      equipmentId &&
+      (updateError.message?.includes("equipment_id") ||
+        updateError.code === "42703")
+    ) {
+      const { equipment_id: _drop, ...withoutEquipment } = patchPayload;
+      const retry = await supabase
+        .from("fuel_transactions")
+        .update(withoutEquipment)
+        .eq("id", id)
+        .select("*")
+        .single();
+      updated = retry.data;
+      updateError = retry.error;
+    }
+
+    if (updateError || !updated) {
+      // Нові обʼєми вже застосовані — знімаємо їх і повертаємо стару tx
+      try {
+        await reverseTx(supabase, {
+          id,
+          transaction_type: transactionType,
+          amount_liters: amount,
+          from_storage_id: fromStorageId,
+          to_storage_id: toStorageId,
+          wialon_unit_id: wialonUnitId,
+          price_per_liter: costing.pricePerLiter,
+          total_cost: costing.totalCost,
+        });
+      } catch {
+        /* best-effort */
+      }
+      await restoreOld();
       return NextResponse.json(
-        { ok: false, error: updateError.message },
+        { ok: false, error: updateError?.message ?? "Не вдалося оновити" },
         { status: 500, headers: JSON_UTF8 }
       );
     }
@@ -434,12 +493,37 @@ export async function DELETE(
 
     await reverseTx(supabase, existing as TxRow);
 
+    try {
+      const { deleteAttachmentsForEntity } = await import(
+        "@/lib/operation-attachments"
+      );
+      await deleteAttachmentsForEntity("fuel_transaction", id);
+    } catch {
+      /* best-effort */
+    }
+
     const { error: deleteError } = await supabase
       .from("fuel_transactions")
       .delete()
       .eq("id", id);
 
     if (deleteError) {
+      // Відкат обʼємів уже зроблено — повертаємо ефект старої tx
+      try {
+        const old = existing as TxRow;
+        await applyTx(
+          supabase,
+          old.transaction_type,
+          Number(old.amount_liters),
+          old.from_storage_id,
+          old.to_storage_id,
+          old.price_per_liter != null && Number(old.price_per_liter) > 0
+            ? Number(old.price_per_liter)
+            : null
+        );
+      } catch {
+        /* best-effort */
+      }
       return NextResponse.json(
         { ok: false, error: deleteError.message },
         { status: 500, headers: JSON_UTF8 }

@@ -378,7 +378,7 @@ export const COMMAND_ITEMS = [
   },
   {
     id: "cmd-export",
-    label: "Експорт в 1С",
+    label: "Бухгалтерія",
     hint: "Excel чернеток для бухгалтера",
     group: "Операції",
     icon: "chart" as const,

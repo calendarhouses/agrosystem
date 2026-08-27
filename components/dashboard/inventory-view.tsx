@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   endOfDay,
   format,
@@ -12,24 +13,26 @@ import type { DateRange } from "react-day-picker";
 import {
   ArrowDownLeft,
   ArrowUpRight,
-  Bug,
   Calendar as CalendarIcon,
   ChevronDown,
-  CloudUpload,
+  ChevronLeft,
+  Download,
   Eye,
   EyeOff,
   ExternalLink,
+  FlaskConical,
+  History,
   Leaf,
   Loader2,
-  MapPinned,
   MoreHorizontal,
-  Package,
   PackageMinus,
+  PackagePlus,
   Pencil,
+  Plus,
   Search,
   Sprout,
-  TrendingUp,
-  Warehouse,
+  Trash2,
+  Wheat,
   Wrench,
   type LucideIcon,
 } from "lucide-react";
@@ -37,24 +40,28 @@ import { toast } from "sonner";
 
 import {
   getInventoryCacheMetaMap,
-  getLocalOutboundQtyByItem,
+  getLocalMoveById,
+  getLocalMoveQtyByItem,
+  deleteLocalMove,
   setInventoryItemHidden,
-  syncLocalMovesToBasAction,
+  updateInventoryItemCard,
   type InventoryCacheMeta,
+  type LocalMoveRow,
+  type LocalOutboundRow,
 } from "@/app/admin/inventory/actions";
+import { AccountantExportSheet } from "@/components/dashboard/accountant-export-sheet";
+import { AttachmentViewerButton } from "@/components/dashboard/attachment-viewer";
+import { QuickIssueSheet } from "@/components/dashboard/quick-issue-sheet";
+import { InventoryInboundSheet } from "@/components/dashboard/inventory-inbound-sheet";
 import {
-  QuickIssueButton,
-  QuickIssueSheet,
-} from "@/components/dashboard/quick-issue-sheet";
-import { FieldEconomicsDashboard } from "@/components/dashboard/field-economics-dashboard";
-import { InventoryItemEditDialog } from "@/components/dashboard/inventory-item-edit-dialog";
+  InventorySaleButton,
+  InventorySaleSheet,
+} from "@/components/dashboard/inventory-sale-sheet";
 import {
-  LocalMovesHistoryButton,
+  EditLocalMoveInline,
   LocalMovesHistorySheet,
 } from "@/components/dashboard/local-moves-history-sheet";
-import { PageHeader } from "@/components/layout/page-header";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -63,14 +70,18 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { GlassCard } from "@/components/ui/glass-card";
 import { Input } from "@/components/ui/input";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Progress } from "@/components/ui/progress";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   Sheet,
   SheetContent,
@@ -79,15 +90,10 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
-import {
   filterDashboardByRange,
   formatInventoryMoney,
   formatInventoryQty,
+  INVENTORY_CATEGORIES,
   INVENTORY_CATEGORY_META,
   type InventoryCategory,
   type InventoryFullDashboard,
@@ -95,22 +101,48 @@ import {
   type ItemMove,
 } from "@/lib/inventory-bas";
 import { useSeasonStore } from "@/lib/season-store";
+import { useFieldRealtime } from "@/lib/use-field-realtime";
 import { cn } from "@/lib/utils";
 
-const CATEGORY_ORDER: InventoryCategory[] = [
-  "zzr",
-  "harvest",
-  "fertilizer",
-  "parts",
-];
+const CATEGORY_ORDER: InventoryCategory[] = INVENTORY_CATEGORIES;
 const CATEGORY_ICONS: Record<InventoryCategory, LucideIcon> = {
-  zzr: Bug,
-  harvest: Sprout,
-  fertilizer: Leaf,
+  zzr: FlaskConical,
+  harvest: Wheat,
+  fertilizer: Sprout,
+  seed: Leaf,
   parts: Wrench,
 };
 
-type Tab = "stock" | "economics";
+const CATEGORY_CARD_STYLE: Record<
+  InventoryCategory,
+  { card: string; icon: string; chip: string }
+> = {
+  zzr: {
+    card: "border-emerald-200/70 bg-gradient-to-br from-emerald-50 to-white hover:border-emerald-300/80",
+    icon: "bg-emerald-600 text-white shadow-emerald-600/25",
+    chip: "bg-emerald-100 text-emerald-800",
+  },
+  fertilizer: {
+    card: "border-orange-200/70 bg-gradient-to-br from-orange-50 to-white hover:border-orange-300/80",
+    icon: "bg-orange-500 text-white shadow-orange-500/25",
+    chip: "bg-orange-100 text-orange-800",
+  },
+  harvest: {
+    card: "border-amber-200/70 bg-gradient-to-br from-amber-50 to-white hover:border-amber-300/80",
+    icon: "bg-amber-500 text-white shadow-amber-500/25",
+    chip: "bg-amber-100 text-amber-900",
+  },
+  seed: {
+    card: "border-lime-200/70 bg-gradient-to-br from-lime-50 to-white hover:border-lime-300/80",
+    icon: "bg-lime-600 text-white shadow-lime-600/25",
+    chip: "bg-lime-100 text-lime-800",
+  },
+  parts: {
+    card: "border-zinc-200/80 bg-gradient-to-br from-zinc-50 to-white hover:border-zinc-300",
+    icon: "bg-zinc-800 text-white shadow-zinc-800/20",
+    chip: "bg-zinc-100 text-zinc-700",
+  },
+};
 
 type HistoryPeriod =
   | "Сьогодні"
@@ -173,21 +205,42 @@ function toIsoDay(d: Date): string {
   return format(d, "yyyy-MM-dd");
 }
 
+
+function formatCompactUah(amount: number): string {
+  if (!Number.isFinite(amount) || amount === 0) return "—";
+  const abs = Math.abs(amount);
+  if (abs >= 1_000_000) {
+    return `${new Intl.NumberFormat("uk-UA", {
+      maximumFractionDigits: 1,
+    }).format(amount / 1_000_000)} млн ₴`;
+  }
+  if (abs >= 1_000) {
+    return `${new Intl.NumberFormat("uk-UA", {
+      maximumFractionDigits: 0,
+    }).format(amount / 1_000)} тис. ₴`;
+  }
+  return formatInventoryMoney(amount);
+}
+
+
 type Props = {
   dashboard: InventoryFullDashboard | null;
   error: string | null;
 };
 
 export function InventoryView({ dashboard, error }: Props) {
-  const [tab, setTab] = useState<Tab>("stock");
-  const [category, setCategory] = useState<InventoryCategory>("zzr");
+  const router = useRouter();
+  const [category, setCategory] = useState<InventoryCategory | null>(null);
   const [query, setQuery] = useState("");
   const [onlyActive, setOnlyActive] = useState(true);
   const [openItemId, setOpenItemId] = useState<string | null>(null);
   const [quickIssueOpen, setQuickIssueOpen] = useState(false);
+  const [inboundOpen, setInboundOpen] = useState(false);
+  const [saleOpen, setSaleOpen] = useState(false);
   const [presetIssueKey, setPresetIssueKey] = useState<string | null>(null);
-  const [editItem, setEditItem] = useState<InventoryItem | null>(null);
+  const [presetSaleKey, setPresetSaleKey] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [showHidden, setShowHidden] = useState(false);
   const [cacheMetaByRef, setCacheMetaByRef] = useState<
     Record<string, InventoryCacheMeta>
@@ -195,8 +248,10 @@ export function InventoryView({ dashboard, error }: Props) {
   const [localOutboundByRef, setLocalOutboundByRef] = useState<
     Record<string, number>
   >({});
-  const [syncPending, startSyncTransition] = useTransition();
-  const [opsTick, setOpsTick] = useState(0);
+  const [localInboundByRef, setLocalInboundByRef] = useState<
+    Record<string, number>
+  >({});
+  const [localMoveRows, setLocalMoveRows] = useState<LocalOutboundRow[]>([]);
   const [movesRefreshToken, setMovesRefreshToken] = useState(0);
 
   const [period, setPeriod] = useState<HistoryPeriod>("Сезон");
@@ -210,18 +265,28 @@ export function InventoryView({ dashboard, error }: Props) {
   const rangePickStarted = useRef(false);
 
   async function refreshOperational() {
-    const [outRes, metaRes] = await Promise.all([
-      getLocalOutboundQtyByItem(),
+    const [movesRes, metaRes] = await Promise.all([
+      getLocalMoveQtyByItem(),
       getInventoryCacheMetaMap(),
     ]);
-    if (outRes.ok) setLocalOutboundByRef(outRes.byRef);
+    if (movesRes.ok) {
+      setLocalOutboundByRef(movesRes.outboundByRef);
+      setLocalInboundByRef(movesRes.inboundByRef);
+      setLocalMoveRows(movesRes.rows);
+    }
     if (metaRes.ok) setCacheMetaByRef(metaRes.byRef);
-    setOpsTick((t) => t + 1);
   }
 
   useEffect(() => {
     void refreshOperational();
   }, []);
+
+  useFieldRealtime({
+    onInventoryMovesChange: () => {
+      void refreshOperational();
+      setMovesRefreshToken((token) => token + 1);
+    },
+  });
 
   const dateRange = useMemo(
     () => getPeriodRange(period, seasonYear, customRange),
@@ -237,362 +302,658 @@ export function InventoryView({ dashboard, error }: Props) {
     );
   }, [dashboard, dateRange]);
 
-  const periodHint = useMemo(() => {
-    if (period === "Сезон") return `Сезон ${seasonYear}`;
-    if (period === "custom" && customRange?.from) {
-      return `${format(customRange.from, "d MMM", { locale: uk })}${
-        customRange.to
-          ? ` – ${format(customRange.to, "d MMM", { locale: uk })}`
-          : ""
-      }`;
+  /** Lifetime BAS qtyIn/qtyOut (не зрізане періодом) — для «На складі». */
+  const lifetimeQtyInByRef = useMemo(() => {
+    const map: Record<string, number> = {};
+    if (!dashboard) return map;
+    for (const item of dashboard.items) {
+      map[item.id.toLowerCase()] = Number(item.qtyIn) || 0;
     }
-    return period;
-  }, [period, seasonYear, customRange]);
+    return map;
+  }, [dashboard]);
+
+  const lifetimeQtyOutByRef = useMemo(() => {
+    const map: Record<string, number> = {};
+    if (!dashboard) return map;
+    for (const item of dashboard.items) {
+      map[item.id.toLowerCase()] = Number(item.qtyOut) || 0;
+    }
+    return map;
+  }, [dashboard]);
+
+  const localPeriodByRef = useMemo(() => {
+    const startIso = toIsoDay(dateRange.start);
+    const endIso = toIsoDay(dateRange.end);
+    const byRef: Record<
+      string,
+      { inbound: number; outbound: number; sale: number }
+    > = {};
+    for (const row of localMoveRows) {
+      if (row.status === "sent_to_1c") continue;
+      if (!row.dateYmd || row.dateYmd < startIso || row.dateYmd > endIso) {
+        continue;
+      }
+      const cur = byRef[row.ref] ?? { inbound: 0, outbound: 0, sale: 0 };
+      if (row.type === "inbound") cur.inbound += row.qty;
+      else if (row.type === "sale") {
+        cur.sale += row.qty;
+        cur.outbound += row.qty;
+      } else cur.outbound += row.qty;
+      byRef[row.ref] = cur;
+    }
+    return byRef;
+  }, [localMoveRows, dateRange]);
+
+  const localOutboundPeriodByRef = useMemo(() => {
+    const byRef: Record<string, number> = {};
+    for (const [ref, qty] of Object.entries(localPeriodByRef)) {
+      if (qty.outbound > 0) byRef[ref] = qty.outbound;
+    }
+    return byRef;
+  }, [localPeriodByRef]);
+
+  const periodItemById = useMemo(() => {
+    const map = new Map<string, InventoryItem>();
+    if (!view) return map;
+    for (const row of view.items) map.set(row.id, row);
+    return map;
+  }, [view]);
+
+  /** Позиції з рухами BAS/локальними за вибраний період (+ локальні SKU без BAS). */
+  const periodScopedItems = useMemo(() => {
+    if (!view) return [];
+    const byId = new Map(
+      view.items.map((item) => [item.id.toLowerCase(), item])
+    );
+    const stockCats = new Set([
+      "zzr",
+      "fertilizer",
+      "seed",
+      "parts",
+      "harvest",
+    ]);
+    for (const meta of Object.values(cacheMetaByRef)) {
+      const key = meta.basRefKey.toLowerCase();
+      if (byId.has(key)) continue;
+      if (!stockCats.has(meta.category)) continue;
+      const localPeriod = localPeriodByRef[key];
+      const hasLocalPeriod =
+        (localPeriod?.inbound ?? 0) > 0 || (localPeriod?.outbound ?? 0) > 0;
+      if (!meta.isLocal && !hasLocalPeriod) continue;
+      byId.set(key, {
+        id: key,
+        name: meta.customName?.trim() || meta.basName,
+        code: null,
+        category: meta.category as InventoryItem["category"],
+        unit: meta.unit,
+        qtyIn: 0,
+        qtyOut: 0,
+        costIn: 0,
+        costOut: 0,
+        cost: 0,
+        moveCount: hasLocalPeriod ? 1 : 0,
+        lastDate: null,
+      });
+    }
+    return [...byId.values()];
+  }, [view, cacheMetaByRef, localPeriodByRef]);
 
   const items = useMemo(() => {
-    if (!view) return [];
     const q = query.trim().toLowerCase();
-    return view.items.filter((item) => {
-      if (item.category !== category) return false;
-      const meta = cacheMetaByRef[item.id];
+    return periodScopedItems.filter((item) => {
+      if (!category || item.category !== category) return false;
+      const meta =
+        cacheMetaByRef[item.id] ?? cacheMetaByRef[item.id.toLowerCase()];
       const hidden = meta?.isHidden ?? false;
       if (!showHidden && hidden) return false;
-      if (onlyActive && item.moveCount <= 0 && !hidden) return false;
+
+      const periodItem = periodItemById.get(item.id);
+      const localPeriod = localPeriodByRef[item.id.toLowerCase()];
+      const hasPeriodBas = (periodItem?.moveCount ?? item.moveCount) > 0;
+      const hasPeriodLocal =
+        (localPeriod?.inbound ?? 0) > 0 || (localPeriod?.outbound ?? 0) > 0;
+      const isLocalSku = meta?.isLocal === true;
+
+      if (onlyActive) {
+        if (!hasPeriodBas && !hasPeriodLocal) return false;
+      }
+
       if (!q) return true;
       const displayName = (meta?.customName || item.name).toLowerCase();
       return (
         displayName.includes(q) ||
         item.name.toLowerCase().includes(q) ||
-        (item.code?.toLowerCase().includes(q) ?? false)
+        (item.code?.toLowerCase().includes(q) ?? false) ||
+        isLocalSku
       );
     });
-  }, [view, category, query, onlyActive, cacheMetaByRef, showHidden]);
+  }, [
+    periodScopedItems,
+    category,
+    query,
+    showHidden,
+    onlyActive,
+    cacheMetaByRef,
+    periodItemById,
+    localPeriodByRef,
+  ]);
 
-  const summary = view?.categories.find((c) => c.category === category);
+  const periodPillBtn = (active: boolean) =>
+    cn(
+      "inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-semibold transition-all sm:px-3.5",
+      active
+        ? "bg-white text-zinc-900 shadow-sm"
+        : "text-zinc-500 hover:text-zinc-800"
+    );
 
-  function handleSyncToBas() {
-    startSyncTransition(async () => {
-      const res = await syncLocalMovesToBasAction();
-      if (!res.ok) {
-        toast.error(res.error);
-        return;
+  const categorySummaries = view?.categories ?? [];
+
+  /** Локальні ₴ за період → KPI Закупки / Продажі (+ оборот категорій). */
+  const localPeriodFinance = useMemo(() => {
+    const startIso = toIsoDay(dateRange.start);
+    const endIso = toIsoDay(dateRange.end);
+    const categoryByRef: Record<string, InventoryCategory> = {};
+    for (const item of periodScopedItems) {
+      categoryByRef[item.id.toLowerCase()] = item.category;
+    }
+    for (const [key, meta] of Object.entries(cacheMetaByRef)) {
+      if (meta.category) {
+        categoryByRef[key.toLowerCase()] =
+          meta.category as InventoryCategory;
       }
-      if (res.data.moveCount === 0) {
-        toast.message("Немає чернеток для тесту", {
-          description: "Список draft порожній або все вже передано через /export.",
-        });
-        return;
+    }
+
+    let receiptsUah = 0;
+    let receiptDocs = 0;
+    let salesUah = 0;
+    let saleDocs = 0;
+    let harvestUah = 0;
+    const costByCategory: Partial<Record<InventoryCategory, number>> = {};
+
+    for (const row of localMoveRows) {
+      // sent_to_1c уже в BAS KPI після синку — не дублюємо
+      if (row.status === "sent_to_1c") continue;
+      if (!row.dateYmd || row.dateYmd < startIso || row.dateYmd > endIso) {
+        continue;
       }
-      if (res.data.dryRun) {
-        toast.message("Тестовий JSON згенеровано. Авто-відправка в 1С наразі вимкнена", {
-          description: `${res.data.draftCount} карт · ${res.data.moveCount} рухів лишаються draft (див. логи сервера). Передайте через «Експорт в 1С».`,
-        });
-        return;
+      const price = row.unitPriceUah;
+      const amount =
+        price != null && Number.isFinite(price)
+          ? Math.round(row.qty * price * 100) / 100
+          : 0;
+      const cat = categoryByRef[row.ref];
+
+      if (row.type === "inbound") {
+        receiptDocs += 1;
+        receiptsUah += amount;
+        if (cat === "harvest") harvestUah += amount;
+        if (cat && amount > 0) {
+          costByCategory[cat] = (costByCategory[cat] ?? 0) + amount;
+        }
+      } else if (row.type === "sale") {
+        saleDocs += 1;
+        salesUah += amount;
       }
-      toast.success("Тестовий JSON згенеровано", {
-        description: `${res.data.draftCount} карт · ${res.data.moveCount} рухів. Статус не змінено — підтвердіть на /export.`,
-      });
-    });
-  }
+    }
+
+    return {
+      receiptsUah: Math.round(receiptsUah),
+      receiptDocs,
+      salesUah: Math.round(salesUah),
+      saleDocs,
+      harvestUah: Math.round(harvestUah),
+      costByCategory,
+    };
+  }, [
+    localMoveRows,
+    dateRange,
+    periodScopedItems,
+    cacheMetaByRef,
+  ]);
+
+  /** Категорійні лічильники з урахуванням локальних рухів за період */
+  const categoryCounts = useMemo(() => {
+    const counts: Record<
+      string,
+      { active: number; total: number; cost: number }
+    > = {};
+    for (const cat of CATEGORY_ORDER) {
+      counts[cat] = { active: 0, total: 0, cost: 0 };
+    }
+    for (const item of periodScopedItems) {
+      const bucket = counts[item.category];
+      if (!bucket) continue;
+      const meta =
+        cacheMetaByRef[item.id] ?? cacheMetaByRef[item.id.toLowerCase()];
+      if (meta?.isHidden && !showHidden) continue;
+      bucket.total += 1;
+      const localPeriod = localPeriodByRef[item.id.toLowerCase()];
+      const hasPeriod =
+        item.moveCount > 0 ||
+        (localPeriod?.inbound ?? 0) > 0 ||
+        (localPeriod?.outbound ?? 0) > 0;
+      if (hasPeriod) {
+        bucket.active += 1;
+        bucket.cost += item.cost;
+      }
+    }
+    for (const cat of CATEGORY_ORDER) {
+      counts[cat].cost += localPeriodFinance.costByCategory[cat] ?? 0;
+    }
+    return counts;
+  }, [
+    periodScopedItems,
+    cacheMetaByRef,
+    localPeriodByRef,
+    showHidden,
+    localPeriodFinance,
+  ]);
 
   return (
-    <main className="mx-auto h-full w-full max-w-7xl overflow-y-auto overscroll-none px-4 pt-3 pb-6 sm:px-6 lg:px-8">
-      <PageHeader
-        icon={Warehouse}
-        title="Склад"
-        description={`BAS AGRO · ${periodHint}`}
-        actions={
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <LocalMovesHistoryButton
-              onClick={() => setHistoryOpen(true)}
-              className="h-9 flex-none rounded-xl px-3 text-xs sm:h-10"
-            />
-            <Button
-              type="button"
-              variant="outline"
-              size="lg"
-              onClick={handleSyncToBas}
-              disabled={syncPending}
-              className={cn(
-                "h-9 gap-2 rounded-xl border-[#276749]/30 bg-white/80 px-3 text-xs font-semibold text-[#276749] shadow-sm",
-                "hover:bg-[#276749]/5 hover:text-[#276749] sm:h-10 sm:px-3.5"
-              )}
-            >
-              {syncPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <CloudUpload className="h-4 w-4" />
-              )}
-              <span className="hidden truncate sm:inline">
-                Синхронізувати з 1С
-              </span>
-              <span className="sm:hidden">1С</span>
-            </Button>
-            <QuickIssueButton
-              onClick={() => setQuickIssueOpen(true)}
-              className="h-9 flex-none rounded-xl px-3 text-xs sm:h-10 sm:px-3.5 sm:text-sm"
-            />
+    <main
+      className={cn(
+        "h-full w-full overflow-y-auto overscroll-none",
+        "min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))]",
+        "from-slate-100 to-zinc-100 dark:from-slate-950 dark:to-zinc-950"
+      )}
+    >
+      <div className="mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
+        <div className="mb-4 flex flex-col gap-3 sm:mb-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-extrabold tracking-tight text-zinc-900 sm:text-3xl">
+              Склад
+            </h1>
+            <p className="mt-1 text-sm text-zinc-500">Оперативний облік ТМЦ</p>
           </div>
-        }
-      />
 
-      <QuickIssueSheet
-        open={quickIssueOpen}
-        onOpenChange={(open) => {
-          setQuickIssueOpen(open);
-          if (!open) setPresetIssueKey(null);
-        }}
-        presetItemRefKey={presetIssueKey}
-        onSuccess={() => {
-          void refreshOperational();
-          setMovesRefreshToken((token) => token + 1);
-        }}
-      />
-
-      <InventoryItemEditDialog
-        item={editItem}
-        open={editItem != null}
-        onOpenChange={(open) => {
-          if (!open) setEditItem(null);
-        }}
-        onSaved={() => {
-          void refreshOperational();
-        }}
-      />
-
-      <LocalMovesHistorySheet
-        open={historyOpen}
-        onOpenChange={setHistoryOpen}
-        refreshToken={movesRefreshToken}
-        onChanged={() => {
-          void refreshOperational();
-          setMovesRefreshToken((token) => token + 1);
-        }}
-      />
-
-      {error ? (
-        <div className="mt-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
-      ) : null}
-
-      {view ? (
-        <>
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <div className="inline-flex flex-wrap items-center gap-0.5 rounded-xl bg-zinc-100 p-1">
-              {PERIOD_OPTIONS.map((option) => {
-                const active = period === option;
-                return (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={() => setPeriod(option)}
-                    className={cn(
-                      "rounded-md px-3 py-1.5 text-xs transition-all",
-                      active
-                        ? "bg-white font-medium text-zinc-900 shadow-sm"
-                        : "font-medium text-zinc-500 hover:text-zinc-700"
-                    )}
-                  >
-                    {option}
-                  </button>
-                );
-              })}
-
-              <Popover
-                open={seasonOpen}
-                onOpenChange={(next) => {
-                  setSeasonOpen(next);
-                  if (next) setPeriod("Сезон");
-                }}
+          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+            <div className="flex items-center rounded-xl border border-zinc-200/90 bg-white/90 p-0.5 shadow-sm">
+              <button
+                type="button"
+                onClick={() => setHistoryOpen(true)}
+                className="inline-flex h-9 items-center gap-1.5 rounded-[10px] px-2.5 text-xs font-semibold text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-900 sm:px-3"
+                title="Історія"
               >
-                <PopoverTrigger
-                  className={cn(
-                    "inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs transition-all",
-                    period === "Сезон"
-                      ? "bg-white font-medium text-zinc-900 shadow-sm"
-                      : "font-medium text-zinc-500 hover:text-zinc-700"
-                  )}
-                >
-                  Сезон {seasonYear}
-                  <ChevronDown className="h-3 w-3 opacity-60" />
-                </PopoverTrigger>
-                <PopoverContent
-                  align="start"
-                  className="z-[100] w-40 rounded-xl border border-zinc-200 bg-white p-1 shadow-xl"
-                >
-                  {SEASON_OPTIONS.map((year) => (
+                <History className="h-3.5 w-3.5" />
+                <span className="hidden md:inline">Історія</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setExportOpen(true)}
+                className="inline-flex h-9 items-center gap-1.5 rounded-[10px] px-2.5 text-xs font-semibold text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-900 sm:px-3"
+                title="Експорт"
+              >
+                <Download className="h-3.5 w-3.5" />
+                <span className="hidden md:inline">Експорт</span>
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setInboundOpen(true)}
+              className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-sky-200/90 bg-sky-50 px-3 text-xs font-semibold text-sky-900 shadow-sm transition hover:bg-sky-100 sm:px-3.5"
+            >
+              <PackagePlus className="h-3.5 w-3.5" />
+              Прихід
+            </button>
+            {category === "harvest" ? (
+              <InventorySaleButton onClick={() => setSaleOpen(true)} />
+            ) : (
+              <button
+                type="button"
+                onClick={() => setQuickIssueOpen(true)}
+                className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-zinc-900 px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-zinc-800 sm:px-3.5"
+              >
+                <PackageMinus className="h-3.5 w-3.5" />
+                Списати
+              </button>
+            )}
+          </div>
+        </div>
+
+        <QuickIssueSheet
+          open={quickIssueOpen}
+          onOpenChange={(open) => {
+            setQuickIssueOpen(open);
+            if (!open) setPresetIssueKey(null);
+          }}
+          presetItemRefKey={presetIssueKey}
+          onSuccess={() => {
+            void refreshOperational();
+            setMovesRefreshToken((token) => token + 1);
+            router.refresh();
+          }}
+        />
+
+        <InventoryInboundSheet
+          open={inboundOpen}
+          onOpenChange={setInboundOpen}
+          presetCategory={category}
+          onSuccess={() => {
+            void refreshOperational();
+            setMovesRefreshToken((token) => token + 1);
+            router.refresh();
+          }}
+        />
+
+        <InventorySaleSheet
+          open={saleOpen}
+          onOpenChange={(open) => {
+            setSaleOpen(open);
+            if (!open) setPresetSaleKey(null);
+          }}
+          presetItemRefKey={presetSaleKey}
+          onSuccess={() => {
+            void refreshOperational();
+            setMovesRefreshToken((token) => token + 1);
+            router.refresh();
+          }}
+        />
+
+        <LocalMovesHistorySheet
+          open={historyOpen}
+          onOpenChange={setHistoryOpen}
+          refreshToken={movesRefreshToken}
+          season={activeSeason}
+          onChanged={() => {
+            void refreshOperational();
+            setMovesRefreshToken((token) => token + 1);
+          }}
+        />
+
+        <AccountantExportSheet
+          open={exportOpen}
+          onOpenChange={setExportOpen}
+          onChanged={() => {
+            void refreshOperational();
+            setMovesRefreshToken((token) => token + 1);
+          }}
+        />
+
+        {error ? (
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </div>
+        ) : null}
+
+        {view ? (
+          <>
+            <div className="mb-5 space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="inline-flex items-center rounded-full border border-zinc-200/90 bg-white/80 p-1 shadow-sm">
+                  {PERIOD_OPTIONS.map((option) => (
                     <button
-                      key={year}
+                      key={option}
                       type="button"
-                      onClick={() => {
-                        setSeasonYear(year);
-                        setPeriod("Сезон");
-                        setSeasonOpen(false);
-                      }}
-                      className={cn(
-                        "flex w-full items-center rounded-lg px-3 py-2 text-left text-sm transition-colors",
-                        seasonYear === year && period === "Сезон"
-                          ? "bg-[#276749]/10 font-semibold text-[#276749]"
-                          : "text-zinc-700 hover:bg-zinc-50"
-                      )}
+                      onClick={() => setPeriod(option)}
+                      className={periodPillBtn(period === option)}
                     >
-                      Сезон {year}
+                      {option}
                     </button>
                   ))}
-                </PopoverContent>
-              </Popover>
-            </div>
 
-            <Popover
-              open={rangeOpen}
-              onOpenChange={(open) => {
-                setRangeOpen(open);
-                if (open) rangePickStarted.current = false;
-              }}
-            >
-              <PopoverTrigger
-                className={cn(
-                  "inline-flex h-8 items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-700 shadow-sm",
-                  "outline-none transition hover:bg-zinc-50 focus-visible:ring-2 focus-visible:ring-[#276749]/25",
-                  period === "custom" &&
-                    "border-[#276749]/35 bg-[#276749]/5 text-[#276749]"
-                )}
-              >
-                <CalendarIcon className="h-3.5 w-3.5 shrink-0 opacity-70" />
-                {period === "custom" && customRange?.from
-                  ? `${format(customRange.from, "d MMM", { locale: uk })}${
-                      customRange.to
-                        ? ` – ${format(customRange.to, "d MMM", { locale: uk })}`
-                        : ""
-                    }`
-                  : "Діапазон"}
-              </PopoverTrigger>
-              <PopoverContent
-                align="start"
-                className="z-[100] w-auto rounded-2xl border border-zinc-200 bg-white p-2 shadow-xl"
-              >
-                <Calendar
-                  mode="range"
-                  numberOfMonths={1}
-                  selected={customRange}
-                  onSelect={(range) => {
-                    setPeriod("custom");
-                    if (!range?.from) {
-                      setCustomRange(undefined);
-                      rangePickStarted.current = false;
-                      return;
-                    }
-
-                    if (!rangePickStarted.current) {
-                      rangePickStarted.current = true;
-                      setCustomRange({ from: range.from, to: undefined });
-                      return;
-                    }
-
-                    if (!range.to) {
-                      setCustomRange({ from: range.from, to: undefined });
-                      return;
-                    }
-
-                    setCustomRange(range);
-                    rangePickStarted.current = false;
-                    setRangeOpen(false);
-                  }}
-                  locale={uk}
-                  className="rounded-xl"
-                />
-              </PopoverContent>
-            </Popover>
-          </div>
-
-          <section className="mt-3 grid grid-cols-3 gap-2">
-            <KpiCard
-              label="Закупки"
-              value={formatInventoryMoney(view.totalReceipts)}
-              sub={`${view.docs.filter((d) => d.type === "receipt").length} док.`}
-              icon={ArrowDownLeft}
-              accent="#2563EB"
-            />
-            <KpiCard
-              label="Продажі"
-              value={formatInventoryMoney(view.totalSales)}
-              sub={`${view.docs.filter((d) => d.type === "sale").length} док.`}
-              icon={ArrowUpRight}
-              accent="#16A34A"
-            />
-            <KpiCard
-              label="Випуск"
-              value={formatInventoryMoney(view.totalHarvest)}
-              sub="Собівартість"
-              icon={TrendingUp}
-              accent="#D97706"
-            />
-          </section>
-
-          <Tabs
-            value={tab}
-            onValueChange={(v) => setTab(v as Tab)}
-            className="mt-4 gap-4"
-          >
-            <TabsList className="h-10 w-full rounded-xl bg-zinc-100 p-1 sm:w-auto">
-              <TabsTrigger
-                value="stock"
-                className="flex-1 gap-1.5 rounded-lg px-3 text-xs font-semibold sm:flex-none sm:px-4"
-              >
-                <Package className="h-3.5 w-3.5" />
-                Оперативний склад
-              </TabsTrigger>
-              <TabsTrigger
-                value="economics"
-                className="flex-1 gap-1.5 rounded-lg px-3 text-xs font-semibold sm:flex-none sm:px-4"
-              >
-                <MapPinned className="h-3.5 w-3.5" />
-                Економіка полів
-              </TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="stock" className="mt-0 space-y-4 outline-none">
-              <div className="flex flex-col gap-3">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {CATEGORY_ORDER.map((cat) => {
-                    const card = view.categories.find((c) => c.category === cat)!;
-                    const meta = INVENTORY_CATEGORY_META[cat];
-                    const Icon = CATEGORY_ICONS[cat];
-                    const active = category === cat;
-                    return (
-                      <button
-                        key={cat}
-                        type="button"
-                        onClick={() => {
-                          setCategory(cat);
-                          setOpenItemId(null);
-                        }}
-                        className={cn(
-                          "inline-flex h-9 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition-all",
-                          active
-                            ? "border-transparent text-white shadow-sm"
-                            : "border-[#E5DFD3] bg-[#FDFBF7] text-zinc-600 hover:border-zinc-300 hover:bg-white"
-                        )}
-                        style={
-                          active ? { backgroundColor: meta.accent } : undefined
-                        }
-                      >
-                        <Icon className="h-3.5 w-3.5" />
-                        {meta.label}
-                        <span
+                  <Popover
+                    open={seasonOpen}
+                    onOpenChange={(next) => {
+                      setSeasonOpen(next);
+                      if (next) setPeriod("Сезон");
+                    }}
+                  >
+                    <PopoverTrigger
+                      className={periodPillBtn(period === "Сезон")}
+                    >
+                      Сезон {seasonYear}
+                      <ChevronDown className="h-3.5 w-3.5 opacity-70" />
+                    </PopoverTrigger>
+                    <PopoverContent
+                      align="start"
+                      className="z-[100] w-40 rounded-xl border border-zinc-200 bg-white p-1 shadow-xl"
+                    >
+                      {SEASON_OPTIONS.map((year) => (
+                        <button
+                          key={year}
+                          type="button"
+                          onClick={() => {
+                            setSeasonYear(year);
+                            setPeriod("Сезон");
+                            setSeasonOpen(false);
+                          }}
                           className={cn(
-                            "rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums",
-                            active
-                              ? "bg-white/20 text-white"
-                              : "bg-zinc-100 text-zinc-500"
+                            "flex w-full items-center rounded-lg px-3 py-2 text-left text-sm transition-colors",
+                            seasonYear === year && period === "Сезон"
+                              ? "bg-emerald-50 font-semibold text-emerald-800"
+                              : "text-zinc-700 hover:bg-zinc-50"
                           )}
                         >
-                          {onlyActive ? card.activeCount : card.itemCount}
+                          Сезон {year}
+                        </button>
+                      ))}
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
+                <Popover
+                  open={rangeOpen}
+                  onOpenChange={(open) => {
+                    setRangeOpen(open);
+                    if (open) rangePickStarted.current = false;
+                  }}
+                >
+                  <PopoverTrigger
+                    className={cn(
+                      "inline-flex h-8 items-center gap-2 rounded-full border border-zinc-200/90 px-3 text-xs font-semibold shadow-sm transition-all",
+                      period === "custom"
+                        ? "bg-white text-zinc-900"
+                        : "bg-white/80 text-zinc-500 hover:text-zinc-800"
+                    )}
+                  >
+                    <CalendarIcon className="h-3.5 w-3.5 shrink-0 opacity-70" />
+                    {period === "custom" && customRange?.from
+                      ? `${format(customRange.from, "d MMM", { locale: uk })}${
+                          customRange.to
+                            ? ` – ${format(customRange.to, "d MMM", { locale: uk })}`
+                            : ""
+                        }`
+                      : "Діапазон"}
+                  </PopoverTrigger>
+                  <PopoverContent
+                    align="start"
+                    className="z-[100] w-auto rounded-2xl border border-zinc-200 bg-white p-2 shadow-xl"
+                  >
+                    <Calendar
+                      mode="range"
+                      numberOfMonths={1}
+                      selected={customRange}
+                      onSelect={(range) => {
+                        setPeriod("custom");
+                        if (!range?.from) {
+                          setCustomRange(undefined);
+                          rangePickStarted.current = false;
+                          return;
+                        }
+
+                        if (!rangePickStarted.current) {
+                          rangePickStarted.current = true;
+                          setCustomRange({ from: range.from, to: undefined });
+                          return;
+                        }
+
+                        if (!range.to) {
+                          setCustomRange({ from: range.from, to: undefined });
+                          return;
+                        }
+
+                        setCustomRange(range);
+                        rangePickStarted.current = false;
+                        setRangeOpen(false);
+                      }}
+                      locale={uk}
+                      className="rounded-xl"
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 sm:gap-3">
+                {(
+                  [
+                    {
+                      label: "Закупки",
+                      value: formatCompactUah(
+                        view.totalReceipts + localPeriodFinance.receiptsUah
+                      ),
+                      hint: `${
+                        view.docs.filter((d) => d.type === "receipt").length +
+                        localPeriodFinance.receiptDocs
+                      } док.`,
+                      tone: "from-white via-zinc-50/80 to-emerald-50/40",
+                    },
+                    {
+                      label: "Продажі",
+                      value: formatCompactUah(
+                        view.totalSales + localPeriodFinance.salesUah
+                      ),
+                      hint: `${
+                        view.docs.filter((d) => d.type === "sale").length +
+                        localPeriodFinance.saleDocs
+                      } док.`,
+                      tone: "from-white via-zinc-50/80 to-sky-50/40",
+                    },
+                    {
+                      label: "Випуск",
+                      value: formatCompactUah(
+                        view.totalHarvest + localPeriodFinance.harvestUah
+                      ),
+                      hint: "собівартість",
+                      tone: "from-white via-zinc-50/80 to-amber-50/40",
+                    },
+                  ] as const
+                ).map((kpi) => (
+                  <div
+                    key={kpi.label}
+                    className={cn(
+                      "min-h-[5.5rem] rounded-2xl border border-zinc-200/80 bg-gradient-to-br p-3 shadow-sm sm:p-4",
+                      kpi.tone
+                    )}
+                    title={kpi.value}
+                  >
+                    <p className="text-[10px] font-semibold tracking-[0.14em] text-zinc-400 uppercase">
+                      {kpi.label}
+                    </p>
+                    <p className="mt-1.5 truncate text-lg font-bold tracking-tight text-zinc-900 tabular-nums sm:text-xl">
+                      {kpi.value}
+                    </p>
+                    <p className="mt-0.5 text-[10px] text-zinc-400">{kpi.hint}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {category == null ? (
+              <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {CATEGORY_ORDER.map((cat) => {
+                  const card =
+                    categorySummaries.find((c) => c.category === cat) ??
+                    view.categories.find((c) => c.category === cat);
+                  const counts = categoryCounts[cat] ?? {
+                    active: 0,
+                    total: 0,
+                    cost: 0,
+                  };
+                  const meta = INVENTORY_CATEGORY_META[cat];
+                  const style = CATEGORY_CARD_STYLE[cat];
+                  const Icon = CATEGORY_ICONS[cat];
+                  const count = onlyActive ? counts.active : counts.total;
+                  const periodCost = counts.cost || (card?.totalCost ?? 0);
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => {
+                        setCategory(cat);
+                        setOpenItemId(null);
+                        setQuery("");
+                      }}
+                      className={cn(
+                        "group relative min-h-[168px] overflow-hidden rounded-3xl border p-6 text-left shadow-sm transition-all",
+                        "hover:-translate-y-0.5 hover:shadow-md",
+                        style.card
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div
+                          className={cn(
+                            "flex h-12 w-12 items-center justify-center rounded-2xl shadow-md",
+                            style.icon
+                          )}
+                        >
+                          <Icon className="h-5 w-5" strokeWidth={1.9} />
+                        </div>
+                        <span
+                          className={cn(
+                            "rounded-full px-2.5 py-1 text-[11px] font-bold tabular-nums",
+                            style.chip
+                          )}
+                        >
+                          {count} поз.
                         </span>
-                      </button>
-                    );
-                  })}
+                      </div>
+                      <p className="mt-5 text-xl font-extrabold tracking-tight text-zinc-900">
+                        {meta.label}
+                      </p>
+                      <p className="mt-1 text-sm text-zinc-500">
+                        {meta.description}
+                      </p>
+                      <div className="mt-4 flex items-end justify-between gap-2">
+                        <div>
+                          <p className="text-[10px] font-semibold tracking-wider text-zinc-400 uppercase">
+                            Оборот за період
+                          </p>
+                          <p className="mt-0.5 text-base font-bold tabular-nums text-zinc-900">
+                            {formatCompactUah(periodCost)}
+                          </p>
+                        </div>
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-zinc-400 transition group-hover:text-zinc-700">
+                          Відкрити
+                          <ChevronDown className="h-3.5 w-3.5 -rotate-90" />
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </section>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCategory(null);
+                      setOpenItemId(null);
+                      setQuery("");
+                    }}
+                    className="inline-flex h-9 items-center gap-1.5 rounded-full border border-zinc-200/90 bg-white px-3 text-xs font-semibold text-zinc-600 shadow-sm transition hover:text-zinc-900"
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                    Усі категорії
+                  </button>
+                  <div
+                    className={cn(
+                      "inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-semibold",
+                      CATEGORY_CARD_STYLE[category].chip
+                    )}
+                  >
+                    {(() => {
+                      const Icon = CATEGORY_ICONS[category];
+                      return <Icon className="h-3.5 w-3.5" strokeWidth={2} />;
+                    })()}
+                    {INVENTORY_CATEGORY_META[category].label}
+                  </div>
+                  {category ? (
+                    <span className="text-xs text-zinc-400">
+                      {categoryCounts[category]?.active ?? 0} за період ·{" "}
+                      {categoryCounts[category]?.total ?? 0} у списку
+                    </span>
+                  ) : null}
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
@@ -601,8 +962,8 @@ export function InventoryView({ dashboard, error }: Props) {
                     <Input
                       value={query}
                       onChange={(e) => setQuery(e.target.value)}
-                      placeholder="Пошук…"
-                      className="h-9 rounded-full border-[#E5DFD3] bg-[#FDFBF7] pl-9 text-xs shadow-sm"
+                      placeholder="Пошук номенклатури…"
+                      className="h-9 rounded-full border-zinc-200 bg-white pl-9 text-xs shadow-sm"
                     />
                   </div>
                   <Button
@@ -613,21 +974,21 @@ export function InventoryView({ dashboard, error }: Props) {
                     className={cn(
                       "h-9 shrink-0 rounded-full px-3 text-xs font-semibold",
                       onlyActive
-                        ? "bg-[#276749] text-white hover:bg-[#1f5339]"
-                        : "border-[#E5DFD3] bg-[#FDFBF7] text-zinc-600"
+                        ? "bg-zinc-900 text-white hover:bg-zinc-800"
+                        : "border-zinc-200 bg-white text-zinc-600"
                     )}
                   >
-                    {onlyActive ? "Лише з документами" : "Увесь довідник"}
+                    {onlyActive ? "Лише за період" : "Увесь довідник"}
                   </Button>
                   <button
                     type="button"
                     onClick={() => setShowHidden((v) => !v)}
-                    title="Показує позиції, які ви приховали з екрану (меню ⋯ на картці)"
+                    title="Показує позиції, які ви приховали з екрану"
                     className={cn(
                       "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition-all",
                       showHidden
-                        ? "border-[#276749]/30 bg-[#276749]/10 text-[#276749]"
-                        : "border-[#E5DFD3] bg-[#FDFBF7] text-zinc-500 hover:bg-white"
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                        : "border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50"
                     )}
                   >
                     {showHidden ? (
@@ -635,171 +996,222 @@ export function InventoryView({ dashboard, error }: Props) {
                     ) : (
                       <EyeOff className="h-3.5 w-3.5" />
                     )}
-                    {showHidden ? "Приховані: увімк." : "Приховані"}
+                    Приховані
                   </button>
                 </div>
-              </div>
 
-              <p className="text-[11px] text-zinc-400">
-                {summary
-                  ? `${summary.activeCount} з документами · ${summary.itemCount} у довіднику`
-                  : null}
-                {view.stockNote ? ` · ${view.stockNote}` : null}
-              </p>
-
-              {items.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-[#E5DFD3] bg-[#FDFBF7]/60 px-6 py-12 text-center text-sm text-zinc-500">
-                  Нічого не знайдено.
-                </div>
-              ) : (
-                <NomenclatureGrid
-                  items={items}
-                  moves={view.moves}
-                  localOutboundByRef={localOutboundByRef}
-                  cacheMetaByRef={cacheMetaByRef}
-                  openItemId={openItemId}
-                  onOpenItem={(id) => setOpenItemId(id)}
-                  onIssueToField={(item) => {
-                    if (
-                      item.category === "harvest" ||
-                      item.category === "parts"
-                    ) {
-                      toast.message(
-                        "Списання на поле — для ЗЗР, добрив і насіння",
-                        {
-                          description:
-                            "Ця позиція не входить до оперативного списання.",
-                        }
+                {items.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-zinc-200 bg-white/60 px-6 py-12 text-center text-sm text-zinc-500">
+                    Нічого не знайдено.
+                  </div>
+                ) : (
+                  <NomenclatureGrid
+                    items={items}
+                    periodItemById={periodItemById}
+                    periodMoves={view.moves}
+                    lifetimeQtyInByRef={lifetimeQtyInByRef}
+                    lifetimeQtyOutByRef={lifetimeQtyOutByRef}
+                    localMoveRows={localMoveRows}
+                    periodStartIso={toIsoDay(dateRange.start)}
+                    periodEndIso={toIsoDay(dateRange.end)}
+                    localOutboundByRef={localOutboundByRef}
+                    localInboundByRef={localInboundByRef}
+                    localOutboundPeriodByRef={localOutboundPeriodByRef}
+                    localSalePeriodByRef={Object.fromEntries(
+                      Object.entries(localPeriodByRef).map(([k, v]) => [
+                        k,
+                        v.sale,
+                      ])
+                    )}
+                    localInboundPeriodByRef={Object.fromEntries(
+                      Object.entries(localPeriodByRef).map(([k, v]) => [
+                        k,
+                        v.inbound,
+                      ])
+                    )}
+                    cacheMetaByRef={cacheMetaByRef}
+                    openItemId={openItemId}
+                    onOpenItem={(id) => setOpenItemId(id)}
+                    onIssueToField={(item) => {
+                      if (item.category === "harvest") {
+                        setPresetSaleKey(item.id);
+                        setSaleOpen(true);
+                        return;
+                      }
+                      setPresetIssueKey(item.id);
+                      setQuickIssueOpen(true);
+                    }}
+                    onCardSaved={() => {
+                      void refreshOperational();
+                    }}
+                    onToggleHidden={async (item, hide) => {
+                      const res = await setInventoryItemHidden({
+                        basRefKey: item.id,
+                        isHidden: hide,
+                        seed: {
+                          name: item.name,
+                          category: item.category,
+                          unit: item.unit,
+                        },
+                      });
+                      if (!res.ok) {
+                        toast.error(res.error);
+                        return;
+                      }
+                      toast.success(
+                        hide ? "Приховано з екрану" : "Відновлено"
                       );
-                      return;
-                    }
-                    setPresetIssueKey(item.id);
-                    setQuickIssueOpen(true);
-                  }}
-                  onEditItem={(item) => setEditItem(item)}
-                  onToggleHidden={async (item, hide) => {
-                    const res = await setInventoryItemHidden({
-                      basRefKey: item.id,
-                      isHidden: hide,
-                      seed: {
-                        name: item.name,
-                        category: item.category,
-                        unit: item.unit,
-                      },
-                    });
-                    if (!res.ok) {
-                      toast.error(res.error);
-                      return;
-                    }
-                    toast.success(hide ? "Приховано з екрану" : "Відновлено");
-                    void refreshOperational();
-                  }}
-                />
-              )}
-            </TabsContent>
-
-            <TabsContent value="economics" className="mt-0 outline-none">
-              <FieldEconomicsDashboard refreshToken={opsTick} />
-            </TabsContent>
-          </Tabs>
-        </>
-      ) : !error ? (
-        <div className="mt-6 text-sm text-zinc-500">Завантаження…</div>
-      ) : null}
+                      void refreshOperational();
+                    }}
+                    onLocalMovesChanged={() => {
+                      void refreshOperational();
+                      setMovesRefreshToken((t) => t + 1);
+                    }}
+                  />
+                )}
+              </div>
+            )}
+          </>
+        ) : !error ? (
+          <div className="mt-6 text-sm text-zinc-500">Завантаження…</div>
+        ) : null}
+      </div>
     </main>
-  );
-}
-
-function KpiCard({
-  label,
-  value,
-  sub,
-  icon: Icon,
-  accent,
-}: {
-  label: string;
-  value: string;
-  sub: string;
-  icon: LucideIcon;
-  accent: string;
-}) {
-  return (
-    <GlassCard className="flex items-center gap-2.5 px-2.5 py-2 sm:gap-3 sm:px-3.5 sm:py-2.5">
-      <div
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg sm:h-9 sm:w-9 sm:rounded-xl"
-        style={{ backgroundColor: `${accent}14`, color: accent }}
-      >
-        <Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-      </div>
-      <div className="min-w-0">
-        <p className="truncate text-[10px] font-medium text-zinc-500 sm:text-[11px]">
-          {label}
-        </p>
-        <p className="truncate text-sm font-extrabold tracking-tight text-zinc-900 sm:text-base">
-          {value}
-        </p>
-        <p className="hidden truncate text-[10px] text-zinc-400 sm:block">{sub}</p>
-      </div>
-    </GlassCard>
   );
 }
 
 function NomenclatureGrid({
   items,
-  moves,
+  periodItemById,
+  periodMoves,
+  lifetimeQtyInByRef,
+  lifetimeQtyOutByRef,
+  localMoveRows,
+  periodStartIso,
+  periodEndIso,
   localOutboundByRef,
+  localInboundByRef,
+  localOutboundPeriodByRef,
+  localSalePeriodByRef,
+  localInboundPeriodByRef,
   cacheMetaByRef,
   openItemId,
   onOpenItem,
   onIssueToField,
-  onEditItem,
+  onCardSaved,
   onToggleHidden,
+  onLocalMovesChanged,
 }: {
   items: InventoryItem[];
-  moves: ItemMove[];
+  periodItemById: Map<string, InventoryItem>;
+  periodMoves: ItemMove[];
+  lifetimeQtyInByRef: Record<string, number>;
+  lifetimeQtyOutByRef: Record<string, number>;
+  localMoveRows: LocalOutboundRow[];
+  periodStartIso: string;
+  periodEndIso: string;
   localOutboundByRef: Record<string, number>;
+  localInboundByRef: Record<string, number>;
+  localOutboundPeriodByRef: Record<string, number>;
+  localSalePeriodByRef: Record<string, number>;
+  localInboundPeriodByRef: Record<string, number>;
   cacheMetaByRef: Record<string, InventoryCacheMeta>;
   openItemId: string | null;
   onOpenItem: (id: string | null) => void;
   onIssueToField: (item: InventoryItem) => void;
-  onEditItem: (item: InventoryItem) => void;
+  onCardSaved: () => void;
   onToggleHidden: (item: InventoryItem, hide: boolean) => void | Promise<void>;
+  onLocalMovesChanged: () => void;
 }) {
   const openItem = items.find((i) => i.id === openItemId) ?? null;
-  const openMoves = openItem
-    ? moves.filter((m) => m.itemId === openItem.id)
+  const openId = openItem?.id.toLowerCase() ?? "";
+  const openBasMoves = openItem
+    ? periodMoves.filter((m) => m.itemId.toLowerCase() === openId)
     : [];
+  const openLocalMoves = openItem
+    ? localMoveRows.filter(
+        (r) =>
+          r.ref === openId &&
+          r.dateYmd &&
+          r.dateYmd >= periodStartIso &&
+          r.dateYmd <= periodEndIso
+      )
+    : [];
+  const openDisplayName = openItem
+    ? cacheMetaByRef[openId]?.customName?.trim() ||
+      cacheMetaByRef[openItem.id]?.customName?.trim() ||
+      openItem.name
+    : "";
+
+  const [editMove, setEditMove] = useState<LocalMoveRow | null>(null);
+  const [editLoadingId, setEditLoadingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (openItemId && !openItem) onOpenItem(null);
   }, [openItemId, openItem, onOpenItem]);
 
+  async function handleEditLocal(localId: string) {
+    setEditLoadingId(localId);
+    const res = await getLocalMoveById(localId);
+    setEditLoadingId(null);
+    if (!res.ok) {
+      toast.error(res.error);
+      return;
+    }
+    setEditMove(res.move);
+  }
+
   return (
     <>
+      <TooltipProvider delay={120}>
       <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {items.map((item) => (
+        {items.map((item) => {
+          const id = item.id.toLowerCase();
+          return (
           <InventoryItemCard
             key={item.id}
             item={item}
-            moves={moves.filter((m) => m.itemId === item.id)}
-            qtyOutLocal={localOutboundByRef[item.id] ?? 0}
-            cacheMeta={cacheMetaByRef[item.id]}
+            periodItem={periodItemById.get(item.id) ?? null}
+            lifetimeQtyIn={lifetimeQtyInByRef[id] ?? 0}
+            lifetimeQtyOut={lifetimeQtyOutByRef[id] ?? 0}
+            qtyOutLocal={localOutboundByRef[id] ?? 0}
+            qtyInLocal={localInboundByRef[id] ?? 0}
+            qtyInLocalPeriod={localInboundPeriodByRef[id] ?? 0}
+            qtyOutLocalPeriod={localOutboundPeriodByRef[id] ?? 0}
+            qtySaleLocalPeriod={localSalePeriodByRef[id] ?? 0}
+            cacheMeta={cacheMetaByRef[id] ?? cacheMetaByRef[item.id]}
             selected={openItemId === item.id}
             onOpen={() => onOpenItem(item.id)}
             onIssueToField={() => onIssueToField(item)}
-            onEdit={() => onEditItem(item)}
+            onCardSaved={onCardSaved}
             onToggleHidden={(hide) => void onToggleHidden(item, hide)}
           />
-        ))}
+          );
+        })}
       </section>
+      </TooltipProvider>
 
       <ItemDocumentsSheet
         item={openItem}
-        moves={openMoves}
+        displayName={openDisplayName}
+        basMoves={openBasMoves}
+        localMoves={openLocalMoves}
         open={Boolean(openItem)}
+        editMove={editMove}
+        editLoadingId={editLoadingId}
         onOpenChange={(next) => {
-          if (!next) onOpenItem(null);
+          if (!next) {
+            onOpenItem(null);
+            setEditMove(null);
+          }
         }}
+        onEditLocal={(id) => void handleEditLocal(id)}
+        onCancelEdit={() => setEditMove(null)}
+        onSavedEdit={() => {
+          setEditMove(null);
+          onLocalMovesChanged();
+        }}
+        onDeletedLocal={onLocalMovesChanged}
       />
     </>
   );
@@ -849,28 +1261,27 @@ function HarvestMetricTile({
   label,
   qty,
   unit,
-  accent,
 }: {
   label: string;
   qty: number;
   unit: string;
-  accent: string;
 }) {
   const parts = splitQtyParts(qty, unit);
   return (
-    <div className="min-w-0 rounded-xl border border-[#E5DFD3]/80 bg-white/70 px-3 py-2.5">
-      <p className="text-[10px] font-medium tracking-wide text-zinc-400 uppercase">
+    <div className="min-w-0 rounded-xl border border-zinc-200/80 bg-zinc-50/80 px-3 py-2.5">
+      <p className="text-[10px] font-medium tracking-wider text-zinc-400 uppercase">
         {label}
       </p>
       <p
-        className="mt-1 truncate text-xl font-extrabold tracking-tight tabular-nums text-zinc-900 sm:text-2xl"
-        style={{ color: accent }}
+        className="mt-1 truncate text-xl font-bold tracking-tight tabular-nums text-zinc-900"
         title={`${parts.value}${parts.unit ? ` ${parts.unit}` : ""}`}
       >
         {parts.value}
       </p>
       {parts.unit ? (
-        <p className="mt-0.5 text-[11px] font-medium text-zinc-400">{parts.unit}</p>
+        <p className="mt-0.5 text-[11px] font-medium text-zinc-400">
+          {parts.unit}
+        </p>
       ) : null}
     </div>
   );
@@ -879,28 +1290,51 @@ function HarvestMetricTile({
 const VIRTUAL_BALANCE_CATEGORIES = new Set<InventoryCategory>([
   "zzr",
   "fertilizer",
+  "seed",
   "parts",
 ]);
 
+function priceUnitHint(unit: string): string {
+  const u = unit.trim().toLowerCase();
+  if (!u) return "грн/од.";
+  if (u === "л" || u.startsWith("л ")) return "грн/л";
+  if (u === "кг" || u.startsWith("кг")) return "грн/кг";
+  if (u === "т" || u.startsWith("т ")) return "грн/т";
+  if (u.includes("шт")) return "грн/шт";
+  return `грн/${unit.trim()}`;
+}
+
 function InventoryItemCard({
   item,
-  moves,
+  periodItem,
+  lifetimeQtyIn,
+  lifetimeQtyOut,
   qtyOutLocal,
+  qtyInLocal,
+  qtyInLocalPeriod,
+  qtyOutLocalPeriod,
+  qtySaleLocalPeriod,
   cacheMeta,
   selected,
   onOpen,
   onIssueToField,
-  onEdit,
+  onCardSaved,
   onToggleHidden,
 }: {
   item: InventoryItem;
-  moves: ItemMove[];
+  periodItem: InventoryItem | null;
+  lifetimeQtyIn: number;
+  lifetimeQtyOut: number;
   qtyOutLocal: number;
+  qtyInLocal: number;
+  qtyInLocalPeriod: number;
+  qtyOutLocalPeriod: number;
+  qtySaleLocalPeriod: number;
   cacheMeta?: InventoryCacheMeta;
   selected: boolean;
   onOpen: () => void;
   onIssueToField: () => void;
-  onEdit: () => void;
+  onCardSaved: () => void;
   onToggleHidden: (hide: boolean) => void;
 }) {
   const meta = INVENTORY_CATEGORY_META[item.category];
@@ -910,229 +1344,374 @@ function InventoryItemCard({
   const isHidden = cacheMeta?.isHidden ?? false;
   const displayName = cacheMeta?.customName?.trim() || item.name;
   const hasCustomName = Boolean(cacheMeta?.customName?.trim());
+  const isLocalSku = cacheMeta?.isLocal === true;
 
-  const qtyIn = item.qtyIn;
-  const virtualBalance = qtyIn - qtyOutLocal;
+  const [editing, setEditing] = useState(false);
+  const [customName, setCustomName] = useState("");
+  const [price, setPrice] = useState("");
+  const [pending, startTransition] = useTransition();
+
+  useEffect(() => {
+    if (!editing) return;
+    setCustomName(cacheMeta?.customName ?? "");
+    setPrice(
+      cacheMeta && cacheMeta.plannedPriceUah > 0
+        ? String(cacheMeta.plannedPriceUah)
+        : ""
+    );
+  }, [editing, cacheMeta]);
+
+  const qtyInPeriod = periodItem?.qtyIn ?? 0;
+  const qtyOutPeriod = periodItem?.qtyOut ?? 0;
+  // Цифра на картці = рух за вибраний період (BAS + локально)
+  const stockBase = qtyInPeriod + qtyInLocalPeriod;
+  const virtualBalance =
+    Math.round((stockBase - qtyOutPeriod - qtyOutLocalPeriod) * 100) / 100;
   const remainingPct =
-    qtyIn > 0
-      ? Math.max(0, Math.min(100, (virtualBalance / qtyIn) * 100))
+    stockBase > 0
+      ? Math.max(0, Math.min(100, (virtualBalance / stockBase) * 100))
       : 0;
-  const isLow = qtyIn > 0 ? remainingPct < 20 : virtualBalance <= 0;
-  const uniqueDocs = new Set(
-    moves.map((m) => m.docRefKey || `${m.date}:${m.kind}:${m.cost}`)
-  ).size;
+  const isLow = stockBase > 0 ? remainingPct < 20 : virtualBalance <= 0;
+
+  // Тіньовий залишок: BAS in/out + локальні рухи за весь час
+  const warehouseBalance = Math.round(
+    (lifetimeQtyIn + qtyInLocal - lifetimeQtyOut - qtyOutLocal) * 100
+  ) / 100;
+
+  function handleSaveEdit() {
+    const num = Number(String(price).replace(",", "."));
+    if (!Number.isFinite(num) || num < 0) {
+      toast.error("Вкажіть коректну ціну");
+      return;
+    }
+    startTransition(async () => {
+      const res = await updateInventoryItemCard({
+        basRefKey: item.id,
+        customName: customName.trim() || null,
+        plannedPriceUah: num,
+        seed: {
+          name: item.name,
+          category: item.category,
+          unit: item.unit,
+        },
+      });
+      if (!res.ok) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success("Картку збережено");
+      setEditing(false);
+      onCardSaved();
+    });
+  }
 
   return (
-    <GlassCard
+    <div
       className={cn(
-        "overflow-hidden border-[#E5DFD3] bg-[#FDFBF7] p-0 shadow-sm hover:translate-y-0 hover:shadow-sm",
-        selected && "border-[#276749]/35 ring-1 ring-[#276749]/10",
+        "group relative overflow-hidden rounded-3xl border border-zinc-200/80 bg-white p-5 shadow-sm",
+        "transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md",
+        selected && "border-emerald-300/70 ring-1 ring-emerald-500/15",
         isHidden && "opacity-50"
       )}
     >
-      <div className="relative p-4 sm:p-5">
-        <div className="absolute top-3 right-3 z-10">
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              className={cn(
-                "inline-flex h-8 w-8 items-center justify-center rounded-lg text-zinc-400",
-                "outline-none transition hover:bg-white/80 hover:text-zinc-700",
-                "focus-visible:ring-2 focus-visible:ring-[#276749]/20"
-              )}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <MoreHorizontal className="h-4 w-4" />
-              <span className="sr-only">Дії</span>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="end"
-              className="min-w-52 rounded-xl border border-zinc-200 bg-white p-1 text-zinc-900 shadow-lg"
-            >
-              {!isHarvest ? (
-                <DropdownMenuItem
-                  className="cursor-pointer gap-2 rounded-lg px-2.5 py-2"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onIssueToField();
-                  }}
-                >
-                  <PackageMinus className="h-4 w-4 text-[#276749]" />
-                  Списати на поле
-                </DropdownMenuItem>
-              ) : null}
-              <DropdownMenuItem
-                className="cursor-pointer gap-2 rounded-lg px-2.5 py-2"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onEdit();
-                }}
-              >
-                <Pencil className="h-4 w-4 text-zinc-500" />
-                Редагувати картку
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className="cursor-pointer gap-2 rounded-lg px-2.5 py-2"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onToggleHidden(!isHidden);
-                }}
-              >
-                {isHidden ? (
-                  <>
-                    <Eye className="h-4 w-4 text-zinc-500" />
-                    Відновити на екрані
-                  </>
-                ) : (
-                  <>
-                    <EyeOff className="h-4 w-4 text-zinc-500" />
-                    Приховати з екрану
-                  </>
-                )}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+      <div
+        className="absolute inset-x-0 top-0 h-1"
+        style={{ backgroundColor: meta.accent }}
+      />
 
-        <button
-          type="button"
-          onClick={onOpen}
-          className="w-full pr-8 text-left outline-none"
-        >
-          <div className="flex items-start gap-3">
+      <div className="absolute top-3 right-3 z-10 flex items-center gap-0.5">
+        {!editing ? (
+          <Tooltip>
+            <TooltipTrigger
+              delay={120}
+              onClick={(e) => {
+                e.stopPropagation();
+                onIssueToField();
+              }}
+              className={cn(
+                "inline-flex h-8 w-8 items-center justify-center rounded-full",
+                isHarvest
+                  ? "bg-amber-50 text-amber-800 hover:bg-amber-100"
+                  : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
+                "transition",
+                "outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/25"
+              )}
+              aria-label={isHarvest ? "Продаж" : "Списати"}
+            >
+              <Plus className="h-4 w-4" strokeWidth={2} />
+            </TooltipTrigger>
+            <TooltipContent side="top">
+              {isHarvest ? "Продаж" : item.category === "parts" ? "Списати зі складу" : "Списати на поле"}
+            </TooltipContent>
+          </Tooltip>
+        ) : null}
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            className={cn(
+              "inline-flex h-8 w-8 items-center justify-center rounded-full text-zinc-400",
+              "outline-none transition hover:bg-zinc-100 hover:text-zinc-700",
+              "focus-visible:ring-2 focus-visible:ring-zinc-900/10"
+            )}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <MoreHorizontal className="h-4 w-4" />
+            <span className="sr-only">Дії</span>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="end"
+            className="min-w-52 rounded-xl border border-zinc-200 bg-white p-1 text-zinc-900 shadow-lg"
+          >
+            <DropdownMenuItem
+              className="cursor-pointer gap-2 rounded-lg px-2.5 py-2"
+              onClick={(e) => {
+                e.stopPropagation();
+                onIssueToField();
+              }}
+            >
+              <PackageMinus className="h-4 w-4 text-emerald-600" />
+              {isHarvest
+                ? "Продаж"
+                : item.category === "parts"
+                  ? "Списати зі складу"
+                  : "Списати на поле"}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="cursor-pointer gap-2 rounded-lg px-2.5 py-2"
+              onClick={(e) => {
+                e.stopPropagation();
+                setEditing(true);
+              }}
+            >
+              <Pencil className="h-4 w-4 text-zinc-400" />
+              Редагувати картку
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="cursor-pointer gap-2 rounded-lg px-2.5 py-2"
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleHidden(!isHidden);
+              }}
+            >
+              {isHidden ? (
+                <>
+                  <Eye className="h-4 w-4 text-zinc-400" />
+                  Відновити на екрані
+                </>
+              ) : (
+                <>
+                  <EyeOff className="h-4 w-4 text-zinc-400" />
+                  Приховати з екрану
+                </>
+              )}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      {editing ? (
+        <div className="space-y-3 pr-2">
+          <div className="flex items-center gap-2">
             <div
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
               style={{
-                backgroundColor: `${meta.accent}14`,
+                backgroundColor: `${meta.accent}18`,
                 color: meta.accent,
               }}
             >
-              <Icon className="h-5 w-5" />
+              <Icon className="h-4 w-4" strokeWidth={1.8} />
+            </div>
+            <p className="text-sm font-semibold text-zinc-900">Редагування</p>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-semibold tracking-wider text-zinc-400 uppercase">
+              Локальна назва
+            </label>
+            <Input
+              value={customName}
+              disabled={pending}
+              onChange={(e) => setCustomName(e.target.value)}
+              placeholder={item.name}
+              className="h-10 rounded-xl border-zinc-200 bg-zinc-50"
+            />
+            <p className="text-[11px] text-zinc-400">
+              Якщо порожньо — назва з 1С
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-semibold tracking-wider text-zinc-400 uppercase">
+              Планова ціна ({priceUnitHint(item.unit)})
+            </label>
+            <Input
+              type="text"
+              inputMode="decimal"
+              value={price}
+              disabled={pending}
+              onChange={(e) => setPrice(e.target.value)}
+              placeholder="0.00"
+              className="h-10 rounded-xl border-zinc-200 bg-zinc-50 font-semibold tabular-nums"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleSaveEdit();
+                }
+              }}
+            />
+          </div>
+          <div className="flex gap-2 pt-1">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={pending}
+              onClick={() => setEditing(false)}
+              className="h-9 flex-1 rounded-xl"
+            >
+              Скасувати
+            </Button>
+            <Button
+              type="button"
+              disabled={pending}
+              onClick={handleSaveEdit}
+              className="h-9 flex-1 rounded-xl bg-zinc-900 text-white hover:bg-zinc-800"
+            >
+              {pending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                "Зберегти"
+              )}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={onOpen}
+          className="w-full pr-14 text-left outline-none"
+        >
+          <div className="flex items-start gap-3">
+            <div
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
+              style={{
+                backgroundColor: `${meta.accent}18`,
+                color: meta.accent,
+              }}
+            >
+              <Icon className="h-4 w-4" strokeWidth={1.8} />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="line-clamp-2 text-sm font-semibold text-zinc-900">
+              <p className="line-clamp-2 text-base font-bold leading-snug text-zinc-900">
                 {displayName}
+                {isLocalSku ? (
+                  <span className="ml-1.5 align-middle text-[10px] font-bold tracking-wide text-sky-700 uppercase">
+                    локальна
+                  </span>
+                ) : null}
               </p>
-              {hasCustomName ? (
-                <p className="mt-0.5 line-clamp-1 text-[11px] text-zinc-400">
-                  {item.name}
-                </p>
-              ) : null}
-              <div className="mt-1 flex flex-wrap items-center gap-2">
-                <Badge
-                  variant="outline"
-                  className="border-[#E5DFD3] bg-white/70 text-[10px] text-zinc-500"
-                >
-                  {meta.label}
-                </Badge>
-                {isHidden ? (
-                  <Badge
-                    variant="outline"
-                    className="border-zinc-200 bg-zinc-50 text-[10px] text-zinc-400"
-                  >
-                    Приховано
-                  </Badge>
-                ) : null}
+              <p className="mt-0.5 truncate text-[11px] text-zinc-400">
                 {item.code ? (
-                  <span className="text-[11px] text-zinc-400">{item.code}</span>
+                  <span className="font-mono">{item.code}</span>
                 ) : null}
-              </div>
+                {item.code && hasCustomName ? " · " : null}
+                {hasCustomName ? item.name : null}
+                {!item.code && !hasCustomName ? meta.label : null}
+              </p>
             </div>
           </div>
 
           {isHarvest ? (
-            <div className="mt-4 grid grid-cols-2 gap-2.5">
+            <div className="mt-4 grid grid-cols-2 gap-2">
               <HarvestMetricTile
                 label="Випуск"
-                qty={item.qtyIn}
+                qty={qtyInPeriod}
                 unit={item.unit}
-                accent="#B7791F"
               />
               <HarvestMetricTile
                 label="Продано"
-                qty={item.qtyOut}
+                qty={qtyOutPeriod + qtySaleLocalPeriod}
                 unit={item.unit}
-                accent="#276749"
               />
             </div>
           ) : useVirtual ? (
             <>
-              <div className="mt-4">
-                <p className="text-[10px] font-medium tracking-wide text-zinc-400 uppercase">
-                  Доступно зараз
-                </p>
-                <p
+              <p
+                className={cn(
+                  "mt-5 text-3xl font-bold tracking-tight tabular-nums",
+                  virtualBalance < 0 ? "text-rose-600" : "text-zinc-900"
+                )}
+              >
+                {formatQtyInclZero(virtualBalance, item.unit)}
+              </p>
+              <p className="mt-1 text-[10px] font-medium tracking-wide text-zinc-400 uppercase">
+                За період
+              </p>
+              <p
+                className={cn(
+                  "mt-2 text-sm font-semibold tabular-nums",
+                  warehouseBalance < 0 ? "text-rose-600" : "text-zinc-700"
+                )}
+              >
+                {formatQtyInclZero(warehouseBalance, item.unit)}
+                <span className="ml-1.5 text-[10px] font-medium tracking-wide text-zinc-400 uppercase">
+                  На складі
+                </span>
+              </p>
+              <div className="mt-3 flex items-center gap-2">
+                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-100">
+                  <div
+                    className={cn(
+                      "h-full rounded-full transition-all",
+                      isLow ? "bg-rose-500" : "bg-emerald-500"
+                    )}
+                    style={{ width: `${remainingPct}%` }}
+                  />
+                </div>
+                <span
                   className={cn(
-                    "mt-0.5 text-3xl font-extrabold tracking-tight tabular-nums sm:text-4xl",
-                    virtualBalance < 0 ? "text-red-600" : "text-zinc-900"
+                    "text-[10px] font-semibold tabular-nums",
+                    isLow ? "text-rose-500" : "text-zinc-400"
                   )}
                 >
-                  {formatQtyInclZero(virtualBalance, item.unit)}
-                </p>
-              </div>
-
-              <div className="mt-3 space-y-1.5">
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-zinc-500">Залишок від приходу</span>
-                  <span
-                    className={cn(
-                      "font-semibold tabular-nums",
-                      isLow ? "text-red-600" : "text-[#276749]"
-                    )}
-                  >
-                    {qtyIn > 0 ? `${Math.round(remainingPct)}%` : "—"}
-                  </span>
-                </div>
-                <Progress
-                  value={remainingPct}
-                  className={cn(
-                    "w-full gap-0",
-                    isLow
-                      ? "[&_[data-slot=progress-indicator]]:bg-red-500 [&_[data-slot=progress-track]]:h-1.5 [&_[data-slot=progress-track]]:bg-red-100"
-                      : "[&_[data-slot=progress-indicator]]:bg-[#276749] [&_[data-slot=progress-track]]:h-1.5 [&_[data-slot=progress-track]]:bg-[#276749]/15"
-                  )}
-                />
-              </div>
-
-              <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-zinc-500">
-                <span>Прихід {formatQtyInclZero(qtyIn, item.unit)}</span>
-                <span>
-                  Списано {formatQtyInclZero(qtyOutLocal, item.unit)}
+                  {stockBase > 0 ? `${Math.round(remainingPct)}%` : "—"}
                 </span>
-                {uniqueDocs > 0 ? <span>{uniqueDocs} док. BAS</span> : null}
               </div>
             </>
           ) : (
-            <div className="mt-4">
-              <p className="text-[10px] font-medium tracking-wide text-zinc-400 uppercase">
-                Рух за період
-              </p>
-              <p className="mt-0.5 text-2xl font-extrabold tracking-tight tabular-nums text-zinc-900">
-                {formatQtyInclZero(item.qtyIn || item.qtyOut, item.unit)}
-              </p>
-              {uniqueDocs > 0 ? (
-                <p className="mt-2 text-[11px] text-zinc-500">
-                  {uniqueDocs} док. BAS
-                </p>
-              ) : null}
-            </div>
+            <p className="mt-5 text-3xl font-bold tracking-tight tabular-nums text-zinc-900">
+              {formatQtyInclZero(qtyInPeriod || qtyOutPeriod, item.unit)}
+            </p>
           )}
         </button>
-      </div>
-    </GlassCard>
+      )}
+    </div>
   );
 }
 
 
 function ItemDocumentsSheet({
   item,
-  moves,
+  displayName,
+  basMoves,
+  localMoves,
   open,
   onOpenChange,
+  onEditLocal,
+  onCancelEdit,
+  onSavedEdit,
+  onDeletedLocal,
+  editLoadingId,
+  editMove,
 }: {
   item: InventoryItem | null;
-  moves: ItemMove[];
+  displayName: string;
+  basMoves: ItemMove[];
+  localMoves: LocalOutboundRow[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onEditLocal: (localId: string) => void;
+  onCancelEdit: () => void;
+  onSavedEdit: () => void;
+  onDeletedLocal: () => void;
+  editLoadingId: string | null;
+  editMove: LocalMoveRow | null;
 }) {
   const [kindFilter, setKindFilter] = useState<"all" | "in" | "sale">("all");
 
@@ -1143,87 +1722,159 @@ function ItemDocumentsSheet({
   if (!item) {
     return (
       <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent side="right" className="w-full p-0 sm:max-w-xl" />
+        <SheetContent side="right" className="w-full p-0 sm:max-w-md" />
       </Sheet>
     );
   }
 
   const meta = INVENTORY_CATEGORY_META[item.category];
-  const Icon = CATEGORY_ICONS[item.category];
-  const filtered = moves.filter((m) => {
-    if (kindFilter === "sale") return m.kind === "sale";
-    if (kindFilter === "in") return m.kind !== "sale";
+  const SheetIcon = CATEGORY_ICONS[item.category];
+  const titleName = displayName.trim() || item.name;
+
+  type SheetDoc = {
+    key: string;
+    date: string;
+    qty: number;
+    direction: "in" | "out";
+    bucket: "in" | "sale" | "other";
+    title: string;
+    subtitle: string;
+    amountLabel?: string | null;
+    basMove?: ItemMove;
+    localId?: string;
+    attachmentCount?: number;
+  };
+
+  const docs: SheetDoc[] = [
+    ...basMoves.map((m, i) => {
+      const inbound = m.kind !== "sale";
+      return {
+        key: `bas-${m.docRefKey || m.date}-${i}`,
+        date: m.date,
+        qty: m.qty,
+        direction: (inbound ? "in" : "out") as "in" | "out",
+        bucket: (inbound ? "in" : "sale") as "in" | "sale",
+        title: m.counterparty?.trim() || moveKindLabel(m.kind),
+        subtitle: [
+          formatUaDate(m.date),
+          m.docNumber ? `№${m.docNumber}` : null,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+        amountLabel:
+          m.cost > 0
+            ? `${Math.round(m.cost).toLocaleString("uk-UA")} ₴`
+            : null,
+        basMove: m,
+      };
+    }),
+    ...localMoves.map((r) => {
+      const isIn = r.type === "inbound";
+      const isSale = r.type === "sale";
+      const title = isIn
+        ? r.buyerName?.trim() || r.note?.trim() || "Прихід"
+        : isSale
+          ? r.buyerName?.trim() || "Продаж"
+          : r.fieldName?.trim() || r.note?.trim() || "Списання";
+      const subtitleParts = [
+        formatUaDate(r.dateYmd),
+        isIn && r.note?.trim() && r.buyerName ? r.note.trim() : null,
+        isSale && r.note?.trim() ? r.note.trim() : null,
+        !isSale && !isIn && r.note?.trim() && r.fieldName
+          ? r.note.trim()
+          : null,
+      ].filter(Boolean);
+      const sum =
+        r.unitPriceUah != null
+          ? Math.round(r.qty * r.unitPriceUah * 100) / 100
+          : null;
+      return {
+        key: `local-${r.id || `${r.dateYmd}-${r.type}-${r.qty}`}`,
+        date: r.dateYmd,
+        qty: r.qty,
+        direction: (isIn ? "in" : "out") as "in" | "out",
+        bucket: (isIn ? "in" : isSale ? "sale" : "other") as
+          | "in"
+          | "sale"
+          | "other",
+        title,
+        subtitle: subtitleParts.join(" · "),
+        amountLabel:
+          sum != null
+            ? `${sum.toLocaleString("uk-UA", { maximumFractionDigits: 2 })} ₴`
+            : r.unitPriceUah != null
+              ? `${r.unitPriceUah.toLocaleString("uk-UA")} ₴/${item.unit || "од."}`
+              : null,
+        localId: r.id || undefined,
+        attachmentCount: r.attachmentCount,
+      };
+    }),
+  ].sort((a, b) => b.date.localeCompare(a.date));
+
+  const filtered = docs.filter((d) => {
+    if (kindFilter === "sale") return d.bucket === "sale";
+    if (kindFilter === "in") return d.bucket === "in";
     return true;
   });
-  const uniqueDocs = new Set(
-    filtered.map((m) => m.docRefKey || `${m.date}:${m.kind}:${m.cost}`)
-  ).size;
+
+  const periodIn =
+    (basMoves.filter((m) => m.kind !== "sale").reduce((s, m) => s + m.qty, 0) ||
+      0) +
+    localMoves
+      .filter((r) => r.type === "inbound")
+      .reduce((s, r) => s + r.qty, 0);
+  const periodOut =
+    (basMoves.filter((m) => m.kind === "sale").reduce((s, m) => s + m.qty, 0) ||
+      0) +
+    localMoves
+      .filter((r) => r.type === "sale")
+      .reduce((s, r) => s + r.qty, 0);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
+        overlayClassName="bg-black/20 backdrop-blur-sm supports-backdrop-filter:backdrop-blur-sm"
         className={cn(
-          "flex w-full flex-col gap-0 border-l border-[#E5DFD3] bg-[#FAF8F4] p-0 text-zinc-900 sm:max-w-xl",
-          "[&_[data-slot=sheet-close]]:text-zinc-500 [&_[data-slot=sheet-close]]:hover:bg-white/80"
+          "flex w-full flex-col gap-0 border-l border-border bg-background p-0 sm:max-w-md",
+          "[&_[data-slot=sheet-close]]:text-muted-foreground [&_[data-slot=sheet-close]]:hover:bg-muted"
         )}
       >
-        <SheetHeader className="shrink-0 border-b border-[#E5DFD3] bg-white px-6 py-5 pr-14 text-left">
+        <SheetHeader className="shrink-0 border-b border-border/50 bg-background px-6 py-5 pr-14 text-left">
           <div className="flex items-start gap-3">
             <div
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
               style={{
                 backgroundColor: `${meta.accent}14`,
                 color: meta.accent,
               }}
             >
-              <Icon className="h-5 w-5" />
+              <SheetIcon className="h-5 w-5" strokeWidth={1.8} />
             </div>
             <div className="min-w-0">
-              <SheetTitle className="text-lg font-bold tracking-tight text-zinc-900">
-                {item.name}
+              <SheetTitle className="text-lg font-semibold tracking-tight text-foreground">
+                {titleName}
               </SheetTitle>
-              <SheetDescription className="mt-1 text-[12px] text-zinc-500">
+              <SheetDescription className="mt-0.5 text-xs text-muted-foreground">
                 {item.code ? `${item.code} · ` : ""}
-                {meta.label} · документи за обраний період
+                {meta.label} · за період
               </SheetDescription>
-            </div>
-          </div>
-
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            <div className="rounded-xl border border-[#E5DFD3] bg-[#FAF8F4]/80 px-3 py-2.5">
-              <p className="text-[10px] font-medium tracking-wide text-zinc-400 uppercase">
-                {item.category === "harvest" ? "Випуск" : "Надходження"}
-              </p>
-              <p className="mt-0.5 text-lg font-extrabold text-zinc-900">
-                {formatInventoryQty(item.qtyIn, item.unit)}
-              </p>
-              <p className="text-[11px] text-zinc-500">
-                {formatInventoryMoney(item.costIn)}
-              </p>
-            </div>
-            <div className="rounded-xl border border-[#E5DFD3] bg-[#FAF8F4]/80 px-3 py-2.5">
-              <p className="text-[10px] font-medium tracking-wide text-zinc-400 uppercase">
-                Продано
-              </p>
-              <p className="mt-0.5 text-lg font-extrabold text-zinc-900">
-                {formatInventoryQty(item.qtyOut, item.unit)}
-              </p>
-              <p className="text-[11px] text-zinc-500">
-                {formatInventoryMoney(item.costOut)}
+              <p className="mt-2 text-xs text-muted-foreground tabular-nums">
+                {item.category === "harvest" ? "Випуск" : "Надходження"}{" "}
+                <span className="font-medium text-foreground">
+                  {formatInventoryQty(periodIn, item.unit)}
+                </span>
+                {" · "}
+                Продано{" "}
+                <span className="font-medium text-foreground">
+                  {formatInventoryQty(periodOut, item.unit)}
+                </span>
               </p>
             </div>
           </div>
-          {item.qtyOut > 0 && item.qtyIn <= 0 ? (
-            <p className="mt-3 text-[11px] leading-relaxed text-amber-800/90">
-              За обраний період є лише продажі. Випуск/надходження цієї позиції в
-              BAS зафіксовані в інші дати — перевір сусідній сезон (часто
-              врожай осені/зими потрапляє в попередній агросезон).
-            </p>
-          ) : null}
         </SheetHeader>
 
-        <div className="flex shrink-0 items-center gap-2 border-b border-[#E5DFD3] bg-white px-6 py-3">
+        <div className="flex shrink-0 items-center gap-1.5 border-b border-border/50 bg-background px-5 py-2.5">
           {(
             [
               ["all", "Усі"],
@@ -1236,89 +1887,228 @@ function ItemDocumentsSheet({
               type="button"
               onClick={() => setKindFilter(id)}
               className={cn(
-                "rounded-lg px-3 py-1.5 text-[11px] font-semibold transition",
+                "rounded-full px-3 py-1.5 text-[11px] font-medium transition",
                 kindFilter === id
-                  ? "bg-zinc-900 text-white"
-                  : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:bg-muted"
               )}
             >
               {label}
             </button>
           ))}
-          <span className="ml-auto text-[11px] text-zinc-400">
-            {uniqueDocs} док.
+          <span className="ml-auto text-[11px] text-muted-foreground">
+            {filtered.length} док.
           </span>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+        <div className="min-h-0 flex-1 overflow-y-auto bg-background">
           {filtered.length === 0 ? (
-            <p className="py-12 text-center text-sm text-zinc-500">
+            <p className="py-12 text-center text-sm text-muted-foreground">
               Немає документів у цьому фільтрі
             </p>
           ) : (
-            <div className="space-y-2">
-              {filtered.map((move, i) => {
-                const canOpen = Boolean(move.docRefKey && move.docType);
-                const isSale = move.kind === "sale";
-                return (
-                  <button
-                    key={`${move.docRefKey || move.date}-${i}`}
-                    type="button"
-                    disabled={!canOpen}
-                    onClick={() => openDocument(move)}
-                    className={cn(
-                      "w-full rounded-2xl border border-[#E5DFD3] bg-white px-4 py-3 text-left shadow-sm transition",
-                      canOpen
-                        ? "hover:border-[#276749]/35 hover:shadow-md"
-                        : "opacity-80"
-                    )}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="text-sm font-semibold text-zinc-900">
-                            {formatUaDate(move.date)}
-                            {move.docNumber ? ` · №${move.docNumber}` : ""}
-                          </p>
-                          <Badge
-                            variant="outline"
-                            className={cn(
-                              "text-[10px]",
-                              isSale
-                                ? "border-amber-500/30 bg-amber-50 text-amber-800"
-                                : "border-[#276749]/25 bg-[#276749]/8 text-[#276749]"
-                            )}
-                          >
-                            {moveKindLabel(move.kind)}
-                          </Badge>
-                        </div>
-                        <p className="mt-1 text-[12px] text-zinc-500">
-                          {move.counterparty || "—"}
-                        </p>
-                        <p className="mt-2 text-sm font-medium text-zinc-800">
-                          {isSale ? "−" : "+"}
-                          {formatInventoryQty(move.qty, item.unit)}
-                        </p>
-                        {canOpen ? (
-                          <p className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium text-[#276749]">
-                            Відкрити накладну
-                            <ExternalLink className="h-3 w-3" />
-                          </p>
-                        ) : null}
-                      </div>
-                      <span className="shrink-0 text-sm font-bold text-zinc-900">
-                        {formatInventoryMoney(move.cost)}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
+            <div>
+              {filtered.map((doc) => (
+                <SheetDocumentRow
+                  key={doc.key}
+                  doc={doc}
+                  unit={item.unit}
+                  editMove={
+                    doc.localId && editMove?.id === doc.localId
+                      ? editMove
+                      : null
+                  }
+                  editLoading={
+                    doc.localId != null && editLoadingId === doc.localId
+                  }
+                  onEditLocal={
+                    doc.localId
+                      ? () => onEditLocal(doc.localId!)
+                      : undefined
+                  }
+                  onCancelEdit={onCancelEdit}
+                  onSavedEdit={onSavedEdit}
+                  onDeletedLocal={onDeletedLocal}
+                />
+              ))}
             </div>
           )}
         </div>
       </SheetContent>
     </Sheet>
   );
+}
+
+function SheetDocumentRow({
+  doc,
+  unit,
+  onEditLocal,
+  onCancelEdit,
+  onSavedEdit,
+  onDeletedLocal,
+  editLoading,
+  editMove,
+}: {
+  doc: {
+    date: string;
+    qty: number;
+    direction: "in" | "out";
+    title: string;
+    subtitle: string;
+    amountLabel?: string | null;
+    basMove?: ItemMove;
+    localId?: string;
+    attachmentCount?: number;
+  };
+  unit: string;
+  onEditLocal?: () => void;
+  onCancelEdit?: () => void;
+  onSavedEdit?: () => void;
+  onDeletedLocal?: () => void;
+  editLoading?: boolean;
+  editMove?: LocalMoveRow | null;
+}) {
+  const inbound = doc.direction === "in";
+  const canOpenBas = Boolean(doc.basMove?.docRefKey && doc.basMove?.docType);
+  const Icon = inbound ? ArrowDownLeft : ArrowUpRight;
+  const [deleting, startDelete] = useTransition();
+
+  function handleDelete() {
+    if (!doc.localId) return;
+    startDelete(async () => {
+      const { suppressLocalInventoryMovesRealtimeToast } = await import(
+        "@/lib/realtime-toast-guard"
+      );
+      suppressLocalInventoryMovesRealtimeToast();
+      const res = await deleteLocalMove(doc.localId!);
+      if (!res.ok) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success(inbound ? "Прихід видалено" : "Операцію видалено");
+      onDeletedLocal?.();
+    });
+  }
+
+  if (editMove) {
+    return (
+      <div className="border-b border-border/50 p-3 last:border-0">
+        <EditLocalMoveInline
+          move={editMove}
+          onCancel={() => onCancelEdit?.()}
+          onSaved={() => onSavedEdit?.()}
+        />
+      </div>
+    );
+  }
+
+  const rowClass =
+    "group flex w-full items-center justify-between gap-3 border-b border-border/50 p-4 text-left transition-colors last:border-0 hover:bg-muted/50";
+
+  const body = (
+    <>
+      <div className="flex min-w-0 items-center gap-3">
+        <div
+          className={cn(
+            "flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
+            inbound
+              ? "bg-emerald-500/10 text-emerald-600"
+              : "bg-rose-500/10 text-rose-500"
+          )}
+        >
+          <Icon className="h-4 w-4" strokeWidth={1.8} />
+        </div>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-foreground">
+            {doc.title}
+          </p>
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+            {doc.subtitle}
+            {doc.amountLabel ? ` · ${doc.amountLabel}` : ""}
+          </p>
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-1.5">
+        {doc.localId && (doc.attachmentCount ?? 0) > 0 ? (
+          <AttachmentViewerButton
+            entityType="inventory_move"
+            entityId={doc.localId}
+            count={doc.attachmentCount ?? 0}
+          />
+        ) : null}
+        {doc.localId ? (
+          <>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onEditLocal?.();
+              }}
+              disabled={deleting || editLoading}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-800"
+              title="Редагувати"
+            >
+              {editLoading ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Pencil className="h-3.5 w-3.5" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDelete();
+              }}
+              disabled={deleting || editLoading}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition hover:bg-red-50 hover:text-red-600"
+              title="Видалити"
+            >
+              {deleting ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="h-3.5 w-3.5" />
+              )}
+            </button>
+          </>
+        ) : null}
+        <p
+          className={cn(
+            "min-w-[4.5rem] text-right text-lg font-medium tabular-nums",
+            inbound ? "text-emerald-600" : "text-foreground"
+          )}
+        >
+          {formatSignedQty(doc.qty, unit, inbound)}
+        </p>
+        {canOpenBas ? (
+          <ExternalLink className="h-3.5 w-3.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+        ) : null}
+      </div>
+    </>
+  );
+
+  if (canOpenBas && doc.basMove) {
+    return (
+      <button
+        type="button"
+        onClick={() => openDocument(doc.basMove!)}
+        className={rowClass}
+      >
+        {body}
+      </button>
+    );
+  }
+
+  return <div className={rowClass}>{body}</div>;
+}
+
+function formatSignedQty(qty: number, unit: string, inbound: boolean): string {
+  const n = Number.isFinite(qty) ? qty : 0;
+  const formatted = new Intl.NumberFormat("uk-UA", {
+    maximumFractionDigits: Math.abs(n) >= 100 ? 0 : 2,
+  }).format(n);
+  const withUnit = unit ? `${formatted} ${unit}` : formatted;
+  return inbound ? `+${withUnit}` : `−${withUnit}`;
 }
 
 function formatUaDate(iso: string): string {

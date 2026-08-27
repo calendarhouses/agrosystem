@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * Accounting / analytics panels formerly on Склад.
- * Kept for migration into Фінанси / Операції·Звіти — not mounted by InventoryView.
+ * Accounting / analytics panels — MonthlyChart/RankList/Documents на Фінансах.
+ * InventoryOverviewPanel лишається утилітою для повторного використання.
  */
 
 import { useState } from "react";

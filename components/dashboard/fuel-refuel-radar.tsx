@@ -10,9 +10,13 @@ import {
   Radar,
   RefreshCw,
   Tractor,
+  XCircle,
 } from "lucide-react";
 
-import { getUnrecordedRefuelings } from "@/app/fuel/actions";
+import {
+  dismissRadarRefueling,
+  getUnrecordedRefuelings,
+} from "@/app/fuel/actions";
 import {
   FuelSheetHeader,
   fuelFieldLabelClass,
@@ -33,7 +37,10 @@ import {
   Sheet,
   SheetContent,
 } from "@/components/ui/sheet";
-import type { UnrecordedRefueling } from "@/lib/fuel-unrecorded-refuelings";
+import {
+  UNRECORDED_LOOKBACK_HOURS,
+  type UnrecordedRefueling,
+} from "@/lib/fuel-unrecorded-refuelings";
 import type { FuelStorage } from "@/lib/fuel-storages";
 import { cn } from "@/lib/utils";
 
@@ -90,7 +97,9 @@ export function FuelRefuelRadar({
   const [error, setError] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sourceByKey, setSourceByKey] = useState<Record<string, string>>({});
+  const [litersByKey, setLitersByKey] = useState<Record<string, string>>({});
   const [approvingKey, setApprovingKey] = useState<string | null>(null);
+  const [dismissingKey, setDismissingKey] = useState<string | null>(null);
   const [rowError, setRowError] = useState<Record<string, string>>({});
 
   const storagesRef = useRef(storages);
@@ -105,7 +114,9 @@ export function FuelRefuelRadar({
     setLoading(true);
     setError(null);
     try {
-      const result = await getUnrecordedRefuelings({ lookbackHours: 48 });
+      const result = await getUnrecordedRefuelings({
+        lookbackHours: UNRECORDED_LOOKBACK_HOURS,
+      });
       if (!result.ok) {
         setError(result.error);
         return;
@@ -153,6 +164,47 @@ export function FuelRefuelRadar({
     });
   }, [mobileDefault, events]);
 
+  /** Оператор може виправити обʼєм: ДУТ інколи занижує на «сходинках» */
+  const litersFor = useCallback(
+    (event: UnrecordedRefueling): number => {
+      const raw = litersByKey[eventKey(event)];
+      if (raw == null || raw.trim() === "") return event.volume;
+      const parsed = Number(raw.replace(",", "."));
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : event.volume;
+    },
+    [litersByKey]
+  );
+
+  const dismiss = useCallback(
+    async (event: UnrecordedRefueling) => {
+      const key = eventKey(event);
+      setDismissingKey(key);
+      setRowError((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+      try {
+        const result = await dismissRadarRefueling({
+          unitId: event.unitId,
+          timeIso: event.timeIso,
+          volumeLiters: event.volume,
+        });
+        if (!result.ok) throw new Error(result.error);
+        setEvents((prev) => prev.filter((e) => eventKey(e) !== key));
+      } catch (err) {
+        setRowError((prev) => ({
+          ...prev,
+          [key]:
+            err instanceof Error ? err.message : "Не вдалося відхилити подію",
+        }));
+      } finally {
+        setDismissingKey(null);
+      }
+    },
+    []
+  );
+
   const approve = useCallback(
     async (event: UnrecordedRefueling) => {
       const key = eventKey(event);
@@ -161,6 +213,14 @@ export function FuelRefuelRadar({
         setRowError((prev) => ({
           ...prev,
           [key]: "Оберіть склад-джерело (бензовоз)",
+        }));
+        return;
+      }
+      const amountLiters = litersFor(event);
+      if (!(amountLiters > 0)) {
+        setRowError((prev) => ({
+          ...prev,
+          [key]: "Вкажіть обʼєм більше нуля",
         }));
         return;
       }
@@ -178,7 +238,7 @@ export function FuelRefuelRadar({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             transactionType: "outbound",
-            amountLiters: event.volume,
+            amountLiters,
             fromStorageId,
             wialonUnitId: event.unitId,
             hasFuelSensor: true,
@@ -207,7 +267,7 @@ export function FuelRefuelRadar({
         setApprovingKey(null);
       }
     },
-    [sourceByKey, mobileDefault, onApproved]
+    [sourceByKey, mobileDefault, onApproved, litersFor]
   );
 
   const count = events.length;
@@ -277,9 +337,12 @@ export function FuelRefuelRadar({
                 const key = eventKey(event);
                 const sourceId = sourceByKey[key] || mobileDefault;
                 const busy = approvingKey === key;
+                const rejecting = dismissingKey === key;
+                const amount = litersFor(event);
+                const edited = Math.abs(amount - event.volume) > 0.05;
                 const donor = storages.find((s) => s.id === sourceId);
                 const insufficient =
-                  donor != null && donor.currentVolume + 0.001 < event.volume;
+                  donor != null && donor.currentVolume + 0.001 < amount;
 
                 return (
                   <li
@@ -326,14 +389,38 @@ export function FuelRefuelRadar({
                           </p>
                         ) : null}
                       </div>
-                      <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 px-3 py-2.5">
-                        <p className="text-[10px] font-semibold tracking-[0.08em] text-emerald-700/70 uppercase">
+                      <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 px-3 py-2">
+                        <label
+                          htmlFor={`radar-liters-${key}`}
+                          className="text-[10px] font-semibold tracking-[0.08em] text-emerald-700/70 uppercase"
+                        >
                           Обʼєм
+                        </label>
+                        <div className="mt-0.5 flex items-baseline gap-1">
+                          <input
+                            id={`radar-liters-${key}`}
+                            type="number"
+                            inputMode="decimal"
+                            min={0}
+                            step="0.1"
+                            value={litersByKey[key] ?? String(event.volume)}
+                            onChange={(e) =>
+                              setLitersByKey((prev) => ({
+                                ...prev,
+                                [key]: e.target.value,
+                              }))
+                            }
+                            className="w-full min-w-0 border-0 bg-transparent p-0 text-sm font-bold tabular-nums text-emerald-900 outline-none focus:ring-0"
+                          />
+                          <span className="text-sm font-bold text-emerald-800">
+                            л
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-emerald-700/70">
+                          {edited
+                            ? `ДУТ показав ${formatLiters(event.volume)} л`
+                            : "ДУТ · можна виправити"}
                         </p>
-                        <p className="mt-0.5 text-sm font-bold tabular-nums text-emerald-800">
-                          +{formatLiters(event.volume)} л
-                        </p>
-                        <p className="text-[11px] text-emerald-700/70">ДУТ</p>
                       </div>
                     </div>
 
@@ -402,27 +489,45 @@ export function FuelRefuelRadar({
                         </p>
                       ) : null}
 
-                      <Button
-                        type="button"
-                        disabled={
-                          busy ||
-                          !sourceId ||
-                          insufficient ||
-                          storages.length === 0
-                        }
-                        onClick={() => void approve(event)}
-                        className={cn(
-                          fuelPrimaryBtnClass,
-                          "h-11 bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/30"
-                        )}
-                      >
-                        {busy ? (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : (
-                          <CheckCircle2 className="mr-2 h-4 w-4" />
-                        )}
-                        Схвалити
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          disabled={
+                            busy ||
+                            rejecting ||
+                            !sourceId ||
+                            insufficient ||
+                            storages.length === 0
+                          }
+                          onClick={() => void approve(event)}
+                          className={cn(
+                            fuelPrimaryBtnClass,
+                            "h-11 flex-1 bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/30"
+                          )}
+                        >
+                          {busy ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          ) : (
+                            <CheckCircle2 className="mr-2 h-4 w-4" />
+                          )}
+                          Схвалити
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={busy || rejecting}
+                          onClick={() => void dismiss(event)}
+                          title="Хибне спрацювання ДУТ — прибрати з радара"
+                          className="h-11 gap-2 rounded-xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-600 hover:bg-zinc-50 hover:text-rose-700"
+                        >
+                          {rejecting ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <XCircle className="h-4 w-4" />
+                          )}
+                          Відхилити
+                        </Button>
+                      </div>
                     </div>
                   </li>
                 );

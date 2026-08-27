@@ -62,25 +62,79 @@ export async function sumOutboundRefueledForPeriod(
   const supabase = createServiceSupabase();
   const { data, error } = await supabase
     .from("fuel_transactions")
-    .select("amount_liters, wialon_unit_id, operator_name, transaction_date")
+    .select(
+      "amount_liters, wialon_unit_id, equipment_id, operator_name, transaction_date"
+    )
     .eq("transaction_type", "outbound")
     .gte("transaction_date", fromIso)
     .lte("transaction_date", toIso);
 
   if (error && error.code !== "PGRST205" && error.code !== "42P01") {
-    throw new Error(error.message);
+    if (error.message?.includes("equipment_id") || error.code === "42703") {
+      // fall through with legacy select below
+    } else {
+      throw new Error(error.message);
+    }
+  }
+
+  let txRows: Array<{
+    amount_liters: unknown;
+    wialon_unit_id: unknown;
+    equipment_id?: unknown;
+    operator_name: unknown;
+    transaction_date: unknown;
+  }> = data ?? [];
+  if (error && (error.message?.includes("equipment_id") || error.code === "42703")) {
+    const legacy = await supabase
+      .from("fuel_transactions")
+      .select("amount_liters, wialon_unit_id, operator_name, transaction_date")
+      .eq("transaction_type", "outbound")
+      .gte("transaction_date", fromIso)
+      .lte("transaction_date", toIso);
+    if (legacy.error && legacy.error.code !== "PGRST205" && legacy.error.code !== "42P01") {
+      throw new Error(legacy.error.message);
+    }
+    txRows = legacy.data ?? [];
+  }
+
+  const eqIds = [
+    ...new Set(
+      txRows
+        .map((r) =>
+          "equipment_id" in r && r.equipment_id != null
+            ? String(r.equipment_id)
+            : ""
+        )
+        .filter(Boolean)
+    ),
+  ];
+  const wialonByEquipment = new Map<string, number>();
+  if (eqIds.length > 0) {
+    const { data: eqRows } = await supabase
+      .from("equipment")
+      .select("id, wialon_id")
+      .in("id", eqIds);
+    for (const row of eqRows ?? []) {
+      const wid = Number(row.wialon_id);
+      if (Number.isFinite(wid) && wid > 0) {
+        wialonByEquipment.set(String(row.id), wid);
+      }
+    }
   }
 
   const manual: ManualRow[] = [];
-  for (const row of data ?? []) {
+  for (const row of txRows) {
     const liters = Number(row.amount_liters) || 0;
     if (liters <= 0) continue;
     const at = new Date(String(row.transaction_date));
     if (Number.isNaN(at.getTime())) continue;
-    const wid =
+    let wid =
       row.wialon_unit_id != null && Number.isFinite(Number(row.wialon_unit_id))
         ? Number(row.wialon_unit_id)
         : null;
+    if ((wid == null || wid <= 0) && "equipment_id" in row && row.equipment_id) {
+      wid = wialonByEquipment.get(String(row.equipment_id)) ?? null;
+    }
     manual.push({
       wialonUnitId: wid != null && wid > 0 ? wid : null,
       amountLiters: liters,

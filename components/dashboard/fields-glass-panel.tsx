@@ -27,6 +27,7 @@ type FieldsGlassPanelProps = {
   livePulse: boolean;
   statusHint: string | null;
   saveHint: string | null;
+  wialonLoadError?: string | null;
   budgetByFieldId?: Record<string, number | null>;
   mobileExpanded: boolean;
   onMobileExpandedChange: (v: boolean) => void;
@@ -195,6 +196,7 @@ export function FieldsGlassPanel({
   livePulse,
   statusHint,
   saveHint,
+  wialonLoadError = null,
   budgetByFieldId = {},
   mobileExpanded,
   onMobileExpandedChange,
@@ -352,7 +354,7 @@ export function FieldsGlassPanel({
           </div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-[13px] font-extrabold tracking-tight text-zinc-900">
-              Карта полів
+              Поля
             </p>
             <p className="truncate text-[10px] font-medium text-zinc-500">
               {loading
@@ -467,16 +469,24 @@ export function FieldsGlassPanel({
         )}
       </div>
 
-      {(saveHint || statusHint) && (
-        <div className="shrink-0 border-t border-white/25 px-4 py-2.5">
-          <p
-            className={cn(
-              "text-[11px] leading-snug",
-              saveHint ? "text-amber-800" : "text-emerald-800"
-            )}
-          >
-            {saveHint || statusHint}
-          </p>
+      {(wialonLoadError || saveHint || statusHint) && (
+        <div className="shrink-0 space-y-1.5 border-t border-white/25 px-4 py-2.5">
+          {wialonLoadError ? (
+            <p className="text-[11px] leading-snug text-rose-700">
+              Wialon: {wialonLoadError}. Показані лише збережені поля — демо-контурів
+              немає.
+            </p>
+          ) : null}
+          {(saveHint || statusHint) && (
+            <p
+              className={cn(
+                "text-[11px] leading-snug",
+                saveHint ? "text-amber-800" : "text-emerald-800"
+              )}
+            >
+              {saveHint || statusHint}
+            </p>
+          )}
         </div>
       )}
     </div>

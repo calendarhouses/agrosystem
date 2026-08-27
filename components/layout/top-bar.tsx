@@ -19,13 +19,19 @@ import { cn } from "@/lib/utils";
 /**
  * Верхня панель: Command Menu + глобальний перемикач агросезону.
  * На Command Center (/ та /equipment) — прозора плаваюча шапка без пошуку та сезону.
- * На /fuel — той самий мінімалізм (без пошуку/сезону), sticky bar лишається.
+ * На /fuel, /inventory та /finance — без глобального пошуку/сезону (є локальні контроли).
  */
 export function TopBar() {
   const pathname = usePathname();
   const isCommandCenter = isCommandCenterPath(pathname);
   const hideSearchAndSeason =
-    isCommandCenter || pathname === "/fuel" || pathname?.startsWith("/fuel/");
+    isCommandCenter ||
+    pathname === "/fuel" ||
+    pathname?.startsWith("/fuel/") ||
+    pathname === "/inventory" ||
+    pathname?.startsWith("/inventory/") ||
+    pathname === "/finance" ||
+    pathname?.startsWith("/finance/");
   const activeSeason = useSeasonStore((s) => s.activeSeason);
   const availableSeasons = useSeasonStore((s) => s.availableSeasons);
   const setActiveSeason = useSeasonStore((s) => s.setActiveSeason);

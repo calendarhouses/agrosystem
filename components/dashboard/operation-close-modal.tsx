@@ -48,6 +48,7 @@ export type CloseableOperation = {
   wage: number;
   status: "completed" | "in_progress" | "planned";
   agronomistComment?: string;
+  equipmentId?: string | null;
   wialonUnitId?: number | null;
   implementWidthM?: number | null;
   trackerDistanceKm?: number | null;
@@ -65,6 +66,7 @@ export type ClosedOperationPayload = {
   trackerDistanceKm?: number | null;
   trackerWorkHours?: number | null;
   trackerFuelL?: number | null;
+  equipmentId?: string | null;
   wialonUnitId?: number | null;
   implementWidthM?: number | null;
 };
@@ -276,6 +278,7 @@ export function OperationClosePanel({
               units: [{ id: unitId, name: op.machinery || String(unitId) }],
               from,
               to,
+              fieldId: fieldId ?? null,
             }),
           }),
           fetch(
@@ -285,28 +288,47 @@ export function OperationClosePanel({
 
         let distanceKm = 0;
         let workHours = 0;
+        let fuelL: number | null = null;
 
         if (historyRes.ok) {
           const hist = (await historyRes.json()) as {
             visits?: FieldTechVisit[];
+            fieldFuelLiters?: number | null;
           };
           for (const visit of hist.visits ?? []) {
             distanceKm += visit.distanceKm ?? 0;
             workHours += Math.max(0, (visit.endUnix - visit.startUnix) / 3600);
           }
+          if (
+            hist.fieldFuelLiters != null &&
+            Number.isFinite(hist.fieldFuelLiters)
+          ) {
+            fuelL = hist.fieldFuelLiters;
+          }
         }
 
-        let fuelL: number | null = null;
-        if (trackRes.ok) {
+        // Резерв — витрата за весь день. Саме consumed, а не різниця рівнів:
+        // у день із дозаправкою рівень росте, хоча техніка спалила сотні літрів.
+        if (fuelL == null && trackRes.ok) {
           const trackBody = (await trackRes.json()) as {
             analytics?: {
               summary?: {
+                fuelConsumed?: number | null;
                 fuelDelta?: number | null;
               };
             };
           };
           const summary = trackBody.analytics?.summary;
-          if (summary?.fuelDelta != null && Number.isFinite(summary.fuelDelta)) {
+          if (
+            summary?.fuelConsumed != null &&
+            Number.isFinite(summary.fuelConsumed)
+          ) {
+            fuelL = summary.fuelConsumed;
+          } else if (
+            summary?.fuelDelta != null &&
+            Number.isFinite(summary.fuelDelta) &&
+            summary.fuelDelta < 0
+          ) {
             fuelL = Math.abs(summary.fuelDelta);
           }
         }
@@ -368,6 +390,7 @@ export function OperationClosePanel({
     op.trackerWorkHours,
     op.trackerFuelL,
     fieldGeometry,
+    fieldId,
     widthM,
   ]);
 
@@ -491,6 +514,7 @@ export function OperationClosePanel({
       trackerWorkHours: tracker.workHours || null,
       trackerFuelL: tracker.fuelL,
       wialonUnitId: op.wialonUnitId ?? null,
+      equipmentId: op.equipmentId ?? null,
       implementWidthM: widthM > 0 ? widthM : null,
     };
 
@@ -520,6 +544,7 @@ export function OperationClosePanel({
           wagePlan,
           wageFact: payload.wage,
           agronomistComment: payload.agronomistComment,
+          equipmentId: payload.equipmentId,
           wialonUnitId: payload.wialonUnitId,
           implementWidthM: payload.implementWidthM,
           trackerDistanceKm: payload.trackerDistanceKm,

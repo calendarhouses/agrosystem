@@ -28,6 +28,8 @@ export type FieldOperation = {
   wage: number;
   status: Exclude<FieldOperationStatus, "cancelled">;
   agronomistComment?: string;
+  /** UUID з довідника equipment (техніки без GPS теж) */
+  equipmentId?: string | null;
   wialonUnitId?: number | null;
   implementWidthM?: number | null;
   trackerDistanceKm?: number | null;
@@ -187,6 +189,10 @@ export function mapOperationRow(row: DbRow): FieldOperation {
       row.agronomist_comment != null && String(row.agronomist_comment).trim()
         ? String(row.agronomist_comment)
         : undefined,
+    equipmentId:
+      row.equipment_id != null && String(row.equipment_id).trim()
+        ? String(row.equipment_id)
+        : null,
     wialonUnitId: optionalNum(row.wialon_unit_id),
     implementWidthM: optionalNum(row.implement_width_m),
     trackerDistanceKm: optionalNum(row.tracker_distance_km),
@@ -354,6 +360,7 @@ export async function upsertFieldOperation(
     wagePlan: input.wagePlan ?? input.wage,
     wageFact: input.status === "completed" ? input.wage : null,
     agronomistComment: input.agronomistComment ?? null,
+    equipmentId: input.equipmentId ?? null,
     wialonUnitId: input.wialonUnitId ?? null,
     implementWidthM: input.implementWidthM ?? null,
     trackerDistanceKm: input.trackerDistanceKm ?? null,

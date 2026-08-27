@@ -33,6 +33,7 @@ type UpsertBody = {
   wagePlan?: number | null;
   wageFact?: number | null;
   agronomistComment?: string | null;
+  equipmentId?: string | null;
   wialonUnitId?: number | null;
   implementWidthM?: number | null;
   trackerDistanceKm?: number | null;
@@ -173,6 +174,10 @@ export async function POST(request: Request) {
       wage_plan: body.wagePlan ?? null,
       wage_fact: body.wageFact ?? null,
       agronomist_comment: body.agronomistComment?.trim() || null,
+      equipment_id:
+        typeof body.equipmentId === "string" && isUuid(body.equipmentId)
+          ? body.equipmentId
+          : null,
       wialon_unit_id:
         typeof body.wialonUnitId === "number" && Number.isFinite(body.wialonUnitId)
           ? body.wialonUnitId

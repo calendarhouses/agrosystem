@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { BasExportView } from "@/components/dashboard/bas-export-view";
 
 export const metadata: Metadata = {
-  title: "Експорт в 1С",
+  title: "Бухгалтерія",
 };
 
 export const dynamic = "force-dynamic";

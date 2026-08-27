@@ -28,7 +28,7 @@ import { cn } from "@/lib/utils";
 const NAV_ITEMS = [
   {
     href: "/",
-    label: "Карта полів",
+    label: "Поля",
     hint: "Поля, контури та погода",
     icon: MapIcon,
   },
@@ -58,7 +58,7 @@ const NAV_ITEMS = [
   },
   {
     href: "/export",
-    label: "Експорт в 1С",
+    label: "Бухгалтерія",
     hint: "Excel для бухгалтера · чернетки списань",
     icon: FileSpreadsheet,
   },

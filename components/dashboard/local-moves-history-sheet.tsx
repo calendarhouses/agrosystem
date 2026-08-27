@@ -7,6 +7,8 @@ import {
   History,
   Loader2,
   Lock,
+  PackageMinus,
+  PackagePlus,
   Pencil,
   Trash2,
 } from "lucide-react";
@@ -20,16 +22,7 @@ import {
   type LocalMoveRow,
   type QuickIssueFieldOption,
 } from "@/app/admin/inventory/actions";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Sheet,
@@ -39,53 +32,35 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
-
-export function LocalMovesHistoryButton({
-  onClick,
-  className,
-}: {
-  onClick: () => void;
-  className?: string;
-}) {
-  return (
-    <Button
-      type="button"
-      variant="outline"
-      size="lg"
-      onClick={onClick}
-      className={cn(
-        "h-10 flex-1 gap-2 rounded-xl border-zinc-200 bg-[#FDFBF7] px-3 text-xs font-semibold text-zinc-700 shadow-sm",
-        "hover:bg-zinc-50 sm:h-11 sm:flex-none sm:px-4 sm:text-sm",
-        className
-      )}
-    >
-      <History className="h-4 w-4" />
-      <span className="truncate">Історія операцій</span>
-    </Button>
-  );
-}
+import { AttachmentViewerButton } from "@/components/dashboard/attachment-viewer";
 
 export function LocalMovesHistorySheet({
   open,
   onOpenChange,
   onChanged,
   refreshToken = 0,
+  season = null,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onChanged?: () => void;
   /** Змінюється після нового списання — оновити список, якщо sheet відкритий */
   refreshToken?: number;
+  /** Фільтр по агросезону; null — усі */
+  season?: string | null;
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [moves, setMoves] = useState<LocalMoveRow[]>([]);
-  const [editMove, setEditMove] = useState<LocalMoveRow | null>(null);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [seasonOnly, setSeasonOnly] = useState(true);
 
   async function load() {
     setLoading(true);
     setError(null);
-    const res = await listLocalMoves();
+    const res = await listLocalMoves({
+      season: seasonOnly && season ? season : null,
+    });
     setLoading(false);
     if (!res.ok) {
       setError(res.error);
@@ -98,87 +73,104 @@ export function LocalMovesHistorySheet({
   useEffect(() => {
     if (!open) return;
     void load();
-  }, [open, refreshToken]);
+  }, [open, refreshToken, season, seasonOnly]);
+
+  useEffect(() => {
+    if (!open) setEditId(null);
+  }, [open]);
 
   return (
-    <>
-      <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent
-          side="right"
-          className={cn(
-            "flex w-full flex-col gap-0 border-l border-[#E5DFD3] bg-[#FAF8F4] p-0 text-zinc-900 sm:max-w-lg",
-            "[&_[data-slot=sheet-close]]:text-zinc-500"
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="right"
+        className={cn(
+          "flex w-full flex-col gap-0 border-l border-border/50 bg-background p-0 sm:max-w-md",
+          "[&_[data-slot=sheet-close]]:text-muted-foreground"
+        )}
+      >
+        <SheetHeader className="shrink-0 border-b border-border/50 bg-card/40 px-6 py-5 pr-14 text-left backdrop-blur-md">
+          <SheetTitle className="text-xl font-semibold tracking-tight">
+            Історія операцій
+          </SheetTitle>
+          <SheetDescription className="text-sm text-muted-foreground">
+            Локальні приходи й списання · залишок на хабі — за всі сезони
+          </SheetDescription>
+          {season ? (
+            <button
+              type="button"
+              onClick={() => setSeasonOnly((v) => !v)}
+              className="mt-2 w-fit rounded-full border border-border/60 px-2.5 py-1 text-[11px] font-semibold text-muted-foreground transition hover:bg-muted/60"
+            >
+              {seasonOnly
+                ? `Сезон ${season} · показати всі`
+                : "Усі сезони · лише активний"}
+            </button>
+          ) : null}
+        </SheetHeader>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-5">
+          {loading ? (
+            <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              Завантаження…
+            </div>
+          ) : error ? (
+            <div className="my-4 rounded-xl border border-amber-200/80 bg-amber-50/80 px-4 py-3 text-sm text-amber-900">
+              {error}
+            </div>
+          ) : moves.length === 0 ? (
+            <p className="py-16 text-center text-sm text-muted-foreground">
+              Поки немає локальних операцій
+              {seasonOnly && season ? ` за сезон ${season}` : ""}
+            </p>
+          ) : (
+            <ul>
+              {moves.map((move) => (
+                <LocalMoveListItem
+                  key={move.id}
+                  move={move}
+                  editing={editId === move.id}
+                  onEdit={() => setEditId(move.id)}
+                  onCancelEdit={() => setEditId(null)}
+                  onSaved={() => {
+                    setEditId(null);
+                    void load();
+                    onChanged?.();
+                  }}
+                  onDeleted={() => {
+                    if (editId === move.id) setEditId(null);
+                    void load();
+                    onChanged?.();
+                  }}
+                />
+              ))}
+            </ul>
           )}
-        >
-          <SheetHeader className="shrink-0 border-b border-[#E5DFD3] bg-white px-6 py-5 pr-14 text-left">
-            <SheetTitle className="text-xl font-bold tracking-tight">
-              Історія операцій
-            </SheetTitle>
-            <SheetDescription className="text-sm text-zinc-500">
-              Локальні списання з тіньового складу
-            </SheetDescription>
-          </SheetHeader>
-
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
-            {loading ? (
-              <div className="flex items-center justify-center gap-2 py-16 text-sm text-zinc-500">
-                <Loader2 className="h-5 w-5 animate-spin" />
-                Завантаження…
-              </div>
-            ) : error ? (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                {error}
-              </div>
-            ) : moves.length === 0 ? (
-              <p className="py-16 text-center text-sm text-zinc-500">
-                Поки немає локальних списань
-              </p>
-            ) : (
-              <ul className="space-y-2">
-                {moves.map((move) => (
-                  <LocalMoveListItem
-                    key={move.id}
-                    move={move}
-                    onEdit={() => setEditMove(move)}
-                    onDeleted={() => {
-                      void load();
-                      onChanged?.();
-                    }}
-                  />
-                ))}
-              </ul>
-            )}
-          </div>
-        </SheetContent>
-      </Sheet>
-
-      <EditLocalMoveDialog
-        move={editMove}
-        open={editMove != null}
-        onOpenChange={(next) => {
-          if (!next) setEditMove(null);
-        }}
-        onSaved={() => {
-          setEditMove(null);
-          void load();
-          onChanged?.();
-        }}
-      />
-    </>
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }
 
 function LocalMoveListItem({
   move,
+  editing,
   onEdit,
+  onCancelEdit,
+  onSaved,
   onDeleted,
 }: {
   move: LocalMoveRow;
+  editing: boolean;
   onEdit: () => void;
+  onCancelEdit: () => void;
+  onSaved: () => void;
   onDeleted: () => void;
 }) {
   const [pending, startTransition] = useTransition();
   const isDraft = move.status === "draft";
+  const isInbound = move.type === "inbound";
+  const isSale = move.type === "sale";
   const dateLabel = (() => {
     try {
       return format(new Date(move.date), "d MMM yyyy, HH:mm", { locale: uk });
@@ -190,114 +182,194 @@ function LocalMoveListItem({
   function handleDelete() {
     if (!isDraft) return;
     startTransition(async () => {
+      const { suppressLocalInventoryMovesRealtimeToast } = await import(
+        "@/lib/realtime-toast-guard"
+      );
+      suppressLocalInventoryMovesRealtimeToast();
       const res = await deleteLocalMove(move.id);
       if (!res.ok) {
         toast.error(res.error);
         return;
       }
-      toast.success("Списання видалено");
+      toast.success(
+        isInbound
+          ? "Прихід видалено"
+          : isSale
+            ? "Продаж видалено"
+            : "Списання видалено"
+      );
       onDeleted();
     });
   }
 
-  return (
-    <li className="rounded-2xl border border-[#E5DFD3] bg-white px-4 py-3 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="truncate text-sm font-semibold text-zinc-900">
-              {move.itemName}
-            </p>
-            <Badge
-              variant="outline"
-              className={cn(
-                "text-[10px]",
-                isDraft
-                  ? "border-amber-200 bg-amber-50 text-amber-800"
-                  : "border-zinc-200 bg-zinc-50 text-zinc-500"
-              )}
-            >
-              {isDraft ? "Чернетка" : "В 1С"}
-            </Badge>
-          </div>
-          <p className="mt-1 text-[12px] text-zinc-500">{dateLabel}</p>
-          <p className="mt-2 text-sm font-bold tabular-nums text-zinc-900">
-            {new Intl.NumberFormat("uk-UA", {
-              maximumFractionDigits: 2,
-            }).format(move.qty)}
-            {move.itemUnit ? ` ${move.itemUnit}` : ""}
-          </p>
-          <p className="mt-0.5 text-[12px] text-zinc-500">
-            → {move.fieldName || "Поле не вказано"}
-          </p>
-        </div>
+  const qtyLabel = new Intl.NumberFormat("uk-UA", {
+    maximumFractionDigits: 2,
+  }).format(move.qty);
 
-        <div className="flex shrink-0 items-center gap-1">
-          {isDraft ? (
-            <>
-              <button
-                type="button"
-                onClick={onEdit}
-                disabled={pending}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700"
-                title="Редагувати"
-              >
-                <Pencil className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={handleDelete}
-                disabled={pending}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-red-50 hover:text-red-600"
-                title="Видалити"
-              >
-                {pending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Trash2 className="h-4 w-4" />
-                )}
-              </button>
-            </>
+  if (editing) {
+    return (
+      <li className="border-b border-border/40 py-3 last:border-0">
+        <EditLocalMoveInline
+          move={move}
+          onCancel={onCancelEdit}
+          onSaved={onSaved}
+        />
+      </li>
+    );
+  }
+
+  return (
+    <li className="group flex items-center justify-between gap-3 border-b border-border/40 py-4 last:border-0">
+      <div className="flex min-w-0 items-center gap-3">
+        <div
+          className={cn(
+            "flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
+            isInbound
+              ? "bg-sky-50 text-sky-700"
+              : "bg-muted/70 text-muted-foreground"
+          )}
+        >
+          {isInbound ? (
+            <PackagePlus className="h-4 w-4" strokeWidth={1.8} />
           ) : (
-            <span
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-zinc-300"
-              title="Заблоковано — вже в 1С"
-            >
-              <Lock className="h-4 w-4" />
-            </span>
+            <PackageMinus className="h-4 w-4" strokeWidth={1.8} />
           )}
         </div>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium text-foreground">
+            {move.itemName}
+          </p>
+          <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+            {isDraft ? (
+              <span
+                className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400"
+                title="Чернетка"
+              />
+            ) : (
+              <Lock className="h-3 w-3 shrink-0 text-muted-foreground/70" />
+            )}
+            <span className="truncate">
+              {isSale ? "Продаж" : isInbound ? "Прихід" : "Списання"}
+              {" · "}
+              {dateLabel}
+              {isSale && move.buyerName ? ` · ${move.buyerName}` : ""}
+              {isInbound && move.buyerName ? ` · ${move.buyerName}` : ""}
+              {move.fieldName ? ` · ${move.fieldName}` : ""}
+              {move.note ? ` · ${move.note}` : ""}
+              {move.unitPriceUah != null
+                ? ` · ${(move.qty * move.unitPriceUah).toLocaleString("uk-UA", { maximumFractionDigits: 2 })} ₴`
+                : ""}
+            </span>
+          </p>
+        </div>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-1">
+        {move.attachmentCount > 0 ? (
+          <AttachmentViewerButton
+            entityType="inventory_move"
+            entityId={move.id}
+            count={move.attachmentCount}
+          />
+        ) : null}
+        <div className="text-right">
+          <p
+            className={cn(
+              "text-sm tabular-nums",
+              isInbound
+                ? "font-medium text-emerald-700"
+                : isSale
+                  ? "font-medium text-amber-800"
+                  : "text-foreground"
+            )}
+          >
+            {isInbound ? "+" : isSale ? "→" : "−"}
+            {qtyLabel}
+            {move.itemUnit ? ` ${move.itemUnit}` : ""}
+          </p>
+          {isSale && move.unitPriceUah != null ? (
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              {(move.qty * move.unitPriceUah).toLocaleString("uk-UA", {
+                maximumFractionDigits: 0,
+              })}{" "}
+              ₴
+            </p>
+          ) : !isDraft ? (
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              передано бухгалтеру
+            </p>
+          ) : null}
+        </div>
+        {isDraft ? (
+          <div className="flex items-center">
+            <button
+              type="button"
+              onClick={onEdit}
+              disabled={pending}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground"
+              title="Редагувати"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={pending}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition hover:bg-red-50 hover:text-red-600"
+              title="Видалити"
+            >
+              {pending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="h-3.5 w-3.5" />
+              )}
+            </button>
+          </div>
+        ) : null}
       </div>
     </li>
   );
 }
 
-function EditLocalMoveDialog({
+/** Inline-редактор (без центральної модалки) — історія й деталі картки. */
+export function EditLocalMoveInline({
   move,
-  open,
-  onOpenChange,
+  onCancel,
   onSaved,
+  className,
 }: {
-  move: LocalMoveRow | null;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+  move: LocalMoveRow;
+  onCancel: () => void;
   onSaved: () => void;
+  className?: string;
 }) {
   const [qty, setQty] = useState("");
   const [fieldId, setFieldId] = useState<string>("");
+  const [buyerName, setBuyerName] = useState("");
+  const [unitPrice, setUnitPrice] = useState("");
   const [fields, setFields] = useState<QuickIssueFieldOption[]>([]);
   const [fieldQuery, setFieldQuery] = useState("");
   const [pending, startTransition] = useTransition();
 
+  const isInbound = move.type === "inbound";
+  const isSale = move.type === "sale";
+  const fieldRequired =
+    !isInbound &&
+    !isSale &&
+    (move.itemCategory === "zzr" ||
+      move.itemCategory === "fertilizer" ||
+      move.itemCategory === "seed");
+
   useEffect(() => {
-    if (!open || !move) return;
     setQty(String(move.qty));
     setFieldId(move.fieldId ?? "");
+    setBuyerName(move.buyerName ?? "");
+    setUnitPrice(move.unitPriceUah != null ? String(move.unitPriceUah) : "");
     setFieldQuery("");
     void getQuickIssueOptions().then((res) => {
       if (res.ok) setFields(res.fields);
     });
-  }, [open, move?.id]);
+  }, [move.id]);
 
   const filteredFields = useMemo(() => {
     const q = fieldQuery.trim().toLowerCase();
@@ -312,63 +384,181 @@ function EditLocalMoveDialog({
   }, [fields, fieldQuery]);
 
   function handleSave() {
-    if (!move) return;
     const qtyNum = Number(String(qty).replace(",", "."));
     if (!Number.isFinite(qtyNum) || qtyNum <= 0) {
       toast.error("Вкажіть кількість > 0");
       return;
     }
-    if (!fieldId) {
+    if (fieldRequired && !fieldId) {
       toast.error("Оберіть поле");
       return;
     }
+    let buyer: string | null | undefined;
+    let price: number | null | undefined;
+    if (isSale || isInbound) {
+      if (isSale) {
+        buyer = buyerName.trim();
+        if (!buyer) {
+          toast.error("Вкажіть покупця");
+          return;
+        }
+      } else {
+        buyer = buyerName.trim() || null;
+      }
+      const priceNum = Number(String(unitPrice).replace(",", "."));
+      if (!Number.isFinite(priceNum) || priceNum < 0 || !unitPrice.trim()) {
+        toast.error("Вкажіть коректну ціну");
+        return;
+      }
+      price = priceNum;
+    }
     startTransition(async () => {
+      const { suppressLocalInventoryMovesRealtimeToast } = await import(
+        "@/lib/realtime-toast-guard"
+      );
+      suppressLocalInventoryMovesRealtimeToast();
       const res = await updateLocalMove({
         id: move.id,
         qty: qtyNum,
-        fieldId,
+        fieldId: isSale ? undefined : fieldId ? fieldId : null,
+        ...(isSale
+          ? { buyerName: buyer, unitPriceUah: price }
+          : isInbound
+            ? { buyerName: buyer ?? null, unitPriceUah: price }
+            : {}),
       });
       if (!res.ok) {
         toast.error(res.error);
         return;
       }
-      toast.success("Списання оновлено");
+      toast.success(
+        isInbound
+          ? "Прихід оновлено"
+          : isSale
+            ? "Продаж оновлено"
+            : "Списання оновлено"
+      );
       onSaved();
     });
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="gap-3 sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Редагувати списання</DialogTitle>
-          <DialogDescription className="line-clamp-2">
-            {move?.itemName}
-          </DialogDescription>
-        </DialogHeader>
+    <div
+      className={cn(
+        "space-y-3 rounded-2xl border border-emerald-200/70 bg-emerald-50/40 p-3.5",
+        className
+      )}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold tracking-wide text-emerald-800 uppercase">
+            {isInbound
+              ? "Редагування приходу"
+              : isSale
+                ? "Редагування продажу"
+                : "Редагування списання"}
+          </p>
+          <p className="mt-0.5 truncate text-sm font-medium text-zinc-900">
+            {move.itemName}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={pending}
+          className="text-[11px] font-semibold text-zinc-400 hover:text-zinc-700"
+        >
+          Скасувати
+        </button>
+      </div>
 
-        <div className="space-y-3">
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-zinc-500">
-              Кількість{move?.itemUnit ? ` (${move.itemUnit})` : ""}
-            </label>
-            <Input
-              value={qty}
-              inputMode="decimal"
-              onChange={(e) => setQty(e.target.value)}
-              className="h-11 text-base font-semibold tabular-nums"
-            />
-          </div>
+      <div className="space-y-2.5">
+        <div className="space-y-1">
+          <label className="text-[11px] font-medium text-zinc-500">
+            Кількість{move.itemUnit ? ` (${move.itemUnit})` : ""}
+          </label>
+          <Input
+            value={qty}
+            inputMode="decimal"
+            onChange={(e) => setQty(e.target.value)}
+            className="h-10 bg-white text-base font-semibold tabular-nums"
+            autoFocus
+          />
+        </div>
 
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-zinc-500">Поле</label>
+        {isSale ? (
+          <>
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-zinc-500">
+                Покупець
+              </label>
+              <Input
+                value={buyerName}
+                onChange={(e) => setBuyerName(e.target.value)}
+                className="h-10 bg-white"
+                placeholder="Назва контрагента"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-zinc-500">
+                Ціна ₴ / од.
+              </label>
+              <Input
+                value={unitPrice}
+                inputMode="decimal"
+                onChange={(e) => setUnitPrice(e.target.value)}
+                className="h-10 bg-white text-base font-semibold tabular-nums"
+              />
+            </div>
+          </>
+        ) : isInbound ? (
+          <>
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-zinc-500">
+                Постачальник
+              </label>
+              <Input
+                value={buyerName}
+                onChange={(e) => setBuyerName(e.target.value)}
+                className="h-10 bg-white"
+                placeholder="Контрагент"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-zinc-500">
+                Ціна ₴ / од.
+              </label>
+              <Input
+                value={unitPrice}
+                inputMode="decimal"
+                onChange={(e) => setUnitPrice(e.target.value)}
+                className="h-10 bg-white text-base font-semibold tabular-nums"
+              />
+            </div>
+          </>
+        ) : (
+          <div className="space-y-1">
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-[11px] font-medium text-zinc-500">
+                {fieldRequired ? "Поле" : "Поле (опційно)"}
+              </label>
+              {fieldId ? (
+                <button
+                  type="button"
+                  onClick={() => setFieldId("")}
+                  className="text-[11px] font-semibold text-zinc-400 hover:text-zinc-700"
+                >
+                  Зняти
+                </button>
+              ) : null}
+            </div>
             <Input
               value={fieldQuery}
               onChange={(e) => setFieldQuery(e.target.value)}
               placeholder="Пошук поля…"
-              className="h-9"
+              className="h-9 bg-white"
             />
-            <div className="max-h-40 overflow-y-auto rounded-xl border border-zinc-200 bg-white">
+            <div className="max-h-36 overflow-y-auto rounded-xl border border-zinc-200 bg-white">
               {filteredFields.map((f) => {
                 const active = f.id === fieldId;
                 return (
@@ -392,28 +582,53 @@ function EditLocalMoveDialog({
               })}
             </div>
           </div>
-        </div>
+        )}
+      </div>
 
-        <DialogFooter className="border-0 bg-transparent p-0 sm:justify-end">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={pending}
-          >
-            Скасувати
-          </Button>
-          <Button
-            type="button"
-            onClick={handleSave}
-            disabled={pending}
-            className="bg-[#276749] text-white hover:bg-[#1f5339]"
-          >
-            {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            Зберегти
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      <div className="flex justify-end gap-2 pt-0.5">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={onCancel}
+          disabled={pending}
+          className="h-9"
+        >
+          Скасувати
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          onClick={handleSave}
+          disabled={pending}
+          className="h-9 bg-[#276749] text-white hover:bg-[#1f5339]"
+        >
+          {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+          Зберегти
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** @deprecated — використовуй EditLocalMoveInline */
+export function EditLocalMoveDialog({
+  move,
+  open,
+  onOpenChange,
+  onSaved,
+}: {
+  move: LocalMoveRow | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSaved: () => void;
+}) {
+  if (!open || !move) return null;
+  return (
+    <EditLocalMoveInline
+      move={move}
+      onCancel={() => onOpenChange(false)}
+      onSaved={onSaved}
+    />
   );
 }

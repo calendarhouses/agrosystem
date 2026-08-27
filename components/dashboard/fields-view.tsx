@@ -99,6 +99,7 @@ export function FieldsView() {
       EMPTY_GEOFENCES
     );
   const [wialonBootLoading, setWialonBootLoading] = useState(true);
+  const [wialonLoadError, setWialonLoadError] = useState<string | null>(null);
   const [statusHint, setStatusHint] = useState<string | null>(null);
 
   const { units: wialonUnits } = useLiveWialonUnits({
@@ -154,10 +155,10 @@ export function FieldsView() {
   const mapFields = useMemo(
     () =>
       buildMapFieldList(savedFields, wialonGeofences, {
-        // Поки Wialon грузиться — без демо «Поле 1/2/3»
-        allowDemoFallback: !wialonLoading,
+        // Ніколи не підставляємо фейкові «Поле 1/2/3» — лише Wialon + збережені
+        allowDemoFallback: false,
       }),
-    [savedFields, wialonGeofences, wialonLoading]
+    [savedFields, wialonGeofences]
   );
 
   const { connected: liveConnected, pulse: livePulse } = useFieldRealtime({
@@ -453,6 +454,7 @@ export function FieldsView() {
   useEffect(() => {
     const controller = new AbortController();
     setWialonBootLoading(true);
+    setWialonLoadError(null);
 
     fetch("/api/wialon", { signal: controller.signal })
       .then(async (response) => {
@@ -470,12 +472,18 @@ export function FieldsView() {
             ? data.geofences
             : EMPTY_GEOFENCES
         );
+        setWialonLoadError(null);
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
         console.error(error);
         setWialonSeedUnits([]);
         setWialonGeofences(EMPTY_GEOFENCES);
+        setWialonLoadError(
+          error instanceof Error
+            ? error.message
+            : "Wialon недоступний — геозони не завантажено"
+        );
       })
       .finally(() => {
         if (!controller.signal.aborted) setWialonBootLoading(false);
@@ -960,14 +968,14 @@ export function FieldsView() {
     flashStatus(
       selectedItem.source === "wialon"
         ? "Геозону Wialon не можна видалити з AgroSystem"
-        : "Демо-поле лише для огляду"
+        : "Видаляти можна лише збережені поля"
     );
   }
 
   function requestDeleteFromToolbar() {
     if (!selectedItem) return;
     if (selectedItem.source !== "saved") {
-      flashStatus("Демо-поля лише для огляду — видаляйте збережені");
+      flashStatus("Спочатку збережіть поле з паспортом");
       return;
     }
     setHubInitialTab("settings");
@@ -1053,6 +1061,7 @@ export function FieldsView() {
           livePulse={livePulse}
           statusHint={statusHint}
           saveHint={saveHint}
+          wialonLoadError={wialonLoadError}
           mobileExpanded={mobileListExpanded}
           onMobileExpandedChange={setMobileListExpanded}
           onSelect={(field) => selectField(field, { fly: true })}

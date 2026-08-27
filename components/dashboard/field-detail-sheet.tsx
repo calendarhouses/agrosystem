@@ -55,7 +55,9 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -79,6 +81,7 @@ import { SmartWeatherAlert } from "@/components/dashboard/smart-weather-alert";
 import { OperationClosePanel } from "@/components/dashboard/operation-close-modal";
 import type { CloseableOperation } from "@/components/dashboard/operation-close-modal";
 import {
+  listEquipmentForOps,
   listImplementsForOps,
   type ImplementOption,
 } from "@/app/admin/equipment/actions";
@@ -100,6 +103,12 @@ import {
 import { formatUahCurrency } from "@/lib/fuel-price";
 import { isFieldPassportComplete } from "@/lib/field-passport";
 import { formatVisitClockHm } from "@/lib/field-tech-history";
+import {
+  findEquipmentOpsOption,
+  mergeEquipmentOpsOptions,
+  type EquipmentForOpsRow,
+  type EquipmentOpsOption,
+} from "@/lib/equipment-ops-options";
 import type { WialonGeofenceProperties, WialonUnit } from "@/lib/wialon";
 import type { HourlyForecastHour, WeatherSnapshot } from "@/lib/weather";
 import type { FeatureCollection, Polygon } from "geojson";
@@ -523,6 +532,7 @@ function OperationCard({
 type PlanWorkPrefill = {
   occurredAt: string;
   machinery?: string;
+  equipmentId?: string | null;
   wialonUnitId?: number | null;
   fuelUsed?: number | null;
   areaDone?: number | null;
@@ -576,27 +586,50 @@ function PlanWorkPanel({
     crop: passportCrop,
   });
   const fieldPassportBlocked = !fieldPassportOk;
+
+  const [catalogEquipment, setCatalogEquipment] = useState<
+    EquipmentForOpsRow[]
+  >([]);
+  const [equipmentLoading, setEquipmentLoading] = useState(true);
+
   const unitOptions = useMemo(() => {
-    const list = units
-      .filter((u) => Number.isFinite(u.id))
-      .map((u) => ({
-        id: u.id,
-        name: u.nm?.trim() || `Техніка ${u.id}`,
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name, "uk"));
-    const injectId = initial?.wialonUnitId ?? prefill?.wialonUnitId ?? null;
+    const merged = mergeEquipmentOpsOptions(catalogEquipment, units);
+    const injectEq = initial?.equipmentId ?? prefill?.equipmentId ?? null;
+    const injectW = initial?.wialonUnitId ?? prefill?.wialonUnitId ?? null;
     const injectName =
       initial?.machinery?.trim() ||
       prefill?.machinery?.trim() ||
-      (injectId != null ? `Техніка ${injectId}` : "");
-    if (injectId != null && !list.some((u) => u.id === injectId)) {
-      return [{ id: injectId, name: injectName }, ...list];
+      (injectW != null ? `Техніка ${injectW}` : "Техніка");
+    if (
+      findEquipmentOpsOption(merged, {
+        equipmentId: injectEq,
+        wialonUnitId: injectW,
+      })
+    ) {
+      return merged;
     }
-    return list;
+    if (injectEq || injectW != null) {
+      const hasTracker = injectW != null;
+      const inject: EquipmentOpsOption = {
+        key: injectEq
+          ? `eq:${injectEq}`
+          : `w:${injectW}`,
+        label: injectName,
+        equipmentId: injectEq,
+        wialonUnitId: injectW,
+        hasTracker,
+        group: hasTracker ? "tracked" : "non_tracked",
+      };
+      return [inject, ...merged];
+    }
+    return merged;
   }, [
+    catalogEquipment,
     units,
+    initial?.equipmentId,
     initial?.wialonUnitId,
     initial?.machinery,
+    prefill?.equipmentId,
     prefill?.wialonUnitId,
     prefill?.machinery,
   ]);
@@ -604,9 +637,20 @@ function PlanWorkPanel({
   const unitSelectItems = useMemo(
     () =>
       unitOptions.map((unit) => ({
-        value: String(unit.id),
-        label: unit.name,
+        value: unit.key,
+        label: unit.hasTracker
+          ? unit.label
+          : `${unit.label} · без трекера`,
       })),
+    [unitOptions]
+  );
+
+  const trackedUnitOptions = useMemo(
+    () => unitOptions.filter((u) => u.group === "tracked"),
+    [unitOptions]
+  );
+  const nonTrackedUnitOptions = useMemo(
+    () => unitOptions.filter((u) => u.group === "non_tracked"),
     [unitOptions]
   );
 
@@ -615,9 +659,7 @@ function PlanWorkPanel({
   const [date, setDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
   const [timeFrom, setTimeFrom] = useState("08:00");
   const [timeTo, setTimeTo] = useState("18:00");
-  const [unitId, setUnitId] = useState<string | null>(
-    initial?.wialonUnitId != null ? String(initial.wialonUnitId) : null
-  );
+  const [unitId, setUnitId] = useState<string | null>(null);
   const [implement, setImplement] = useState(IMPLEMENT_PRESETS.Посів);
   const [implementId, setImplementId] = useState<string | null>(null);
   const [implementWidth, setImplementWidth] = useState(
@@ -665,6 +707,19 @@ function PlanWorkPanel({
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    setEquipmentLoading(true);
+    void listEquipmentForOps().then((res) => {
+      if (cancelled) return;
+      if (res.ok) setCatalogEquipment(res.data);
+      setEquipmentLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     setError(null);
     if (initial) {
       const [from = "08:00", to = "18:00"] = initial.time
@@ -675,11 +730,6 @@ function PlanWorkPanel({
       setDate(initial.occurredAt);
       setTimeFrom(from);
       setTimeTo(to);
-      setUnitId(
-        initial.wialonUnitId != null
-          ? String(initial.wialonUnitId)
-          : null
-      );
       setImplement(initial.implement);
       setImplementId(null);
       setImplementWidth(
@@ -744,10 +794,37 @@ function PlanWorkPanel({
         : estimatePlanFuelLiters(workType, prefillArea);
     setFuelUsed(String(fuelFromGps));
     setWage(String(estimatePlanWageUah(prefillArea)));
-    setUnitId(
-      prefill?.wialonUnitId != null ? String(prefill.wialonUnitId) : null
-    );
   }, [initial, prefill, field.id, field.crop, field.areaHa]);
+
+  /** Резолв ключа техніки після завантаження довідника / Wialon. */
+  useEffect(() => {
+    if (unitOptions.length === 0) return;
+    if (initial) {
+      const match = findEquipmentOpsOption(unitOptions, {
+        equipmentId: initial.equipmentId,
+        wialonUnitId: initial.wialonUnitId,
+      });
+      if (match) setUnitId(match.key);
+      return;
+    }
+    if (prefill?.equipmentId || prefill?.wialonUnitId != null) {
+      const match = findEquipmentOpsOption(unitOptions, {
+        equipmentId: prefill.equipmentId,
+        wialonUnitId: prefill.wialonUnitId,
+      });
+      if (match) setUnitId(match.key);
+      return;
+    }
+    setUnitId((prev) => {
+      if (prev && unitOptions.some((o) => o.key === prev)) return prev;
+      return unitOptions[0]?.key ?? null;
+    });
+  }, [
+    unitOptions,
+    initial,
+    prefill?.equipmentId,
+    prefill?.wialonUnitId,
+  ]);
 
   /** Підтягнути id зі довідника для вже обраної назви (edit / після завантаження). */
   useEffect(() => {
@@ -758,11 +835,6 @@ function PlanWorkPanel({
     );
     if (matched) setImplementId(matched.id);
   }, [implementOptions]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (initial || prefill?.wialonUnitId != null) return;
-    setUnitId((prev) => prev ?? (unitOptions[0] ? String(unitOptions[0].id) : null));
-  }, [unitOptions, initial, prefill?.wialonUnitId]);
 
   function applyAreaFromTrack(widthM: number) {
     const dist = prefill?.trackerDistanceKm;
@@ -838,12 +910,14 @@ function PlanWorkPanel({
     const fuel = Number(fuelUsed.replace(",", "."));
     const pay = Number(wage.replace(",", "."));
     const width = Number(implementWidth.replace(",", "."));
-    const selectedUnit = unitOptions.find((u) => String(u.id) === unitId);
+    const selectedUnit = unitOptions.find((u) => u.key === unitId);
 
     if (!type.trim() || !selectedUnit) {
       setError(
         unitOptions.length === 0
-          ? "Немає техніки з GPS — перевірте підключення Wialon"
+          ? equipmentLoading
+            ? "Завантаження техніки…"
+            : "Немає техніки в довіднику — синхронізуйте з 1С або підключіть Wialon"
           : "Оберіть тип робіт і техніку"
       );
       return;
@@ -880,7 +954,7 @@ function PlanWorkPanel({
       crop: crop.trim() || passportCrop || field.crop || "—",
       date: formatOpDateLabel(date),
       time: `${timeFrom} – ${timeTo}`,
-      machinery: selectedUnit.name,
+      machinery: selectedUnit.label,
       implement: implement.trim(),
       areaDone: Math.round(area * 100) / 100,
       areaTotal: Number(passportAreaHa) || Number(field.areaHa) || area,
@@ -889,7 +963,8 @@ function PlanWorkPanel({
       status: submitAsCompleted
         ? "completed"
         : (initial?.status ?? "planned"),
-      wialonUnitId: selectedUnit.id,
+      equipmentId: selectedUnit.equipmentId,
+      wialonUnitId: selectedUnit.wialonUnitId,
       implementWidthM: Math.round(width * 100) / 100,
       trackerDistanceKm:
         prefill?.trackerDistanceKm != null &&
@@ -1067,11 +1142,26 @@ function PlanWorkPanel({
                       <SelectValue placeholder="Оберіть техніку" />
                     </SelectTrigger>
                     <SelectContent className="z-[120] max-h-64 border-[#E5DFD3] bg-white">
-                      {unitOptions.map((item) => (
-                        <SelectItem key={item.id} value={String(item.id)}>
-                          {item.name}
-                        </SelectItem>
-                      ))}
+                      {trackedUnitOptions.length > 0 ? (
+                        <SelectGroup>
+                          <SelectLabel>З GPS</SelectLabel>
+                          {trackedUnitOptions.map((item) => (
+                            <SelectItem key={item.key} value={item.key}>
+                              {item.label}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      ) : null}
+                      {nonTrackedUnitOptions.length > 0 ? (
+                        <SelectGroup>
+                          <SelectLabel>Без трекера</SelectLabel>
+                          {nonTrackedUnitOptions.map((item) => (
+                            <SelectItem key={item.key} value={item.key}>
+                              {item.label}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      ) : null}
                     </SelectContent>
                   </Select>
                 ) : (
@@ -1081,7 +1171,9 @@ function PlanWorkPanel({
                       "flex items-center text-sm text-amber-800"
                     )}
                   >
-                    GPS ще не завантажився
+                    {equipmentLoading
+                      ? "Завантаження техніки…"
+                      : "Немає техніки в довіднику"}
                   </div>
                 )}
               </div>
@@ -1266,6 +1358,7 @@ function toCloseableOperation(op: FieldOperation): CloseableOperation {
     wage: op.wage,
     status: op.status,
     agronomistComment: op.agronomistComment,
+    equipmentId: op.equipmentId,
     wialonUnitId: op.wialonUnitId,
     implementWidthM: op.implementWidthM,
     trackerDistanceKm: op.trackerDistanceKm,
@@ -1404,18 +1497,27 @@ export function FieldDetailSheet({
     moveId: string;
     fieldId: string;
     itemTitle: string;
-    category: "zzr" | "fertilizer" | "seed";
+    category: "zzr" | "fertilizer" | "seed" | "parts" | "harvest";
     qty: number;
     unit: string;
   }) {
     if (!farmFieldId) return;
+    if (!payload.fieldId) return;
     if (payload.fieldId.toLowerCase() !== farmFieldId.toLowerCase()) return;
 
-    const categoryLabels = {
+    const categoryLabels: Record<string, string> = {
       zzr: "ЗЗР",
       fertilizer: "Добрива",
       seed: "Насіння",
-    } as const;
+      parts: "Запчастини",
+      harvest: "Врожай",
+    };
+    const materialCategory =
+      payload.category === "zzr" ||
+      payload.category === "fertilizer" ||
+      payload.category === "seed"
+        ? payload.category
+        : ("other" as const);
     const eventId = `material:${payload.moveId}`;
     const today = new Date().toISOString().slice(0, 10);
 
@@ -1426,8 +1528,9 @@ export function FieldDetailSheet({
         type: "material",
         date: today,
         title: payload.itemTitle,
-        category: payload.category,
-        categoryLabel: categoryLabels[payload.category],
+        category: materialCategory,
+        categoryLabel:
+          categoryLabels[payload.category] ?? categoryLabels.other ?? "ТМЦ",
         qty: payload.qty,
         unit: payload.unit,
         costUah: 0,

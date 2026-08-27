@@ -10,7 +10,6 @@ import {
   Loader2,
   MapPin,
   Settings2,
-  Sprout,
   Sun,
   Wind,
 } from "lucide-react";
@@ -24,16 +23,7 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { searchPlaces, type GeoSearchResult } from "@/lib/geocode";
-import { seasonLabel } from "@/lib/season";
-import { useSeasonStore } from "@/lib/season-store";
 import {
   DEFAULT_WEATHER_LOCATION,
   fetchWeather,
@@ -59,12 +49,8 @@ type FieldsMapChromeProps = {
   align?: "start" | "end";
 };
 
-/** Сезон + погода — плаваюче скло на карті */
+/** Погода — плаваюче скло на карті (сезон обирається в деталях поля) */
 export function FieldsMapChrome({ align = "end" }: FieldsMapChromeProps) {
-  const activeSeason = useSeasonStore((s) => s.activeSeason);
-  const availableSeasons = useSeasonStore((s) => s.availableSeasons);
-  const setActiveSeason = useSeasonStore((s) => s.setActiveSeason);
-
   const [location, setLocation] = useState<WeatherLocation>(
     DEFAULT_WEATHER_LOCATION
   );
@@ -180,36 +166,6 @@ export function FieldsMapChrome({ align = "end" }: FieldsMapChromeProps) {
         align === "start" ? "justify-start" : "justify-end"
       )}
     >
-      <Select
-        value={String(activeSeason)}
-        onValueChange={(v) => {
-          if (typeof v === "string" && v) setActiveSeason(v);
-        }}
-      >
-        <SelectTrigger
-          className={cn(
-            "h-10 min-h-10 min-w-[148px] gap-2 rounded-2xl border-white/40 bg-background/75 px-3",
-            "text-sm font-semibold text-zinc-800 shadow-lg backdrop-blur-xl",
-            "hover:bg-background/90 focus-visible:ring-2 focus-visible:ring-emerald-600/30",
-            "data-[size=default]:h-10 data-[size=default]:min-h-10"
-          )}
-          aria-label="Агросезон"
-        >
-          <Sprout className="h-3.5 w-3.5 text-emerald-700" />
-          <SelectValue>{seasonLabel(String(activeSeason))}</SelectValue>
-        </SelectTrigger>
-        <SelectContent align="end" className="min-w-[200px] rounded-xl">
-          <div className="px-2 pt-1.5 pb-1 text-[10px] font-semibold tracking-wider text-zinc-400 uppercase">
-            Агросезон (бер–лют)
-          </div>
-          {availableSeasons.map((year) => (
-            <SelectItem key={year} value={year} className="rounded-lg">
-              {seasonLabel(year)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
       <div className="flex items-center gap-1 rounded-2xl border border-white/40 bg-background/75 py-1 pr-1 pl-2.5 shadow-lg backdrop-blur-xl">
         <div className="min-w-0 px-1">
           <div className="flex items-center gap-1.5">

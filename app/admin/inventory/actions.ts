@@ -26,6 +26,7 @@ import {
   syncNomenclatureToSupabase,
   type SyncNomenclatureResult,
 } from "@/lib/inventory-sync";
+import { toKyivDayKey } from "@/lib/kyiv-date";
 import { createServiceSupabase } from "@/lib/supabase/server";
 
 export async function syncInventoryNomenclatureAction(): Promise<
@@ -33,6 +34,7 @@ export async function syncInventoryNomenclatureAction(): Promise<
 > {
   try {
     const data = await syncNomenclatureToSupabase();
+    invalidateBasQtyInCache();
     revalidatePath("/inventory");
     revalidatePath("/admin");
     return { ok: true, data };
@@ -50,11 +52,12 @@ export async function syncInventoryNomenclatureAction(): Promise<
 export type QuickIssueItemOption = {
   basRefKey: string;
   name: string;
-  category: "zzr" | "fertilizer" | "seed";
+  category: "zzr" | "fertilizer" | "seed" | "parts" | "harvest";
   categoryLabel: string;
   unit: string;
   virtualBalance: number;
   plannedPriceUah: number | null;
+  isLocal?: boolean;
 };
 
 const QUICK_ISSUE_CATEGORY_LABELS: Record<
@@ -62,13 +65,50 @@ const QUICK_ISSUE_CATEGORY_LABELS: Record<
   string
 > = {
   zzr: "ЗЗР",
-  fertilizer: "Добриво",
+  fertilizer: "Добрива",
   seed: "Насіння",
+  parts: "Запчастини",
+  harvest: "Врожай",
 };
 
-const BAS_STOCK_SINCE = "2024-03-01T00:00:00";
+const ISSUE_CATEGORIES = new Set<QuickIssueItemOption["category"]>([
+  "zzr",
+  "fertilizer",
+  "seed",
+  "parts",
+]);
 
-async function loadBasQtyInByRef(): Promise<Record<string, number>> {
+const STOCK_CATEGORIES = new Set<QuickIssueItemOption["category"]>([
+  "zzr",
+  "fertilizer",
+  "seed",
+  "parts",
+  "harvest",
+]);
+
+const BAS_STOCK_SINCE = "2024-03-01T00:00:00";
+const BAS_QTY_IN_TTL_MS = 5 * 60 * 1000;
+
+type BasStockMaps = {
+  qtyIn: Record<string, number>;
+  qtyOut: Record<string, number>;
+};
+
+let basStockCache: { at: number; maps: BasStockMaps } | null = null;
+
+function invalidateBasQtyInCache() {
+  basStockCache = null;
+}
+
+/** BAS qtyIn/qtyOut з TTL-кешем — уникаємо повного OData rebuild на кожен options/submit. */
+async function loadBasStockByRef(force = false): Promise<BasStockMaps> {
+  if (
+    !force &&
+    basStockCache &&
+    Date.now() - basStockCache.at < BAS_QTY_IN_TTL_MS
+  ) {
+    return basStockCache.maps;
+  }
   try {
     const [
       nomenclature,
@@ -105,13 +145,18 @@ async function loadBasQtyInByRef(): Promise<Record<string, number>> {
       since: BAS_STOCK_SINCE,
     });
 
-    const map: Record<string, number> = {};
+    const qtyIn: Record<string, number> = {};
+    const qtyOut: Record<string, number> = {};
     for (const item of full.items) {
-      map[item.id.toLowerCase()] = item.qtyIn;
+      const key = item.id.toLowerCase();
+      qtyIn[key] = item.qtyIn;
+      qtyOut[key] = item.qtyOut;
     }
-    return map;
+    const maps = { qtyIn, qtyOut };
+    basStockCache = { at: Date.now(), maps };
+    return maps;
   } catch {
-    return {};
+    return basStockCache?.maps ?? { qtyIn: {}, qtyOut: {} };
   }
 }
 
@@ -119,15 +164,16 @@ async function resolveQuickIssueVirtualBalance(
   basRefKey: string
 ): Promise<number | { ok: false; error: string }> {
   const key = basRefKey.trim().toLowerCase();
-  const [outboundRes, qtyInMap] = await Promise.all([
-    getLocalOutboundQtyByItem(),
-    loadBasQtyInByRef(),
+  const [movesRes, basStock] = await Promise.all([
+    getLocalMoveQtyByItem(),
+    loadBasStockByRef(),
   ]);
-  if (!outboundRes.ok) {
-    return { ok: false, error: outboundRes.error };
+  if (!movesRes.ok) {
+    return { ok: false, error: movesRes.error };
   }
-  const qtyIn = qtyInMap[key] ?? 0;
-  const qtyOut = outboundRes.byRef[key] ?? 0;
+  const qtyIn = (basStock.qtyIn[key] ?? 0) + (movesRes.inboundByRef[key] ?? 0);
+  const qtyOut =
+    (basStock.qtyOut[key] ?? 0) + (movesRes.outboundByRef[key] ?? 0);
   return Math.round((qtyIn - qtyOut) * 100) / 100;
 }
 
@@ -160,34 +206,38 @@ export async function getQuickIssueOptions(): Promise<
         }[]
       | null = null;
 
-    const [itemsRes, fieldsRes, outboundRes, qtyInMap] = await Promise.all([
+    const [itemsRes, fieldsRes, movesRes, basStock] = await Promise.all([
       supabase
         .from("inventory_items_cache")
         .select(
-          "bas_ref_key, name, custom_name, category, unit, is_hidden, planned_price_uah"
+          "bas_ref_key, name, custom_name, category, unit, is_hidden, planned_price_uah, is_local"
         )
-        .in("category", ["zzr", "fertilizer", "seed"])
+        .in("category", ["zzr", "fertilizer", "seed", "parts", "harvest"])
         .order("name"),
       supabase
         .from("farm_fields")
         .select("id, name, area_ha, crop")
         .order("name"),
-      getLocalOutboundQtyByItem(),
-      loadBasQtyInByRef(),
+      getLocalMoveQtyByItem(),
+      loadBasStockByRef(),
     ]);
 
-    const outboundByRef = outboundRes.ok ? outboundRes.byRef : {};
+    const outboundByRef = movesRes.ok ? movesRes.outboundByRef : {};
+    const inboundByRef = movesRes.ok ? movesRes.inboundByRef : {};
+    const qtyInMap = basStock.qtyIn;
+    const qtyOutMap = basStock.qtyOut;
 
     if (itemsRes.error) {
       if (
         itemsRes.error.message?.includes("is_hidden") ||
         itemsRes.error.message?.includes("custom_name") ||
-        itemsRes.error.message?.includes("planned_price_uah")
+        itemsRes.error.message?.includes("planned_price_uah") ||
+        itemsRes.error.message?.includes("is_local")
       ) {
         const legacy = await supabase
           .from("inventory_items_cache")
           .select("bas_ref_key, name, category, unit")
-          .in("category", ["zzr", "fertilizer", "seed"])
+          .in("category", ["zzr", "fertilizer", "seed", "parts", "harvest"])
           .order("name");
         if (legacy.error) {
           return {
@@ -217,19 +267,18 @@ export async function getQuickIssueOptions(): Promise<
     }
 
     const items: QuickIssueItemOption[] = (itemsData ?? [])
-      .filter(
-        (row) =>
-          (row.category === "zzr" ||
-            row.category === "fertilizer" ||
-            row.category === "seed") &&
-          !row.is_hidden
-      )
+      .filter((row) => {
+        const cat = row.category as QuickIssueItemOption["category"];
+        return STOCK_CATEGORIES.has(cat) && !row.is_hidden;
+      })
       .map((row) => {
         const basRefKey = String(row.bas_ref_key);
         const key = basRefKey.toLowerCase();
         const category = row.category as QuickIssueItemOption["category"];
-        const qtyIn = qtyInMap[key] ?? 0;
-        const qtyOut = outboundByRef[key] ?? 0;
+        const qtyIn =
+          (qtyInMap[key] ?? 0) + (inboundByRef[key] ?? 0);
+        const qtyOut =
+          (qtyOutMap[key] ?? 0) + (outboundByRef[key] ?? 0);
         const plannedRaw = row.planned_price_uah;
         const plannedPriceUah =
           plannedRaw != null && Number(plannedRaw) > 0
@@ -247,6 +296,9 @@ export async function getQuickIssueOptions(): Promise<
           unit: String(row.unit ?? ""),
           virtualBalance: Math.round((qtyIn - qtyOut) * 100) / 100,
           plannedPriceUah,
+          isLocal: Boolean(
+            (row as { is_local?: unknown }).is_local === true
+          ),
         };
       });
 
@@ -271,18 +323,19 @@ export async function getQuickIssueOptions(): Promise<
 
 export async function createLocalOutboundMove(input: {
   itemRefKey: string;
-  fieldId: string;
+  fieldId?: string | null;
   qty: number;
   /** Агросезон ('2026'); якщо не передано — DEFAULT_SEASON */
   season?: string;
+  note?: string | null;
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   const itemRefKey = input.itemRefKey?.trim().toLowerCase();
-  const fieldId = input.fieldId?.trim().toLowerCase();
+  const fieldId = input.fieldId?.trim().toLowerCase() || null;
   const qty = Number(input.qty);
   const season = String(input.season ?? "2026").trim() || "2026";
+  const note = input.note?.trim() || null;
 
   if (!itemRefKey) return { ok: false, error: "Оберіть ТМЦ" };
-  if (!fieldId) return { ok: false, error: "Оберіть поле" };
   if (!Number.isFinite(qty) || qty <= 0) {
     return { ok: false, error: "Вкажіть кількість більше нуля" };
   }
@@ -300,6 +353,21 @@ export async function createLocalOutboundMove(input: {
 
   try {
     const supabase = createServiceSupabase();
+
+    const { data: itemRow } = await supabase
+      .from("inventory_items_cache")
+      .select("category")
+      .eq("bas_ref_key", itemRefKey)
+      .maybeSingle();
+    const category = String(itemRow?.category ?? "");
+    const fieldRequired =
+      category === "zzr" ||
+      category === "fertilizer" ||
+      category === "seed";
+    if (fieldRequired && !fieldId) {
+      return { ok: false, error: "Оберіть поле" };
+    }
+
     const payload: Record<string, unknown> = {
       item_ref_key: itemRefKey,
       field_id: fieldId,
@@ -308,6 +376,7 @@ export async function createLocalOutboundMove(input: {
       date: new Date().toISOString(),
       status: "draft",
       season,
+      note,
     };
     const { data, error } = await supabase
       .from("inventory_local_moves")
@@ -316,11 +385,11 @@ export async function createLocalOutboundMove(input: {
       .single();
 
     if (error) {
-      if (error.message?.includes("season")) {
-        const { season: _s, ...withoutSeason } = payload;
+      if (error.message?.includes("season") || error.message?.includes("note")) {
+        const { season: _s, note: _n, ...withoutExtra } = payload;
         const retry = await supabase
           .from("inventory_local_moves")
-          .insert(withoutSeason)
+          .insert(withoutExtra)
           .select("id")
           .single();
         if (retry.error) return { ok: false, error: retry.error.message };
@@ -338,6 +407,369 @@ export async function createLocalOutboundMove(input: {
     return {
       ok: false,
       error: err instanceof Error ? err.message : "Не вдалося зберегти списання",
+    };
+  }
+}
+
+export async function createLocalInboundMove(input: {
+  itemRefKey: string;
+  qty: number;
+  /** Ціна закупівлі ₴/од. — обовʼязкова для фінансів / Excel */
+  unitPriceUah: number;
+  /** Постачальник / контрагент (вільний текст або з BAS) */
+  buyerName?: string | null;
+  fieldId?: string | null;
+  note?: string | null;
+  season?: string;
+}): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  const itemRefKey = input.itemRefKey?.trim().toLowerCase();
+  const fieldId = input.fieldId?.trim().toLowerCase() || null;
+  const qty = Number(input.qty);
+  const unitPriceUah = Number(input.unitPriceUah);
+  const season = String(input.season ?? "2026").trim() || "2026";
+  const note = input.note?.trim() || null;
+  const buyerName = input.buyerName?.trim() || null;
+
+  if (!itemRefKey) return { ok: false, error: "Оберіть ТМЦ" };
+  if (!Number.isFinite(qty) || qty <= 0) {
+    return { ok: false, error: "Вкажіть кількість більше нуля" };
+  }
+  if (!Number.isFinite(unitPriceUah) || unitPriceUah < 0) {
+    return { ok: false, error: "Вкажіть ціну за одиницю (₴)" };
+  }
+
+  try {
+    const supabase = createServiceSupabase();
+    const payload: Record<string, unknown> = {
+      item_ref_key: itemRefKey,
+      field_id: fieldId,
+      type: "inbound",
+      qty,
+      date: new Date().toISOString(),
+      status: "draft",
+      season,
+      note,
+      unit_price_uah: unitPriceUah,
+      buyer_name: buyerName,
+    };
+    const { data, error } = await supabase
+      .from("inventory_local_moves")
+      .insert(payload)
+      .select("id")
+      .single();
+
+    if (error) {
+      if (
+        error.message?.includes("inbound") ||
+        error.message?.includes("type")
+      ) {
+        return {
+          ok: false,
+          error:
+            "Потрібна міграція 038 (inbound). Виконай SQL у Supabase, потім повтори.",
+        };
+      }
+      if (error.message?.includes("unit_price")) {
+        const { unit_price_uah: _p, ...withoutPrice } = payload;
+        const retry = await supabase
+          .from("inventory_local_moves")
+          .insert(withoutPrice)
+          .select("id")
+          .single();
+        if (retry.error) return { ok: false, error: retry.error.message };
+        // Міграція 039 потрібна для ціни — але planned_price все одно оновимо
+        await supabase
+          .from("inventory_items_cache")
+          .update({ planned_price_uah: unitPriceUah })
+          .eq("bas_ref_key", itemRefKey);
+        revalidatePath("/inventory");
+        return { ok: true, id: String(retry.data.id) };
+      }
+      if (error.message?.includes("season") || error.message?.includes("note")) {
+        const { season: _s, note: _n, unit_price_uah: _p, ...withoutExtra } =
+          payload;
+        const retry = await supabase
+          .from("inventory_local_moves")
+          .insert({ ...withoutExtra, unit_price_uah: unitPriceUah })
+          .select("id")
+          .single();
+        if (retry.error) {
+          const bare = await supabase
+            .from("inventory_local_moves")
+            .insert(withoutExtra)
+            .select("id")
+            .single();
+          if (bare.error) return { ok: false, error: bare.error.message };
+          revalidatePath("/inventory");
+          return { ok: true, id: String(bare.data.id) };
+        }
+        await supabase
+          .from("inventory_items_cache")
+          .update({ planned_price_uah: unitPriceUah })
+          .eq("bas_ref_key", itemRefKey);
+        revalidatePath("/inventory");
+        return { ok: true, id: String(retry.data.id) };
+      }
+      return { ok: false, error: error.message };
+    }
+
+    // Оновлюємо планову ціну в кеші — фінанси поля беруть її при списанні
+    await supabase
+      .from("inventory_items_cache")
+      .update({ planned_price_uah: unitPriceUah })
+      .eq("bas_ref_key", itemRefKey);
+
+    revalidatePath("/inventory");
+    return { ok: true, id: String(data.id) };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Не вдалося зберегти прихід",
+    };
+  }
+}
+
+export async function createLocalHarvestSale(input: {
+  itemRefKey: string;
+  qty: number;
+  buyerName: string;
+  unitPriceUah: number;
+  date?: string | null;
+  note?: string | null;
+  season?: string;
+}): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  const itemRefKey = input.itemRefKey?.trim().toLowerCase();
+  const buyerName = input.buyerName?.trim() || "";
+  const qty = Number(input.qty);
+  const unitPriceUah = Number(input.unitPriceUah);
+  const season = String(input.season ?? "2026").trim() || "2026";
+  const note = input.note?.trim() || null;
+  const dateRaw = input.date?.trim();
+  const dateIso = dateRaw
+    ? new Date(
+        dateRaw.includes("T") ? dateRaw : `${dateRaw}T12:00:00`
+      ).toISOString()
+    : new Date().toISOString();
+
+  if (!itemRefKey) return { ok: false, error: "Оберіть культуру / ТМЦ" };
+  if (!buyerName) return { ok: false, error: "Вкажіть покупця" };
+  if (!Number.isFinite(qty) || qty <= 0) {
+    return { ok: false, error: "Вкажіть кількість більше нуля" };
+  }
+  if (!Number.isFinite(unitPriceUah) || unitPriceUah < 0) {
+    return { ok: false, error: "Вкажіть коректну ціну" };
+  }
+  if (Number.isNaN(new Date(dateIso).getTime())) {
+    return { ok: false, error: "Невірна дата" };
+  }
+
+  try {
+    const supabase = createServiceSupabase();
+    const { data: itemRow } = await supabase
+      .from("inventory_items_cache")
+      .select("category")
+      .eq("bas_ref_key", itemRefKey)
+      .maybeSingle();
+    if (String(itemRow?.category ?? "") !== "harvest") {
+      return { ok: false, error: "Продаж доступний лише для врожаю" };
+    }
+
+    const balance = await resolveQuickIssueVirtualBalance(itemRefKey);
+    if (typeof balance !== "number") return balance;
+    if (qty > balance) {
+      return {
+        ok: false,
+        error: `Недостатньо на складі. Доступно: ${balance}`,
+      };
+    }
+
+    const payload: Record<string, unknown> = {
+      item_ref_key: itemRefKey,
+      field_id: null,
+      type: "sale",
+      qty,
+      date: dateIso,
+      status: "draft",
+      season,
+      note,
+      buyer_name: buyerName,
+      unit_price_uah: unitPriceUah,
+    };
+    const { data, error } = await supabase
+      .from("inventory_local_moves")
+      .insert(payload)
+      .select("id")
+      .single();
+
+    if (error) {
+      if (
+        error.message?.includes("sale") ||
+        error.message?.includes("buyer_name") ||
+        error.message?.includes("unit_price") ||
+        error.message?.includes("type")
+      ) {
+        return {
+          ok: false,
+          error:
+            "Потрібна міграція 039 (продаж врожаю). Виконай SQL у Supabase, потім повтори.",
+        };
+      }
+      return { ok: false, error: error.message };
+    }
+
+    revalidatePath("/inventory");
+    return { ok: true, id: String(data.id) };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Не вдалося зберегти продаж",
+    };
+  }
+}
+
+export async function listBuyerSuggestions(): Promise<
+  | { ok: true; names: string[] }
+  | { ok: false; error: string }
+> {
+  return listCounterpartySuggestions("buyer");
+}
+
+export async function listSupplierSuggestions(): Promise<
+  | { ok: true; names: string[] }
+  | { ok: false; error: string }
+> {
+  return listCounterpartySuggestions("supplier");
+}
+
+/** Контрагенти з реальних BAS-документів (як у Фінансах), не весь довідник. */
+async function listCounterpartySuggestions(
+  role: "buyer" | "supplier"
+): Promise<{ ok: true; names: string[] } | { ok: false; error: string }> {
+  try {
+    const since = "2024-03-01T00:00:00";
+    const [docs, counterparties, localNames] = await Promise.all([
+      role === "buyer" ? getBasSalesSince(since) : getBasReceiptsSince(since),
+      getBasCounterparties(),
+      listLocalCounterpartyNames(role),
+    ]);
+
+    const cpMap = new Map(
+      counterparties.map((c) => [
+        c.Ref_Key.toLowerCase(),
+        c.Description?.trim() || "",
+      ])
+    );
+    const counts = new Map<string, number>();
+
+    for (const doc of docs) {
+      const key = (doc.Контрагент_Key || "").toLowerCase();
+      const name = cpMap.get(key);
+      if (!name) continue;
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+    }
+    for (const name of localNames) {
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+    }
+
+    const names = [...counts.entries()]
+      .sort(
+        (a, b) =>
+          b[1] - a[1] || a[0].localeCompare(b[0], "uk", { sensitivity: "base" })
+      )
+      .map(([name]) => name);
+
+    return { ok: true, names };
+  } catch (err) {
+    return {
+      ok: false,
+      error:
+        err instanceof Error
+          ? err.message
+          : "Не вдалося завантажити контрагентів",
+    };
+  }
+}
+
+async function listLocalCounterpartyNames(
+  role: "buyer" | "supplier"
+): Promise<string[]> {
+  try {
+    const supabase = createServiceSupabase();
+    const type = role === "buyer" ? "sale" : "inbound";
+    const { data, error } = await supabase
+      .from("inventory_local_moves")
+      .select("buyer_name")
+      .eq("type", type)
+      .not("buyer_name", "is", null)
+      .limit(200);
+    if (error || !data) return [];
+    return [
+      ...new Set(
+        data
+          .map((r) =>
+            typeof r.buyer_name === "string" ? r.buyer_name.trim() : ""
+          )
+          .filter((n) => n.length > 0)
+      ),
+    ];
+  } catch {
+    return [];
+  }
+}
+
+export async function createLocalInventoryItem(input: {
+  name: string;
+  category: QuickIssueItemOption["category"];
+  unit: string;
+  plannedPriceUah?: number | null;
+}): Promise<
+  | { ok: true; basRefKey: string }
+  | { ok: false; error: string }
+> {
+  const name = input.name?.trim();
+  const unit = input.unit?.trim() || "шт";
+  const category = input.category;
+  if (!name) return { ok: false, error: "Вкажіть назву" };
+  if (!STOCK_CATEGORIES.has(category)) {
+    return { ok: false, error: "Невірна категорія" };
+  }
+  const price = Number(input.plannedPriceUah);
+  const plannedPriceUah =
+    Number.isFinite(price) && price > 0 ? price : null;
+
+  try {
+    const supabase = createServiceSupabase();
+    const basRefKey = crypto.randomUUID();
+    const payload: Record<string, unknown> = {
+      bas_ref_key: basRefKey,
+      name,
+      category,
+      unit,
+      planned_price_uah: plannedPriceUah,
+      is_local: true,
+      is_hidden: false,
+      custom_name: null,
+    };
+    const { error } = await supabase.from("inventory_items_cache").insert(payload);
+    if (error) {
+      if (error.message?.includes("is_local")) {
+        const { is_local: _l, ...withoutLocal } = payload;
+        const retry = await supabase
+          .from("inventory_items_cache")
+          .insert(withoutLocal);
+        if (retry.error) return { ok: false, error: retry.error.message };
+        revalidatePath("/inventory");
+        return { ok: true, basRefKey };
+      }
+      return { ok: false, error: error.message };
+    }
+    revalidatePath("/inventory");
+    return { ok: true, basRefKey };
+  } catch (err) {
+    return {
+      ok: false,
+      error:
+        err instanceof Error ? err.message : "Не вдалося створити позицію",
     };
   }
 }
@@ -582,40 +1014,177 @@ export async function syncLocalMovesToBasAction(): Promise<
   }
 }
 
-/** Сума outbound з inventory_local_moves по bas_ref_key (item_ref_key). */
-export async function getLocalOutboundQtyByItem(): Promise<
-  | { ok: true; byRef: Record<string, number> }
+/** Суми локальних рухів по bas_ref_key. sale рахується як відтік (як outbound). */
+export type LocalOutboundRow = {
+  id: string;
+  ref: string;
+  qty: number;
+  dateYmd: string;
+  type: "outbound" | "inbound" | "sale";
+  status: "draft" | "sent_to_1c";
+  note: string | null;
+  buyerName: string | null;
+  unitPriceUah: number | null;
+  fieldName: string | null;
+  attachmentCount: number;
+};
+
+export async function getLocalMoveQtyByItem(): Promise<
+  | {
+      ok: true;
+      outboundByRef: Record<string, number>;
+      inboundByRef: Record<string, number>;
+      saleByRef: Record<string, number>;
+      rows: LocalOutboundRow[];
+    }
   | { ok: false; error: string }
 > {
   try {
     const supabase = createServiceSupabase();
     const { data, error } = await supabase
       .from("inventory_local_moves")
-      .select("item_ref_key, qty")
-      .eq("type", "outbound");
+      .select(
+        "id, item_ref_key, qty, date, type, status, note, buyer_name, unit_price_uah, field_id, farm_fields ( name )"
+      );
 
     if (error) {
       if (error.code === "PGRST205" || error.code === "42P01") {
-        return { ok: true, byRef: {} };
+        return {
+          ok: true,
+          outboundByRef: {},
+          inboundByRef: {},
+          saleByRef: {},
+          rows: [],
+        };
       }
-      return { ok: false, error: error.message };
+      // Fallback якщо 039 / join ще недоступні
+      const legacy = await supabase
+        .from("inventory_local_moves")
+        .select("id, item_ref_key, qty, date, type, status, note, field_id");
+      if (legacy.error) {
+        return { ok: false, error: legacy.error.message };
+      }
+      return aggregateLocalMoves(
+        (legacy.data ?? []) as Record<string, unknown>[]
+      );
     }
 
-    const byRef: Record<string, number> = {};
-    for (const row of data ?? []) {
-      const key = String(row.item_ref_key).toLowerCase();
-      byRef[key] = (byRef[key] ?? 0) + (Number(row.qty) || 0);
-    }
-    return { ok: true, byRef };
+    return aggregateLocalMoves((data ?? []) as Record<string, unknown>[]);
   } catch (err) {
     return {
       ok: false,
       error:
         err instanceof Error
           ? err.message
-          : "Не вдалося завантажити локальні списання",
+          : "Не вдалося завантажити локальні рухи",
     };
   }
+}
+
+async function aggregateLocalMoves(
+  data: Record<string, unknown>[]
+): Promise<{
+  ok: true;
+  outboundByRef: Record<string, number>;
+  inboundByRef: Record<string, number>;
+  saleByRef: Record<string, number>;
+  rows: LocalOutboundRow[];
+}> {
+  const outboundByRef: Record<string, number> = {};
+  const inboundByRef: Record<string, number> = {};
+  const saleByRef: Record<string, number> = {};
+  const rows: LocalOutboundRow[] = [];
+  for (const row of data) {
+    const key = String(row.item_ref_key).toLowerCase();
+    const qty = Number(row.qty) || 0;
+    const type =
+      row.type === "inbound"
+        ? ("inbound" as const)
+        : row.type === "sale"
+          ? ("sale" as const)
+          : ("outbound" as const);
+    const status: "draft" | "sent_to_1c" =
+      row.status === "sent_to_1c" ? "sent_to_1c" : "draft";
+    // Після mark sent → бухгалтер проводить у 1С → BAS sync.
+    // У віртуальний залишок / KPI лишаємо лише draft, інакше подвійний рахунок.
+    if (status === "draft") {
+      if (type === "inbound") {
+        inboundByRef[key] = (inboundByRef[key] ?? 0) + qty;
+      } else if (type === "sale") {
+        saleByRef[key] = (saleByRef[key] ?? 0) + qty;
+        outboundByRef[key] = (outboundByRef[key] ?? 0) + qty;
+      } else {
+        outboundByRef[key] = (outboundByRef[key] ?? 0) + qty;
+      }
+    }
+    const at = new Date(String(row.date));
+    const fieldRaw = row.farm_fields as
+      | { name?: string }
+      | { name?: string }[]
+      | null
+      | undefined;
+    const field = Array.isArray(fieldRaw) ? fieldRaw[0] ?? null : fieldRaw;
+    const priceRaw = row.unit_price_uah;
+    const unitPriceUah =
+      priceRaw != null && Number.isFinite(Number(priceRaw))
+        ? Number(priceRaw)
+        : null;
+    rows.push({
+      id: String(row.id ?? ""),
+      ref: key,
+      qty,
+      type,
+      status,
+      dateYmd: Number.isNaN(at.getTime()) ? "" : toKyivDayKey(at),
+      note: typeof row.note === "string" ? row.note : null,
+      buyerName:
+        typeof row.buyer_name === "string" && row.buyer_name.trim()
+          ? String(row.buyer_name)
+          : null,
+      unitPriceUah,
+      fieldName: field?.name ? String(field.name) : null,
+      attachmentCount: 0,
+    });
+  }
+
+  const ids = rows.map((r) => r.id).filter(Boolean);
+  if (ids.length > 0) {
+    try {
+      const { countAttachmentsByEntityIds } = await import(
+        "@/lib/operation-attachments"
+      );
+      const counts = await countAttachmentsByEntityIds("inventory_move", ids);
+      for (const r of rows) {
+        r.attachmentCount = counts[r.id] ?? 0;
+      }
+    } catch {
+      /* таблиця attachments може ще не існувати */
+    }
+  }
+
+  return { ok: true, outboundByRef, inboundByRef, saleByRef, rows };
+}
+
+/** @deprecated — використовуй getLocalMoveQtyByItem; byRef = outbound (+sale) */
+export async function getLocalOutboundQtyByItem(): Promise<
+  | {
+      ok: true;
+      byRef: Record<string, number>;
+      inboundByRef: Record<string, number>;
+      saleByRef: Record<string, number>;
+      rows: LocalOutboundRow[];
+    }
+  | { ok: false; error: string }
+> {
+  const res = await getLocalMoveQtyByItem();
+  if (!res.ok) return res;
+  return {
+    ok: true,
+    byRef: res.outboundByRef,
+    inboundByRef: res.inboundByRef,
+    saleByRef: res.saleByRef,
+    rows: res.rows.filter((r) => r.type !== "inbound"),
+  };
 }
 
 export async function getInventoryItemUnitCost(
@@ -737,6 +1306,7 @@ export type InventoryCacheMeta = {
   plannedPriceUah: number;
   category: string;
   unit: string;
+  isLocal: boolean;
 };
 
 export async function getInventoryCacheMetaMap(): Promise<
@@ -748,7 +1318,7 @@ export async function getInventoryCacheMetaMap(): Promise<
     const { data, error } = await supabase
       .from("inventory_items_cache")
       .select(
-        "bas_ref_key, name, custom_name, is_hidden, planned_price_uah, category, unit"
+        "bas_ref_key, name, custom_name, is_hidden, planned_price_uah, category, unit, is_local"
       );
 
     if (error) {
@@ -756,8 +1326,42 @@ export async function getInventoryCacheMetaMap(): Promise<
         error.code === "PGRST205" ||
         error.code === "42P01" ||
         error.message?.includes("is_hidden") ||
-        error.message?.includes("custom_name")
+        error.message?.includes("custom_name") ||
+        error.message?.includes("is_local")
       ) {
+        // Fallback без is_local
+        if (error.message?.includes("is_local")) {
+          const legacy = await supabase
+            .from("inventory_items_cache")
+            .select(
+              "bas_ref_key, name, custom_name, is_hidden, planned_price_uah, category, unit"
+            );
+          if (legacy.error) {
+            if (
+              legacy.error.code === "PGRST205" ||
+              legacy.error.code === "42P01" ||
+              legacy.error.message?.includes("is_hidden")
+            ) {
+              return { ok: true, byRef: {} };
+            }
+            return { ok: false, error: legacy.error.message };
+          }
+          const byRef: Record<string, InventoryCacheMeta> = {};
+          for (const row of legacy.data ?? []) {
+            const key = String(row.bas_ref_key).toLowerCase();
+            byRef[key] = {
+              basRefKey: key,
+              basName: String(row.name),
+              customName: row.custom_name ? String(row.custom_name) : null,
+              isHidden: Boolean(row.is_hidden),
+              plannedPriceUah: Number(row.planned_price_uah) || 0,
+              category: String(row.category),
+              unit: String(row.unit ?? ""),
+              isLocal: false,
+            };
+          }
+          return { ok: true, byRef };
+        }
         return { ok: true, byRef: {} };
       }
       return { ok: false, error: error.message };
@@ -774,6 +1378,7 @@ export async function getInventoryCacheMetaMap(): Promise<
         plannedPriceUah: Number(row.planned_price_uah) || 0,
         category: String(row.category),
         unit: String(row.unit ?? ""),
+        isLocal: Boolean((row as { is_local?: unknown }).is_local),
       };
     }
     return { ok: true, byRef };
@@ -892,84 +1497,103 @@ export type LocalMoveRow = {
   id: string;
   date: string;
   qty: number;
+  type: "outbound" | "inbound" | "sale";
   status: "draft" | "sent_to_1c";
+  season: string | null;
   itemRefKey: string;
   itemName: string;
   itemUnit: string;
+  itemCategory: string | null;
   fieldId: string | null;
   fieldName: string | null;
+  note: string | null;
+  buyerName: string | null;
+  unitPriceUah: number | null;
+  attachmentCount: number;
 };
 
-export async function listLocalMoves(): Promise<
+export async function listLocalMoves(input?: {
+  season?: string | null;
+}): Promise<
   | { ok: true; moves: LocalMoveRow[] }
   | { ok: false; error: string }
 > {
   try {
     const supabase = createServiceSupabase();
-    const { data, error } = await supabase
+    const season = input?.season?.trim() || null;
+    let query = supabase
       .from("inventory_local_moves")
       .select(
         `
         id,
         date,
         qty,
+        type,
         status,
+        note,
+        season,
+        buyer_name,
+        unit_price_uah,
         item_ref_key,
         field_id,
         farm_fields ( id, name ),
-        inventory_items_cache ( name, custom_name, unit )
+        inventory_items_cache ( name, custom_name, unit, category )
       `
       )
-      .eq("type", "outbound")
       .order("date", { ascending: false })
-      .limit(300);
+      .limit(400);
+
+    if (season) {
+      query = query.eq("season", season);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       if (error.code === "PGRST205" || error.code === "42P01") {
         return { ok: true, moves: [] };
       }
+      // Fallback без season / note / sale columns
+      if (
+        error.message?.includes("season") ||
+        error.message?.includes("note") ||
+        error.message?.includes("buyer_name") ||
+        error.message?.includes("unit_price")
+      ) {
+        const legacy = await supabase
+          .from("inventory_local_moves")
+          .select(
+            `
+            id,
+            date,
+            qty,
+            type,
+            status,
+            item_ref_key,
+            field_id,
+            farm_fields ( id, name ),
+            inventory_items_cache ( name, custom_name, unit, category )
+          `
+          )
+          .order("date", { ascending: false })
+          .limit(400);
+        if (legacy.error) {
+          if (legacy.error.code === "PGRST205" || legacy.error.code === "42P01") {
+            return { ok: true, moves: [] };
+          }
+          return { ok: false, error: legacy.error.message };
+        }
+        return {
+          ok: true,
+          moves: await enrichMovesWithAttachmentCounts(
+            mapLocalMoveRows(legacy.data ?? [])
+          ),
+        };
+      }
       return { ok: false, error: error.message };
     }
 
-    const moves: LocalMoveRow[] = (data ?? []).map((row) => {
-      const fieldRaw = row.farm_fields as
-        | { id: string; name: string }
-        | { id: string; name: string }[]
-        | null;
-      const field = Array.isArray(fieldRaw) ? fieldRaw[0] ?? null : fieldRaw;
-      const cacheRaw = row.inventory_items_cache as
-        | {
-            name: string;
-            custom_name: string | null;
-            unit: string | null;
-          }
-        | {
-            name: string;
-            custom_name: string | null;
-            unit: string | null;
-          }[]
-        | null;
-      const cache = Array.isArray(cacheRaw) ? cacheRaw[0] ?? null : cacheRaw;
-      const status =
-        row.status === "sent_to_1c" ? "sent_to_1c" : ("draft" as const);
-      return {
-        id: String(row.id),
-        date: String(row.date),
-        qty: Number(row.qty) || 0,
-        status,
-        itemRefKey: String(row.item_ref_key).toLowerCase(),
-        itemName: String(
-          cache?.custom_name?.trim() || cache?.name || "ТМЦ"
-        ),
-        itemUnit: String(cache?.unit ?? ""),
-        fieldId: field?.id ? String(field.id) : row.field_id
-          ? String(row.field_id)
-          : null,
-        fieldName: field?.name ? String(field.name) : null,
-      };
-    });
-
-    return { ok: true, moves };
+    return { ok: true, moves: await enrichMovesWithAttachmentCounts(mapLocalMoveRows(data ?? [])) };
   } catch (err) {
     return {
       ok: false,
@@ -981,10 +1605,156 @@ export async function listLocalMoves(): Promise<
   }
 }
 
+export async function getLocalMoveById(
+  id: string
+): Promise<{ ok: true; move: LocalMoveRow } | { ok: false; error: string }> {
+  const moveId = id?.trim();
+  if (!moveId) return { ok: false, error: "Невірний id" };
+  try {
+    const supabase = createServiceSupabase();
+    const { data, error } = await supabase
+      .from("inventory_local_moves")
+      .select(
+        `
+        id,
+        date,
+        qty,
+        type,
+        status,
+        note,
+        season,
+        buyer_name,
+        unit_price_uah,
+        item_ref_key,
+        field_id,
+        farm_fields ( id, name ),
+        inventory_items_cache ( name, custom_name, unit, category )
+      `
+      )
+      .eq("id", moveId)
+      .maybeSingle();
+
+    if (error) {
+      if (error.code === "PGRST205" || error.code === "42P01") {
+        return { ok: false, error: "Таблиця рухів відсутня" };
+      }
+      return { ok: false, error: error.message };
+    }
+    if (!data) return { ok: false, error: "Операцію не знайдено" };
+    const [move] = await enrichMovesWithAttachmentCounts(
+      mapLocalMoveRows([data as Record<string, unknown>])
+    );
+    if (!move) return { ok: false, error: "Операцію не знайдено" };
+    return { ok: true, move };
+  } catch (err) {
+    return {
+      ok: false,
+      error:
+        err instanceof Error ? err.message : "Не вдалося завантажити операцію",
+    };
+  }
+}
+
+async function enrichMovesWithAttachmentCounts(
+  moves: LocalMoveRow[]
+): Promise<LocalMoveRow[]> {
+  if (moves.length === 0) return moves;
+  try {
+    const supabase = createServiceSupabase();
+    const ids = moves.map((m) => m.id);
+    const { data, error } = await supabase
+      .from("operation_attachments")
+      .select("entity_id")
+      .eq("entity_type", "inventory_move")
+      .in("entity_id", ids);
+    if (error || !data) return moves;
+    const counts: Record<string, number> = {};
+    for (const row of data) {
+      const id = String(row.entity_id);
+      counts[id] = (counts[id] ?? 0) + 1;
+    }
+    return moves.map((m) => ({
+      ...m,
+      attachmentCount: counts[m.id] ?? 0,
+    }));
+  } catch {
+    return moves;
+  }
+}
+
+function mapLocalMoveRows(data: Record<string, unknown>[]): LocalMoveRow[] {
+  return data.map((row) => {
+    const fieldRaw = row.farm_fields as
+      | { id: string; name: string }
+      | { id: string; name: string }[]
+      | null;
+    const field = Array.isArray(fieldRaw) ? fieldRaw[0] ?? null : fieldRaw;
+    const cacheRaw = row.inventory_items_cache as
+      | {
+          name: string;
+          custom_name: string | null;
+          unit: string | null;
+          category?: string | null;
+        }
+      | {
+          name: string;
+          custom_name: string | null;
+          unit: string | null;
+          category?: string | null;
+        }[]
+      | null;
+    const cache = Array.isArray(cacheRaw) ? cacheRaw[0] ?? null : cacheRaw;
+    const status =
+      row.status === "sent_to_1c" ? "sent_to_1c" : ("draft" as const);
+    const type =
+      row.type === "inbound"
+        ? ("inbound" as const)
+        : row.type === "sale"
+          ? ("sale" as const)
+          : ("outbound" as const);
+    const priceRaw = row.unit_price_uah;
+    const unitPriceUah =
+      priceRaw != null && Number.isFinite(Number(priceRaw))
+        ? Number(priceRaw)
+        : null;
+    return {
+      id: String(row.id),
+      date: String(row.date),
+      qty: Number(row.qty) || 0,
+      type,
+      status,
+      season:
+        typeof row.season === "string" && row.season.trim()
+          ? String(row.season)
+          : null,
+      itemRefKey: String(row.item_ref_key).toLowerCase(),
+      itemName: String(cache?.custom_name?.trim() || cache?.name || "ТМЦ"),
+      itemUnit: String(cache?.unit ?? ""),
+      itemCategory: cache?.category ? String(cache.category) : null,
+      fieldId: field?.id
+        ? String(field.id)
+        : row.field_id
+          ? String(row.field_id)
+          : null,
+      fieldName: field?.name ? String(field.name) : null,
+      note: typeof row.note === "string" ? String(row.note) : null,
+      buyerName:
+        typeof row.buyer_name === "string" && row.buyer_name.trim()
+          ? String(row.buyer_name)
+          : null,
+      unitPriceUah,
+      attachmentCount: 0,
+    };
+  });
+}
+
 export async function updateLocalMove(input: {
   id: string;
   qty?: number;
-  fieldId?: string;
+  /** undefined — не змінювати; null — зняти поле; string — нове поле */
+  fieldId?: string | null;
+  buyerName?: string | null;
+  unitPriceUah?: number | null;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const id = input.id?.trim();
   if (!id) return { ok: false, error: "Невірний id" };
@@ -993,7 +1763,7 @@ export async function updateLocalMove(input: {
     const supabase = createServiceSupabase();
     const { data: existing, error: readErr } = await supabase
       .from("inventory_local_moves")
-      .select("id, status")
+      .select("id, status, qty, type, item_ref_key, field_id")
       .eq("id", id)
       .maybeSingle();
 
@@ -1002,24 +1772,55 @@ export async function updateLocalMove(input: {
     if (existing.status !== "draft") {
       return {
         ok: false,
-        error: "Рух уже відправлено в 1С — редагування заборонено",
+        error: "Операцію вже передано бухгалтеру — редагування заборонено",
       };
     }
 
     const patch: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
     };
+
     if (input.qty != null) {
       const qty = Number(input.qty);
       if (!Number.isFinite(qty) || qty <= 0) {
         return { ok: false, error: "Кількість має бути > 0" };
       }
+
+      const moveType = String(existing.type ?? "outbound");
+      const prevQty = Number(existing.qty) || 0;
+      if ((moveType === "outbound" || moveType === "sale") && qty > prevQty) {
+        const itemRef = String(existing.item_ref_key ?? "").toLowerCase();
+        const balance = await resolveQuickIssueVirtualBalance(itemRef);
+        if (typeof balance !== "number") return balance;
+        const available = Math.round((balance + prevQty) * 100) / 100;
+        if (qty > available) {
+          return {
+            ok: false,
+            error: `Недостатньо на складі. Доступно: ${available}`,
+          };
+        }
+      }
       patch.qty = qty;
     }
-    if (input.fieldId != null) {
-      const fieldId = input.fieldId.trim().toLowerCase();
-      if (!fieldId) return { ok: false, error: "Оберіть поле" };
-      patch.field_id = fieldId;
+
+    if (input.fieldId !== undefined) {
+      if (input.fieldId === null || input.fieldId.trim() === "") {
+        patch.field_id = null;
+      } else {
+        patch.field_id = input.fieldId.trim().toLowerCase();
+      }
+    }
+
+    if (input.buyerName !== undefined) {
+      patch.buyer_name = input.buyerName?.trim() || null;
+    }
+    if (input.unitPriceUah !== undefined) {
+      const price = Number(input.unitPriceUah);
+      if (input.unitPriceUah != null && (!Number.isFinite(price) || price < 0)) {
+        return { ok: false, error: "Невірна ціна" };
+      }
+      patch.unit_price_uah =
+        input.unitPriceUah == null ? null : price;
     }
 
     const { error } = await supabase
@@ -1029,6 +1830,18 @@ export async function updateLocalMove(input: {
       .eq("status", "draft");
 
     if (error) return { ok: false, error: error.message };
+
+    if (
+      String(existing.type) === "inbound" &&
+      input.unitPriceUah != null &&
+      Number.isFinite(Number(input.unitPriceUah))
+    ) {
+      await supabase
+        .from("inventory_items_cache")
+        .update({ planned_price_uah: Number(input.unitPriceUah) })
+        .eq("bas_ref_key", String(existing.item_ref_key).toLowerCase());
+    }
+
     revalidatePath("/inventory");
     return { ok: true };
   } catch (err) {
@@ -1058,8 +1871,17 @@ export async function deleteLocalMove(
     if (existing.status !== "draft") {
       return {
         ok: false,
-        error: "Рух уже відправлено в 1С — видалення заборонено",
+        error: "Операцію вже передано бухгалтеру — видалення заборонено",
       };
+    }
+
+    try {
+      const { deleteAttachmentsForEntity } = await import(
+        "@/lib/operation-attachments"
+      );
+      await deleteAttachmentsForEntity("inventory_move", moveId);
+    } catch {
+      /* best-effort */
     }
 
     const { error } = await supabase

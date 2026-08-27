@@ -10,7 +10,20 @@ import type {
 } from "@/lib/bas-api";
 import { normalizeBasRefKey } from "@/lib/bas-mapping";
 
-export type InventoryCategory = "zzr" | "fertilizer" | "harvest" | "parts";
+export type InventoryCategory =
+  | "zzr"
+  | "fertilizer"
+  | "harvest"
+  | "seed"
+  | "parts";
+
+export const INVENTORY_CATEGORIES: InventoryCategory[] = [
+  "zzr",
+  "harvest",
+  "fertilizer",
+  "seed",
+  "parts",
+];
 
 export type InventoryItem = {
   id: string;
@@ -69,6 +82,11 @@ export const INVENTORY_CATEGORY_META: Record<
     description: "Продукція рослиництва",
     accent: "#B7791F",
   },
+  seed: {
+    label: "Насіння",
+    description: "Посівні матеріали",
+    accent: "#2F855A",
+  },
   parts: {
     label: "Запчастини",
     description: "Деталі та витратні матеріали",
@@ -79,6 +97,8 @@ export const INVENTORY_CATEGORY_META: Record<
 const FOLDER_ZZR = "ЗЗР, мін.добриво";
 const FOLDER_PARTS = "Запчастини";
 const FOLDER_HARVEST = ["Продукція С/Г рослиництво", "Продукція"];
+/** У BAS немає окремої «Насіння» — папка «Посівні матеріали» */
+const FOLDER_SEEDS = "Посівні матеріали";
 
 const PESTICIDE_HINT_RE =
   /інсектицид|гербіцид|фунгіцид|протрую|десикант|прилипач|ад.?ювант|пестицид/i;
@@ -220,6 +240,7 @@ export function buildInventoryDashboard(input: {
   const zzrRaw = zzrFolder.filter((row) => !fertilizerKeys.has(row.Ref_Key));
   const partsRaw = itemsInFolders(input.nomenclature, [FOLDER_PARTS]);
   const harvestRaw = itemsInFolders(input.nomenclature, FOLDER_HARVEST);
+  const seedsRaw = itemsInFolders(input.nomenclature, [FOLDER_SEEDS]);
 
   function toItems(
     rows: BasNomenclature[],
@@ -260,12 +281,12 @@ export function buildInventoryDashboard(input: {
     ...toItems(zzrRaw, "zzr", purchaseMap),
     ...toItems(fertilizerRaw, "fertilizer", purchaseMap),
     ...toItems(harvestRaw, "harvest", harvestMap),
+    ...toItems(seedsRaw, "seed", purchaseMap),
     ...toItems(partsRaw, "parts", purchaseMap),
   ];
 
-  const categories: InventoryCategorySummary[] = (
-    ["zzr", "harvest", "fertilizer", "parts"] as InventoryCategory[]
-  ).map((cat) =>
+  const categories: InventoryCategorySummary[] = INVENTORY_CATEGORIES.map(
+    (cat) =>
     summarizeCategory(
       cat,
       items.filter((i) => i.category === cat)
@@ -613,9 +634,7 @@ export function buildFullDashboard(input: {
     items: itemsWithDocCount,
     stockNote:
       "Залишки ТоварыНаСкладах через OData порожні. Показуємо окремо випуск/надходження і продажі (у BAS часто різні номенклатури).",
-    categories: (
-      ["zzr", "harvest", "fertilizer", "parts"] as InventoryCategory[]
-    ).map((cat) =>
+    categories: INVENTORY_CATEGORIES.map((cat) =>
       summarizeCategory(
         cat,
         itemsWithDocCount.filter((i) => i.category === cat)
@@ -708,13 +727,12 @@ export function filterDashboardByRange(
         a.name.localeCompare(b.name, "uk")
     );
 
-  const categories: InventoryCategorySummary[] = (
-    ["zzr", "harvest", "fertilizer", "parts"] as InventoryCategory[]
-  ).map((cat) =>
-    summarizeCategory(
-      cat,
-      items.filter((i) => i.category === cat)
-    )
+  const categories: InventoryCategorySummary[] = INVENTORY_CATEGORIES.map(
+    (cat) =>
+      summarizeCategory(
+        cat,
+        items.filter((i) => i.category === cat)
+      )
   );
 
   const buckets = new Map<string, MonthBucket>();

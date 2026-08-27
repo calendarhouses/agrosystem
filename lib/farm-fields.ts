@@ -106,30 +106,10 @@ export async function listFarmFields(): Promise<FarmField[]> {
   return readLocal();
 }
 
-/** Створити поле в БД (+ локальний кеш) */
+/** Створити поле в БД (+ локальний кеш після успіху). Без тихого local-*. */
 export async function createFarmField(
   input: FarmFieldInput
 ): Promise<FarmField> {
-  const toLocal = (reason: string) => {
-    const localField: FarmField = {
-      id: `local-${
-        typeof crypto !== "undefined" && "randomUUID" in crypto
-          ? crypto.randomUUID()
-          : Date.now()
-      }`,
-      name: input.name,
-      crop: input.crop,
-      areaHa: input.areaHa,
-      color: input.color,
-      geometry: input.geometry,
-      createdAt: new Date().toISOString(),
-      wialonZoneId: input.wialonZoneId ?? null,
-    };
-    writeLocal([localField, ...readLocal()]);
-    console.warn("[farm_fields] Збережено локально:", reason);
-    return localField;
-  };
-
   let response: Response;
   try {
     response = await fetch("/api/fields", {
@@ -138,7 +118,11 @@ export async function createFarmField(
       body: JSON.stringify(input),
     });
   } catch (error) {
-    return toLocal(error instanceof Error ? error.message : "network");
+    throw new Error(
+      error instanceof Error
+        ? `Немає звʼязку із сервером: ${error.message}`
+        : "Немає звʼязку із сервером"
+    );
   }
 
   if (response.ok) {
@@ -149,42 +133,20 @@ export async function createFarmField(
   }
 
   const errorBody = await response.text().catch(() => "");
-  if (response.status === 503 || response.status === 500) {
-    return toLocal(errorBody || `HTTP ${response.status}`);
-  }
-
-  throw new Error(errorBody || `HTTP ${response.status}`);
+  throw new Error(
+    errorBody || `Не вдалося зберегти поле (HTTP ${response.status})`
+  );
 }
 
-/** Оновити поле в БД (+ локальний кеш) */
+/** Оновити поле в БД (+ локальний кеш після успіху). */
 export async function updateFarmField(
   id: string,
   patch: Partial<FarmFieldInput>
 ): Promise<FarmField> {
-  const applyLocal = () => {
-    const local = readLocal();
-    const existing = local.find((field) => field.id === id);
-    if (!existing) {
-      throw new Error("Поле не знайдено локально");
-    }
-    const updated: FarmField = {
-      ...existing,
-      ...(patch.name !== undefined ? { name: patch.name } : {}),
-      ...(patch.crop !== undefined ? { crop: patch.crop } : {}),
-      ...(patch.areaHa !== undefined ? { areaHa: patch.areaHa } : {}),
-      ...(patch.color !== undefined ? { color: patch.color } : {}),
-      ...(patch.geometry !== undefined ? { geometry: patch.geometry } : {}),
-      ...(patch.wialonZoneId !== undefined
-        ? { wialonZoneId: patch.wialonZoneId }
-        : {}),
-    };
-    writeLocal(local.map((field) => (field.id === id ? updated : field)));
-    return updated;
-  };
-
-  // Локальні id ніколи не були в Supabase
   if (id.startsWith("local-")) {
-    return applyLocal();
+    throw new Error(
+      "Це поле збережене лише локально й не синхронізоване. Створіть його знову через карту."
+    );
   }
 
   let response: Response;
@@ -194,8 +156,12 @@ export async function updateFarmField(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
     });
-  } catch {
-    return applyLocal();
+  } catch (error) {
+    throw new Error(
+      error instanceof Error
+        ? `Немає звʼязку із сервером: ${error.message}`
+        : "Немає звʼязку із сервером"
+    );
   }
 
   if (response.ok) {
@@ -205,41 +171,41 @@ export async function updateFarmField(
     return data.field;
   }
 
-  if (response.status === 503 || response.status === 500) {
-    return applyLocal();
-  }
-
   const errorBody = await response.text().catch(() => "");
-  throw new Error(errorBody || `HTTP ${response.status}`);
+  throw new Error(
+    errorBody || `Не вдалося оновити поле (HTTP ${response.status})`
+  );
 }
 
-/** Видалити поле з БД (+ локальний кеш) */
+/** Видалити поле з БД (+ локальний кеш після успіху). */
 export async function deleteFarmField(id: string): Promise<void> {
-  const removeLocal = () => {
-    writeLocal(readLocal().filter((field) => field.id !== id));
-  };
-
   if (id.startsWith("local-")) {
-    removeLocal();
+    writeLocal(readLocal().filter((field) => field.id !== id));
     return;
   }
 
+  let response: Response;
   try {
-    const response = await fetch(`/api/fields/${encodeURIComponent(id)}`, {
+    response = await fetch(`/api/fields/${encodeURIComponent(id)}`, {
       method: "DELETE",
     });
-    if (response.ok || response.status === 503 || response.status === 500) {
-      removeLocal();
-      return;
-    }
-    const errorBody = await response.text().catch(() => "");
-    throw new Error(errorBody || `HTTP ${response.status}`);
   } catch (error) {
-    removeLocal();
-    if (error instanceof Error && error.message.startsWith("HTTP")) {
-      throw error;
-    }
+    throw new Error(
+      error instanceof Error
+        ? `Немає звʼязку із сервером: ${error.message}`
+        : "Немає звʼязку із сервером"
+    );
   }
+
+  if (response.ok || response.status === 404) {
+    writeLocal(readLocal().filter((field) => field.id !== id));
+    return;
+  }
+
+  const errorBody = await response.text().catch(() => "");
+  throw new Error(
+    errorBody || `Не вдалося видалити поле (HTTP ${response.status})`
+  );
 }
 
 export function isPolygonGeometry(

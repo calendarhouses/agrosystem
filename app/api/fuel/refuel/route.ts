@@ -11,9 +11,13 @@ const JSON_UTF8 = {
   "Content-Type": "application/json; charset=utf-8",
 } as const;
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 type Body = {
   fromStorageId?: string;
-  wialonUnitId?: number;
+  equipmentId?: string | null;
+  wialonUnitId?: number | null;
   amountLiters?: number;
   operatorName?: string | null;
   /** false → одразу ручний облік, без запиту звірки до Wialon */
@@ -42,7 +46,13 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json()) as Body;
     const fromStorageId = body.fromStorageId?.trim();
-    const wialonUnitId = Number(body.wialonUnitId);
+    const equipmentId =
+      typeof body.equipmentId === "string" && UUID_RE.test(body.equipmentId.trim())
+        ? body.equipmentId.trim()
+        : null;
+    const wialonRaw = Number(body.wialonUnitId);
+    const wialonUnitId =
+      Number.isFinite(wialonRaw) && wialonRaw > 0 ? wialonRaw : null;
     const amountLiters = Number(body.amountLiters);
     const operatorName = body.operatorName?.trim() || null;
     const clientHasFuelSensor = body.hasFuelSensor;
@@ -51,7 +61,7 @@ export async function POST(request: Request) {
     if (!fromStorageId) {
       return badRequest("Оберіть ємність-донор");
     }
-    if (!Number.isFinite(wialonUnitId) || wialonUnitId <= 0) {
+    if (wialonUnitId == null && !equipmentId) {
       return badRequest("Оберіть техніку");
     }
     if (!Number.isFinite(amountLiters) || amountLiters <= 0) {
@@ -63,7 +73,7 @@ export async function POST(request: Request) {
 
     let calculatedVariance: number | null = null;
     let realAdded: number | null = null;
-    if (clientHasFuelSensor !== false) {
+    if (wialonUnitId != null && clientHasFuelSensor !== false) {
       const match = await resolveWialonVariance(
         wialonUnitId,
         amount,
@@ -111,49 +121,53 @@ export async function POST(request: Request) {
       );
     }
 
+    const insertPayload: Record<string, unknown> = {
+      transaction_type: "outbound",
+      from_storage_id: fromStorageId,
+      to_storage_id: null,
+      wialon_unit_id: wialonUnitId,
+      equipment_id: equipmentId,
+      amount_liters: amount,
+      operator_name: operatorName,
+      transaction_date: transactionDate.toISOString(),
+      wialon_variance: calculatedVariance,
+      wialon_verified: wialonVerified,
+      price_per_liter: donorPrice,
+      total_cost: totalCost,
+      sync_status: "pending_1c",
+      ...(fieldOperationId ? { field_operation_id: fieldOperationId } : {}),
+    };
+
     const { data: tx, error: txError } = await supabase
       .from("fuel_transactions")
-      .insert({
-        transaction_type: "outbound",
-        from_storage_id: fromStorageId,
-        to_storage_id: null,
-        wialon_unit_id: wialonUnitId,
-        amount_liters: amount,
-        operator_name: operatorName,
-        transaction_date: transactionDate.toISOString(),
-        wialon_variance: calculatedVariance,
-        wialon_verified: wialonVerified,
-        price_per_liter: donorPrice,
-        total_cost: totalCost,
-        sync_status: "pending_1c",
-        ...(fieldOperationId ? { field_operation_id: fieldOperationId } : {}),
-      })
+      .insert(insertPayload)
       .select("*")
       .single();
 
     if (txError) {
-      // До міграції 031 — повтор без field_operation_id
+      // До міграцій — повтор без нових колонок
+      const retryPayload = { ...insertPayload };
+      if (
+        txError.message?.includes("equipment_id") ||
+        txError.code === "42703"
+      ) {
+        delete retryPayload.equipment_id;
+      }
       if (
         fieldOperationId &&
         (txError.message?.includes("field_operation_id") ||
           txError.code === "42703")
       ) {
+        delete retryPayload.field_operation_id;
+      }
+
+      if (
+        retryPayload.equipment_id !== insertPayload.equipment_id ||
+        retryPayload.field_operation_id !== insertPayload.field_operation_id
+      ) {
         const retry = await supabase
           .from("fuel_transactions")
-          .insert({
-            transaction_type: "outbound",
-            from_storage_id: fromStorageId,
-            to_storage_id: null,
-            wialon_unit_id: wialonUnitId,
-            amount_liters: amount,
-            operator_name: operatorName,
-            transaction_date: transactionDate.toISOString(),
-            wialon_variance: calculatedVariance,
-            wialon_verified: wialonVerified,
-            price_per_liter: donorPrice,
-            total_cost: totalCost,
-            sync_status: "pending_1c",
-          })
+          .insert(retryPayload)
           .select("*")
           .single();
 

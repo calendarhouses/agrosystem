@@ -24,6 +24,7 @@ type CloseBody = {
   timeLabel?: string;
   seasonYear?: number;
   areaTotal?: number;
+  equipmentId?: string | null;
   wialonUnitId?: number | null;
   implementWidthM?: number | null;
   trackerDistanceKm?: number | null;
@@ -107,6 +108,14 @@ export async function POST(request: Request) {
       row.season = String(body.seasonYear);
     }
     if (body.areaTotal != null) row.area_total = body.areaTotal;
+    if (
+      typeof body.equipmentId === "string" &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        body.equipmentId
+      )
+    ) {
+      row.equipment_id = body.equipmentId;
+    }
     if (typeof body.wialonUnitId === "number") {
       row.wialon_unit_id = body.wialonUnitId;
     }

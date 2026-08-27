@@ -29,6 +29,8 @@ import {
   type FieldFuelBreakdownRow,
   type FieldFuelPeriod,
 } from "@/app/fuel/actions";
+import { listEquipmentForOps } from "@/app/admin/equipment/actions";
+import { AttachmentViewerButton } from "@/components/dashboard/attachment-viewer";
 import {
   FuelActionDialogs,
   type FleetUnitOption,
@@ -36,6 +38,7 @@ import {
 import { FuelDashboardHeader } from "@/components/dashboard/fuel-dashboard-header";
 import { FuelDetailSheet } from "@/components/dashboard/fuel-detail-sheet";
 import { FuelStorageDialog } from "@/components/dashboard/fuel-storage-dialog";
+import { mergeEquipmentOpsOptions } from "@/lib/equipment-ops-options";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -118,11 +121,29 @@ function getDateRange(
   return { start: startOfDay(now), end: endOfDay(now) };
 }
 
-/** Fallback, якщо Wialon недоступний */
+/** Fallback, якщо Wialon і довідник недоступні */
 const FALLBACK_UNITS: FleetUnitOption[] = [
-  { id: 601301819, name: "МТЗ-82", hasFuelSensor: false },
-  { id: 601301822, name: "John Deere 8R", hasFuelSensor: true },
-  { id: 601301825, name: "Case IH Magnum", hasFuelSensor: true },
+  {
+    key: "w:601301819",
+    name: "МТЗ-82",
+    wialonUnitId: 601301819,
+    hasFuelSensor: false,
+    hasTracker: true,
+  },
+  {
+    key: "w:601301822",
+    name: "John Deere 8R",
+    wialonUnitId: 601301822,
+    hasFuelSensor: true,
+    hasTracker: true,
+  },
+  {
+    key: "w:601301825",
+    name: "Case IH Magnum",
+    wialonUnitId: 601301825,
+    hasFuelSensor: true,
+    hasTracker: true,
+  },
 ];
 
 function formatTxDate(iso: string): string {
@@ -147,10 +168,13 @@ function BasSyncBadge({
   status,
   onSend,
   sending,
+  canQueue1c = true,
 }: {
   status: FuelSyncStatus;
   onSend?: () => void;
   sending?: boolean;
+  /** Заправка (outbound) не йде в чергу 1С — лише закупівля/переміщення */
+  canQueue1c?: boolean;
 }) {
   if (status === "synced") {
     return (
@@ -163,6 +187,21 @@ function BasSyncBadge({
       >
         <CheckCircle2 className="h-3 w-3 shrink-0" strokeWidth={2.2} />
         Проведено в 1С
+      </span>
+    );
+  }
+  if (!canQueue1c) {
+    return (
+      <span
+        className={cn(
+          "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1",
+          "bg-zinc-100 text-[11px] font-semibold tracking-wide text-zinc-600",
+          "ring-1 ring-zinc-500/10"
+        )}
+        title="Заправка зберігається локально; чернетка 1С лише для закупівлі та переміщення"
+      >
+        <CheckCircle2 className="h-3 w-3 shrink-0 text-zinc-400" strokeWidth={2.2} />
+        Локально
       </span>
     );
   }
@@ -193,7 +232,7 @@ function BasSyncBadge({
       type="button"
       disabled={sending || !onSend}
       onClick={onSend}
-      title="Підготувати чернетку для бухгалтера в 1С"
+      title="Підготувати чернетку для бухгалтера (відправка в BAS зараз вимкнена)"
       className={cn(
         "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1",
         "bg-amber-50 text-[11px] font-semibold tracking-wide text-amber-900",
@@ -206,7 +245,7 @@ function BasSyncBadge({
       ) : (
         <Clock3 className="h-3 w-3 shrink-0 text-amber-700" strokeWidth={2.2} />
       )}
-      Очікує 1С
+      Локально · черга 1С
     </button>
   );
 }
@@ -640,15 +679,39 @@ export function FuelView({
 
   const unitNameById = useMemo(() => {
     const map = new Map<number, string>();
-    for (const unit of units) map.set(unit.id, unit.name);
+    for (const unit of units) {
+      if (unit.wialonUnitId != null) map.set(unit.wialonUnitId, unit.name);
+    }
+    return map;
+  }, [units]);
+
+  const equipmentNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const unit of units) {
+      if (unit.equipmentId) map.set(unit.equipmentId, unit.name);
+    }
     return map;
   }, [units]);
 
   const unitHasDutById = useMemo(() => {
     const map = new Map<number, boolean>();
-    for (const unit of units) map.set(unit.id, unit.hasFuelSensor);
+    for (const unit of units) {
+      if (unit.wialonUnitId != null) {
+        map.set(unit.wialonUnitId, unit.hasFuelSensor);
+      }
+    }
     return map;
   }, [units]);
+
+  function resolveUnitLabel(tx: FuelTransaction): string | null {
+    if (tx.wialonUnitId != null) {
+      return unitNameById.get(tx.wialonUnitId) ?? null;
+    }
+    if (tx.equipmentId) {
+      return equipmentNameById.get(tx.equipmentId) ?? null;
+    }
+    return null;
+  }
 
   useEffect(() => {
     setStorages(initialStorages);
@@ -805,10 +868,7 @@ export function FuelView({
     async (tx: FuelTransaction) => {
       setSend1cTxId(tx.id);
       try {
-        const equipmentHint =
-          tx.wialonUnitId != null
-            ? unitNameById.get(tx.wialonUnitId) ?? null
-            : null;
+        const equipmentHint = resolveUnitLabel(tx);
         const response = await fetch("/api/fuel/transactions/send-1c", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -845,7 +905,7 @@ export function FuelView({
         setSend1cTxId(null);
       }
     },
-    [unitNameById]
+    [unitNameById, equipmentNameById]
   );
 
   const confirmDeleteStorage = useCallback(async () => {
@@ -996,36 +1056,56 @@ export function FuelView({
     };
   }, [fieldFuelPeriod, kpiRefreshToken]);
 
-  /** Список техніки з Wialon для модалки заправки */
+  /** Список техніки: довідник equipment + live Wialon */
   useEffect(() => {
     const controller = new AbortController();
     setUnitsLoading(true);
-    fetch("/api/wialon", { signal: controller.signal })
-      .then(async (response) => {
-        const data = (await response.json()) as {
-          ok?: boolean;
-          units?: WialonUnit[];
-        };
-        if (!response.ok || !Array.isArray(data.units) || data.units.length === 0) {
-          return;
+
+    void (async () => {
+      try {
+        const [catalogRes, wialonRes] = await Promise.all([
+          listEquipmentForOps(),
+          fetch("/api/wialon", { signal: controller.signal })
+            .then(async (response) => {
+              const data = (await response.json()) as {
+                ok?: boolean;
+                units?: WialonUnit[];
+              };
+              if (!response.ok || !Array.isArray(data.units)) return [] as WialonUnit[];
+              return data.units;
+            })
+            .catch(() => [] as WialonUnit[]),
+        ]);
+
+        if (controller.signal.aborted) return;
+
+        const catalog = catalogRes.ok ? catalogRes.data : [];
+        const merged = mergeEquipmentOpsOptions(catalog, wialonRes);
+        const dutByWialon = new Map<number, boolean>();
+        for (const u of wialonRes) {
+          dutByWialon.set(u.id, unitHasFuelSensor(u));
         }
-        setUnits(
-          data.units
-            .map((u) => ({
-              id: u.id,
-              name: u.nm,
-              /** Той самий критерій ДУТ, що й на вкладці «Техніка» / у Smart Match */
-              hasFuelSensor: unitHasFuelSensor(u),
-            }))
-            .sort((a, b) => a.name.localeCompare(b.name, "uk"))
-        );
-      })
-      .catch(() => {
+
+        const next: FleetUnitOption[] = merged.map((opt) => ({
+          key: opt.key,
+          name: opt.label,
+          equipmentId: opt.equipmentId,
+          wialonUnitId: opt.wialonUnitId,
+          hasTracker: opt.hasTracker,
+          hasFuelSensor:
+            opt.wialonUnitId != null
+              ? (dutByWialon.get(opt.wialonUnitId) ?? false)
+              : false,
+        }));
+
+        if (next.length > 0) setUnits(next);
+      } catch {
         /* лишаємо FALLBACK_UNITS */
-      })
-      .finally(() => {
+      } finally {
         if (!controller.signal.aborted) setUnitsLoading(false);
-      });
+      }
+    })();
+
     return () => controller.abort();
   }, []);
 
@@ -1280,10 +1360,7 @@ export function FuelView({
                   </tr>
                 ) : (
                   transactions.map((tx) => {
-                    const unitName =
-                      tx.wialonUnitId != null
-                        ? unitNameById.get(tx.wialonUnitId) ?? null
-                        : null;
+                    const unitName = resolveUnitLabel(tx);
                     const meta = txTypeMeta(tx, unitName);
                     const TypeIcon = meta.Icon;
                     const litersLabel =
@@ -1356,11 +1433,23 @@ export function FuelView({
                           {litersLabel}
                         </td>
                         <td className="min-w-[140px] px-4 py-4 text-left">
-                          <BasSyncBadge
-                            status={tx.syncStatus}
-                            sending={send1cTxId === tx.id}
-                            onSend={() => void sendTransactionTo1c(tx)}
-                          />
+                          <div className="flex flex-wrap items-center gap-2">
+                            <BasSyncBadge
+                              status={tx.syncStatus}
+                              sending={send1cTxId === tx.id}
+                              canQueue1c={
+                                tx.type === "inbound" || tx.type === "transfer"
+                              }
+                              onSend={() => void sendTransactionTo1c(tx)}
+                            />
+                            {(tx.attachmentCount ?? 0) > 0 ? (
+                              <AttachmentViewerButton
+                                entityType="fuel_transaction"
+                                entityId={tx.id}
+                                count={tx.attachmentCount ?? 0}
+                              />
+                            ) : null}
+                          </div>
                         </td>
                         <td className="w-12 text-center">
                           <DropdownMenu>

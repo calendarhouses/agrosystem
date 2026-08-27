@@ -11,7 +11,6 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
-import * as XLSX from "xlsx";
 
 import {
   listDraftMovesForExport,
@@ -38,6 +37,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { downloadDraftMovesExcel } from "@/lib/inventory-excel-export";
 import { cn } from "@/lib/utils";
 
 function formatQty(qty: number, unit: string): string {
@@ -51,35 +51,6 @@ function formatDate(iso: string): string {
   const d = new Date(`${iso.slice(0, 10)}T12:00:00`);
   if (Number.isNaN(d.getTime())) return iso;
   return format(d, "d MMM yyyy", { locale: uk });
-}
-
-function downloadExcel(moves: DraftExportMove[]): string {
-  const rows = moves.map((m) => ({
-    bas_ref_key: m.basRefKey,
-    Назва: m.itemName,
-    Кількість: m.qty,
-    Одиниця: m.unit,
-    Поле: m.fieldName ?? "—",
-    Дата: m.date,
-  }));
-
-  const sheet = XLSX.utils.json_to_sheet(rows);
-  sheet["!cols"] = [
-    { wch: 38 },
-    { wch: 36 },
-    { wch: 12 },
-    { wch: 10 },
-    { wch: 22 },
-    { wch: 12 },
-  ];
-
-  const book = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(book, sheet, "Списання");
-
-  const stamp = format(new Date(), "yyyy-MM-dd_HHmm");
-  const filename = `AgroSystem_1C_export_${stamp}.xlsx`;
-  XLSX.writeFile(book, filename);
-  return filename;
 }
 
 export function BasExportView() {
@@ -110,7 +81,7 @@ export function BasExportView() {
   function handleDownload() {
     if (moves.length === 0) return;
     try {
-      downloadExcel(moves);
+      downloadDraftMovesExcel(moves);
       setPendingIds(moves.map((m) => m.id));
       setConfirmOpen(true);
     } catch (err) {
@@ -128,7 +99,9 @@ export function BasExportView() {
         toast.error(res.error);
         return;
       }
-      toast.success(`Позначено ${res.data.updated} рухів як передані в 1С`);
+      toast.success(
+        `Позначено ${res.data.updated} рухів як передані бухгалтеру`
+      );
       setConfirmOpen(false);
       setPendingIds([]);
       await load();
@@ -139,8 +112,8 @@ export function BasExportView() {
     <main className="mx-auto h-full w-full max-w-7xl overflow-y-auto overscroll-none px-4 pt-3 pb-10 sm:px-6 lg:px-8">
       <PageHeader
         icon={FileSpreadsheet}
-        title="Експорт в 1С"
-        description="Чернетки списань для бухгалтера · Excel без запису в BAS"
+        title="Експорт для бухгалтерії"
+        description="Чернетки для бухгалтера · Excel без запису в BAS · «передано» ≠ проведено в 1С"
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Button
@@ -250,7 +223,8 @@ export function BasExportView() {
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="pl-5">Що списано</TableHead>
+                  <TableHead className="pl-5">Тип</TableHead>
+                  <TableHead>Що</TableHead>
                   <TableHead>Кількість</TableHead>
                   <TableHead>Поле</TableHead>
                   <TableHead>Дата</TableHead>
@@ -260,10 +234,26 @@ export function BasExportView() {
               <TableBody>
                 {moves.map((move) => (
                   <TableRow key={move.id}>
-                    <TableCell className="max-w-[240px] pl-5 font-medium text-zinc-900">
-                      <span className="line-clamp-2">{move.itemName}</span>
+                    <TableCell className="pl-5 text-xs font-semibold text-zinc-500">
+                      {move.type === "inbound" ? "Прихід" : "Списання"}
                     </TableCell>
-                    <TableCell className="tabular-nums text-zinc-800">
+                    <TableCell className="max-w-[240px] font-medium text-zinc-900">
+                      <span className="line-clamp-2">{move.itemName}</span>
+                      {move.isLocalItem ? (
+                        <span className="mt-0.5 block text-[10px] font-bold uppercase tracking-wide text-sky-700">
+                          нова позиція
+                        </span>
+                      ) : null}
+                    </TableCell>
+                    <TableCell
+                      className={cn(
+                        "tabular-nums",
+                        move.type === "inbound"
+                          ? "font-semibold text-emerald-700"
+                          : "text-zinc-800"
+                      )}
+                    >
+                      {move.type === "inbound" ? "+" : "−"}
                       {formatQty(move.qty, move.unit)}
                     </TableCell>
                     <TableCell className="text-zinc-700">

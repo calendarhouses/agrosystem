@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 
 import { getBasAllAssets, type BasMachinery } from "@/lib/bas-api";
+import { isSelfPropelledEquipmentType } from "@/lib/equipment-fleet";
+import type { EquipmentForOpsRow } from "@/lib/equipment-ops-options";
 import { createServiceSupabase } from "@/lib/supabase/server";
 
 // BAS folder Ref_Keys
@@ -472,6 +474,50 @@ export type ImplementOption = {
 };
 
 /** Список знарядь для форми наряду (з шириною захвату). */
+/** Самохідна активна техніка з довідника (з GPS і без) — для нарядів / заправок. */
+export async function listEquipmentForOps(): Promise<
+  { ok: true; data: EquipmentForOpsRow[] } | { ok: false; error: string }
+> {
+  try {
+    const supabase = createServiceSupabase();
+    const { data, error } = await supabase
+      .from("equipment")
+      .select("id, name, type, wialon_id, has_tracker, is_active")
+      .eq("is_active", true)
+      .order("name");
+
+    if (error) return { ok: false, error: error.message };
+
+    const rows: EquipmentForOpsRow[] = (data ?? [])
+      .filter((row) => isSelfPropelledEquipmentType(String(row.type ?? "other")))
+      .map((row) => {
+        const wialonRaw = row.wialon_id;
+        const wialonId =
+          wialonRaw != null && Number.isFinite(Number(wialonRaw))
+            ? Number(wialonRaw)
+            : null;
+        const hasTracker = Boolean(row.has_tracker) && wialonId != null;
+        return {
+          id: String(row.id),
+          name: String(row.name ?? "").trim() || "Техніка",
+          type: String(row.type ?? "other"),
+          wialonId,
+          hasTracker,
+        };
+      });
+
+    return { ok: true, data: rows };
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Не вдалося завантажити техніку",
+    };
+  }
+}
+
 export async function listImplementsForOps(): Promise<
   { ok: true; data: ImplementOption[] } | { ok: false; error: string }
 > {

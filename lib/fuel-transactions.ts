@@ -7,6 +7,7 @@ export type FuelTransactionInput = {
   amountLiters: number;
   fromStorageId?: string | null;
   toStorageId?: string | null;
+  equipmentId?: string | null;
   wialonUnitId?: number | null;
   operatorName?: string | null;
 };
@@ -17,6 +18,7 @@ export type FuelTransactionRow = {
   amount_liters: number;
   from_storage_id: string | null;
   to_storage_id: string | null;
+  equipment_id?: string | null;
   wialon_unit_id: number | null;
   operator_name: string | null;
   transaction_date: string;
@@ -41,6 +43,7 @@ export type FuelTransaction = {
   toStorageId: string | null;
   fromName: string | null;
   toName: string | null;
+  equipmentId: string | null;
   wialonUnitId: number | null;
   operatorName: string | null;
   transactionDate: string;
@@ -53,6 +56,8 @@ export type FuelTransaction = {
   totalCost: number | null;
   /** pending_1c | synced | error */
   syncStatus: FuelSyncStatus;
+  /** Кількість накладних (operation_attachments) */
+  attachmentCount?: number;
 };
 
 function asType(raw: unknown): FuelTransactionType {
@@ -90,6 +95,10 @@ export function mapFuelTransactionRow(
     toStorageId: row.to_storage_id != null ? String(row.to_storage_id) : null,
     fromName: relationName(row.from),
     toName: relationName(row.to),
+    equipmentId:
+      row.equipment_id != null && String(row.equipment_id).trim()
+        ? String(row.equipment_id)
+        : null,
     wialonUnitId:
       row.wialon_unit_id != null && Number.isFinite(Number(row.wialon_unit_id))
         ? Number(row.wialon_unit_id)
@@ -114,6 +123,10 @@ export function mapFuelTransactionRow(
       return Number.isFinite(n) ? n : null;
     })(),
     syncStatus: asSyncStatus(row.sync_status),
+    attachmentCount:
+      row.attachmentCount != null && Number.isFinite(Number(row.attachmentCount))
+        ? Number(row.attachmentCount)
+        : undefined,
   };
 }
 

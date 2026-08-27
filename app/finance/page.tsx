@@ -13,6 +13,11 @@ import {
   getBasSalesSince,
   getBasUnits,
 } from "@/lib/bas-api";
+import {
+  defaultFinanceSeasonYear,
+  getSeasonRange,
+  seasonSinceIso,
+} from "@/lib/finance-period";
 import { buildFullDashboard } from "@/lib/inventory-bas";
 
 export const metadata: Metadata = {
@@ -21,11 +26,16 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-const SINCE = "2024-03-01T00:00:00";
-
 export default async function FinancePage() {
+  const seasonYear = defaultFinanceSeasonYear();
+  const seasonRange = getSeasonRange(seasonYear);
+  const since = seasonSinceIso(seasonYear);
+
   const [overviewRes, basResult] = await Promise.all([
-    getCompanyFinancialOverview(),
+    getCompanyFinancialOverview(String(seasonYear), {
+      startIso: seasonRange.startIso,
+      endIso: seasonRange.endIso,
+    }),
     (async () => {
       try {
         const [
@@ -41,13 +51,13 @@ export default async function FinancePage() {
         ] = await Promise.all([
           getBasNomenclature(),
           getBasUnits(),
-          getBasPurchasesSince(SINCE),
-          getBasHarvestOutputSince(SINCE),
-          getBasSaleMovementsSince(SINCE),
-          getBasReceiptsSince(SINCE),
-          getBasSalesSince(SINCE),
+          getBasPurchasesSince(since),
+          getBasHarvestOutputSince(since),
+          getBasSaleMovementsSince(since),
+          getBasReceiptsSince(since),
+          getBasSalesSince(since),
           getBasCounterparties(),
-          getBasProductionReportsSince(SINCE),
+          getBasProductionReportsSince(since),
         ]);
 
         return {
@@ -62,7 +72,7 @@ export default async function FinancePage() {
             sales,
             counterparties,
             productionDocs,
-            since: SINCE,
+            since,
           }),
         };
       } catch (err) {
@@ -71,7 +81,7 @@ export default async function FinancePage() {
           error:
             err instanceof Error
               ? err.message
-              : "Не вдалося завантажити cashflow з 1С",
+              : "Не вдалося завантажити динаміку",
         };
       }
     })(),
@@ -79,6 +89,7 @@ export default async function FinancePage() {
 
   return (
     <FinanceView
+      initialSeasonYear={seasonYear}
       overview={overviewRes.ok ? overviewRes.data : null}
       overviewError={overviewRes.ok ? null : overviewRes.error}
       bas={basResult.ok ? basResult.data : null}

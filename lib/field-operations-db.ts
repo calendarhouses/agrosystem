@@ -5,6 +5,7 @@ import { mapOperationRow, type FieldOperation } from "@/lib/field-operations";
 /** Колонки з міграції 008 / 022 — можуть бути відсутні на старій БД */
 const OPTIONAL_UPSERT_COLUMNS = [
   "export_status",
+  "equipment_id",
   "wialon_unit_id",
   "implement_width_m",
   "tracker_distance_km",

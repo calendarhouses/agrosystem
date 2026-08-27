@@ -5,7 +5,7 @@ import { CommandCenterPageBootFallback } from "@/components/dashboard/command-ce
 import { FieldsView } from "@/components/dashboard/fields-view";
 
 export const metadata: Metadata = {
-  title: "Карта полів",
+  title: "Поля",
 };
 
 /** Головний розділ — карта полів */
