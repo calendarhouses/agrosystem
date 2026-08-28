@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Sprout } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { IosInstallGuide } from "@/components/pwa/ios-install-guide";
 import {
   APP_BRAND_NAME,
   isMobileUserAgent,
@@ -26,6 +27,7 @@ export function InstallPrompt() {
   const [deferredPrompt, setDeferredPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
   const [installing, setInstalling] = useState<"ios" | "android" | null>(null);
+  const [iosGuideOpen, setIosGuideOpen] = useState(false);
 
   useEffect(() => {
     if (!isMobileUserAgent()) {
@@ -74,30 +76,20 @@ export function InstallPrompt() {
     }
   }
 
-  async function onInstallIos() {
-    setInstalling("ios");
-    try {
-      const url = window.location.origin + "/";
-      if (typeof navigator.share === "function") {
-        await navigator.share({
-          title: APP_BRAND_NAME,
-          text: APP_BRAND_NAME,
-          url,
-        });
-        markInstallPromptCompleted();
-        return;
-      }
-      markInstallPromptCompleted();
-      goNext();
-    } catch {
-      /* користувач скасував share sheet */
-    } finally {
-      setInstalling(null);
-    }
+  function onInstallIos() {
+    setIosGuideOpen(true);
+  }
+
+  function onIosGuideClose() {
+    setIosGuideOpen(false);
+    markInstallPromptCompleted();
   }
 
   return (
-    <div className="relative flex min-h-dvh flex-col overflow-hidden bg-[#F4F1EA] text-zinc-900">
+    <>
+      <IosInstallGuide open={iosGuideOpen} onClose={onIosGuideClose} />
+
+      <div className="relative flex min-h-dvh flex-col overflow-hidden bg-[#F4F1EA] text-zinc-900">
       <div
         className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(39,103,73,0.14),_transparent_55%),radial-gradient(ellipse_at_bottom_right,_rgba(192,86,33,0.1),_transparent_50%)]"
         aria-hidden
@@ -123,9 +115,9 @@ export function InstallPrompt() {
             size="lg"
             className="h-12 w-full rounded-2xl bg-[#276749] text-base font-semibold text-white hover:bg-[#1f5239]"
             disabled={installing != null}
-            onClick={() => void onInstallIos()}
+            onClick={onInstallIos}
           >
-            {installing === "ios" ? "Відкриваємо…" : "Встановити для iOS"}
+            Встановити для iOS
           </Button>
 
           <Button
@@ -150,7 +142,8 @@ export function InstallPrompt() {
           </Button>
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 }
 

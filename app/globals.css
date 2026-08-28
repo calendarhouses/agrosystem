@@ -142,6 +142,20 @@ body {
   padding-top: env(safe-area-inset-top);
 }
 
+@keyframes ios-guide-bounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(10px);
+  }
+}
+
+@utility animate-ios-guide-bounce {
+  animation: ios-guide-bounce 1.1s ease-in-out infinite;
+}
+
 @utility no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
