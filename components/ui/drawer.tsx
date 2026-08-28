@@ -65,7 +65,7 @@ function DrawerContent({
         data-slot="drawer-content"
         className={cn(
           "fixed inset-x-0 bottom-0 z-[150] flex h-[80vh] flex-col rounded-t-3xl border border-[#E5DFD3]/80 bg-[#F4F1EA] outline-none",
-          "pb-[max(env(safe-area-inset-bottom),16px)]",
+          "pb-[calc(12px+var(--safe-bottom))]",
           "data-[state=closed]:pointer-events-none data-[state=open]:pointer-events-auto",
           className
         )}

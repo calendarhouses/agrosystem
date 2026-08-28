@@ -60,13 +60,14 @@ body {
   --agro-green: #276749;
   --fuel-gold: #d69e2e;
 
-  --bottom-nav-height: 4rem;
-  --fields-peek-height: 3.75rem;
-  /* Єдине джерело нижнього safe-area відступу: iOS home indicator або Android gesture bar */
-  --nav-safe-pb: max(env(safe-area-inset-bottom, 0px), 10px);
-  --mobile-nav-offset: calc(var(--bottom-nav-height) + var(--nav-safe-pb));
+  /* Колір усього нижнього chrome: меню, safe-area, кінець градієнта шторки */
+  --nav-bg: #18181b;
+  /* Повна висота меню = контент + реальний safe-area пристрою (--safe-bottom) */
+  --bottom-nav-height: 78px;
+  --fields-peek-height: 4.75rem;
+  --mobile-nav-offset: calc(var(--bottom-nav-height) + var(--safe-bottom));
   --map-float-bottom: calc(
-    var(--bottom-nav-height) + var(--fields-peek-height) + var(--nav-safe-pb) +
+    var(--bottom-nav-height) + var(--safe-bottom) + var(--fields-peek-height) +
       1rem
   );
   --app-height: 100dvh;
@@ -147,16 +148,14 @@ body {
 }
 
 html[data-app-nav="1"] {
-  --app-bottom-inset: calc(var(--bottom-nav-height) + var(--nav-safe-pb));
+  --app-bottom-inset: calc(var(--bottom-nav-height) + var(--safe-bottom));
 }
 
+/* Меню, html і body одного кольору — під навігацією не може лишитись іншої смуги */
 @media (max-width: 767px) {
-  html[data-app-nav="1"] {
-    background: #18181b;
-  }
-
+  html[data-app-nav="1"],
   html[data-app-nav="1"] body {
-    background: #18181b;
+    background: var(--nav-bg);
   }
 }
 

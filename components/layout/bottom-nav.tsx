@@ -18,6 +18,13 @@ import {
 import { ROLE_LABEL_UK, type AppActor } from "@/lib/app-actor-shared";
 import { cn } from "@/lib/utils";
 
+const NAV_ITEM_CLASS =
+  "flex min-w-0 flex-1 flex-col items-center gap-[5px] rounded-[14px] py-1.5 min-h-11 transition-transform duration-200";
+const NAV_ICON_WRAP_CLASS =
+  "flex h-8 w-10 items-center justify-center rounded-xl transition-colors duration-200";
+const NAV_TEXT_CLASS =
+  "max-w-full truncate text-[10px] font-bold leading-none tracking-[0.15px]";
+
 function BottomNavBar({
   pathname,
   moreOpen,
@@ -31,89 +38,66 @@ function BottomNavBar({
 }) {
   return (
     <nav
-      className={cn(
-        "fixed inset-x-0 bottom-0 z-[100] md:hidden",
-        "bg-zinc-950 text-zinc-400",
-        "pb-[var(--nav-safe-pb)]"
-      )}
+      className="fixed inset-x-0 bottom-0 z-[100] flex items-start justify-around px-1 md:hidden"
+      style={{
+        height: "calc(var(--bottom-nav-height) + var(--safe-bottom))",
+        paddingTop: "10px",
+        paddingBottom: "calc(12px + var(--safe-bottom))",
+        background: "var(--nav-bg)",
+      }}
       aria-label="Головна навігація"
     >
-      {/* М'який перехід від світлого контенту (шторка полів) до чорного меню */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 -top-7 h-7 bg-gradient-to-b from-zinc-950/0 via-zinc-950/55 to-zinc-950"
-      />
-      <div className="relative mx-auto flex h-16 max-w-lg items-stretch justify-around px-1">
-        {BOTTOM_NAV_ITEMS.map((item) => {
-          const Icon = item.icon;
-          const active = isNavItemActive(pathname, item.href);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              aria-label={item.label}
-              aria-current={active ? "page" : undefined}
+      {BOTTOM_NAV_ITEMS.map((item) => {
+        const Icon = item.icon;
+        const active = isNavItemActive(pathname, item.href);
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            aria-label={item.label}
+            aria-current={active ? "page" : undefined}
+            className={cn(
+              NAV_ITEM_CLASS,
+              active
+                ? "-translate-y-px text-[#E8A87C]"
+                : "text-zinc-500 active:text-zinc-300"
+            )}
+          >
+            <span
               className={cn(
-                "group flex min-w-0 flex-1 flex-col items-center justify-center gap-1 px-0.5",
-                active ? "text-[#E8A87C]" : "text-zinc-500 active:text-zinc-300"
+                NAV_ICON_WRAP_CLASS,
+                active ? "bg-[#C05621]/20" : "bg-transparent"
               )}
             >
-              <span
-                className={cn(
-                  "flex h-8 w-14 items-center justify-center rounded-full transition-colors duration-200",
-                  active ? "bg-[#C05621]/18" : "bg-transparent"
-                )}
-              >
-                <Icon
-                  className="h-[22px] w-[22px]"
-                  strokeWidth={active ? 2.2 : 1.7}
-                />
-              </span>
-              <span
-                className={cn(
-                  "max-w-full truncate text-[10.5px] leading-none tracking-tight",
-                  active ? "font-bold" : "font-medium"
-                )}
-              >
-                {item.label}
-              </span>
-            </Link>
-          );
-        })}
+              <Icon className="h-[22px] w-[22px]" strokeWidth={1.8} />
+            </span>
+            <span className={NAV_TEXT_CLASS}>{item.label}</span>
+          </Link>
+        );
+      })}
 
-        <button
-          type="button"
-          aria-label={MORE_NAV_TRIGGER.label}
-          aria-expanded={moreOpen}
-          onClick={() => onMoreOpen(true)}
+      <button
+        type="button"
+        aria-label={MORE_NAV_TRIGGER.label}
+        aria-expanded={moreOpen}
+        onClick={() => onMoreOpen(true)}
+        className={cn(
+          NAV_ITEM_CLASS,
+          moreActive || moreOpen
+            ? "-translate-y-px text-[#E8A87C]"
+            : "text-zinc-500 active:text-zinc-300"
+        )}
+      >
+        <span
           className={cn(
-            "flex min-w-0 flex-1 flex-col items-center justify-center gap-1 px-0.5",
-            moreActive || moreOpen
-              ? "text-[#E8A87C]"
-              : "text-zinc-500 active:text-zinc-300"
+            NAV_ICON_WRAP_CLASS,
+            moreActive || moreOpen ? "bg-[#C05621]/20" : "bg-transparent"
           )}
         >
-          <span
-            className={cn(
-              "flex h-8 w-14 items-center justify-center rounded-full transition-colors duration-200",
-              moreActive || moreOpen ? "bg-[#C05621]/18" : "bg-transparent"
-            )}
-          >
-            <MORE_NAV_TRIGGER.icon
-              className="h-[22px] w-[22px]"
-              strokeWidth={moreActive || moreOpen ? 2.2 : 1.7}
-            />
-          </span>
-          <span
-            className={cn(
-              "max-w-full truncate text-[10.5px] leading-none tracking-tight",
-              moreActive || moreOpen ? "font-bold" : "font-medium"
-            )}
-          >
-            {MORE_NAV_TRIGGER.label}
-          </span>
-        </button>
-      </div>
+          <MORE_NAV_TRIGGER.icon className="h-[22px] w-[22px]" strokeWidth={1.8} />
+        </span>
+        <span className={NAV_TEXT_CLASS}>{MORE_NAV_TRIGGER.label}</span>
+      </button>
     </nav>
   );
 }
@@ -200,7 +184,7 @@ export function BottomNav() {
           </div>
         ) : null}
 
-        <form action={logoutAction} className="px-3 pb-[max(1rem,max(env(safe-area-inset-bottom),16px))] pt-2">
+        <form action={logoutAction} className="px-3 pb-[calc(1rem+var(--safe-bottom))] pt-2">
           <button
             type="submit"
             className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-sm font-medium text-zinc-400 transition-colors active:bg-zinc-800 active:text-zinc-100"

@@ -533,13 +533,12 @@ export function FieldsGlassPanel({
                 aria-label="Відкрити список полів"
                 onClick={() => onMobileExpandedChange(true)}
                 className={cn(
-                  "pointer-events-auto mx-auto flex h-[var(--fields-peek-height)] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl",
-                  "border-x border-t border-[#E5DFD3]/70 bg-[#F4F1EA]",
-                  "shadow-[0_-14px_34px_-18px_rgba(0,0,0,0.45)]"
+                  "pointer-events-auto relative mx-auto flex h-[var(--fields-peek-height)] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl",
+                  "bg-[#F4F1EA] shadow-[0_-14px_34px_-18px_rgba(0,0,0,0.4)]"
                 )}
               >
-                <span className="mx-auto mt-2 mb-1.5 block h-1 w-10 shrink-0 rounded-full bg-zinc-400/80" />
-                <span className="flex min-h-0 flex-1 items-center gap-3 px-4">
+                <span className="mx-auto mt-2.5 mb-2 block h-1 w-10 shrink-0 rounded-full bg-zinc-400/70" />
+                <span className="flex min-h-0 flex-1 items-center gap-3 px-4 pb-3.5">
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#276749] text-white shadow-sm shadow-[#276749]/25">
                     <MapIcon className="h-4 w-4" />
                   </span>
@@ -555,6 +554,15 @@ export function FieldsGlassPanel({
                   </span>
                   <ChevronUp className="h-4 w-4 shrink-0 text-zinc-400" />
                 </span>
+                {/* Перехід шторки в колір меню живе в межах самої шторки, тому не накриває текст */}
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute inset-x-0 bottom-0 h-3.5"
+                  style={{
+                    background:
+                      "linear-gradient(to bottom, rgba(24,24,27,0) 0%, rgba(24,24,27,0.18) 55%, var(--nav-bg) 100%)",
+                  }}
+                />
               </button>
             </div>
 
@@ -591,7 +599,7 @@ export function FieldsDetailGlassFrame({
     <aside
       className={cn(
         "pointer-events-auto absolute z-20 flex flex-col overflow-hidden border border-white/30 bg-[#F4F1EA] shadow-2xl",
-        "inset-x-0 bottom-[calc(4rem+max(env(safe-area-inset-bottom),16px))] top-[max(10px,var(--safe-top))] rounded-t-3xl",
+        "inset-x-0 bottom-[var(--app-bottom-inset)] top-[max(10px,var(--safe-top))] rounded-t-3xl",
         "md:inset-x-auto md:top-3 md:right-3 md:bottom-3 md:h-auto md:w-[min(100%,580px)] md:rounded-2xl md:bg-[#F4F1EA]/88 md:backdrop-blur-2xl"
       )}
     >
