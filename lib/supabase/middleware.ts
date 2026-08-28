@@ -52,8 +52,12 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const pathname = request.nextUrl.pathname;
+  const userAgent = request.headers.get("user-agent") ?? "";
+  const isMobileUa = /iphone|ipad|ipod|android|mobile/i.test(userAgent.toLowerCase());
+
   const isPublic =
     pathname === "/login" ||
+    pathname === "/install" ||
     pathname.startsWith("/api/auth/callback") ||
     pathname.startsWith("/auth/callback") ||
     pathname.startsWith("/api/cron/");
@@ -69,6 +73,19 @@ export async function updateSession(request: NextRequest) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/";
     redirectUrl.search = "";
+    return NextResponse.redirect(redirectUrl);
+  }
+
+  if (user && pathname === "/install") {
+    const redirectUrl = request.nextUrl.clone();
+    redirectUrl.pathname = "/";
+    redirectUrl.search = "";
+    return NextResponse.redirect(redirectUrl);
+  }
+
+  if (pathname === "/install" && !isMobileUa) {
+    const redirectUrl = request.nextUrl.clone();
+    redirectUrl.pathname = "/login";
     return NextResponse.redirect(redirectUrl);
   }
 

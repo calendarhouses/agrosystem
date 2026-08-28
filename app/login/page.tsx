@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+import { LoginInstallRedirect } from "@/components/pwa/install-prompt";
 import { LoginForm } from "@/app/login/login-form";
 
 export const metadata: Metadata = {
@@ -22,6 +23,9 @@ export default function LoginPage() {
         }}
         aria-hidden
       />
+      <Suspense fallback={null}>
+        <LoginInstallRedirect />
+      </Suspense>
       <Suspense
         fallback={
           <div className="h-80 w-full max-w-md animate-pulse rounded-xl bg-white/60" />

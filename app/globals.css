@@ -134,6 +134,14 @@ body {
   stroke-width: 2.5px !important;
 }
 
+@utility safe-bottom-nav {
+  padding-bottom: calc(3.5rem + env(safe-area-inset-bottom));
+}
+
+@utility safe-top-notch {
+  padding-top: env(safe-area-inset-top);
+}
+
 @utility no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;

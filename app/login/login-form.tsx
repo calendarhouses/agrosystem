@@ -48,7 +48,7 @@ export function LoginForm() {
         </div>
         <div>
           <CardTitle className="text-2xl font-extrabold tracking-tight text-zinc-900">
-            AgroSystem
+            LEVADA SYSTEM
           </CardTitle>
           <CardDescription className="mt-1.5 text-zinc-500">
             Увійдіть, щоб відкрити операційну панель господарства

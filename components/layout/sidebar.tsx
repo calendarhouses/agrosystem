@@ -4,75 +4,17 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
-  FileSpreadsheet,
-  Fuel,
   LogOut,
-  Map as MapIcon,
   PanelLeftClose,
   PanelLeftOpen,
-  PieChart,
-  Radar,
-  Tractor,
-  Warehouse,
 } from "lucide-react";
 
 import { getMyProfileAction } from "@/app/team/actions";
 import { logoutAction } from "@/app/login/actions";
 import { SidebarNavTooltip } from "@/components/layout/sidebar-nav-tooltip";
+import { APP_NAV_ITEMS, isNavItemActive, type AppNavItem } from "@/lib/navigation";
 import { ROLE_LABEL_UK, type AppActor } from "@/lib/app-actor-shared";
 import { cn } from "@/lib/utils";
-
-const NAV_ITEMS = [
-  {
-    href: "/",
-    label: "Поля",
-    hint: "Поля, контури та погода",
-    icon: MapIcon,
-  },
-  {
-    href: "/calendar",
-    label: "Агро-Радар",
-    hint: "Вікна можливостей і план робіт",
-    icon: Radar,
-  },
-  {
-    href: "/equipment",
-    label: "Техніка",
-    hint: "Радар автопарку та статуси",
-    icon: Tractor,
-  },
-  {
-    href: "/fuel",
-    label: "Паливо",
-    hint: "Склади та логи списання",
-    icon: Fuel,
-  },
-  {
-    href: "/inventory",
-    label: "Склад",
-    hint: "ЗЗР, врожай, добрива, запчастини",
-    icon: Warehouse,
-  },
-  {
-    href: "/finance",
-    label: "Фінанси",
-    hint: "Витрати та підсумки",
-    icon: PieChart,
-  },
-  {
-    href: "/accounting",
-    label: "Бухгалтерія",
-    hint: "Експорт · звірка · мапінг BAS AGRO",
-    icon: FileSpreadsheet,
-  },
-] as const;
-
-type NavItem = {
-  href: string;
-  label: string;
-  hint: string;
-  icon: typeof MapIcon;
-};
 
 type SidebarProps = {
   collapsed: boolean;
@@ -89,12 +31,9 @@ export function Sidebar({ collapsed, onToggleCollapsed }: SidebarProps) {
     void getMyProfileAction().then(setMe);
   }, []);
 
-  function renderNavItem(item: NavItem) {
+  function renderNavItem(item: AppNavItem) {
     const Icon = item.icon;
-    const active =
-      item.href === "/"
-        ? pathname === "/" || pathname.startsWith("/fields")
-        : pathname.startsWith(item.href);
+    const active = isNavItemActive(pathname, item.href);
 
     const link = (
       <Link
@@ -185,10 +124,10 @@ export function Sidebar({ collapsed, onToggleCollapsed }: SidebarProps) {
   return (
     <aside
       className={cn(
-        "fixed inset-y-0 left-0 z-40 flex flex-col",
+        "fixed inset-y-0 left-0 z-40 hidden flex-col md:flex",
         "border-r border-zinc-700 bg-zinc-800 text-zinc-400",
         "transition-[width] duration-200 ease-out",
-        collapsed ? "w-16" : "w-16 md:w-[250px]"
+        collapsed ? "w-16" : "w-[250px]"
       )}
     >
       <div
@@ -204,12 +143,12 @@ export function Sidebar({ collapsed, onToggleCollapsed }: SidebarProps) {
           )}
         >
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#C05621]/40 bg-gradient-to-br from-[#C05621]/25 to-[#9c4221]/40 text-xs font-bold text-[#C05621]">
-            AS
+            LS
           </div>
           {expanded ? (
             <div className="hidden min-w-0 md:block">
               <p className="truncate text-sm font-bold tracking-wide text-zinc-100 uppercase">
-                AgroSystem
+                LEVADA
               </p>
             </div>
           ) : null}
@@ -234,7 +173,7 @@ export function Sidebar({ collapsed, onToggleCollapsed }: SidebarProps) {
       </div>
 
       <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto p-2">
-        {NAV_ITEMS.map((item) => renderNavItem(item))}
+        {APP_NAV_ITEMS.map((item) => renderNavItem(item))}
       </nav>
 
       <div className="shrink-0 border-t border-zinc-700 p-2">

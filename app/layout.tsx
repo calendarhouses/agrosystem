@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "sonner";
 
@@ -17,10 +17,31 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "AgroSystem",
-    template: "%s · AgroSystem",
+    default: "LEVADA SYSTEM",
+    template: "%s · LEVADA",
   },
-  description: "Преміум B2B SaaS для сучасного агробізнесу",
+  description: "Операційна система господарства",
+  manifest: "/manifest.webmanifest",
+  applicationName: "LEVADA SYSTEM",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "LEVADA",
+  },
+  formatDetection: {
+    telephone: false,
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#F4F1EA" },
+    { media: "(prefers-color-scheme: dark)", color: "#18181b" },
+  ],
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

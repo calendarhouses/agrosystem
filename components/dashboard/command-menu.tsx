@@ -76,7 +76,7 @@ export function CommandMenu({ className }: CommandMenuProps) {
       <CommandDialog
         open={open}
         onOpenChange={setOpen}
-        title="Пошук по AgroSystem"
+        title="Пошук по LEVADA"
         description="Швидка навігація по полях, техніці та звітах"
         className={cn(
           "overflow-hidden rounded-xl! border border-[#E5DFD3] bg-[#F4F1EA] p-0 text-zinc-900 shadow-sm ring-0 sm:max-w-lg",

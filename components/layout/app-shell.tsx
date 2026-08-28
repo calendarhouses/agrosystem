@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 
+import { BottomNav } from "@/components/layout/bottom-nav";
 import { Sidebar } from "@/components/layout/sidebar";
 import { TopBar } from "@/components/layout/top-bar";
 import { isCommandCenterPath } from "@/lib/equipment-command-center-layout";
@@ -13,7 +14,8 @@ const SIDEBAR_COLLAPSED_KEY = "agrosystem-sidebar-collapsed";
 /** App Shell: фіксований viewport + згортання сайдбару */
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const isAuthScreen = pathname === "/login";
+  const isAuthScreen =
+    pathname === "/login" || pathname === "/install";
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
@@ -50,11 +52,13 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="h-dvh overflow-hidden bg-zinc-100 text-zinc-900">
       <Sidebar collapsed={collapsed} onToggleCollapsed={toggleCollapsed} />
+      <BottomNav />
 
       <div
         className={cn(
           "relative flex h-full flex-col transition-[padding] duration-200 ease-out",
-          collapsed ? "pl-16" : "pl-16 md:pl-[250px]"
+          "pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0",
+          collapsed ? "md:pl-16" : "md:pl-[250px]"
         )}
       >
         <TopBar />
