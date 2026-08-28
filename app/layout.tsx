@@ -54,7 +54,10 @@ export const viewport: Viewport = {
   userScalable: false,
   viewportFit: "cover",
   interactiveWidget: "overlays-content",
-  themeColor: "#276749",
+  themeColor: [
+    { media: "(max-width: 767px)", color: "#18181b" },
+    { color: "#276749" },
+  ],
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -63,7 +66,20 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="uk"
       className={`${geistSans.variable} ${geistMono.variable} antialiased`}
     >
-      <body className="overflow-hidden bg-zinc-100 font-sans text-zinc-900">
+      <head>
+        {/* Критично: до globals.css — фон під заокругленнями корпусу iPhone */}
+        <style
+          dangerouslySetInnerHTML={{
+            __html: `@media(max-width:767px){html,body{background-color:#18181b!important}}@media(max-width:767px){html[data-app-nav="0"],html[data-app-nav="0"] body{background-color:#f4f4f5!important}}`,
+          }}
+        />
+      </head>
+      <body className="overflow-hidden font-sans text-zinc-900">
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){var p=location.pathname;document.documentElement.dataset.appNav=(p==='/login'||p==='/install')?'0':'1';})();`,
+          }}
+        />
         <PwaBootstrap />
         <div id="app-root" className="h-dvh min-h-0 overflow-hidden">
           <AppShell>{children}</AppShell>

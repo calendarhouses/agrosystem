@@ -210,7 +210,6 @@ export function FieldsGlassPanel({
   onHover,
   onFitAll,
 }: FieldsGlassPanelProps) {
-  const isMobile = useIsMobile();
   const [query, setQuery] = useState("");
 
   const filtered = useMemo(() => {
@@ -512,69 +511,68 @@ export function FieldsGlassPanel({
         {list}
       </aside>
 
-      {isMobile ? (
-        <>
-          <Drawer
-            open={mobileExpanded}
-            onOpenChange={onMobileExpandedChange}
-            shouldScaleBackground={false}
-            noBodyStyles
-          >
-            <div
-              className={cn(
-                "pointer-events-none fixed inset-x-0 z-40 md:hidden",
-                mobileExpanded && "hidden"
-              )}
-              style={{ bottom: "var(--app-bottom-inset)" }}
-            >
-              <button
-                type="button"
-                aria-expanded={mobileExpanded}
-                aria-label="Відкрити список полів"
-                onClick={() => onMobileExpandedChange(true)}
-                className={cn(
-                  "pointer-events-auto relative mx-auto flex h-[var(--fields-peek-height)] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl",
-                  "bg-[#F4F1EA] shadow-[0_-14px_34px_-18px_rgba(0,0,0,0.4)]"
-                )}
-              >
-                <span className="mx-auto mt-2.5 mb-2 block h-1 w-10 shrink-0 rounded-full bg-zinc-400/70" />
-                <span className="flex min-h-0 flex-1 items-center gap-3 px-4 pb-3.5">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#276749] text-white shadow-sm shadow-[#276749]/25">
-                    <MapIcon className="h-4 w-4" />
-                  </span>
-                  <span className="min-w-0 flex-1 text-left">
-                    <span className="block truncate text-[14px] font-bold leading-tight tracking-tight text-zinc-900">
-                      Поля
-                    </span>
-                    <span className="block truncate text-[11px] font-medium leading-tight text-zinc-500">
-                      {loading
-                        ? "Завантаження…"
-                        : `${formatCountPlural(fields.length, ["ділянка", "ділянки", "ділянок"])} · ${totalHa.toLocaleString("uk-UA")} га`}
-                    </span>
-                  </span>
-                  <ChevronUp className="h-4 w-4 shrink-0 text-zinc-400" />
-                </span>
-              </button>
-            </div>
+      {/* Мобільна шторка — md:hidden замість useIsMobile (без flash після hydration) */}
+      <div
+        className={cn(
+          "pointer-events-none fixed inset-x-0 z-40 md:hidden",
+          mobileExpanded && "hidden"
+        )}
+        style={{ bottom: "var(--app-bottom-inset)" }}
+      >
+        <button
+          type="button"
+          aria-expanded={mobileExpanded}
+          aria-label="Відкрити список полів"
+          onClick={() => onMobileExpandedChange(true)}
+          className={cn(
+            "pointer-events-auto relative mx-auto flex h-[var(--fields-peek-height)] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl",
+            "bg-[#F4F1EA] shadow-[0_-14px_34px_-18px_rgba(0,0,0,0.4)]"
+          )}
+        >
+          <span className="mx-auto mt-2.5 mb-2 block h-1 w-10 shrink-0 rounded-full bg-zinc-400/70" />
+          <span className="flex min-h-0 flex-1 items-center gap-3 px-4 pb-3.5">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#276749] text-white shadow-sm shadow-[#276749]/25">
+              <MapIcon className="h-4 w-4" />
+            </span>
+            <span className="min-w-0 flex-1 text-left">
+              <span className="block truncate text-[14px] font-bold leading-tight tracking-tight text-zinc-900">
+                Поля
+              </span>
+              <span className="block truncate text-[11px] font-medium leading-tight text-zinc-500">
+                {loading
+                  ? "Завантаження…"
+                  : `${formatCountPlural(fields.length, ["ділянка", "ділянки", "ділянок"])} · ${totalHa.toLocaleString("uk-UA")} га`}
+              </span>
+            </span>
+            <ChevronUp className="h-4 w-4 shrink-0 text-zinc-400" />
+          </span>
+        </button>
+      </div>
 
-            <DrawerContent className="border-[#E5DFD3]/90 bg-[#F4F1EA]">
-              <DrawerTitle className="sr-only">Список полів</DrawerTitle>
-              <DrawerHandle className="bg-zinc-400/90" />
+      <Drawer
+        open={mobileExpanded}
+        onOpenChange={onMobileExpandedChange}
+        shouldScaleBackground={false}
+        noBodyStyles
+      >
+        {mobileExpanded ? (
+          <DrawerContent className="border-[#E5DFD3]/90 bg-[#F4F1EA]">
+            <DrawerTitle className="sr-only">Список полів</DrawerTitle>
+            <DrawerHandle className="bg-zinc-400/90" />
+            <div
+              className="flex min-h-0 flex-1 flex-col overflow-hidden"
+              data-vaul-no-drag
+            >
               <div
-                className="flex min-h-0 flex-1 flex-col overflow-hidden"
-                data-vaul-no-drag
+                className="flex-1 overflow-y-auto overscroll-contain"
+                data-allow-pan="true"
               >
-                <div
-                  className="flex-1 overflow-y-auto overscroll-contain"
-                  data-allow-pan="true"
-                >
-                  {list}
-                </div>
+                {list}
               </div>
-            </DrawerContent>
-          </Drawer>
-        </>
-      ) : null}
+            </div>
+          </DrawerContent>
+        ) : null}
+      </Drawer>
     </>
   );
 }

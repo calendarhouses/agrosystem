@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useLayoutEffect, useEffect, useState, type ReactNode } from "react";
 
 import { BottomNav } from "@/components/layout/bottom-nav";
 import { Sidebar } from "@/components/layout/sidebar";
@@ -45,7 +45,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const isCommandCenter = isCommandCenterPath(pathname);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     document.documentElement.dataset.appNav = isAuthScreen ? "0" : "1";
     return () => {
       document.documentElement.dataset.appNav = "0";
@@ -57,7 +57,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden overscroll-none bg-zinc-100 text-zinc-900">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden overscroll-none bg-transparent text-zinc-900 md:bg-zinc-100">
       <Sidebar collapsed={collapsed} onToggleCollapsed={toggleCollapsed} />
 
       <div

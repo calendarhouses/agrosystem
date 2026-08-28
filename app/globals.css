@@ -64,7 +64,9 @@ body {
   --nav-bg: #18181b;
   /* Висота рядка кнопок (без safe-area) — для позиціонування шторок і float UI */
   --bottom-nav-content: 56px;
-  --bottom-nav-height: calc(var(--bottom-nav-content) + var(--safe-bottom));
+  --bottom-nav-height: calc(
+    var(--bottom-nav-content) + env(safe-area-inset-bottom, 0px)
+  );
   --fields-peek-height: 4.75rem;
   --mobile-nav-offset: var(--bottom-nav-height);
   --map-float-bottom: calc(
@@ -143,24 +145,48 @@ body {
     background: var(--background);
     color: var(--foreground);
   }
+
+  /* PWA mobile: html/body = колір меню, щоб у заокругленнях корпусу не було білої смуги */
+  @media (max-width: 767px) {
+    html,
+    body {
+      background-color: var(--nav-bg);
+    }
+
+    html[data-app-nav="0"],
+    html[data-app-nav="0"] body {
+      background-color: var(--background);
+    }
+
+    #app-root {
+      background-color: var(--nav-bg);
+    }
+
+    html[data-app-nav="0"] #app-root {
+      background-color: var(--background);
+    }
+  }
 }
 
 html[data-app-nav="1"] {
   --app-bottom-inset: var(--bottom-nav-height);
 }
 
-/* Меню, html і body одного кольору — під навігацією не може лишитись іншої смуги */
-@media (max-width: 767px) {
-  html[data-app-nav="1"],
-  html[data-app-nav="1"] body {
-    background: var(--nav-bg);
-  }
-}
-
 @media (min-width: 768px) {
   html[data-app-nav="1"] {
     --app-bottom-inset: 0px;
   }
+}
+
+/* vaul: закритий drawer не має з'являтись на 80vh при завантаженні */
+[data-vaul-drawer][data-state="closed"] {
+  transform: translate3d(0, 100%, 0) !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+[data-vaul-drawer][data-state="closed"]::after {
+  display: none !important;
 }
 
 /* Ховаємо порожні нативні контролі Mapbox Draw */
