@@ -72,7 +72,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div
           className={cn(
             "relative min-h-0 flex-1 overflow-hidden overscroll-none",
-            isCommandCenter && "min-h-0"
+            isCommandCenter && "min-h-0 bg-zinc-950"
           )}
         >
           {children}

@@ -37,7 +37,6 @@ import {
 import { searchPlaces, type GeoSearchResult } from "@/lib/geocode";
 import {
   boundsFromGeometry,
-  centerFromBounds,
   mergeBounds,
   type LngLatBoundsTuple,
 } from "@/lib/geo-area";
@@ -388,61 +387,54 @@ type FieldsMapProps = {
   onEscape?: () => void;
 };
 
-/** Стартовий кадр над усіма джерелами полів (Wialon + збережені + демо) */
-function bootViewFromFieldSources(
-  wialonGeofences: FeatureCollection<Polygon, WialonGeofenceProperties>,
-  savedFieldsGeoJson: FeatureCollection | undefined,
-  includeDemo: boolean
-): MapBootView {
-  const wialonBounds = wialonGeofences.features.map((feature) =>
-    boundsFromGeometry(feature.geometry)
-  );
-  const demoBounds = includeDemo
-    ? FIELDS_GEOJSON.features.map((feature) =>
-        boundsFromGeometry(feature.geometry)
-      )
-    : [];
-  const savedBounds = (savedFieldsGeoJson?.features ?? []).map((feature) =>
-    boundsFromGeometry(feature.geometry)
-  );
-  const merged = mergeBounds([
-    ...wialonBounds,
-    ...demoBounds,
-    ...savedBounds,
-  ]);
+/** Стартовий кадр — завжди Іванівка; zoom підбирає fitBounds */
+const IVANIVKA_BOOT_VIEW: MapBootView = {
+  longitude: DEFAULT_WEATHER_LOCATION.longitude,
+  latitude: DEFAULT_WEATHER_LOCATION.latitude,
+  zoom: 11.5,
+};
 
-  if (!merged) {
-    return {
-      longitude: DEFAULT_WEATHER_LOCATION.longitude,
-      latitude: DEFAULT_WEATHER_LOCATION.latitude,
-      zoom: 11,
-    };
+function expandBounds(bounds: LngLatBoundsTuple): LngLatBoundsTuple {
+  let [west, south, east, north] = bounds;
+  if (west === east) {
+    west -= 0.002;
+    east += 0.002;
   }
-
-  const { longitude, latitude } = centerFromBounds(merged);
-  const latSpan = merged[3] - merged[1];
-  const lngSpan = merged[2] - merged[0];
-  // До fitBounds з padding — зсув центру вниз, щоб кластер не вилітав у верхній кут
-  const biasedLatitude = latitude - latSpan * 0.1;
-  const biasedLongitude = longitude + lngSpan * 0.02;
-  const span = Math.max(lngSpan, latSpan);
-  let zoom = 12;
-  if (span > 0.8) zoom = 8.5;
-  else if (span > 0.4) zoom = 9.5;
-  else if (span > 0.2) zoom = 10.5;
-  else if (span > 0.08) zoom = 11.5;
-  else if (span > 0.03) zoom = 12.5;
-  else zoom = 13.5;
-
-  if (!Number.isFinite(biasedLongitude) || !Number.isFinite(biasedLatitude)) {
-    return {
-      longitude: DEFAULT_WEATHER_LOCATION.longitude,
-      latitude: DEFAULT_WEATHER_LOCATION.latitude,
-      zoom: 11,
-    };
+  if (south === north) {
+    south -= 0.002;
+    north += 0.002;
   }
+  return [west, south, east, north];
+}
 
-  return { longitude: biasedLongitude, latitude: biasedLatitude, zoom };
+function focusFieldsAroundAnchor(
+  map: NonNullable<ReturnType<MapRef["getMap"]>>,
+  bounds: LngLatBoundsTuple,
+  options?: { padding?: FitPadding; maxZoom?: number; duration?: number }
+) {
+  const [west, south, east, north] = expandBounds(bounds);
+  const padding = options?.padding ?? 80;
+  const duration = options?.duration ?? 850;
+  const easing = (t: number) =>
+    t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+  const camera = map.cameraForBounds(
+    [
+      [west, south],
+      [east, north],
+    ],
+    { padding, maxZoom: options?.maxZoom ?? 14 }
+  );
+  if (!camera) return;
+
+  map.easeTo({
+    center: [IVANIVKA_BOOT_VIEW.longitude, IVANIVKA_BOOT_VIEW.latitude],
+    zoom: camera.zoom,
+    padding,
+    duration,
+    essential: true,
+    easing,
+  });
 }
 
 function collectFieldBounds(
@@ -583,17 +575,11 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       });
     }, [wialonUnits]);
     const hasWialonGeofences = wialonGeofences.features.length > 0;
+    const savedFieldCount = savedFieldsGeoJson?.features?.length ?? 0;
+    const showDemoFields =
+      !wialonLoading && !hasWialonGeofences && savedFieldCount === 0;
 
-    /** Синхронно з даними — без race зі stale FIELDS_MAP_INITIAL_VIEW (Київ) */
-    const mountBootView = useMemo(
-      () =>
-        bootViewFromFieldSources(
-          wialonGeofences,
-          savedFieldsGeoJson,
-          !hasWialonGeofences
-        ),
-      [wialonGeofences, savedFieldsGeoJson, hasWialonGeofences]
-    );
+    const mountBootView = IVANIVKA_BOOT_VIEW;
 
     const [activeTool, setActiveTool] = useState<DrawTool>("edit");
     const [hasSelection, setHasSelection] = useState(false);
@@ -803,11 +789,11 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       const wialonBounds = wialonGeofences.features.map((feature) =>
         boundsFromGeometry(feature.geometry)
       );
-      const demoBounds = hasWialonGeofences
-        ? []
-        : FIELDS_GEOJSON.features.map((feature) =>
+      const demoBounds = showDemoFields
+        ? FIELDS_GEOJSON.features.map((feature) =>
             boundsFromGeometry(feature.geometry)
-          );
+          )
+        : [];
       const savedBounds = (savedFieldsGeoJson?.features ?? []).map((feature) =>
         boundsFromGeometry(feature.geometry)
       );
@@ -816,16 +802,27 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         ...demoBounds,
         ...savedBounds,
       ]);
-      if (merged) {
-        focusBounds(merged, {
-          padding: chromePadding(chrome),
+      if (!merged) return;
+
+      const padding = chromePadding(chrome);
+      const isDesktop =
+        typeof window !== "undefined" ? window.innerWidth >= 768 : true;
+      const map = mapRef.current?.getMap();
+
+      if (!isDesktop && map) {
+        focusFieldsAroundAnchor(map, merged, {
+          padding,
+          maxZoom: 14,
         });
+        return;
       }
+
+      focusBounds(merged, { padding });
     }, [
       chrome,
       chromePadding,
       focusBounds,
-      hasWialonGeofences,
+      showDemoFields,
       savedFieldsGeoJson?.features,
       wialonGeofences.features,
     ]);
@@ -1308,7 +1305,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       );
     }
 
-    const showBootOverlay = !mapReady || !viewSettled;
+    const showBootOverlay = !mapReady || !viewSettled || wialonLoading;
     const showTractor = zoom >= 7 && !focusMode;
     const tractorScale = tractorScaleFromZoom(zoom);
 
@@ -1354,32 +1351,42 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
               map.getCanvasContainer().style.backgroundColor =
                 COMMAND_CENTER_MAP_CANVAS_BG;
 
-              const merged = collectFieldBounds(
-                wialonGeofences,
-                savedFieldsGeoJson,
-                !hasWialonGeofences
-              );
-              if (merged) {
-                const [west, south, east, north] = merged;
-                const isDesktop =
-                  typeof window !== "undefined"
-                    ? window.innerWidth >= 768
-                    : true;
-                try {
-                  map.fitBounds(
-                    [
-                      [west, south],
-                      [east, north],
-                    ],
-                    {
-                      padding: mapCameraPadding(isDesktop, "left"),
-                      duration: 0,
-                      maxZoom: 14,
-                      essential: true,
+              if (!wialonLoading) {
+                const merged = collectFieldBounds(
+                  wialonGeofences,
+                  savedFieldsGeoJson,
+                  showDemoFields
+                );
+                if (merged) {
+                  const isDesktop =
+                    typeof window !== "undefined"
+                      ? window.innerWidth >= 768
+                      : true;
+                  const padding = mapCameraPadding(isDesktop, "left");
+                  try {
+                    if (!isDesktop) {
+                      focusFieldsAroundAnchor(map, merged, {
+                        padding,
+                        maxZoom: 14,
+                        duration: 0,
+                      });
+                    } else {
+                      map.fitBounds(
+                        [
+                          [merged[0], merged[1]],
+                          [merged[2], merged[3]],
+                        ],
+                        {
+                          padding,
+                          duration: 0,
+                          maxZoom: 14,
+                          essential: true,
+                        }
+                      );
                     }
-                  );
-                } catch {
-                  // ignore invalid bounds
+                  } catch {
+                    // ignore invalid bounds
+                  }
                 }
               }
 
@@ -1403,7 +1410,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
             <Source
               id="fields"
               type="geojson"
-              data={hasWialonGeofences ? EMPTY_COLLECTION : FIELDS_GEOJSON}
+              data={showDemoFields ? FIELDS_GEOJSON : EMPTY_COLLECTION}
             >
               <Layer
                 id="fields-fill"

@@ -34,8 +34,11 @@ function BottomNavBar({
       className={cn(
         "fixed bottom-0 left-0 right-0 z-[100] md:hidden",
         "border-t border-zinc-700/80 bg-zinc-900 text-zinc-400",
-          "pb-[max(env(safe-area-inset-bottom),16px)]"
+        "pb-[max(env(safe-area-inset-bottom),16px)]"
       )}
+      style={{
+        boxShadow: "0 0 0 max(env(safe-area-inset-bottom), 16px) #18181b",
+      }}
       aria-label="Головна навігація"
     >
       <div className="mx-auto flex h-16 max-w-lg items-center justify-around px-0.5">

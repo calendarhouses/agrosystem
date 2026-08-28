@@ -155,6 +155,10 @@ html[data-app-nav="1"] {
   html[data-app-nav="1"] {
     background: #18181b;
   }
+
+  html[data-app-nav="1"] body {
+    background: #18181b;
+  }
 }
 
 @media (min-width: 768px) {

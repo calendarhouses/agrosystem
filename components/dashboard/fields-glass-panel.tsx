@@ -4,6 +4,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity,
+  ChevronUp,
   Focus,
   Map as MapIcon,
   Search,
@@ -15,7 +16,6 @@ import {
   DrawerContent,
   DrawerHandle,
   DrawerTitle,
-  DrawerTrigger,
 } from "@/components/ui/drawer";
 import { useIsMobile } from "@/lib/use-mobile";
 import type { MapFieldItem } from "@/lib/map-fields";
@@ -513,59 +513,79 @@ export function FieldsGlassPanel({
       </aside>
 
       {isMobile ? (
-        <Drawer
-          open={mobileExpanded}
-          onOpenChange={onMobileExpandedChange}
-          handleOnly
-          shouldScaleBackground={false}
-          noBodyStyles
-        >
+        <>
           <div
-            className="pointer-events-none fixed inset-x-0 z-40 md:hidden"
-            style={{ bottom: "var(--app-bottom-inset)" }}
+            className="pointer-events-none fixed inset-x-0 z-[39] md:hidden"
+            style={{
+              bottom: 0,
+              height: "var(--app-bottom-inset)",
+            }}
+            aria-hidden
           >
-            <DrawerTrigger asChild>
+            <div className="h-full bg-gradient-to-b from-[#F4F1EA]/0 via-zinc-900/35 to-zinc-900" />
+          </div>
+
+          <Drawer
+            open={mobileExpanded}
+            onOpenChange={onMobileExpandedChange}
+            shouldScaleBackground={false}
+            noBodyStyles
+          >
+            <div
+              className={cn(
+                "pointer-events-none fixed inset-x-0 z-40 md:hidden",
+                mobileExpanded && "hidden"
+              )}
+              style={{ bottom: "var(--app-bottom-inset)" }}
+            >
               <button
                 type="button"
+                aria-expanded={mobileExpanded}
+                aria-label="Відкрити список полів"
+                onClick={() => onMobileExpandedChange(true)}
                 className={cn(
-                  "pointer-events-auto mx-auto flex h-[var(--fields-peek-height)] w-full max-w-lg items-center gap-3 rounded-t-3xl px-4",
+                  "pointer-events-auto mx-auto flex w-full max-w-lg flex-col overflow-hidden rounded-t-3xl",
                   "border border-b-0 border-[#E5DFD3]/90 bg-[#F4F1EA]",
                   "shadow-[0_-10px_40px_-12px_rgba(0,0,0,0.2)]"
                 )}
               >
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#276749] text-white shadow-md shadow-[#276749]/25">
-                  <MapIcon className="h-4 w-4" />
-                </span>
-                <span className="min-w-0 flex-1 text-left">
-                  <span className="block truncate text-[15px] font-bold tracking-tight text-zinc-900">
-                    Поля
+                <span className="mx-auto mt-2.5 mb-1 block h-1 w-12 shrink-0 rounded-full bg-zinc-400/90" />
+                <span className="flex h-[calc(var(--fields-peek-height)-0.75rem)] items-center gap-3 px-4 pb-1">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#276749] text-white shadow-md shadow-[#276749]/25">
+                    <MapIcon className="h-4 w-4" />
                   </span>
-                  <span className="block truncate text-[11px] font-medium text-zinc-500">
-                    {loading
-                      ? "Завантаження…"
-                      : `${formatCountPlural(fields.length, ["ділянка", "ділянки", "ділянок"])} · ${totalHa.toLocaleString("uk-UA")} га`}
+                  <span className="min-w-0 flex-1 text-left">
+                    <span className="block truncate text-[15px] font-bold tracking-tight text-zinc-900">
+                      Поля
+                    </span>
+                    <span className="block truncate text-[11px] font-medium text-zinc-500">
+                      {loading
+                        ? "Завантаження…"
+                        : `${formatCountPlural(fields.length, ["ділянка", "ділянки", "ділянок"])} · ${totalHa.toLocaleString("uk-UA")} га`}
+                    </span>
                   </span>
+                  <ChevronUp className="h-5 w-5 shrink-0 text-zinc-400" />
                 </span>
               </button>
-            </DrawerTrigger>
-          </div>
-
-          <DrawerContent className="border-[#E5DFD3]/90 bg-[#F4F1EA]">
-            <DrawerTitle className="sr-only">Список полів</DrawerTitle>
-            <DrawerHandle />
-            <div
-              className="flex min-h-0 flex-1 flex-col overflow-hidden"
-              data-vaul-no-drag
-            >
-              <div
-                className="flex-1 overflow-y-auto overscroll-contain"
-                data-allow-pan="true"
-              >
-                {list}
-              </div>
             </div>
-          </DrawerContent>
-        </Drawer>
+
+            <DrawerContent className="border-[#E5DFD3]/90 bg-[#F4F1EA]">
+              <DrawerTitle className="sr-only">Список полів</DrawerTitle>
+              <DrawerHandle className="bg-zinc-400/90" />
+              <div
+                className="flex min-h-0 flex-1 flex-col overflow-hidden"
+                data-vaul-no-drag
+              >
+                <div
+                  className="flex-1 overflow-y-auto overscroll-contain"
+                  data-allow-pan="true"
+                >
+                  {list}
+                </div>
+              </div>
+            </DrawerContent>
+          </Drawer>
+        </>
       ) : null}
     </>
   );
