@@ -58,6 +58,12 @@ export async function updateSession(request: NextRequest) {
   const isPublic =
     pathname === "/login" ||
     pathname === "/install" ||
+    pathname === "/manifest.webmanifest" ||
+    pathname === "/sw.js" ||
+    pathname === "/icon" ||
+    pathname === "/apple-icon" ||
+    pathname.startsWith("/icon/") ||
+    pathname.startsWith("/apple-icon") ||
     pathname.startsWith("/api/auth/callback") ||
     pathname.startsWith("/auth/callback") ||
     pathname.startsWith("/api/cron/");

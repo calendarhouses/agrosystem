@@ -11,22 +11,21 @@ const source = fs.readFileSync(
 );
 
 function maskableSvg() {
-  return source
-    .toString()
-    .replace('scale(11.2)', 'scale(8.8)')
-    .replace('translate(256 268)', 'translate(256 256)');
+  return source.replace("scale(13.5)", "scale(10)");
 }
 
 function renderPng(svg, size) {
   const resvg = new Resvg(Buffer.from(svg, "utf8"), {
     fitTo: { mode: "width", value: size },
-    background: "#1f5239",
+    background: "#276749",
   });
   return resvg.render().asPng();
 }
 
 const outputs = [
   [180, path.join(root, "public/apple-touch-icon.png")],
+  [180, path.join(root, "public/apple-touch-icon-precomposed.png")],
+  [180, path.join(root, "public/apple-touch-icon-180x180.png")],
   [192, path.join(root, "public/icons/icon-192.png")],
   [512, path.join(root, "public/icons/icon-512.png")],
   [512, path.join(root, "public/icons/icon-maskable-512.png"), maskableSvg()],
