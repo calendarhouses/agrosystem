@@ -11,6 +11,7 @@ import {
   PlusSquare,
   Share,
   Smartphone,
+  Sprout,
 } from "lucide-react";
 
 import { APP_BRAND_NAME } from "@/lib/pwa";
@@ -32,10 +33,35 @@ type StepDef = {
   visual?: React.ReactNode;
 };
 
+function AppIcon({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
+  const box =
+    size === "lg"
+      ? "h-16 w-16 rounded-[1.35rem]"
+      : size === "sm"
+        ? "h-11 w-11 rounded-xl"
+        : "h-14 w-14 rounded-2xl";
+  const icon =
+    size === "lg" ? "h-8 w-8" : size === "sm" ? "h-5 w-5" : "h-7 w-7";
+
+  return (
+    <div
+      className={cn(
+        box,
+        "flex items-center justify-center bg-gradient-to-br from-[#276749] to-[#1f5239] text-white shadow-lg shadow-[#276749]/30 ring-1 ring-white/20"
+      )}
+    >
+      <Sprout className={icon} strokeWidth={1.75} />
+    </div>
+  );
+}
+
 function StepArrow() {
   return (
-    <div className="flex justify-center py-1" aria-hidden>
-      <ArrowDown className="h-5 w-5 text-[#276749]/50" strokeWidth={2.5} />
+    <div className="flex justify-center py-2" aria-hidden>
+      <div className="flex flex-col items-center gap-0.5">
+        <div className="h-5 w-px bg-gradient-to-b from-white/0 via-[#C05621]/60 to-white/0" />
+        <ArrowDown className="h-4 w-4 text-[#E8A87C]/80" strokeWidth={2.5} />
+      </div>
     </div>
   );
 }
@@ -48,22 +74,35 @@ function StepCard({
   visual,
 }: StepDef & { index: number }) {
   return (
-    <div className="rounded-2xl border border-[#E5DFD3] bg-white p-4 shadow-sm">
+    <div
+      className={cn(
+        "relative overflow-hidden rounded-3xl border border-white/10",
+        "bg-white/[0.06] p-4 shadow-[0_8px_32px_rgba(0,0,0,0.35)] backdrop-blur-2xl"
+      )}
+    >
+      <div
+        className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent"
+        aria-hidden
+      />
       <div className="flex gap-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#276749] text-sm font-bold text-white">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#C05621]/90 to-[#9c4221]/90 text-sm font-bold text-white shadow-md shadow-[#C05621]/20">
           {index}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-start gap-2.5">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#276749]/10 text-[#276749]">
-              <Icon className="h-5 w-5" strokeWidth={2} />
+          <div className="flex items-start gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-[#276749]/30 bg-[#276749]/15 text-[#8fd4a8]">
+              <Icon className="h-5 w-5" strokeWidth={1.75} />
             </span>
             <div className="min-w-0">
-              <p className="font-bold text-zinc-900">{title}</p>
-              <p className="mt-1 text-sm leading-relaxed text-zinc-600">{text}</p>
+              <p className="text-[15px] font-bold tracking-tight text-zinc-50">
+                {title}
+              </p>
+              <p className="mt-1.5 text-sm leading-relaxed text-zinc-400">
+                {text}
+              </p>
             </div>
           </div>
-          {visual ? <div className="mt-3">{visual}</div> : null}
+          {visual ? <div className="mt-4">{visual}</div> : null}
         </div>
       </div>
     </div>
@@ -78,15 +117,15 @@ function MenuMock({
   items: string[];
 }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-zinc-200 bg-zinc-50 text-sm">
+    <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/30 text-sm shadow-inner">
       {items.map((item) => (
         <div
           key={item}
           className={cn(
-            "border-b border-zinc-100 px-3 py-2.5 last:border-0",
+            "border-b border-white/[0.06] px-3.5 py-2.5 last:border-0",
             item === highlight
-              ? "bg-[#276749] font-semibold text-white"
-              : "text-zinc-400"
+              ? "bg-gradient-to-r from-[#276749] to-[#1f5239] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]"
+              : "text-zinc-500"
           )}
         >
           {item}
@@ -102,9 +141,16 @@ const IOS_STEPS: StepDef[] = [
     text: "У Safari внизу екрана натисніть кнопку з квадратом і стрілкою вгору. Вона зазвичай по центру панелі.",
     icon: Share,
     visual: (
-      <div className="flex flex-col items-center rounded-xl border border-dashed border-[#E5DFD3] bg-[#F4F1EA]/60 py-4">
-        <Share className="h-8 w-8 text-[#276749]" strokeWidth={1.75} />
-        <p className="mt-2 text-xs font-medium text-zinc-500">Поділитися · Safari</p>
+      <div className="flex flex-col items-center rounded-2xl border border-dashed border-white/15 bg-white/[0.04] py-5">
+        <div className="relative">
+          <span className="absolute -inset-3 animate-pulse rounded-full bg-[#276749]/20" />
+          <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl border border-white/25 bg-white/10 text-white backdrop-blur-sm">
+            <Share className="h-7 w-7" strokeWidth={1.75} />
+          </div>
+        </div>
+        <p className="mt-3 text-xs font-semibold tracking-wide text-zinc-400 uppercase">
+          Поділитися · Safari
+        </p>
       </div>
     ),
   },
@@ -131,16 +177,15 @@ const IOS_STEPS: StepDef[] = [
     text: `Перевірте назву «${APP_BRAND_NAME}» і натисніть «Додати» у правому верхньому куті. Іконка зʼявиться на головному екрані.`,
     icon: Check,
     visual: (
-      <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-zinc-400">Скасувати</span>
-          <span className="font-bold text-[#276749]">Додати</span>
+      <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/35 shadow-inner">
+        <div className="flex items-center justify-between border-b border-white/[0.08] px-4 py-2.5 text-sm">
+          <span className="text-zinc-500">Скасувати</span>
+          <span className="font-bold text-[#8fd4a8]">Додати</span>
         </div>
-        <div className="mt-3 flex flex-col items-center py-2">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-[#276749] to-[#1f5239] text-base font-extrabold text-white">
-            LS
-          </div>
-          <p className="mt-2 text-sm font-bold text-zinc-800">{APP_BRAND_NAME}</p>
+        <div className="flex flex-col items-center px-4 py-5">
+          <AppIcon />
+          <p className="mt-3 text-sm font-bold text-zinc-100">{APP_BRAND_NAME}</p>
+          <p className="mt-1 text-[11px] text-zinc-500">На Початковий екран</p>
         </div>
       </div>
     ),
@@ -153,9 +198,12 @@ const ANDROID_CHROME_STEPS: StepDef[] = [
     text: "У правому верхньому куті Chrome натисніть три крапки (⋮).",
     icon: MoreVertical,
     visual: (
-      <div className="flex justify-end pr-2">
-        <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-[#276749]/30 bg-white shadow-sm">
-          <MoreVertical className="h-5 w-5 text-[#276749]" />
+      <div className="flex justify-end pr-1">
+        <div className="relative">
+          <span className="absolute -inset-2 animate-pulse rounded-full bg-[#276749]/20" />
+          <div className="relative flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white shadow-lg backdrop-blur-sm">
+            <MoreVertical className="h-5 w-5" />
+          </div>
         </div>
       </div>
     ),
@@ -179,9 +227,12 @@ const ANDROID_SAMSUNG_STEPS: StepDef[] = [
     text: "Натисніть три крапки (⋮) або іконку меню в панелі браузера.",
     icon: MoreVertical,
     visual: (
-      <div className="flex justify-end pr-2">
-        <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-[#276749]/30 bg-white shadow-sm">
-          <MoreVertical className="h-5 w-5 text-[#276749]" />
+      <div className="flex justify-end pr-1">
+        <div className="relative">
+          <span className="absolute -inset-2 animate-pulse rounded-full bg-[#276749]/20" />
+          <div className="relative flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white shadow-lg backdrop-blur-sm">
+            <MoreVertical className="h-5 w-5" />
+          </div>
         </div>
       </div>
     ),
@@ -202,7 +253,10 @@ const ANDROID_SAMSUNG_STEPS: StepDef[] = [
     text: "Натисніть «На головний екран» і підтвердіть. Після цього відкривайте LEVADA з іконки на екрані телефону.",
     icon: Smartphone,
     visual: (
-      <MenuMock items={["Закладки", "На головний екран", "Скасувати"]} highlight="На головний екран" />
+      <MenuMock
+        items={["Закладки", "На головний екран", "Скасувати"]}
+        highlight="На головний екран"
+      />
     ),
   },
 ];
@@ -220,6 +274,16 @@ function StepList({ steps }: { steps: StepDef[] }) {
   );
 }
 
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="mb-3 flex items-center gap-2 text-xs font-bold tracking-[0.14em] text-zinc-500 uppercase">
+      <span className="h-px flex-1 bg-gradient-to-r from-white/0 to-white/15" />
+      <span>{children}</span>
+      <span className="h-px flex-1 bg-gradient-to-l from-white/0 to-white/15" />
+    </p>
+  );
+}
+
 export function PlatformInstallGuide({
   platform,
   onClose,
@@ -230,47 +294,48 @@ export function PlatformInstallGuide({
   const isIos = platform === "ios";
 
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col bg-[#F4F1EA]">
-      <header className="shrink-0 border-b border-[#E5DFD3] bg-white/90 px-4 py-3 backdrop-blur-md pt-[max(0.75rem,env(safe-area-inset-top))]">
+    <div className="fixed inset-0 z-[100] flex flex-col bg-zinc-950 text-zinc-100">
+      <div
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(39,103,73,0.18),_transparent_55%),radial-gradient(ellipse_at_bottom_right,_rgba(192,86,33,0.12),_transparent_50%)]"
+        aria-hidden
+      />
+
+      <header className="relative shrink-0 border-b border-white/[0.08] bg-zinc-950/80 px-4 py-3 backdrop-blur-2xl pt-[max(0.75rem,env(safe-area-inset-top))]">
         <div className="mx-auto flex w-full max-w-lg items-center gap-3">
           <button
             type="button"
             onClick={onClose}
-            className="flex h-10 w-10 items-center justify-center rounded-full text-zinc-600 hover:bg-zinc-100"
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-zinc-300 transition-colors hover:bg-white/10"
             aria-label="Назад"
           >
             <ChevronLeft className="h-5 w-5" />
           </button>
-          <div className="min-w-0 flex-1">
-            <h2 className="truncate text-lg font-extrabold text-zinc-900">
-              {isIos ? "iPhone (Safari)" : "Android"}
-            </h2>
-            <p className="text-xs text-zinc-500">
-              {isIos ? "3 кроки" : "Оберіть свій браузер"}
-            </p>
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <AppIcon size="sm" />
+            <div className="min-w-0">
+              <h2 className="truncate text-lg font-extrabold tracking-tight text-zinc-50">
+                {isIos ? "iPhone · Safari" : "Android"}
+              </h2>
+              <p className="text-xs text-zinc-500">
+                {isIos ? "3 кроки до встановлення" : "Оберіть свій браузер"}
+              </p>
+            </div>
           </div>
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5">
+      <div className="relative min-h-0 flex-1 overflow-y-auto px-4 py-5">
         <div className="mx-auto w-full max-w-lg space-y-6">
           {isIos ? (
             <StepList steps={IOS_STEPS} />
           ) : (
             <>
               <section>
-                <p className="mb-3 text-sm font-bold text-zinc-800">Google Chrome</p>
+                <SectionLabel>Google Chrome</SectionLabel>
                 <StepList steps={ANDROID_CHROME_STEPS} />
               </section>
 
-              <div className="relative py-2">
-                <div className="absolute inset-0 flex items-center" aria-hidden>
-                  <div className="w-full border-t border-[#E5DFD3]" />
-                </div>
-                <p className="relative mx-auto w-fit bg-[#F4F1EA] px-3 text-xs font-semibold text-zinc-400 uppercase">
-                  або Samsung Internet
-                </p>
-              </div>
+              <SectionLabel>або Samsung Internet</SectionLabel>
 
               <section>
                 <StepList steps={ANDROID_SAMSUNG_STEPS} />
@@ -280,11 +345,11 @@ export function PlatformInstallGuide({
         </div>
       </div>
 
-      <footer className="shrink-0 border-t border-[#E5DFD3] bg-white/95 px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-md">
+      <footer className="relative shrink-0 border-t border-white/[0.08] bg-zinc-950/90 px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-2xl">
         <div className="mx-auto w-full max-w-lg">
           <Button
             type="button"
-            className="h-12 w-full rounded-2xl bg-[#276749] text-base font-semibold text-white hover:bg-[#1f5239]"
+            className="h-12 w-full rounded-2xl bg-gradient-to-r from-[#276749] to-[#1f5239] text-base font-semibold text-white shadow-lg shadow-[#276749]/25 hover:from-[#2d7a54] hover:to-[#245f42]"
             onClick={onDone}
           >
             Зрозуміло, продовжити
