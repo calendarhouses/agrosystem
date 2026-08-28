@@ -4,10 +4,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Sprout } from "lucide-react";
 
-import { AndroidInstallGuide } from "@/components/pwa/android-install-guide";
-import { IosInstallGuide } from "@/components/pwa/ios-install-guide";
+import {
+  PlatformInstallGuide,
+  type InstallGuidePlatform,
+} from "@/components/pwa/platform-install-guide";
 import { Button } from "@/components/ui/button";
-import { tryInstallWithWait } from "@/lib/pwa-install-prompt";
 import {
   APP_BRAND_NAME,
   isMobileUserAgent,
@@ -21,9 +22,9 @@ export function InstallPrompt() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextPath = searchParams.get("next") || "/login";
-  const [iosGuideOpen, setIosGuideOpen] = useState(false);
-  const [androidGuideOpen, setAndroidGuideOpen] = useState(false);
-  const [androidTrying, setAndroidTrying] = useState(false);
+  const [guidePlatform, setGuidePlatform] = useState<InstallGuidePlatform | null>(
+    null
+  );
 
   useEffect(() => {
     if (!isMobileUserAgent()) {
@@ -44,25 +45,6 @@ export function InstallPrompt() {
     goNext();
   }
 
-  function onInstallIos() {
-    setIosGuideOpen(true);
-  }
-
-  async function onInstallAndroid() {
-    setAndroidTrying(true);
-    try {
-      const outcome = await tryInstallWithWait(4500);
-      if (outcome === "accepted") {
-        markInstallPromptCompleted();
-        goNext();
-        return;
-      }
-    } finally {
-      setAndroidTrying(false);
-    }
-    setAndroidGuideOpen(true);
-  }
-
   function onGuideDone() {
     markInstallPromptCompleted();
     goNext();
@@ -70,72 +52,65 @@ export function InstallPrompt() {
 
   return (
     <>
-      <IosInstallGuide
-        open={iosGuideOpen}
-        onClose={() => setIosGuideOpen(false)}
+      <PlatformInstallGuide
+        platform={guidePlatform}
+        onClose={() => setGuidePlatform(null)}
         onDone={onGuideDone}
       />
 
-      <AndroidInstallGuide
-        open={androidGuideOpen}
-        onClose={() => setAndroidGuideOpen(false)}
-        onDone={onGuideDone}
-      />
+      {guidePlatform ? null : (
+        <div className="relative flex min-h-dvh flex-col overflow-hidden bg-[#F4F1EA] text-zinc-900">
+          <div
+            className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(39,103,73,0.14),_transparent_55%),radial-gradient(ellipse_at_bottom_right,_rgba(192,86,33,0.1),_transparent_50%)]"
+            aria-hidden
+          />
 
-      <div className="relative flex min-h-dvh flex-col overflow-hidden bg-[#F4F1EA] text-zinc-900">
-        <div
-          className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(39,103,73,0.14),_transparent_55%),radial-gradient(ellipse_at_bottom_right,_rgba(192,86,33,0.1),_transparent_50%)]"
-          aria-hidden
-        />
-
-        <div className="relative mx-auto flex w-full max-w-lg flex-1 flex-col px-5 pb-8 pt-[max(2.5rem,env(safe-area-inset-top))]">
-          <div className="flex flex-col items-center text-center">
-            <div className="flex h-20 w-20 items-center justify-center rounded-[1.75rem] bg-gradient-to-br from-[#276749] to-[#1f5239] text-white shadow-xl shadow-[#276749]/25">
-              <Sprout className="h-10 w-10" strokeWidth={1.75} />
+          <div className="relative mx-auto flex w-full max-w-lg flex-1 flex-col px-5 pb-8 pt-[max(2.5rem,env(safe-area-inset-top))]">
+            <div className="flex flex-col items-center text-center">
+              <div className="flex h-20 w-20 items-center justify-center rounded-[1.75rem] bg-gradient-to-br from-[#276749] to-[#1f5239] text-white shadow-xl shadow-[#276749]/25">
+                <Sprout className="h-10 w-10" strokeWidth={1.75} />
+              </div>
+              <h1 className="mt-6 text-2xl font-extrabold tracking-tight sm:text-3xl">
+                Встановіть {APP_BRAND_NAME}
+              </h1>
+              <p className="mt-3 max-w-sm text-sm leading-relaxed text-zinc-600">
+                Встановіть застосунок на телефон — швидкий доступ до полів, техніки
+                та складу без адресного рядка браузера.
+              </p>
             </div>
-            <h1 className="mt-6 text-2xl font-extrabold tracking-tight sm:text-3xl">
-              Встановіть {APP_BRAND_NAME}
-            </h1>
-            <p className="mt-3 max-w-sm text-sm leading-relaxed text-zinc-600">
-              Встановіть застосунок на телефон — швидкий доступ до полів, техніки
-              та складу без адресного рядка браузера.
-            </p>
-          </div>
 
-          <div className="mt-auto space-y-3 pt-10">
-            <Button
-              type="button"
-              size="lg"
-              className="h-12 w-full rounded-2xl bg-[#276749] text-base font-semibold text-white hover:bg-[#1f5239]"
-              disabled={androidTrying}
-              onClick={onInstallIos}
-            >
-              Встановити для iOS
-            </Button>
+            <div className="mt-auto space-y-3 pt-10">
+              <Button
+                type="button"
+                size="lg"
+                className="h-12 w-full rounded-2xl bg-[#276749] text-base font-semibold text-white hover:bg-[#1f5239]"
+                onClick={() => setGuidePlatform("ios")}
+              >
+                Інструкція для iPhone
+              </Button>
 
-            <Button
-              type="button"
-              size="lg"
-              className="h-12 w-full rounded-2xl bg-[#276749] text-base font-semibold text-white hover:bg-[#1f5239]"
-              disabled={androidTrying}
-              onClick={() => void onInstallAndroid()}
-            >
-              {androidTrying ? "Перевіряємо…" : "Встановити для Android"}
-            </Button>
+              <Button
+                type="button"
+                size="lg"
+                className="h-12 w-full rounded-2xl bg-[#276749] text-base font-semibold text-white hover:bg-[#1f5239]"
+                onClick={() => setGuidePlatform("android")}
+              >
+                Інструкція для Android
+              </Button>
 
-            <Button
-              type="button"
-              size="lg"
-              variant="secondary"
-              className="h-12 w-full rounded-2xl border border-[#E5DFD3] bg-zinc-200/80 text-base font-semibold text-zinc-700 hover:bg-zinc-300/80"
-              disabled={androidTrying}
-              onClick={onSkip}
-            >
-              Пропустити зараз
-            </Button>
+              <Button
+                type="button"
+                size="lg"
+                variant="secondary"
+                className="h-12 w-full rounded-2xl border border-[#E5DFD3] bg-zinc-200/80 text-base font-semibold text-zinc-700 hover:bg-zinc-300/80"
+                onClick={onSkip}
+              >
+                Пропустити зараз
+              </Button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </>
   );
 }
