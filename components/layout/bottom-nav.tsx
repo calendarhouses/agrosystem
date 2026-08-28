@@ -43,13 +43,9 @@ export function BottomNav() {
           "fixed inset-x-0 bottom-0 z-50 md:hidden",
           "border-t border-zinc-700/80 bg-zinc-900 text-zinc-400"
         )}
-        style={{
-          paddingBottom:
-            "max(var(--safe-bottom), env(safe-area-inset-bottom, 0px))",
-        }}
         aria-label="Головна навігація"
       >
-        <div className="mx-auto flex h-14 max-w-lg items-stretch justify-around px-1">
+        <div className="mx-auto flex h-16 max-w-lg items-center justify-around px-0.5 pt-1">
           {BOTTOM_NAV_ITEMS.map((item) => {
             const Icon = item.icon;
             const active = isNavItemActive(pathname, item.href);
@@ -60,7 +56,7 @@ export function BottomNav() {
                 aria-label={item.label}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1 transition-colors",
+                  "flex min-h-11 min-w-0 flex-1 flex-col items-center justify-end gap-1 rounded-xl px-0.5 pb-0.5 transition-colors",
                   active
                     ? "text-[#E8A87C]"
                     : "text-zinc-500 active:text-zinc-200"
@@ -68,13 +64,13 @@ export function BottomNav() {
               >
                 <span
                   className={cn(
-                    "flex h-8 w-8 items-center justify-center rounded-xl transition-colors",
+                    "flex h-10 w-10 items-center justify-center rounded-2xl transition-colors",
                     active && "bg-[#C05621]/20 text-[#E8A87C]"
                   )}
                 >
-                  <Icon className="h-5 w-5" strokeWidth={active ? 2.25 : 1.75} />
+                  <Icon className="h-6 w-6" strokeWidth={active ? 2.25 : 1.75} />
                 </span>
-                <span className="max-w-full truncate text-[10px] font-semibold leading-none">
+                <span className="max-w-full truncate text-[11px] font-semibold leading-none">
                   {item.label}
                 </span>
               </Link>
@@ -87,7 +83,7 @@ export function BottomNav() {
             aria-expanded={moreOpen}
             onClick={() => setMoreOpen(true)}
             className={cn(
-              "flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1 transition-colors",
+              "flex min-h-11 min-w-0 flex-1 flex-col items-center justify-end gap-1 rounded-xl px-0.5 pb-0.5 transition-colors",
               moreActive || moreOpen
                 ? "text-[#E8A87C]"
                 : "text-zinc-500 active:text-zinc-200"
@@ -95,20 +91,27 @@ export function BottomNav() {
           >
             <span
               className={cn(
-                "flex h-8 w-8 items-center justify-center rounded-xl transition-colors",
+                "flex h-10 w-10 items-center justify-center rounded-2xl transition-colors",
                 (moreActive || moreOpen) && "bg-[#C05621]/20 text-[#E8A87C]"
               )}
             >
               <MORE_NAV_TRIGGER.icon
-                className="h-5 w-5"
+                className="h-6 w-6"
                 strokeWidth={moreActive || moreOpen ? 2.25 : 1.75}
               />
             </span>
-            <span className="max-w-full truncate text-[10px] font-semibold leading-none">
+            <span className="max-w-full truncate text-[11px] font-semibold leading-none">
               {MORE_NAV_TRIGGER.label}
             </span>
           </button>
         </div>
+        <div
+          className="bg-zinc-900"
+          style={{
+            height: "max(var(--safe-bottom), env(safe-area-inset-bottom, 0px))",
+          }}
+          aria-hidden
+        />
       </nav>
 
       <Sheet open={moreOpen} onOpenChange={setMoreOpen}>

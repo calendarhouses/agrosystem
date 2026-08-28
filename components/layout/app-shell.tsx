@@ -57,13 +57,13 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="h-full overflow-hidden overscroll-none bg-zinc-900 text-zinc-900 md:bg-zinc-100">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden overscroll-none bg-zinc-100 text-zinc-900">
       <Sidebar collapsed={collapsed} onToggleCollapsed={toggleCollapsed} />
       <BottomNav />
 
       <div
         className={cn(
-          "relative flex h-full flex-col overflow-hidden overscroll-none transition-[padding] duration-200 ease-out",
+          "relative flex min-h-0 flex-1 flex-col overflow-hidden overscroll-none transition-[padding] duration-200 ease-out",
           "pb-[var(--app-bottom-inset)] md:pb-0",
           collapsed ? "md:pl-16" : "md:pl-[250px]"
         )}
@@ -71,8 +71,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         <TopBar />
         <div
           className={cn(
-            "relative min-h-0 flex-1 overflow-hidden overscroll-none bg-zinc-100",
-            isCommandCenter && "h-full"
+            "relative min-h-0 flex-1 overflow-hidden overscroll-none",
+            isCommandCenter && "min-h-0"
           )}
         >
           {children}

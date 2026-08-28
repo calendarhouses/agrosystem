@@ -7,7 +7,10 @@ import { lockAppViewport } from "@/lib/lock-app-viewport";
 
 /** Рання реєстрація SW і фіксація viewport (без гумового скролу). */
 export function PwaBootstrap() {
-  useLayoutEffect(() => lockAppViewport(), []);
+  useLayoutEffect(() => {
+    const unlock = lockAppViewport();
+    return unlock;
+  }, []);
   useEffect(() => {
     bootstrapPwaInstallCapture();
   }, []);

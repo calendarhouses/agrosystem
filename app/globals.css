@@ -60,7 +60,7 @@ body {
   --agro-green: #276749;
   --fuel-gold: #d69e2e;
 
-  --bottom-nav-height: 3.5rem;
+  --bottom-nav-height: 4rem;
   --app-height: 100dvh;
   --vv-height: 100dvh;
   --app-vv-offset-top: 0px;
@@ -111,18 +111,21 @@ body {
   }
   html {
     height: 100%;
-    height: -webkit-fill-available;
+    height: var(--app-height, 100dvh);
+    min-height: 100dvh;
+    min-height: -webkit-fill-available;
     overflow: hidden;
     overscroll-behavior: none;
     overscroll-behavior-x: none;
     overscroll-behavior-y: none;
     touch-action: manipulation;
-    background: #18181b;
+    background: var(--background);
     font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   }
   body {
     height: 100%;
-    min-height: 100%;
+    height: var(--app-height, 100dvh);
+    min-height: 100dvh;
     min-height: -webkit-fill-available;
     margin: 0;
     overflow: hidden;
@@ -130,7 +133,7 @@ body {
     overscroll-behavior-x: none;
     overscroll-behavior-y: none;
     touch-action: manipulation;
-    background: #18181b;
+    background: var(--background);
     color: var(--foreground);
   }
 }
