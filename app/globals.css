@@ -62,8 +62,9 @@ body {
 
   /* Колір усього нижнього chrome: меню, safe-area, кінець градієнта шторки */
   --nav-bg: #18181b;
-  /* Повна висота меню = контент + реальний safe-area пристрою (--safe-bottom) */
-  --bottom-nav-height: 78px;
+  /* Висота рядка кнопок (без safe-area) — для позиціонування шторок і float UI */
+  --bottom-nav-content: 56px;
+  --bottom-nav-height: calc(var(--bottom-nav-content) + var(--safe-bottom));
   --fields-peek-height: 4.75rem;
   --mobile-nav-offset: calc(var(--bottom-nav-height) + var(--safe-bottom));
   --map-float-bottom: calc(

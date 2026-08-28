@@ -19,7 +19,7 @@ import { ROLE_LABEL_UK, type AppActor } from "@/lib/app-actor-shared";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEM_CLASS =
-  "flex min-w-0 flex-1 flex-col items-center gap-[5px] rounded-[14px] py-1.5 min-h-11 transition-transform duration-200";
+  "flex min-w-0 flex-1 flex-col items-center gap-[5px] rounded-[14px] pb-0.5 pt-1 transition-transform duration-200";
 const NAV_ICON_WRAP_CLASS =
   "flex h-8 w-10 items-center justify-center rounded-xl transition-colors duration-200";
 const NAV_TEXT_CLASS =
@@ -38,13 +38,8 @@ function BottomNavBar({
 }) {
   return (
     <nav
-      className="fixed inset-x-0 bottom-0 z-[100] flex items-start justify-around px-1 md:hidden"
-      style={{
-        height: "calc(var(--bottom-nav-height) + var(--safe-bottom))",
-        paddingTop: "10px",
-        paddingBottom: "calc(12px + var(--safe-bottom))",
-        background: "var(--nav-bg)",
-      }}
+      className="fixed inset-x-0 bottom-0 z-[100] flex items-end justify-around px-1 pt-1.5 pb-[var(--safe-bottom)] md:hidden"
+      style={{ background: "var(--nav-bg)" }}
       aria-label="Головна навігація"
     >
       {BOTTOM_NAV_ITEMS.map((item) => {
