@@ -66,10 +66,9 @@ body {
   --bottom-nav-content: 56px;
   --bottom-nav-height: calc(var(--bottom-nav-content) + var(--safe-bottom));
   --fields-peek-height: 4.75rem;
-  --mobile-nav-offset: calc(var(--bottom-nav-height) + var(--safe-bottom));
+  --mobile-nav-offset: var(--bottom-nav-height);
   --map-float-bottom: calc(
-    var(--bottom-nav-height) + var(--safe-bottom) + var(--fields-peek-height) +
-      1rem
+    var(--bottom-nav-height) + var(--fields-peek-height) + 1rem
   );
   --app-height: 100dvh;
   --vv-height: 100dvh;
@@ -149,7 +148,7 @@ body {
 }
 
 html[data-app-nav="1"] {
-  --app-bottom-inset: calc(var(--bottom-nav-height) + var(--safe-bottom));
+  --app-bottom-inset: var(--bottom-nav-height);
 }
 
 /* Меню, html і body одного кольору — під навігацією не може лишитись іншої смуги */
@@ -195,7 +194,7 @@ html[data-app-nav="1"] {
 }
 
 @utility safe-bottom-nav {
-  padding-bottom: calc(var(--bottom-nav-height) + var(--safe-bottom));
+  padding-bottom: var(--bottom-nav-height);
 }
 
 @utility app-sheet-bottom {

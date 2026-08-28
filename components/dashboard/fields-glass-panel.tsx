@@ -554,15 +554,6 @@ export function FieldsGlassPanel({
                   </span>
                   <ChevronUp className="h-4 w-4 shrink-0 text-zinc-400" />
                 </span>
-                {/* Перехід шторки в колір меню живе в межах самої шторки, тому не накриває текст */}
-                <span
-                  aria-hidden
-                  className="pointer-events-none absolute inset-x-0 bottom-0 h-3.5"
-                  style={{
-                    background:
-                      "linear-gradient(to bottom, rgba(24,24,27,0) 0%, rgba(24,24,27,0.18) 55%, var(--nav-bg) 100%)",
-                  }}
-                />
               </button>
             </div>
 

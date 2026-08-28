@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
 import { LogOut } from "lucide-react";
 
 import { logoutAction } from "@/app/login/actions";
@@ -38,7 +37,7 @@ function BottomNavBar({
 }) {
   return (
     <nav
-      className="fixed inset-x-0 bottom-0 z-[100] flex items-end justify-around px-1 pt-1.5 pb-[var(--safe-bottom)] md:hidden"
+      className="relative z-[100] flex shrink-0 items-end justify-around px-1 pt-1.5 pb-[env(safe-area-inset-bottom,0px)] md:hidden"
       style={{ background: "var(--nav-bg)" }}
       aria-label="Головна навігація"
     >
@@ -101,10 +100,8 @@ export function BottomNav() {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
   const [me, setMe] = useState<AppActor | null>(null);
-  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
     void getMyProfileAction().then(setMe);
   }, []);
 
@@ -112,7 +109,7 @@ export function BottomNav() {
     isNavItemActive(pathname, item.href)
   );
 
-  const chrome = (
+  return (
     <>
       <BottomNavBar
         pathname={pathname}
@@ -193,7 +190,4 @@ export function BottomNav() {
       </MobileBottomDrawer>
     </>
   );
-
-  if (!mounted) return null;
-  return createPortal(chrome, document.body);
 }
