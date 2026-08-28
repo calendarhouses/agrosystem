@@ -60,7 +60,7 @@ export function MobileBottomDrawer({
             role="dialog"
             aria-modal="true"
             className={cn(
-              "fixed inset-x-0 z-[110] flex max-h-[min(88dvh,calc(var(--app-height,100dvh)-var(--app-bottom-inset)))] flex-col overflow-hidden rounded-t-3xl border border-b-0 border-zinc-800 bg-zinc-950 shadow-[0_-24px_64px_-12px_rgba(0,0,0,0.65)]",
+              "fixed inset-x-0 z-[110] flex max-h-[min(88dvh,calc(100dvh-var(--app-bottom-inset)))] flex-col overflow-hidden rounded-t-3xl border border-b-0 border-zinc-800 bg-zinc-950 shadow-[0_-24px_64px_-12px_rgba(0,0,0,0.65)]",
               className
             )}
             style={{ bottom: navOffset }}

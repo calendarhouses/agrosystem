@@ -65,10 +65,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="overflow-hidden bg-zinc-100 font-sans text-zinc-900">
         <PwaBootstrap />
-        <div
-          id="app-root"
-          className="h-[var(--app-height,100dvh)] min-h-[100dvh] overflow-hidden"
-        >
+        <div id="app-root" className="h-dvh min-h-0 overflow-hidden">
           <AppShell>{children}</AppShell>
         </div>
         <Toaster

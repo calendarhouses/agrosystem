@@ -1,24 +1,13 @@
 "use client";
 
-import { usePathname } from "next/navigation";
 import { useEffect, useLayoutEffect } from "react";
 
 import { bootstrapPwaInstallCapture } from "@/lib/pwa-install-prompt";
-import { initAppViewport, lockAppViewport } from "@/lib/lock-app-viewport";
+import { initAppViewport } from "@/lib/lock-app-viewport";
 
-const AUTH_PATHS = new Set(["/login", "/install"]);
-
-/** Рання реєстрація SW і фіксація viewport (без гумового скролу). */
+/** Рання реєстрація SW і safe-area для PWA. */
 export function PwaBootstrap() {
-  const pathname = usePathname();
-  const isAuthScreen = AUTH_PATHS.has(pathname);
-
-  useLayoutEffect(() => {
-    if (isAuthScreen) {
-      return initAppViewport();
-    }
-    return lockAppViewport();
-  }, [isAuthScreen]);
+  useLayoutEffect(() => initAppViewport(), []);
 
   useEffect(() => {
     const run = () => bootstrapPwaInstallCapture();

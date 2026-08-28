@@ -76,8 +76,8 @@ body {
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --app-top-inset: var(--safe-top);
-  --app-bottom-inset: var(--safe-bottom);
-  --app-sheet-max: min(88dvh, calc(var(--app-height) - var(--app-bottom-inset) - 0.5rem));
+  --app-bottom-inset: 0px;
+  --app-sheet-max: min(88dvh, calc(100dvh - var(--app-bottom-inset) - 0.5rem));
 
   --background: #f4f4f5;
   --foreground: #18181b;
@@ -120,7 +120,6 @@ body {
   }
   html {
     height: 100%;
-    height: var(--app-height, 100dvh);
     min-height: 100dvh;
     min-height: -webkit-fill-available;
     overflow: hidden;
@@ -133,7 +132,6 @@ body {
   }
   body {
     height: 100%;
-    height: var(--app-height, 100dvh);
     min-height: 100dvh;
     min-height: -webkit-fill-available;
     margin: 0;

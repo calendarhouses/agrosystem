@@ -63,6 +63,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div
         className={cn(
           "relative flex min-h-0 flex-1 flex-col overflow-hidden overscroll-none transition-[padding] duration-200 ease-out",
+          !isCommandCenter && "pb-[var(--bottom-nav-height)] md:pb-0",
           collapsed ? "md:pl-16" : "md:pl-[250px]"
         )}
       >

@@ -1,32 +1,4 @@
-/** Фіксує висоту PWA під visualViewport і глушить гумовий скрол iOS/Android. */
-
-const PAN_SURFACE =
-  "canvas, .mapboxgl-map, .mapboxgl-canvas-container, [data-allow-pan], input, textarea, select, button, a, label, [contenteditable='true'], [data-vaul-drawer], [data-vaul-overlay], [data-vaul-handle], [data-slot='drawer-content'], [data-slot='drawer-overlay'], [data-slot='drawer-handle']";
-
-function isPanSurface(target: EventTarget | null): boolean {
-  return target instanceof Element && Boolean(target.closest(PAN_SURFACE));
-}
-
-function closestScrollable(start: EventTarget | null): HTMLElement | null {
-  let el: Element | null = start instanceof Element ? start : null;
-  while (el && el !== document.documentElement) {
-    if (el instanceof HTMLElement) {
-      if (el.dataset.allowPan === "true") return el;
-      const style = window.getComputedStyle(el);
-      const oy = style.overflowY;
-      const ox = style.overflowX;
-      const yScroll =
-        (oy === "auto" || oy === "scroll" || oy === "overlay") &&
-        el.scrollHeight > el.clientHeight + 1;
-      const xScroll =
-        (ox === "auto" || ox === "scroll" || ox === "overlay") &&
-        el.scrollWidth > el.clientWidth + 1;
-      if (yScroll || xScroll) return el;
-    }
-    el = el.parentElement;
-  }
-  return null;
-}
+/** PWA viewport: safe-area для iOS/Android. Без innerHeight — він ламає низ екрана в standalone. */
 
 function measureSafeArea() {
   const probe = document.createElement("div");
@@ -52,100 +24,22 @@ function measureSafeArea() {
   root.style.setProperty("--safe-bottom", `${Math.round(bottom)}px`);
 }
 
-function applyAppHeight() {
-  const vv = window.visualViewport;
-  const inner = window.innerHeight;
-  const vvH = Math.round(vv?.height ?? inner);
-  const offsetTop = Math.round(vv?.offsetTop ?? 0);
-  const keyboardOpen = inner - vvH > 80;
-  const root = document.documentElement;
-  root.style.setProperty("--app-height", `${inner}px`);
-  root.style.setProperty("--vv-height", `${vvH}px`);
-  root.style.setProperty("--app-vv-offset-top", `${offsetTop}px`);
-  root.classList.toggle("keyboard-open", keyboardOpen);
-}
-
-/** Легка ініціалізація без touch-lock (login / install). */
+/** Safe-area + 100dvh. Без touch-lock — він блокує Mapbox/vaul і вешає UI. */
 export function initAppViewport(): () => void {
   measureSafeArea();
-  applyAppHeight();
 
-  let raf = 0;
-  const scheduleHeightSync = () => {
-    if (raf) return;
-    raf = window.requestAnimationFrame(() => {
-      raf = 0;
-      applyAppHeight();
-    });
+  const onOrientation = () => {
+    window.setTimeout(measureSafeArea, 120);
   };
 
-  const vv = window.visualViewport;
-  vv?.addEventListener("resize", scheduleHeightSync);
-  window.addEventListener("resize", scheduleHeightSync);
-  window.addEventListener("orientationchange", () => {
-    measureSafeArea();
-    scheduleHeightSync();
-  });
+  window.addEventListener("orientationchange", onOrientation);
 
   return () => {
-    if (raf) window.cancelAnimationFrame(raf);
-    vv?.removeEventListener("resize", scheduleHeightSync);
-    window.removeEventListener("resize", scheduleHeightSync);
-    window.removeEventListener("orientationchange", scheduleHeightSync);
+    window.removeEventListener("orientationchange", onOrientation);
   };
 }
 
+/** @deprecated alias — те саме, без агресивного touch-lock */
 export function lockAppViewport(): () => void {
-  const unlockHeight = initAppViewport();
-
-  let startX = 0;
-  let startY = 0;
-
-  function onTouchStart(event: TouchEvent) {
-    if (event.touches.length !== 1) return;
-    startX = event.touches[0].clientX;
-    startY = event.touches[0].clientY;
-  }
-
-  function onTouchMove(event: TouchEvent) {
-    if (event.touches.length !== 1) return;
-    if (isPanSurface(event.target)) return;
-
-    const scrollable = closestScrollable(event.target);
-    if (!scrollable) {
-      event.preventDefault();
-      return;
-    }
-
-    const dx = event.touches[0].clientX - startX;
-    const dy = event.touches[0].clientY - startY;
-    const canY = scrollable.scrollHeight > scrollable.clientHeight + 1;
-    const canX = scrollable.scrollWidth > scrollable.clientWidth + 1;
-
-    if (Math.abs(dx) > Math.abs(dy) + 2 && !canX) {
-      event.preventDefault();
-      return;
-    }
-
-    if (Math.abs(dy) >= Math.abs(dx) && canY) {
-      const atTop = scrollable.scrollTop <= 0;
-      const atBottom =
-        scrollable.scrollTop + scrollable.clientHeight >=
-        scrollable.scrollHeight - 1;
-      if ((atTop && dy > 0) || (atBottom && dy < 0)) {
-        event.preventDefault();
-      }
-    } else if (!canY && !canX) {
-      event.preventDefault();
-    }
-  }
-
-  document.addEventListener("touchstart", onTouchStart, { passive: true });
-  document.addEventListener("touchmove", onTouchMove, { passive: false });
-
-  return () => {
-    unlockHeight();
-    document.removeEventListener("touchstart", onTouchStart);
-    document.removeEventListener("touchmove", onTouchMove);
-  };
+  return initAppViewport();
 }

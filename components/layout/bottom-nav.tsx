@@ -37,7 +37,7 @@ function BottomNavBar({
 }) {
   return (
     <nav
-      className="relative z-[100] flex shrink-0 items-end justify-around px-1 pt-1.5 pb-[env(safe-area-inset-bottom,0px)] md:hidden"
+      className="fixed inset-x-0 bottom-0 z-[100] flex items-end justify-around px-1 pt-1.5 pb-[var(--safe-bottom)] md:hidden"
       style={{ background: "var(--nav-bg)" }}
       aria-label="Головна навігація"
     >
