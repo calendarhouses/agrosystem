@@ -32,16 +32,18 @@ function BottomNavBar({
   return (
     <nav
       className={cn(
-        "fixed bottom-0 left-0 right-0 z-[100] md:hidden",
-        "border-t border-zinc-700/80 bg-zinc-900 text-zinc-400",
-        "pb-[max(env(safe-area-inset-bottom),16px)]"
+        "fixed inset-x-0 bottom-0 z-[100] md:hidden",
+        "bg-zinc-950 text-zinc-400",
+        "pb-[var(--nav-safe-pb)]"
       )}
-      style={{
-        boxShadow: "0 0 0 max(env(safe-area-inset-bottom), 16px) #18181b",
-      }}
       aria-label="Головна навігація"
     >
-      <div className="mx-auto flex h-16 max-w-lg items-center justify-around px-0.5">
+      {/* М'який перехід від світлого контенту (шторка полів) до чорного меню */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 -top-7 h-7 bg-gradient-to-b from-zinc-950/0 via-zinc-950/55 to-zinc-950"
+      />
+      <div className="relative mx-auto flex h-16 max-w-lg items-stretch justify-around px-1">
         {BOTTOM_NAV_ITEMS.map((item) => {
           const Icon = item.icon;
           const active = isNavItemActive(pathname, item.href);
@@ -52,21 +54,27 @@ function BottomNavBar({
               aria-label={item.label}
               aria-current={active ? "page" : undefined}
               className={cn(
-                "flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-0.5 transition-colors",
-                active
-                  ? "text-[#E8A87C]"
-                  : "text-zinc-500 active:text-zinc-200"
+                "group flex min-w-0 flex-1 flex-col items-center justify-center gap-1 px-0.5",
+                active ? "text-[#E8A87C]" : "text-zinc-500 active:text-zinc-300"
               )}
             >
               <span
                 className={cn(
-                  "flex h-10 w-10 items-center justify-center rounded-2xl transition-colors",
-                  active && "bg-[#C05621]/20 text-[#E8A87C]"
+                  "flex h-8 w-14 items-center justify-center rounded-full transition-colors duration-200",
+                  active ? "bg-[#C05621]/18" : "bg-transparent"
                 )}
               >
-                <Icon className="h-6 w-6" strokeWidth={active ? 2.25 : 1.75} />
+                <Icon
+                  className="h-[22px] w-[22px]"
+                  strokeWidth={active ? 2.2 : 1.7}
+                />
               </span>
-              <span className="max-w-full truncate text-[11px] font-semibold leading-none">
+              <span
+                className={cn(
+                  "max-w-full truncate text-[10.5px] leading-none tracking-tight",
+                  active ? "font-bold" : "font-medium"
+                )}
+              >
                 {item.label}
               </span>
             </Link>
@@ -79,24 +87,29 @@ function BottomNavBar({
           aria-expanded={moreOpen}
           onClick={() => onMoreOpen(true)}
           className={cn(
-            "flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-0.5 transition-colors",
+            "flex min-w-0 flex-1 flex-col items-center justify-center gap-1 px-0.5",
             moreActive || moreOpen
               ? "text-[#E8A87C]"
-              : "text-zinc-500 active:text-zinc-200"
+              : "text-zinc-500 active:text-zinc-300"
           )}
         >
           <span
             className={cn(
-              "flex h-10 w-10 items-center justify-center rounded-2xl transition-colors",
-              (moreActive || moreOpen) && "bg-[#C05621]/20 text-[#E8A87C]"
+              "flex h-8 w-14 items-center justify-center rounded-full transition-colors duration-200",
+              moreActive || moreOpen ? "bg-[#C05621]/18" : "bg-transparent"
             )}
           >
             <MORE_NAV_TRIGGER.icon
-              className="h-6 w-6"
-              strokeWidth={moreActive || moreOpen ? 2.25 : 1.75}
+              className="h-[22px] w-[22px]"
+              strokeWidth={moreActive || moreOpen ? 2.2 : 1.7}
             />
           </span>
-          <span className="max-w-full truncate text-[11px] font-semibold leading-none">
+          <span
+            className={cn(
+              "max-w-full truncate text-[10.5px] leading-none tracking-tight",
+              moreActive || moreOpen ? "font-bold" : "font-medium"
+            )}
+          >
             {MORE_NAV_TRIGGER.label}
           </span>
         </button>

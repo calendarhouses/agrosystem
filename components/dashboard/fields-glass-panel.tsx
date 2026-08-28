@@ -514,17 +514,6 @@ export function FieldsGlassPanel({
 
       {isMobile ? (
         <>
-          <div
-            className="pointer-events-none fixed inset-x-0 z-[39] md:hidden"
-            style={{
-              bottom: 0,
-              height: "var(--app-bottom-inset)",
-            }}
-            aria-hidden
-          >
-            <div className="h-full bg-gradient-to-b from-[#F4F1EA]/0 via-zinc-900/35 to-zinc-900" />
-          </div>
-
           <Drawer
             open={mobileExpanded}
             onOpenChange={onMobileExpandedChange}
@@ -544,27 +533,27 @@ export function FieldsGlassPanel({
                 aria-label="Відкрити список полів"
                 onClick={() => onMobileExpandedChange(true)}
                 className={cn(
-                  "pointer-events-auto mx-auto flex w-full max-w-lg flex-col overflow-hidden rounded-t-3xl",
-                  "border border-b-0 border-[#E5DFD3]/90 bg-[#F4F1EA]",
-                  "shadow-[0_-10px_40px_-12px_rgba(0,0,0,0.2)]"
+                  "pointer-events-auto mx-auto flex h-[var(--fields-peek-height)] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl",
+                  "border-x border-t border-[#E5DFD3]/70 bg-[#F4F1EA]",
+                  "shadow-[0_-14px_34px_-18px_rgba(0,0,0,0.45)]"
                 )}
               >
-                <span className="mx-auto mt-2.5 mb-1 block h-1 w-12 shrink-0 rounded-full bg-zinc-400/90" />
-                <span className="flex h-[calc(var(--fields-peek-height)-0.75rem)] items-center gap-3 px-4 pb-1">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#276749] text-white shadow-md shadow-[#276749]/25">
+                <span className="mx-auto mt-2 mb-1.5 block h-1 w-10 shrink-0 rounded-full bg-zinc-400/80" />
+                <span className="flex min-h-0 flex-1 items-center gap-3 px-4">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#276749] text-white shadow-sm shadow-[#276749]/25">
                     <MapIcon className="h-4 w-4" />
                   </span>
                   <span className="min-w-0 flex-1 text-left">
-                    <span className="block truncate text-[15px] font-bold tracking-tight text-zinc-900">
+                    <span className="block truncate text-[14px] font-bold leading-tight tracking-tight text-zinc-900">
                       Поля
                     </span>
-                    <span className="block truncate text-[11px] font-medium text-zinc-500">
+                    <span className="block truncate text-[11px] font-medium leading-tight text-zinc-500">
                       {loading
                         ? "Завантаження…"
                         : `${formatCountPlural(fields.length, ["ділянка", "ділянки", "ділянок"])} · ${totalHa.toLocaleString("uk-UA")} га`}
                     </span>
                   </span>
-                  <ChevronUp className="h-5 w-5 shrink-0 text-zinc-400" />
+                  <ChevronUp className="h-4 w-4 shrink-0 text-zinc-400" />
                 </span>
               </button>
             </div>

@@ -61,12 +61,13 @@ body {
   --fuel-gold: #d69e2e;
 
   --bottom-nav-height: 4rem;
-  --fields-peek-height: 3.25rem;
-  --mobile-nav-offset: calc(
-    var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px)
-  );
+  --fields-peek-height: 3.75rem;
+  /* Єдине джерело нижнього safe-area відступу: iOS home indicator або Android gesture bar */
+  --nav-safe-pb: max(env(safe-area-inset-bottom, 0px), 10px);
+  --mobile-nav-offset: calc(var(--bottom-nav-height) + var(--nav-safe-pb));
   --map-float-bottom: calc(
-    8.25rem + max(env(safe-area-inset-bottom, 0px), 16px)
+    var(--bottom-nav-height) + var(--fields-peek-height) + var(--nav-safe-pb) +
+      1rem
   );
   --app-height: 100dvh;
   --vv-height: 100dvh;
@@ -146,9 +147,7 @@ body {
 }
 
 html[data-app-nav="1"] {
-  --app-bottom-inset: calc(
-    var(--bottom-nav-height) + max(env(safe-area-inset-bottom, 0px), 16px)
-  );
+  --app-bottom-inset: calc(var(--bottom-nav-height) + var(--nav-safe-pb));
 }
 
 @media (max-width: 767px) {

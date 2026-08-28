@@ -407,6 +407,11 @@ function expandBounds(bounds: LngLatBoundsTuple): LngLatBoundsTuple {
   return [west, south, east, north];
 }
 
+/**
+ * Мобільна камера: масштаб підбирається під усі поля, але центром кадру
+ * лишається база (Іванівка). Зсув `offset` компенсує нижнє меню й шторку —
+ * поля стають по центру видимої смуги, а не під навігацією.
+ */
 function focusFieldsAroundAnchor(
   map: NonNullable<ReturnType<MapRef["getMap"]>>,
   bounds: LngLatBoundsTuple,
@@ -418,19 +423,27 @@ function focusFieldsAroundAnchor(
   const easing = (t: number) =>
     t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
-  const camera = map.cameraForBounds(
-    [
-      [west, south],
-      [east, north],
-    ],
-    { padding, maxZoom: options?.maxZoom ?? 14 }
-  );
-  if (!camera) return;
+  let fittedZoom: number | undefined;
+  try {
+    fittedZoom = map.cameraForBounds(
+      [
+        [west, south],
+        [east, north],
+      ],
+      { padding, maxZoom: options?.maxZoom ?? 14 }
+    )?.zoom;
+  } catch {
+    fittedZoom = undefined;
+  }
+  if (fittedZoom == null || !Number.isFinite(fittedZoom)) return;
+
+  const top = typeof padding === "number" ? padding : (padding.top ?? 0);
+  const bottom = typeof padding === "number" ? padding : (padding.bottom ?? 0);
 
   map.easeTo({
     center: [IVANIVKA_BOOT_VIEW.longitude, IVANIVKA_BOOT_VIEW.latitude],
-    zoom: camera.zoom,
-    padding,
+    zoom: fittedZoom,
+    offset: [0, -(bottom - top) / 2],
     duration,
     essential: true,
     easing,
@@ -1305,7 +1318,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       );
     }
 
-    const showBootOverlay = !mapReady || !viewSettled || wialonLoading;
+    const showBootOverlay = !mapReady || !viewSettled;
     const showTractor = zoom >= 7 && !focusMode;
     const tractorScale = tractorScaleFromZoom(zoom);
 
@@ -1314,7 +1327,6 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         ref={mapContainerRef}
         className={cn("relative h-full min-h-0 w-full bg-zinc-950", className)}
       >
-        <>
         <div className="absolute inset-0 overflow-hidden bg-zinc-950">
           <Map
             ref={mapRef}
@@ -1813,7 +1825,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
             onClose={() => setSelectedTractor(null)}
           />
         ) : null}
-        </>
+
         <CommandCenterMapBootOverlay
           visible={showBootOverlay}
           icon={MapIcon}
