@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils"
 function Drawer({
   shouldScaleBackground = false,
   handleOnly = true,
+  noBodyStyles = true,
   ...props
 }: React.ComponentProps<typeof DrawerPrimitive.Root>) {
   return (
@@ -15,6 +16,7 @@ function Drawer({
       data-slot="drawer"
       shouldScaleBackground={shouldScaleBackground}
       handleOnly={handleOnly}
+      noBodyStyles={noBodyStyles}
       {...props}
     />
   )
@@ -64,6 +66,7 @@ function DrawerContent({
         className={cn(
           "fixed inset-x-0 bottom-0 z-[150] flex h-[80vh] flex-col rounded-t-3xl border border-[#E5DFD3]/80 bg-[#F4F1EA] outline-none",
           "pb-[max(env(safe-area-inset-bottom),16px)]",
+          "data-[state=closed]:pointer-events-none data-[state=open]:pointer-events-auto",
           className
         )}
         {...props}

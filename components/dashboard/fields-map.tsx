@@ -830,12 +830,14 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       wialonGeofences.features,
     ]);
 
+    const didAutoFitRef = useRef(false);
     useEffect(() => {
-      if (!mapReady || wialonLoading) return;
+      if (!mapReady || wialonLoading || didAutoFitRef.current) return;
       const hasFields =
         wialonGeofences.features.length > 0 ||
         (savedFieldsGeoJson?.features?.length ?? 0) > 0;
       if (!hasFields) return;
+      didAutoFitRef.current = true;
       const timer = window.setTimeout(() => fitAllFields(), 200);
       return () => window.clearTimeout(timer);
     }, [
@@ -860,11 +862,12 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         if (timer) window.clearTimeout(timer);
         timer = window.setTimeout(() => fitAllFields(), 180);
       };
-      window.addEventListener("resize", refit);
-      window.addEventListener("orientationchange", refit);
+      const onViewportChange = () => refit();
+      window.addEventListener("orientationchange", onViewportChange);
+      window.visualViewport?.addEventListener("resize", onViewportChange);
       return () => {
-        window.removeEventListener("resize", refit);
-        window.removeEventListener("orientationchange", refit);
+        window.removeEventListener("orientationchange", onViewportChange);
+        window.visualViewport?.removeEventListener("resize", onViewportChange);
         window.clearTimeout(timer);
       };
     }, [fitAllFields, mapReady, wialonLoading]);

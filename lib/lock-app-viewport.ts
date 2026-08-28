@@ -1,7 +1,7 @@
 /** Фіксує висоту PWA під visualViewport і глушить гумовий скрол iOS/Android. */
 
 const PAN_SURFACE =
-  "canvas, .mapboxgl-map, .mapboxgl-canvas-container, [data-allow-pan], input, textarea, select, [contenteditable='true']";
+  "canvas, .mapboxgl-map, .mapboxgl-canvas-container, [data-allow-pan], input, textarea, select, [contenteditable='true'], [data-vaul-drawer], [data-vaul-overlay], [data-vaul-handle], [data-slot='drawer-content'], [data-slot='drawer-overlay'], [data-slot='drawer-handle']";
 
 function isPanSurface(target: EventTarget | null): boolean {
   return target instanceof Element && Boolean(target.closest(PAN_SURFACE));

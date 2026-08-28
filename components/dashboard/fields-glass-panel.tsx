@@ -14,6 +14,7 @@ import {
   Drawer,
   DrawerContent,
   DrawerHandle,
+  DrawerTitle,
   DrawerTrigger,
 } from "@/components/ui/drawer";
 import { useIsMobile } from "@/lib/use-mobile";
@@ -209,6 +210,7 @@ export function FieldsGlassPanel({
   onHover,
   onFitAll,
 }: FieldsGlassPanelProps) {
+  const isMobile = useIsMobile();
   const [query, setQuery] = useState("");
 
   const filtered = useMemo(() => {
@@ -510,54 +512,61 @@ export function FieldsGlassPanel({
         {list}
       </aside>
 
-      <Drawer
-        open={mobileExpanded}
-        onOpenChange={onMobileExpandedChange}
-        handleOnly
-        shouldScaleBackground={false}
-      >
-        <div className="pointer-events-none absolute bottom-[calc(4rem+max(env(safe-area-inset-bottom),16px))] left-0 right-0 z-40 md:hidden">
-          <DrawerTrigger asChild>
-            <button
-              type="button"
-              className={cn(
-                "pointer-events-auto mx-auto flex h-[var(--fields-peek-height)] w-full max-w-lg items-center gap-3 rounded-t-3xl px-4",
-                "border border-b-0 border-[#E5DFD3]/90 bg-[#F4F1EA]",
-                "shadow-[0_-10px_40px_-12px_rgba(0,0,0,0.2)]"
-              )}
-            >
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#276749] text-white shadow-md shadow-[#276749]/25">
-                <MapIcon className="h-4 w-4" />
-              </span>
-              <span className="min-w-0 flex-1 text-left">
-                <span className="block truncate text-[15px] font-bold tracking-tight text-zinc-900">
-                  Поля
-                </span>
-                <span className="block truncate text-[11px] font-medium text-zinc-500">
-                  {loading
-                    ? "Завантаження…"
-                    : `${formatCountPlural(fields.length, ["ділянка", "ділянки", "ділянок"])} · ${totalHa.toLocaleString("uk-UA")} га`}
-                </span>
-              </span>
-            </button>
-          </DrawerTrigger>
-        </div>
-
-        <DrawerContent className="border-[#E5DFD3]/90 bg-[#F4F1EA]">
-          <DrawerHandle />
+      {isMobile ? (
+        <Drawer
+          open={mobileExpanded}
+          onOpenChange={onMobileExpandedChange}
+          handleOnly
+          shouldScaleBackground={false}
+          noBodyStyles
+        >
           <div
-            className="flex min-h-0 flex-1 flex-col overflow-hidden"
-            data-vaul-no-drag
+            className="pointer-events-none fixed inset-x-0 z-40 md:hidden"
+            style={{ bottom: "var(--app-bottom-inset)" }}
           >
-            <div
-              className="flex-1 overflow-y-auto overscroll-contain"
-              data-allow-pan="true"
-            >
-              {list}
-            </div>
+            <DrawerTrigger asChild>
+              <button
+                type="button"
+                className={cn(
+                  "pointer-events-auto mx-auto flex h-[var(--fields-peek-height)] w-full max-w-lg items-center gap-3 rounded-t-3xl px-4",
+                  "border border-b-0 border-[#E5DFD3]/90 bg-[#F4F1EA]",
+                  "shadow-[0_-10px_40px_-12px_rgba(0,0,0,0.2)]"
+                )}
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#276749] text-white shadow-md shadow-[#276749]/25">
+                  <MapIcon className="h-4 w-4" />
+                </span>
+                <span className="min-w-0 flex-1 text-left">
+                  <span className="block truncate text-[15px] font-bold tracking-tight text-zinc-900">
+                    Поля
+                  </span>
+                  <span className="block truncate text-[11px] font-medium text-zinc-500">
+                    {loading
+                      ? "Завантаження…"
+                      : `${formatCountPlural(fields.length, ["ділянка", "ділянки", "ділянок"])} · ${totalHa.toLocaleString("uk-UA")} га`}
+                  </span>
+                </span>
+              </button>
+            </DrawerTrigger>
           </div>
-        </DrawerContent>
-      </Drawer>
+
+          <DrawerContent className="border-[#E5DFD3]/90 bg-[#F4F1EA]">
+            <DrawerTitle className="sr-only">Список полів</DrawerTitle>
+            <DrawerHandle />
+            <div
+              className="flex min-h-0 flex-1 flex-col overflow-hidden"
+              data-vaul-no-drag
+            >
+              <div
+                className="flex-1 overflow-y-auto overscroll-contain"
+                data-allow-pan="true"
+              >
+                {list}
+              </div>
+            </div>
+          </DrawerContent>
+        </Drawer>
+      ) : null}
     </>
   );
 }
