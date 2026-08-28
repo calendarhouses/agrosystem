@@ -4,15 +4,18 @@ import { useMemo, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity,
-  ChevronDown,
-  ChevronUp,
   Focus,
   Map as MapIcon,
   Search,
 } from "lucide-react";
 
 import { COMMAND_CENTER_GLASS_PANEL_CLASS } from "@/lib/equipment-command-center-layout";
-import { SwipeableSheet } from "@/components/ui/swipe-sheet";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerHandle,
+  DrawerTrigger,
+} from "@/components/ui/drawer";
 import { useIsMobile } from "@/lib/use-mobile";
 import type { MapFieldItem } from "@/lib/map-fields";
 import { formatCountPlural } from "@/lib/plural";
@@ -507,70 +510,54 @@ export function FieldsGlassPanel({
         {list}
       </aside>
 
-      <div className="pointer-events-none fixed inset-x-0 z-30 md:hidden" style={{ bottom: "var(--app-bottom-inset)" }}>
-        <div
-          className={cn(
-            "pointer-events-auto mx-auto flex max-w-lg flex-col overflow-hidden",
-            "rounded-t-[1.35rem] border border-b-0 border-zinc-700/60",
-            "bg-gradient-to-b from-zinc-800 to-zinc-900",
-            "shadow-[0_-12px_40px_-8px_rgba(0,0,0,0.45)]",
-            mobileExpanded
-              ? "max-h-[min(78dvh,calc(var(--app-height)-var(--safe-top)-var(--app-bottom-inset)-0.5rem))]"
-              : "max-h-[var(--fields-peek-height)]"
-          )}
-        >
-          <div
-            className={cn(
-              "flex min-h-0 flex-col overflow-hidden bg-[#F4F1EA]",
-              mobileExpanded ? "min-h-0 flex-1 rounded-t-[1.2rem]" : "rounded-t-[1.2rem]"
-            )}
-          >
-            <SwipeableSheet
-              className="min-h-0"
-              handleClassName="pt-2 pb-0"
-              lockDragWhenScrolled={mobileExpanded}
-              onSwipeDown={() => onMobileExpandedChange(false)}
-              onSwipeUp={() => onMobileExpandedChange(true)}
-              dragHandle={
-                <button
-                  type="button"
-                  onClick={() => onMobileExpandedChange(!mobileExpanded)}
-                  className="flex h-[var(--fields-peek-height)] w-full shrink-0 items-center gap-3 px-4"
-                >
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#276749] text-white shadow-md shadow-[#276749]/25">
-                    <MapIcon className="h-4 w-4" />
-                  </span>
-                  <span className="min-w-0 flex-1 text-left">
-                    <span className="block truncate text-[15px] font-bold tracking-tight text-zinc-900">
-                      Поля
-                    </span>
-                    <span className="block truncate text-[11px] font-medium text-zinc-500">
-                      {loading
-                        ? "Завантаження…"
-                        : `${formatCountPlural(fields.length, ["ділянка", "ділянки", "ділянок"])} · ${totalHa.toLocaleString("uk-UA")} га`}
-                    </span>
-                  </span>
-                  {mobileExpanded ? (
-                    <ChevronDown className="h-5 w-5 shrink-0 text-zinc-400" />
-                  ) : (
-                    <ChevronUp className="h-5 w-5 shrink-0 text-zinc-400" />
-                  )}
-                </button>
-              }
-              showHandle
+      <Drawer
+        open={mobileExpanded}
+        onOpenChange={onMobileExpandedChange}
+        handleOnly
+        shouldScaleBackground={false}
+      >
+        <div className="pointer-events-none absolute bottom-[calc(4rem+max(env(safe-area-inset-bottom),16px))] left-0 right-0 z-40 md:hidden">
+          <DrawerTrigger asChild>
+            <button
+              type="button"
+              className={cn(
+                "pointer-events-auto mx-auto flex h-[var(--fields-peek-height)] w-full max-w-lg items-center gap-3 rounded-t-3xl px-4",
+                "border border-b-0 border-[#E5DFD3]/90 bg-[#F4F1EA]",
+                "shadow-[0_-10px_40px_-12px_rgba(0,0,0,0.2)]"
+              )}
             >
-              {mobileExpanded ? (
-                <div
-                  className="flex min-h-0 flex-1 flex-col overflow-hidden overscroll-none border-t border-[#E5DFD3]/70"
-                  data-allow-pan="true"
-                >
-                  {list}
-                </div>
-              ) : null}
-            </SwipeableSheet>
-          </div>
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#276749] text-white shadow-md shadow-[#276749]/25">
+                <MapIcon className="h-4 w-4" />
+              </span>
+              <span className="min-w-0 flex-1 text-left">
+                <span className="block truncate text-[15px] font-bold tracking-tight text-zinc-900">
+                  Поля
+                </span>
+                <span className="block truncate text-[11px] font-medium text-zinc-500">
+                  {loading
+                    ? "Завантаження…"
+                    : `${formatCountPlural(fields.length, ["ділянка", "ділянки", "ділянок"])} · ${totalHa.toLocaleString("uk-UA")} га`}
+                </span>
+              </span>
+            </button>
+          </DrawerTrigger>
         </div>
-      </div>
+
+        <DrawerContent className="border-[#E5DFD3]/90 bg-[#F4F1EA]">
+          <DrawerHandle />
+          <div
+            className="flex min-h-0 flex-1 flex-col overflow-hidden"
+            data-vaul-no-drag
+          >
+            <div
+              className="flex-1 overflow-y-auto overscroll-contain"
+              data-allow-pan="true"
+            >
+              {list}
+            </div>
+          </div>
+        </DrawerContent>
+      </Drawer>
     </>
   );
 }
@@ -586,7 +573,7 @@ export function FieldsDetailGlassFrame({
     <aside
       className={cn(
         "pointer-events-auto absolute z-20 flex flex-col overflow-hidden border border-white/30 bg-[#F4F1EA] shadow-2xl",
-        "inset-x-0 bottom-[var(--app-bottom-inset)] top-[max(10px,var(--safe-top))] rounded-t-[1.75rem]",
+        "inset-x-0 bottom-[calc(4rem+max(env(safe-area-inset-bottom),16px))] top-[max(10px,var(--safe-top))] rounded-t-3xl",
         "md:inset-x-auto md:top-3 md:right-3 md:bottom-3 md:h-auto md:w-[min(100%,580px)] md:rounded-2xl md:bg-[#F4F1EA]/88 md:backdrop-blur-2xl"
       )}
     >

@@ -26,17 +26,42 @@ export const COMMAND_CENTER_DETAIL_FLOAT_INSET_CLASS =
 export const COMMAND_CENTER_GLASS_PANEL_CLASS =
   "pointer-events-auto absolute top-3 bottom-3 z-20 hidden flex-col overflow-hidden rounded-2xl border border-white/30 bg-background/80 shadow-2xl backdrop-blur-2xl md:flex";
 
-export function commandCenterFitPadding(
-  isDesktop: boolean,
-  panel: CommandCenterPanelSide = "left"
-): {
+/** Відступи камери Mapbox: видима зона мінус нижнє меню, шторка полів, FAB. */
+export const MAP_MOBILE_CAMERA_PADDING = {
+  top: 100,
+  bottom: 250,
+  left: 20,
+  right: 20,
+} as const;
+
+export type MapCameraPadding = {
   top: number;
   bottom: number;
   left: number;
   right: number;
-} {
+};
+
+/** Padding fitBounds з урахуванням мобільного chrome (меню, peek, кнопки). */
+export function mapCameraPadding(
+  isDesktop: boolean,
+  panel: CommandCenterPanelSide = "left",
+  options?: { economicsLegend?: boolean }
+): MapCameraPadding {
   if (!isDesktop) {
-    return { top: 64, bottom: 168, left: 28, right: 28 };
+    const top = options?.economicsLegend
+      ? MAP_MOBILE_CAMERA_PADDING.top + 56
+      : MAP_MOBILE_CAMERA_PADDING.top;
+    return { ...MAP_MOBILE_CAMERA_PADDING, top };
+  }
+  return commandCenterFitPadding(isDesktop, panel);
+}
+
+export function commandCenterFitPadding(
+  isDesktop: boolean,
+  panel: CommandCenterPanelSide = "left"
+): MapCameraPadding {
+  if (!isDesktop) {
+    return { ...MAP_MOBILE_CAMERA_PADDING };
   }
   if (panel === "right") {
     return {

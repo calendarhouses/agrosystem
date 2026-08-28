@@ -1044,7 +1044,7 @@ export function FieldsView() {
 
       <div
         className={cn(
-          "pointer-events-none z-30 px-3 pb-3",
+          "pointer-events-none z-30 hidden px-3 pb-3 md:block",
           "pt-[calc(var(--safe-top)+0.4rem)]",
           sheetOpen
             ? COMMAND_CENTER_MAP_AREA_RIGHT_CLASS

@@ -53,7 +53,7 @@ import {
 } from "@/components/dashboard/command-center-map-boot";
 import {
   COMMAND_CENTER_DETAIL_FLOAT_INSET_CLASS,
-  commandCenterFitPadding,
+  mapCameraPadding,
 } from "@/lib/equipment-command-center-layout";
 import { cn } from "@/lib/utils";
 
@@ -420,7 +420,12 @@ function bootViewFromFieldSources(
   }
 
   const { longitude, latitude } = centerFromBounds(merged);
-  const span = Math.max(merged[2] - merged[0], merged[3] - merged[1]);
+  const latSpan = merged[3] - merged[1];
+  const lngSpan = merged[2] - merged[0];
+  // До fitBounds з padding — зсув центру вниз, щоб кластер не вилітав у верхній кут
+  const biasedLatitude = latitude - latSpan * 0.1;
+  const biasedLongitude = longitude + lngSpan * 0.02;
+  const span = Math.max(lngSpan, latSpan);
   let zoom = 12;
   if (span > 0.8) zoom = 8.5;
   else if (span > 0.4) zoom = 9.5;
@@ -429,7 +434,7 @@ function bootViewFromFieldSources(
   else if (span > 0.03) zoom = 12.5;
   else zoom = 13.5;
 
-  if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) {
+  if (!Number.isFinite(biasedLongitude) || !Number.isFinite(biasedLatitude)) {
     return {
       longitude: DEFAULT_WEATHER_LOCATION.longitude,
       latitude: DEFAULT_WEATHER_LOCATION.latitude,
@@ -437,7 +442,7 @@ function bootViewFromFieldSources(
     };
   }
 
-  return { longitude, latitude, zoom };
+  return { longitude: biasedLongitude, latitude: biasedLatitude, zoom };
 }
 
 function collectFieldBounds(
@@ -724,14 +729,16 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       [focusBounds]
     );
 
-    const chromePadding = useCallback((mode: "list" | "detail") => {
-      const isDesktop =
-        typeof window !== "undefined" ? window.innerWidth >= 768 : true;
-      return commandCenterFitPadding(
-        isDesktop,
-        mode === "detail" ? "right" : "left"
-      );
-    }, []);
+    const chromePadding = useCallback(
+      (mode: "list" | "detail") => {
+        const isDesktop =
+          typeof window !== "undefined" ? window.innerWidth >= 768 : true;
+        return mapCameraPadding(isDesktop, mode === "detail" ? "right" : "left", {
+          economicsLegend: mapViewMode === "economics",
+        });
+      },
+      [mapViewMode]
+    );
 
     const focusFieldForInspector = useCallback(
       (geometry: Geometry, chromeOverride?: "list" | "detail") => {
@@ -823,15 +830,13 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       wialonGeofences.features,
     ]);
 
-    const didAutoFitRef = useRef(false);
     useEffect(() => {
-      if (!mapReady || wialonLoading || didAutoFitRef.current) return;
+      if (!mapReady || wialonLoading) return;
       const hasFields =
         wialonGeofences.features.length > 0 ||
         (savedFieldsGeoJson?.features?.length ?? 0) > 0;
       if (!hasFields) return;
-      didAutoFitRef.current = true;
-      const timer = window.setTimeout(() => fitAllFields(), 150);
+      const timer = window.setTimeout(() => fitAllFields(), 200);
       return () => window.clearTimeout(timer);
     }, [
       fitAllFields,
@@ -840,6 +845,29 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       wialonGeofences.features.length,
       wialonLoading,
     ]);
+
+    useEffect(() => {
+      if (!mapReady || wialonLoading) return;
+      const timer = window.setTimeout(() => fitAllFields(), 80);
+      return () => window.clearTimeout(timer);
+    }, [mapViewMode, mapReady, wialonLoading, fitAllFields]);
+
+    useEffect(() => {
+      if (!mapReady || wialonLoading) return;
+      let timer: number | undefined;
+      const refit = () => {
+        if (window.innerWidth >= 768) return;
+        if (timer) window.clearTimeout(timer);
+        timer = window.setTimeout(() => fitAllFields(), 180);
+      };
+      window.addEventListener("resize", refit);
+      window.addEventListener("orientationchange", refit);
+      return () => {
+        window.removeEventListener("resize", refit);
+        window.removeEventListener("orientationchange", refit);
+        window.clearTimeout(timer);
+      };
+    }, [fitAllFields, mapReady, wialonLoading]);
 
     const flyTo = useCallback(
       (longitude: number, latitude: number, nextZoom = 14) => {
@@ -1346,7 +1374,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
                       [east, north],
                     ],
                     {
-                      padding: commandCenterFitPadding(isDesktop, "left"),
+                      padding: mapCameraPadding(isDesktop, "left"),
                       duration: 0,
                       maxZoom: 14,
                       essential: true,
@@ -1583,7 +1611,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
                   "top-[calc(var(--safe-top)+4.75rem)] right-3 md:top-auto md:bottom-3",
                   COMMAND_CENTER_DETAIL_FLOAT_INSET_CLASS
                 )
-              : "right-3 bottom-[calc(var(--app-bottom-inset)+var(--fields-peek-height)+4.75rem)] md:bottom-3"
+              : "right-3 bottom-[var(--map-float-bottom)] md:bottom-3"
           )}
         >
           <div
@@ -1685,22 +1713,29 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         !(overlayActive && chrome === "list") ? (
           <div
             className={cn(
-              "pointer-events-auto absolute z-30 left-3 max-w-[min(100%,17rem)]",
-              "bottom-[calc(var(--app-bottom-inset)+var(--fields-peek-height)+5.25rem)]",
-              "md:top-auto md:bottom-[5.25rem] md:max-w-sm",
+              "pointer-events-auto absolute z-40",
+              "top-[env(safe-area-inset-top,0px)] mt-4 left-4 right-4",
+              "md:top-auto md:bottom-[5.25rem] md:left-3 md:right-auto md:max-w-sm",
               chrome === "detail"
                 ? COMMAND_CENTER_DETAIL_FLOAT_INSET_CLASS
                 : "md:left-[calc(0.75rem+min(400px,calc(100%-1.5rem))+12px)]"
             )}
           >
-            <div className="rounded-2xl border border-[#E5DFD3]/90 bg-[#F4F1EA]/95 px-3 py-2.5 shadow-lg backdrop-blur-xl">
-              <p className="text-xs font-bold text-zinc-900">
-                Бюджет полів · {activeSeason}
-              </p>
-              <p className="mt-0.5 text-[10px] leading-snug text-zinc-600">
-                Колір контуру = % витрат від планового бюджету
-              </p>
-              <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1.5">
+            <div
+              className={cn(
+                "rounded-2xl border border-white/50 bg-white/80 p-3 shadow-lg backdrop-blur-md",
+                "md:border-[#E5DFD3]/90 md:bg-[#F4F1EA]/95 md:backdrop-blur-xl"
+              )}
+            >
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <p className="text-xs font-bold text-zinc-900">
+                  Бюджет полів · {activeSeason}
+                </p>
+                <p className="hidden text-[10px] leading-snug text-zinc-600 md:block">
+                  Колір контуру = % витрат від планового бюджету
+                </p>
+              </div>
+              <ul className="mt-2 flex flex-wrap items-center gap-3 text-xs md:mt-2 md:gap-x-3 md:gap-y-1.5">
                 {(
                   [
                     {
@@ -1726,12 +1761,10 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
                     className="flex items-center gap-1.5"
                   >
                     <span
-                      className="h-2.5 w-2.5 shrink-0 rounded-sm ring-1 ring-black/10"
+                      className="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-black/10"
                       style={{ backgroundColor: item.color }}
                     />
-                    <span className="text-[10px] font-semibold text-zinc-700">
-                      {item.label}
-                    </span>
+                    <span className="font-medium text-zinc-700">{item.label}</span>
                   </li>
                 ))}
               </ul>

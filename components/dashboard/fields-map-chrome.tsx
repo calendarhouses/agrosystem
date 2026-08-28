@@ -300,7 +300,7 @@ export function FieldsMapChrome({ align = "end" }: FieldsMapChromeProps) {
   return (
     <div
       className={cn(
-        "pointer-events-auto flex flex-wrap items-center gap-2",
+        "pointer-events-auto hidden flex-wrap items-center gap-2 md:flex",
         align === "start" ? "justify-start" : "justify-end"
       )}
     >
