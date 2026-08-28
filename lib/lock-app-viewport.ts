@@ -28,6 +28,30 @@ function closestScrollable(start: EventTarget | null): HTMLElement | null {
   return null;
 }
 
+function measureSafeArea() {
+  const probe = document.createElement("div");
+  probe.style.cssText =
+    "position:fixed;inset:0;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);pointer-events:none;visibility:hidden";
+  document.documentElement.appendChild(probe);
+  const cs = getComputedStyle(probe);
+  let top = Number.parseFloat(cs.paddingTop) || 0;
+  let bottom = Number.parseFloat(cs.paddingBottom) || 0;
+  probe.remove();
+
+  const ios = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const hasHomeIndicator =
+    ios && Math.max(window.screen.width, window.screen.height) >= 812;
+  if (hasHomeIndicator && top < 20) {
+    const long = Math.max(window.screen.width, window.screen.height);
+    top = long >= 852 ? 59 : 47;
+  }
+  if (hasHomeIndicator && bottom < 8) bottom = 34;
+
+  const root = document.documentElement;
+  root.style.setProperty("--safe-top", `${Math.round(top)}px`);
+  root.style.setProperty("--safe-bottom", `${Math.round(bottom)}px`);
+}
+
 function syncAppHeight() {
   const vv = window.visualViewport;
   const inner = window.innerHeight;
@@ -39,6 +63,7 @@ function syncAppHeight() {
   root.style.setProperty("--vv-height", `${vvH}px`);
   root.style.setProperty("--app-vv-offset-top", `${offsetTop}px`);
   root.classList.toggle("keyboard-open", keyboardOpen);
+  measureSafeArea();
 }
 
 export function lockAppViewport(): () => void {

@@ -507,17 +507,19 @@ export function FieldsGlassPanel({
         {list}
       </aside>
 
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 md:hidden">
+      <div className="pointer-events-none absolute inset-0 z-20 flex flex-col md:hidden">
         <div
           className={cn(
-            "pointer-events-auto flex flex-col overflow-hidden border-t border-[#E5DFD3]/80",
-            "bg-[#F4F1EA]/96 shadow-[0_-12px_40px_-16px_rgba(24,24,27,0.35)] backdrop-blur-2xl",
+            "pointer-events-auto flex min-h-0 flex-col overflow-hidden",
+            "border-t border-[#E5DFD3]/90 bg-[#F4F1EA]",
+            "shadow-[0_-18px_48px_-18px_rgba(24,24,27,0.4)]",
             mobileExpanded
-              ? "h-[calc(100%-max(0.5rem,env(safe-area-inset-top,0px)))] rounded-t-3xl"
-              : "h-14 rounded-t-[1.35rem]"
+              ? "mt-[max(10px,var(--safe-top))] flex-1 rounded-t-[1.75rem]"
+              : "mt-auto shrink-0 rounded-t-[1.35rem]"
           )}
         >
           <SwipeableSheet
+            className="min-h-0 flex-1"
             handleClassName="pt-1.5 pb-0"
             onSwipeDown={() => onMobileExpandedChange(false)}
             onSwipeUp={() => onMobileExpandedChange(true)}
@@ -525,7 +527,7 @@ export function FieldsGlassPanel({
             <button
               type="button"
               onClick={() => onMobileExpandedChange(!mobileExpanded)}
-              className="flex h-11 w-full shrink-0 items-center gap-3 px-4"
+              className="flex h-12 w-full shrink-0 items-center gap-3 px-4"
             >
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#276749] text-white shadow-sm">
                 <MapIcon className="h-3.5 w-3.5" />
@@ -547,7 +549,7 @@ export function FieldsGlassPanel({
               )}
             </button>
             {mobileExpanded ? (
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden overscroll-none border-t border-[#E5DFD3]/70">
+              <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden overscroll-none border-t border-[#E5DFD3]/70">
                 {list}
               </div>
             ) : null}
@@ -568,9 +570,9 @@ export function FieldsDetailGlassFrame({
   return (
     <aside
       className={cn(
-        "pointer-events-auto absolute z-20 flex flex-col overflow-hidden border border-white/30 bg-[#F4F1EA]/88 shadow-2xl backdrop-blur-2xl",
-        "inset-x-0 bottom-0 h-[calc(100%-max(0.5rem,env(safe-area-inset-top,0px)))] max-h-full rounded-t-3xl",
-        "md:inset-x-auto md:top-3 md:right-3 md:bottom-3 md:h-auto md:w-[min(100%,580px)] md:rounded-2xl"
+        "pointer-events-auto absolute z-20 flex flex-col overflow-hidden border border-white/30 bg-[#F4F1EA] shadow-2xl",
+        "inset-x-0 bottom-0 top-[max(10px,var(--safe-top))] rounded-t-[1.75rem]",
+        "md:inset-x-auto md:top-3 md:right-3 md:bottom-3 md:h-auto md:w-[min(100%,580px)] md:rounded-2xl md:bg-[#F4F1EA]/88 md:backdrop-blur-2xl"
       )}
     >
       <AnimatePresence mode="wait" initial={false}>

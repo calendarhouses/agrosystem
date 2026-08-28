@@ -378,6 +378,7 @@ type FieldsMapProps = {
   overlayActive?: boolean;
   /** Зсув floating chrome під ліву / праву glass-панель */
   chrome?: "list" | "detail";
+  onSearchOpenChange?: (open: boolean) => void;
   onRequestDeleteSelection?: () => void;
   onEscape?: () => void;
 };
@@ -545,6 +546,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       drawSave,
       overlayActive = false,
       chrome = "list",
+      onSearchOpenChange,
       onRequestDeleteSelection,
       onEscape,
     },
@@ -593,6 +595,15 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
     const [searchResults, setSearchResults] = useState<GeoSearchResult[]>([]);
     const activeSeason = useSeasonStore((s) => s.activeSeason);
     const [mapViewMode, setMapViewMode] = useState<MapViewMode>("standard");
+
+    useEffect(() => {
+      onSearchOpenChange?.(searchOpen);
+      return () => onSearchOpenChange?.(false);
+    }, [searchOpen, onSearchOpenChange]);
+
+    useEffect(() => {
+      if (overlayActive && chrome === "list") setSearchOpen(false);
+    }, [overlayActive, chrome]);
     const mapCenterRef = useRef<{ lng: number; lat: number }>({
       lng: mountBootView.longitude,
       lat: mountBootView.latitude,
@@ -1465,7 +1476,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         {searchOpen ? (
           <div
             className="absolute inset-x-3 z-50 md:left-auto md:right-3 md:w-[min(calc(100vw-2rem),340px)]"
-            style={{ top: "max(0.75rem, env(safe-area-inset-top, 0px))" }}
+            style={{ top: "calc(var(--safe-top) + 0.5rem)" }}
           >
             <div className="rounded-2xl border border-border bg-background/92 p-3 shadow-lg backdrop-blur-xl">
               <div className="flex items-center gap-2">
@@ -1524,12 +1535,13 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
           </div>
         ) : null}
 
+        {!(overlayActive && chrome === "list") ? (
         <div
           className={cn(
             "absolute z-40 flex flex-col items-end gap-2",
             chrome === "detail"
               ? cn(
-                  "top-[calc(env(safe-area-inset-top,0px)+4.75rem)] right-3 md:top-auto md:bottom-3",
+                  "top-[calc(var(--safe-top)+4.75rem)] right-3 md:top-auto md:bottom-3",
                   COMMAND_CENTER_DETAIL_FLOAT_INSET_CLASS
                 )
               : "right-3 bottom-[3.85rem] md:bottom-3"
@@ -1601,12 +1613,13 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
             ) : null}
           </div>
         </div>
+        ) : null}
 
         {isDrawing ? (
           <div
             className={cn(
               "pointer-events-none absolute z-50 flex justify-center px-4",
-              "top-[max(1rem,env(safe-area-inset-top,0px))]",
+              "top-[max(1rem,var(--safe-top))]",
               chrome === "detail"
                 ? "inset-x-0 md:right-[calc(0.75rem+min(580px,calc(100%-1.5rem)))]"
                 : "inset-x-0 md:left-[calc(0.75rem+min(400px,calc(100%-1.5rem)))]"
@@ -1627,75 +1640,65 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
           </div>
         ) : null}
 
-        {mapViewMode === "economics" && !focusMode && !searchOpen ? (
+        {mapViewMode === "economics" &&
+        !focusMode &&
+        !searchOpen &&
+        !(overlayActive && chrome === "list") ? (
           <div
             className={cn(
-              "pointer-events-auto absolute z-30 flex justify-center px-3",
-              "top-[calc(env(safe-area-inset-top,0px)+5.75rem)] left-3 right-3",
+              "pointer-events-auto absolute z-30",
+              "top-[calc(var(--safe-top)+0.55rem)] left-3",
               "md:top-auto md:bottom-[5.25rem]",
               chrome === "detail"
                 ? COMMAND_CENTER_DETAIL_FLOAT_INSET_CLASS
                 : "md:left-[calc(0.75rem+min(400px,calc(100%-1.5rem))+12px)]"
             )}
           >
-            <div className="w-full max-w-lg rounded-2xl border border-[#E5DFD3] bg-[#F4F1EA]/95 px-3 py-2.5 shadow-lg backdrop-blur-xl md:px-4 md:py-3.5">
-              <p className="text-sm font-bold text-zinc-900">
-                Колір = скільки витрачено від бюджету
+            <div className="flex max-w-[min(100%,calc(100vw-9.5rem))] items-center gap-2 overflow-x-auto rounded-full border border-[#E5DFD3]/90 bg-[#F4F1EA]/92 px-2.5 py-1.5 shadow-lg backdrop-blur-xl md:max-w-md md:flex-col md:items-stretch md:gap-2 md:rounded-2xl md:px-3 md:py-2.5">
+              <p className="hidden text-[11px] font-bold text-zinc-800 md:block">
+                Витрати від бюджету · {activeSeason}
               </p>
-              <p className="mt-1 hidden text-xs leading-relaxed text-zinc-600 md:block">
-                Порівняння фактичних витрат (паливо, ЗП, ТМЦ) з плановим
-                бюджетом поля за сезон {activeSeason}. Бюджет задається у
-                паспорті поля.
-              </p>
-              <ul className="mt-2 grid grid-cols-2 gap-1.5 md:mt-3 md:gap-2">
-                <li className="flex items-start gap-2.5 rounded-xl bg-white/80 px-2.5 py-2">
-                  <span
-                    className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded-sm ring-1 ring-black/10"
-                    style={{ backgroundColor: BUDGET_COLOR_GREEN }}
-                  />
-                  <div>
-                    <p className="text-xs font-semibold text-zinc-900">Зелений</p>
-                    <p className="text-[11px] leading-snug text-zinc-600">
-                      Менше 70% бюджету — у нормі
-                    </p>
-                  </div>
-                </li>
-                <li className="flex items-start gap-2.5 rounded-xl bg-white/80 px-2.5 py-2">
-                  <span
-                    className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded-sm ring-1 ring-black/10"
-                    style={{ backgroundColor: BUDGET_COLOR_YELLOW }}
-                  />
-                  <div>
-                    <p className="text-xs font-semibold text-zinc-900">Жовтий</p>
-                    <p className="text-[11px] leading-snug text-zinc-600">
-                      70–100% — близько до ліміту
-                    </p>
-                  </div>
-                </li>
-                <li className="flex items-start gap-2.5 rounded-xl bg-white/80 px-2.5 py-2">
-                  <span
-                    className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded-sm ring-1 ring-black/10"
-                    style={{ backgroundColor: BUDGET_COLOR_RED }}
-                  />
-                  <div>
-                    <p className="text-xs font-semibold text-zinc-900">Червоний</p>
-                    <p className="text-[11px] leading-snug text-zinc-600">
-                      Більше 100% — перевитрата
-                    </p>
-                  </div>
-                </li>
-                <li className="flex items-start gap-2.5 rounded-xl bg-white/80 px-2.5 py-2">
-                  <span
-                    className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded-sm ring-1 ring-black/10"
-                    style={{ backgroundColor: BUDGET_COLOR_NEUTRAL }}
-                  />
-                  <div>
-                    <p className="text-xs font-semibold text-zinc-900">Сірий</p>
-                    <p className="text-[11px] leading-snug text-zinc-600">
-                      Бюджет не задано — немає порівняння
-                    </p>
-                  </div>
-                </li>
+              <ul className="flex items-center gap-2.5 md:grid md:grid-cols-2 md:gap-1.5">
+                {(
+                  [
+                    {
+                      color: BUDGET_COLOR_GREEN,
+                      short: "<70%",
+                      label: "У нормі",
+                    },
+                    {
+                      color: BUDGET_COLOR_YELLOW,
+                      short: "70–100%",
+                      label: "Близько",
+                    },
+                    {
+                      color: BUDGET_COLOR_RED,
+                      short: ">100%",
+                      label: "Понад",
+                    },
+                    {
+                      color: BUDGET_COLOR_NEUTRAL,
+                      short: "—",
+                      label: "Немає",
+                    },
+                  ] as const
+                ).map((item) => (
+                  <li
+                    key={item.short}
+                    className="flex shrink-0 items-center gap-1.5 md:rounded-xl md:bg-white/80 md:px-2 md:py-1.5"
+                  >
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-sm ring-1 ring-black/10"
+                      style={{ backgroundColor: item.color }}
+                    />
+                    <span className="text-[10px] font-semibold tabular-nums text-zinc-700 md:hidden">
+                      {item.short}
+                    </span>
+                    <span className="hidden text-[11px] font-semibold text-zinc-800 md:inline">
+                      {item.label}
+                    </span>
+                  </li>
+                ))}
               </ul>
             </div>
           </div>

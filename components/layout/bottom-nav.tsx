@@ -41,9 +41,12 @@ export function BottomNav() {
       <nav
         className={cn(
           "fixed inset-x-0 bottom-0 z-50 md:hidden",
-          "border-t border-zinc-700/80 bg-zinc-900 text-zinc-400",
-          "pb-[env(safe-area-inset-bottom,0px)]"
+          "border-t border-zinc-700/80 bg-zinc-900 text-zinc-400"
         )}
+        style={{
+          paddingBottom:
+            "max(var(--safe-bottom), env(safe-area-inset-bottom, 0px))",
+        }}
         aria-label="Головна навігація"
       >
         <div className="mx-auto flex h-14 max-w-lg items-stretch justify-around px-1">
@@ -111,7 +114,7 @@ export function BottomNav() {
       <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
         <SheetContent
           side="bottom"
-          className="rounded-t-3xl border-zinc-700 bg-zinc-900 px-0 pb-[calc(1rem+env(safe-area-inset-bottom))] text-zinc-100"
+          className="rounded-t-3xl border-zinc-700 bg-zinc-900 px-0 pb-[calc(1rem+var(--safe-bottom))] text-zinc-100"
         >
           <SheetHeader className="border-b border-zinc-700/80 px-5 pb-4 text-left">
             <SheetTitle className="text-zinc-100">Інші розділи</SheetTitle>

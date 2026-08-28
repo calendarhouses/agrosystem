@@ -118,6 +118,7 @@ export function FieldsView() {
   const lastPreviewedIdRef = useRef<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [mobileListExpanded, setMobileListExpanded] = useState(false);
+  const [mapSearchOpen, setMapSearchOpen] = useState(false);
   const [hubInitialTab, setHubInitialTab] = useState<FieldHubTab>("overview");
   const [hubConfirmDelete, setHubConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -1017,6 +1018,7 @@ export function FieldsView() {
           ref={fieldsMapRef}
           className="h-full w-full"
           chrome={sheetOpen ? "detail" : "list"}
+          onSearchOpenChange={setMapSearchOpen}
           onFieldClick={openFieldById}
           onDrawnFeaturesChange={handleDrawnFeaturesChange}
           savedFieldsGeoJson={savedGeoJson}
@@ -1028,7 +1030,7 @@ export function FieldsView() {
           hoveredFieldId={hoveredFieldId}
           geometryEditMode={Boolean(editingFieldId)}
           drawSave={drawSaveActions}
-          overlayActive={sheetOpen}
+          overlayActive={sheetOpen || mobileListExpanded}
           onRequestDeleteSelection={requestDeleteFromToolbar}
           onEscape={handleEscape}
         />
@@ -1037,20 +1039,22 @@ export function FieldsView() {
       <div
         className={cn(
           "pointer-events-none z-30 px-3 pb-3",
-          "pt-[max(0.75rem,env(safe-area-inset-top,0px))]",
+          "pt-[calc(var(--safe-top)+0.4rem)]",
           sheetOpen
             ? COMMAND_CENTER_MAP_AREA_RIGHT_CLASS
             : COMMAND_CENTER_MAP_AREA_CLASS
         )}
       >
-        <div
-          className={cn(
-            "flex",
-            sheetOpen ? "justify-start" : "justify-end"
-          )}
-        >
-          <FieldsMapChrome align={sheetOpen ? "start" : "end"} />
-        </div>
+        {!mapSearchOpen && !mobileListExpanded ? (
+          <div
+            className={cn(
+              "flex",
+              sheetOpen ? "justify-start" : "justify-end"
+            )}
+          >
+            <FieldsMapChrome align={sheetOpen ? "start" : "end"} />
+          </div>
+        ) : null}
       </div>
 
       {!sheetOpen ? (

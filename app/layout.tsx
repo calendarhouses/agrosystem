@@ -54,7 +54,7 @@ export const viewport: Viewport = {
   userScalable: false,
   viewportFit: "cover",
   interactiveWidget: "overlays-content",
-  themeColor: "#1f5239",
+  themeColor: "#18181b",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -63,7 +63,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="uk"
       className={`${geistSans.variable} ${geistMono.variable} antialiased`}
     >
-      <body className="overflow-hidden bg-zinc-100 font-sans text-zinc-900">
+      <body className="overflow-hidden bg-zinc-900 font-sans text-zinc-900">
         <PwaBootstrap />
         <AppShell>{children}</AppShell>
         <Toaster
