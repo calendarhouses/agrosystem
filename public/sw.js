@@ -1,5 +1,14 @@
-const CACHE = "levada-pwa-v2";
-const PRECACHE = ["/", "/install", "/login", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png"];
+const CACHE = "levada-pwa-v3";
+const PRECACHE = [
+  "/",
+  "/install",
+  "/login",
+  "/manifest.webmanifest",
+  "/apple-touch-icon.png",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
+  "/icons/icon-maskable-512.png",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -25,7 +34,7 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        if (response.ok && url.pathname !== "/api") {
+        if (response.ok && !url.pathname.startsWith("/api")) {
           const copy = response.clone();
           void caches.open(CACHE).then((cache) => cache.put(event.request, copy));
         }

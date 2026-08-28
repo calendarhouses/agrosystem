@@ -5,6 +5,14 @@ import { InstallPrompt } from "@/components/pwa/install-prompt";
 
 export const metadata: Metadata = {
   title: "Встановлення",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "LEVADA",
+  },
+  icons: {
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
 };
 
 export default function InstallPage() {

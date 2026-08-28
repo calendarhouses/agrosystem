@@ -2,16 +2,23 @@
   "name": "LEVADA SYSTEM",
   "short_name": "LEVADA",
   "description": "Операційна система господарства",
-  "start_url": "/",
+  "start_url": "/?source=pwa",
   "scope": "/",
-  "id": "/",
+  "id": "/?source=pwa",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
   "orientation": "portrait-primary",
-  "background_color": "#F4F1EA",
-  "theme_color": "#27272a",
+  "background_color": "#18181b",
+  "theme_color": "#18181b",
   "lang": "uk",
   "categories": ["business", "productivity"],
   "icons": [
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
     {
       "src": "/icons/icon-192.png",
       "sizes": "192x192",
