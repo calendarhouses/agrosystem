@@ -4,8 +4,14 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Sprout } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
+import { AndroidInstallGuide } from "@/components/pwa/android-install-guide";
 import { IosInstallGuide } from "@/components/pwa/ios-install-guide";
+import { Button } from "@/components/ui/button";
+import {
+  getDeferredInstallPrompt,
+  onInstallPromptReady,
+  triggerInstallPrompt,
+} from "@/lib/pwa-install-prompt";
 import {
   APP_BRAND_NAME,
   isMobileUserAgent,
@@ -15,19 +21,15 @@ import {
   shouldShowInstallPrompt,
 } from "@/lib/pwa";
 
-type BeforeInstallPromptEvent = Event & {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
-};
-
 export function InstallPrompt() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextPath = searchParams.get("next") || "/login";
-  const [deferredPrompt, setDeferredPrompt] =
-    useState<BeforeInstallPromptEvent | null>(null);
-  const [installing, setInstalling] = useState<"ios" | "android" | null>(null);
+  const [nativeInstallReady, setNativeInstallReady] = useState(
+    () => getDeferredInstallPrompt() != null
+  );
   const [iosGuideOpen, setIosGuideOpen] = useState(false);
+  const [androidGuideOpen, setAndroidGuideOpen] = useState(false);
 
   useEffect(() => {
     if (!isMobileUserAgent()) {
@@ -40,14 +42,9 @@ export function InstallPrompt() {
   }, [nextPath, router]);
 
   useEffect(() => {
-    function onBeforeInstallPrompt(event: Event) {
-      event.preventDefault();
-      setDeferredPrompt(event as BeforeInstallPromptEvent);
-    }
-    window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
-    return () => {
-      window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt);
-    };
+    return onInstallPromptReady(() => {
+      setNativeInstallReady(true);
+    });
   }, []);
 
   function goNext() {
@@ -59,89 +56,90 @@ export function InstallPrompt() {
     goNext();
   }
 
-  async function onInstallAndroid() {
-    setInstalling("android");
-    try {
-      if (deferredPrompt) {
-        await deferredPrompt.prompt();
-        const choice = await deferredPrompt.userChoice;
-        if (choice.outcome === "accepted") {
-          markInstallPromptCompleted();
-          return;
-        }
-      }
-    } finally {
-      setInstalling(null);
-      setDeferredPrompt(null);
-    }
-  }
-
   function onInstallIos() {
     setIosGuideOpen(true);
   }
 
-  function onIosGuideClose() {
-    setIosGuideOpen(false);
+  function onInstallAndroid() {
+    setAndroidGuideOpen(true);
+  }
+
+  function onGuideDone() {
     markInstallPromptCompleted();
+    goNext();
+  }
+
+  async function onTryNativeInstall(): Promise<boolean> {
+    const outcome = await triggerInstallPrompt();
+    return outcome === "accepted";
   }
 
   return (
     <>
-      <IosInstallGuide open={iosGuideOpen} onClose={onIosGuideClose} />
-
-      <div className="relative flex min-h-dvh flex-col overflow-hidden bg-[#F4F1EA] text-zinc-900">
-      <div
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(39,103,73,0.14),_transparent_55%),radial-gradient(ellipse_at_bottom_right,_rgba(192,86,33,0.1),_transparent_50%)]"
-        aria-hidden
+      <IosInstallGuide
+        open={iosGuideOpen}
+        onClose={() => setIosGuideOpen(false)}
+        onDone={onGuideDone}
       />
 
-      <div className="relative mx-auto flex w-full max-w-lg flex-1 flex-col px-5 pb-8 pt-[max(2.5rem,env(safe-area-inset-top))]">
-        <div className="flex flex-col items-center text-center">
-          <div className="flex h-20 w-20 items-center justify-center rounded-[1.75rem] bg-gradient-to-br from-[#276749] to-[#1f5239] text-white shadow-xl shadow-[#276749]/25">
-            <Sprout className="h-10 w-10" strokeWidth={1.75} />
+      <AndroidInstallGuide
+        open={androidGuideOpen}
+        onClose={() => setAndroidGuideOpen(false)}
+        onDone={onGuideDone}
+        nativeAvailable={nativeInstallReady}
+        onTryNative={onTryNativeInstall}
+      />
+
+      <div className="relative flex min-h-dvh flex-col overflow-hidden bg-[#F4F1EA] text-zinc-900">
+        <div
+          className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(39,103,73,0.14),_transparent_55%),radial-gradient(ellipse_at_bottom_right,_rgba(192,86,33,0.1),_transparent_50%)]"
+          aria-hidden
+        />
+
+        <div className="relative mx-auto flex w-full max-w-lg flex-1 flex-col px-5 pb-8 pt-[max(2.5rem,env(safe-area-inset-top))]">
+          <div className="flex flex-col items-center text-center">
+            <div className="flex h-20 w-20 items-center justify-center rounded-[1.75rem] bg-gradient-to-br from-[#276749] to-[#1f5239] text-white shadow-xl shadow-[#276749]/25">
+              <Sprout className="h-10 w-10" strokeWidth={1.75} />
+            </div>
+            <h1 className="mt-6 text-2xl font-extrabold tracking-tight sm:text-3xl">
+              Встановіть {APP_BRAND_NAME}
+            </h1>
+            <p className="mt-3 max-w-sm text-sm leading-relaxed text-zinc-600">
+              Встановіть застосунок на телефон — швидкий доступ до полів, техніки
+              та складу без адресного рядка браузера.
+            </p>
           </div>
-          <h1 className="mt-6 text-2xl font-extrabold tracking-tight sm:text-3xl">
-            Встановіть {APP_BRAND_NAME}
-          </h1>
-          <p className="mt-3 max-w-sm text-sm leading-relaxed text-zinc-600">
-            Встановіть застосунок на телефон — швидкий доступ до полів, техніки
-            та складу без адресного рядка браузера.
-          </p>
+
+          <div className="mt-auto space-y-3 pt-10">
+            <Button
+              type="button"
+              size="lg"
+              className="h-12 w-full rounded-2xl bg-[#276749] text-base font-semibold text-white hover:bg-[#1f5239]"
+              onClick={onInstallIos}
+            >
+              Встановити для iOS
+            </Button>
+
+            <Button
+              type="button"
+              size="lg"
+              className="h-12 w-full rounded-2xl bg-[#276749] text-base font-semibold text-white hover:bg-[#1f5239]"
+              onClick={onInstallAndroid}
+            >
+              Встановити для Android
+            </Button>
+
+            <Button
+              type="button"
+              size="lg"
+              variant="secondary"
+              className="h-12 w-full rounded-2xl border border-[#E5DFD3] bg-zinc-200/80 text-base font-semibold text-zinc-700 hover:bg-zinc-300/80"
+              onClick={onSkip}
+            >
+              Пропустити зараз
+            </Button>
+          </div>
         </div>
-
-        <div className="mt-auto space-y-3 pt-10">
-          <Button
-            type="button"
-            size="lg"
-            className="h-12 w-full rounded-2xl bg-[#276749] text-base font-semibold text-white hover:bg-[#1f5239]"
-            disabled={installing != null}
-            onClick={onInstallIos}
-          >
-            Встановити для iOS
-          </Button>
-
-          <Button
-            type="button"
-            size="lg"
-            className="h-12 w-full rounded-2xl bg-[#276749] text-base font-semibold text-white hover:bg-[#1f5239]"
-            disabled={installing != null}
-            onClick={() => void onInstallAndroid()}
-          >
-            {installing === "android" ? "Встановлення…" : "Встановити для Android"}
-          </Button>
-
-          <Button
-            type="button"
-            size="lg"
-            variant="secondary"
-            className="h-12 w-full rounded-2xl border border-[#E5DFD3] bg-zinc-200/80 text-base font-semibold text-zinc-700 hover:bg-zinc-300/80"
-            disabled={installing != null}
-            onClick={onSkip}
-          >
-            Пропустити зараз
-          </Button>
-        </div>
-      </div>
       </div>
     </>
   );

@@ -4,6 +4,7 @@
   "description": "Операційна система господарства",
   "start_url": "/",
   "scope": "/",
+  "id": "/",
   "display": "standalone",
   "orientation": "portrait-primary",
   "background_color": "#F4F1EA",

@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "sonner";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { PwaBootstrap } from "@/components/pwa/pwa-bootstrap";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -51,6 +52,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="h-full overflow-hidden bg-zinc-100 font-sans text-zinc-900">
+        <PwaBootstrap />
         <AppShell>{children}</AppShell>
         <Toaster
           position="bottom-right"
