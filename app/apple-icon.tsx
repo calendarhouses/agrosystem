@@ -3,16 +3,15 @@ import { ImageResponse } from "next/og";
 export const size = { width: 180, height: 180 };
 export const contentType = "image/png";
 
-function SproutMark({ scale = 1 }: { scale?: number }) {
-  const s = scale;
+function SproutMark() {
   return (
     <svg
-      width={120 * s}
-      height={120 * s}
+      width="100"
+      height="100"
       viewBox="0 0 24 24"
       fill="none"
       stroke="white"
-      strokeWidth="2"
+      strokeWidth="1.75"
       strokeLinecap="round"
       strokeLinejoin="round"
     >
@@ -33,10 +32,10 @@ export default function AppleIcon() {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: "linear-gradient(180deg, #276749 0%, #1f5239 100%)",
+          background: "linear-gradient(135deg, #276749 0%, #1f5239 100%)",
         }}
       >
-        <SproutMark scale={1.15} />
+        <SproutMark />
       </div>
     ),
     { ...size }

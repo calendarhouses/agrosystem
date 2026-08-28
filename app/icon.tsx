@@ -3,16 +3,16 @@ import { ImageResponse } from "next/og";
 export const size = { width: 512, height: 512 };
 export const contentType = "image/png";
 
-function SproutMark({ scale = 1 }: { scale?: number }) {
-  const s = scale;
+/** Той самий Lucide Sprout, що на /install */
+function SproutMark() {
   return (
     <svg
-      width={120 * s}
-      height={120 * s}
+      width="280"
+      height="280"
       viewBox="0 0 24 24"
       fill="none"
       stroke="white"
-      strokeWidth="2"
+      strokeWidth="1.75"
       strokeLinecap="round"
       strokeLinejoin="round"
     >
@@ -33,10 +33,11 @@ export default function Icon() {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: "linear-gradient(180deg, #276749 0%, #1f5239 100%)",
+          background: "linear-gradient(135deg, #276749 0%, #1f5239 100%)",
+          borderRadius: 112,
         }}
       >
-        <SproutMark scale={3.2} />
+        <SproutMark />
       </div>
     ),
     { ...size }
