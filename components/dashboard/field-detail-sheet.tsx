@@ -917,7 +917,7 @@ function PlanWorkPanel({
         unitOptions.length === 0
           ? equipmentLoading
             ? "Завантаження техніки…"
-            : "Немає техніки в довіднику — синхронізуйте з 1С або підключіть Wialon"
+            : "Немає техніки в довіднику — синхронізуйте з BAS AGRO або підключіть Wialon"
           : "Оберіть тип робіт і техніку"
       );
       return;
@@ -1535,6 +1535,7 @@ export function FieldDetailSheet({
         unit: payload.unit,
         costUah: 0,
         status: "draft",
+        actorName: null,
       };
       return [next, ...prev];
     });

@@ -156,7 +156,7 @@ export function FieldRegistry({
     setError(null);
     setNote(
       touched > 0
-        ? `Оновлено ${touched} рядк(ів): назва, номер і збіг із довідником 1С. Перевірте і збережіть.`
+        ? `Оновлено ${touched} рядк(ів): назва, номер і збіг із довідником BAS AGRO. Перевірте і збережіть.`
         : "Підказки збігаються з тим, що вже введено."
     );
   }
@@ -207,7 +207,7 @@ export function FieldRegistry({
             <h2 className="text-base font-bold text-zinc-900">Реєстр полів</h2>
             <p className="mt-0.5 text-sm text-zinc-500">
               Назви з Wialon неоднозначні, тому канонічну назву й номер поля
-              задаєте ви. Дані живуть тільки в нашій базі — у 1С ми лише читаємо
+              задаєте ви. Дані живуть тільки в нашій базі — у BAS AGRO ми лише читаємо
               довідник, нічого там не змінюємо.
             </p>
           </div>
@@ -238,7 +238,7 @@ export function FieldRegistry({
               variant="outline"
               className="rounded-lg border-[#E5DFD3] bg-zinc-100/80 text-zinc-600"
             >
-              {linkedCount} / {fieldCount} звірено з 1С
+              {linkedCount} / {fieldCount} звірено з BAS AGRO
             </Badge>
           </div>
         </div>
@@ -279,7 +279,7 @@ export function FieldRegistry({
               <span>Канонічна назва</span>
               <span>№ поля</span>
               <span>Урочище</span>
-              <span>Поле в 1С</span>
+              <span>Поле в BAS AGRO</span>
               <span className="text-right">Дія</span>
             </div>
             {rows.map((row) => (
@@ -325,7 +325,7 @@ function MissingInBas({ rows }: { rows: FieldRegistryRow[] }) {
         </div>
         <div className="min-w-0">
           <h2 className="text-base font-bold text-zinc-900">
-            Наші поля, яких немає в 1С
+            Наші поля, яких немає в BAS AGRO
           </h2>
           <p className="mt-0.5 text-sm text-zinc-500">
             Нічого не створюємо в BAS. Це список під майбутні чернетки, які
@@ -336,7 +336,7 @@ function MissingInBas({ rows }: { rows: FieldRegistryRow[] }) {
 
       {rows.length === 0 ? (
         <p className="rounded-xl border border-dashed border-[#E5DFD3] bg-zinc-100/50 px-4 py-6 text-center text-sm text-zinc-500">
-          Кожне наше поле звірене з довідником 1С.
+          Кожне наше поле звірене з довідником BAS AGRO.
         </p>
       ) : (
         <>
@@ -447,7 +447,7 @@ function RegistryRow({
         <Input
           value={draft.canonicalName}
           onChange={(event) => onChange({ canonicalName: event.target.value })}
-          placeholder="Назва для 1С"
+          placeholder="Назва для BAS AGRO"
           className={inputClass}
           disabled={!draft.isField}
         />
@@ -538,7 +538,7 @@ function BasLink({
         <button
           type="button"
           onClick={onUnlink}
-          title="Відв'язати від 1С"
+          title="Відв'язати від BAS AGRO"
           className="shrink-0 rounded p-0.5 text-emerald-700 hover:bg-emerald-100"
         >
           <X className="h-3.5 w-3.5" />
@@ -563,9 +563,9 @@ function BasLink({
     <Link
       href="/admin/mapping"
       className="truncate rounded-md border border-[#E5DFD3] bg-white px-2 py-1.5 text-center text-xs text-zinc-500 hover:bg-[#E5DFD3]/40"
-      title="Обрати запис 1С вручну на сторінці мапінгу"
+      title="Обрати запис BAS AGRO вручну на сторінці мапінгу"
     >
-      Немає в 1С
+      Немає в BAS AGRO
     </Link>
   );
 }

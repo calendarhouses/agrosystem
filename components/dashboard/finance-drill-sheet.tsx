@@ -452,7 +452,7 @@ function ExpensePanel({
     },
     {
       key: "fuel",
-      label: "Паливо (ДТ)",
+      label: "Паливо (ДП)",
       value: fuelCostUah,
       icon: Fuel,
       color: "text-orange-700 bg-orange-500/10",
@@ -603,7 +603,7 @@ function ResultPanel({
     {
       key: "fuel",
       label: "Паливо",
-      hint: "ДТ по полях і нарядах",
+      hint: "ДП по полях і нарядах",
       value: fuelCostUah,
       icon: Fuel,
       color: "text-orange-700 bg-orange-500/10",

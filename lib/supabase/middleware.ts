@@ -14,8 +14,19 @@ export async function updateSession(request: NextRequest) {
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!url || !anonKey) {
-    // Без credentials не блокуємо локальну розробку — лише лог
-    console.warn("[auth] Немає SUPABASE URL/ANON_KEY — proxy пропускає перевірку");
+    if (process.env.NODE_ENV === "production") {
+      console.error(
+        "[auth] Немає SUPABASE URL/ANON_KEY — production fail-closed"
+      );
+      const redirectUrl = request.nextUrl.clone();
+      redirectUrl.pathname = "/login";
+      redirectUrl.searchParams.set("error", "auth_misconfigured");
+      return NextResponse.redirect(redirectUrl);
+    }
+    // Локальна розробка без credentials — лише лог
+    console.warn(
+      "[auth] Немає SUPABASE URL/ANON_KEY — proxy пропускає перевірку"
+    );
     return supabaseResponse;
   }
 

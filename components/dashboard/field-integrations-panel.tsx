@@ -258,7 +258,7 @@ export function FieldIntegrationsPanel({
             Інтеграції (Джерела даних)
           </h3>
           <p className="mt-0.5 text-xs text-zinc-500">
-            Звʼязок з трекером і номенклатурою 1С.
+            Звʼязок з трекером і номенклатурою BAS AGRO.
           </p>
         </div>
       </div>
@@ -365,7 +365,7 @@ export function FieldIntegrationsPanel({
             <div className="flex items-center gap-2">
               <Database className="h-4 w-4 text-violet-700" />
               <p className="text-[11px] font-semibold tracking-[0.12em] text-zinc-500 uppercase">
-                1С / База номенклатури
+                BAS AGRO / База номенклатури
               </p>
             </div>
             <Button

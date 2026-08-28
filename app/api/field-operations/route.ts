@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { logActivity } from "@/lib/activity-log";
+import { actorCloseColumns, actorCreateColumns, getCurrentActor } from "@/lib/app-actor";
 import { mapOperationRow } from "@/lib/field-operations";
 import { upsertFieldOperationRow } from "@/lib/field-operations-db";
 import { createServiceSupabase } from "@/lib/supabase/server";
@@ -145,7 +147,22 @@ export async function POST(request: Request) {
         ? body.fieldId
         : null;
 
-    const row = {
+    const supabase = createServiceSupabase();
+    const actor = await getCurrentActor();
+
+    const { data: existing } = await supabase
+      .from("field_operations")
+      .select("client_key, actor_name")
+      .eq("client_key", clientKey)
+      .maybeSingle();
+
+    const isNew = !existing;
+    const hasAuthor =
+      existing != null &&
+      typeof (existing as { actor_name?: unknown }).actor_name === "string" &&
+      String((existing as { actor_name: string }).actor_name).trim().length > 0;
+
+    const row: Record<string, unknown> = {
       client_key: clientKey,
       field_key: fieldKey,
       field_id: fieldId,
@@ -208,9 +225,11 @@ export async function POST(request: Request) {
           : "none",
       closed_at: status === "completed" ? new Date().toISOString() : null,
       updated_at: new Date().toISOString(),
+      // Автор лише при створенні / якщо ще порожній (не перезаписуємо)
+      ...(!hasAuthor ? actorCreateColumns(actor) : {}),
+      ...(status === "completed" ? actorCloseColumns(actor) : {}),
     };
 
-    const supabase = createServiceSupabase();
     const result = await upsertFieldOperationRow(supabase, row);
 
     if (!result.ok) {
@@ -221,6 +240,17 @@ export async function POST(request: Request) {
             result.code === "PGRST205" || result.code === "42P01" ? 503 : 500,
         }
       );
+    }
+
+    if (isNew) {
+      void logActivity({
+        actor,
+        action: "create",
+        entityType: "field_operation",
+        entityId: result.operation.id,
+        summary: `${actor.label} створив наряд «${workType} · ${crop}»`,
+        meta: { fieldKey, status },
+      });
     }
 
     return NextResponse.json({

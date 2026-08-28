@@ -609,7 +609,7 @@ export function OperationClosePanel({
               {fieldName ? `${fieldName} · ` : ""}
               {isCorrection
                 ? "виправлення площі, палива та ЗП після закриття"
-                : "звірка план / факт (далі — чорновик 1С)"}
+                : "звірка план / факт (далі — чорновик BAS AGRO)"}
             </p>
           </div>
         </div>

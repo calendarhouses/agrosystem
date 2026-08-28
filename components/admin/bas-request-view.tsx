@@ -51,19 +51,19 @@ const SECTIONS: {
   {
     kind: "create",
     title: "Завести нові поля",
-    hint: "Цих полів у довіднику 1С немає взагалі — без них витрати нема на що відносити.",
+    hint: "Цих полів у довіднику BAS AGRO немає взагалі — без них витрати нема на що відносити.",
     icon: Plus,
   },
   {
     kind: "split",
     title: "Розділити злиті записи",
-    hint: "Один запис 1С покриває кілька фізичних полів. Wialon обміряв їх окремо.",
+    hint: "Один запис BAS AGRO покриває кілька фізичних полів. Wialon обміряв їх окремо.",
     icon: Split,
   },
   {
     kind: "area",
     title: "Уточнити площі",
-    hint: "Зв'язок правильний, але гектари в 1С розходяться з обміром понад 5%.",
+    hint: "Зв'язок правильний, але гектари в BAS AGRO розходяться з обміром понад 5%.",
     icon: Ruler,
   },
 ];
@@ -159,7 +159,7 @@ export function BasRequestView({
         result.data.fileName
       );
       setNote(
-        "Файл для 1С готовий. Бухгалтер відкриває його, перевіряє і завантажує в довідник сам."
+        "Файл для BAS AGRO готовий. Бухгалтер відкриває його, перевіряє і завантажує в довідник сам."
       );
     });
   }
@@ -177,7 +177,7 @@ export function BasRequestView({
       const { linked } = result.data;
       setNote(
         linked.length === 0
-          ? "Нових записів у 1С не знайшлося — усі зв'язки вже актуальні."
+          ? "Нових записів у BAS AGRO не знайшлося — усі зв'язки вже актуальні."
           : `Підв'язано ${linked.length}: ${linked
               .map((item) => item.field)
               .join(", ")}`
@@ -202,13 +202,13 @@ export function BasRequestView({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <h2 className="text-base font-bold text-zinc-900">
-              Що бухгалтеру треба зробити в 1С
+              Що бухгалтеру треба зробити в BAS AGRO
             </h2>
             <p className="mt-0.5 max-w-2xl text-sm text-zinc-500">
-              Список складається сам із реєстру полів. «Файл для 1С» — це книга
+              Список складається сам із реєстру полів. «Файл для BAS AGRO» — це книга
               Excel під штатне завантаження довідника: бухгалтер відкриває її у
               себе, перевіряє і завантажує сам. Чернетку для поля надіслати
-              неможливо — поля лежать у довіднику, а в довідників у 1С немає
+              неможливо — поля лежать у довіднику, а в довідників у BAS AGRO немає
               ознаки проведення, тож проміжного стану «на розгляді» не буває.
             </p>
           </div>
@@ -224,7 +224,7 @@ export function BasRequestView({
               ) : (
                 <FileSpreadsheet className="h-3.5 w-3.5" />
               )}
-              Файл для 1С
+              Файл для BAS AGRO
             </Button>
             <Button
               type="button"
@@ -249,7 +249,7 @@ export function BasRequestView({
               variant="outline"
               disabled={pending && busyKey === "relink"}
               onClick={handleRelink}
-              title="Запускати після того, як бухгалтер завів і розділив поля в 1С"
+              title="Запускати після того, як бухгалтер завів і розділив поля в BAS AGRO"
               className="h-9 gap-1.5 rounded-lg border-[#E5DFD3] bg-white px-3 text-sm font-semibold text-zinc-800 hover:bg-[#E5DFD3]/50"
             >
               {pending && busyKey === "relink" ? (
@@ -257,7 +257,7 @@ export function BasRequestView({
               ) : (
                 <Link2 className="h-3.5 w-3.5" />
               )}
-              Перезв&apos;язати з 1С
+              Перезв&apos;язати з BAS AGRO
             </Button>
           </div>
         </div>
@@ -354,7 +354,7 @@ export function BasRequestView({
       {orphans.length > 0 ? (
         <GlassCard className="hover:translate-y-0 hover:shadow-sm">
           <h2 className="text-base font-bold text-zinc-900">
-            Записи 1С без нашого поля
+            Записи BAS AGRO без нашого поля
           </h2>
           <p className="mt-0.5 mb-3 text-sm text-zinc-500">
             На них не вказує жодна геозона Wialon. Ми їх не чіпаємо — бухгалтер
@@ -367,7 +367,7 @@ export function BasRequestView({
               <ul className="mt-1 space-y-0.5">
                 {collisions.map((collision) => (
                   <li key={collision.basField.refKey}>
-                    «{collision.basField.description}» — у 1С це{" "}
+                    «{collision.basField.description}» — у BAS AGRO це{" "}
                     {collision.basField.areaHa != null
                       ? ha(collision.basField.areaHa)
                       : "запис без площі"}

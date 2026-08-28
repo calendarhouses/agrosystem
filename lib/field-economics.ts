@@ -66,7 +66,7 @@ type MoveJoinRow = {
   inventory_items_cache: {
     category: string;
     unit: string | null;
-    /** Ціна з 1С / старий unit_cost */
+    /** Ціна з BAS AGRO / старий unit_cost */
     unit_cost: number | null;
     /** Планова ціна, задана в UI */
     planned_price_uah: number | null;
@@ -82,7 +82,7 @@ function asCategory(raw: string): FieldEconomicsCategoryKey | null {
   return null;
 }
 
-/** planned_price_uah > 0, інакше unit_cost з 1С (якщо є). */
+/** planned_price_uah > 0, інакше unit_cost з BAS AGRO (якщо є). */
 export function resolveItemUnitPriceUah(item: {
   planned_price_uah?: number | null;
   unit_cost?: number | null;

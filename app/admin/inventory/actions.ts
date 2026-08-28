@@ -18,7 +18,16 @@ import {
   getBasUnits,
 } from "@/lib/bas-api";
 import { buildFullDashboard } from "@/lib/inventory-bas";
+import { enqueueInventoryInboundBasDraft } from "@/lib/bas-drafts/inventory-inbound";
+import { enqueueInventorySaleBasDraft } from "@/lib/bas-drafts/inventory-sale";
+import { logActivity } from "@/lib/activity-log";
 import {
+  actorCreateColumns,
+  actorUpdateColumns,
+  getCurrentActor,
+} from "@/lib/app-actor";
+import {
+  enqueueInventoryOutboundBasDraft,
   syncLocalMovesToBas,
   type SyncLocalMovesToBasResult,
 } from "@/lib/inventory-bas-draft-sync";
@@ -368,6 +377,8 @@ export async function createLocalOutboundMove(input: {
       return { ok: false, error: "Оберіть поле" };
     }
 
+    const actor = await getCurrentActor();
+    const actorCols = actorCreateColumns(actor);
     const payload: Record<string, unknown> = {
       item_ref_key: itemRefKey,
       field_id: fieldId,
@@ -377,6 +388,7 @@ export async function createLocalOutboundMove(input: {
       status: "draft",
       season,
       note,
+      ...actorCols,
     };
     const { data, error } = await supabase
       .from("inventory_local_moves")
@@ -385,24 +397,58 @@ export async function createLocalOutboundMove(input: {
       .single();
 
     if (error) {
-      if (error.message?.includes("season") || error.message?.includes("note")) {
-        const { season: _s, note: _n, ...withoutExtra } = payload;
+      if (
+        error.message?.includes("season") ||
+        error.message?.includes("note") ||
+        error.message?.includes("actor_")
+      ) {
+        const {
+          season: _s,
+          note: _n,
+          actor_id: _a,
+          actor_name: _an,
+          ...withoutExtra
+        } = payload;
         const retry = await supabase
           .from("inventory_local_moves")
           .insert(withoutExtra)
           .select("id")
           .single();
         if (retry.error) return { ok: false, error: retry.error.message };
+        const retryId = String(retry.data.id);
+        void enqueueInventoryOutboundBasDraft(retryId).catch((e) =>
+          console.error("[bas-drafts] outbound", e)
+        );
+        await logActivity({
+          actor,
+          action: "create",
+          entityType: "inventory_move",
+          entityId: retryId,
+          summary: `${actor.label} списав ТМЦ зі складу`,
+          meta: { type: "outbound", qty, itemRefKey, fieldId },
+        });
         revalidatePath("/inventory");
         revalidatePath("/fields");
-        return { ok: true, id: String(retry.data.id) };
+        return { ok: true, id: retryId };
       }
       return { ok: false, error: error.message };
     }
 
+    const id = String(data.id);
+    void enqueueInventoryOutboundBasDraft(id).catch((e) =>
+      console.error("[bas-drafts] outbound", e)
+    );
+    await logActivity({
+      actor,
+      action: "create",
+      entityType: "inventory_move",
+      entityId: id,
+      summary: `${actor.label} списав ТМЦ зі складу`,
+      meta: { type: "outbound", qty, itemRefKey, fieldId },
+    });
     revalidatePath("/inventory");
     revalidatePath("/fields");
-    return { ok: true, id: String(data.id) };
+    return { ok: true, id };
   } catch (err) {
     return {
       ok: false,
@@ -440,6 +486,7 @@ export async function createLocalInboundMove(input: {
 
   try {
     const supabase = createServiceSupabase();
+    const actor = await getCurrentActor();
     const payload: Record<string, unknown> = {
       item_ref_key: itemRefKey,
       field_id: fieldId,
@@ -451,6 +498,7 @@ export async function createLocalInboundMove(input: {
       note,
       unit_price_uah: unitPriceUah,
       buyer_name: buyerName,
+      ...actorCreateColumns(actor),
     };
     const { data, error } = await supabase
       .from("inventory_local_moves")
@@ -500,15 +548,23 @@ export async function createLocalInboundMove(input: {
             .select("id")
             .single();
           if (bare.error) return { ok: false, error: bare.error.message };
+          const bareId = String(bare.data.id);
+          void enqueueInventoryInboundBasDraft(bareId).catch((e) =>
+            console.error("[bas-drafts] inbound", e)
+          );
           revalidatePath("/inventory");
-          return { ok: true, id: String(bare.data.id) };
+          return { ok: true, id: bareId };
         }
         await supabase
           .from("inventory_items_cache")
           .update({ planned_price_uah: unitPriceUah })
           .eq("bas_ref_key", itemRefKey);
+        const retryId = String(retry.data.id);
+        void enqueueInventoryInboundBasDraft(retryId).catch((e) =>
+          console.error("[bas-drafts] inbound", e)
+        );
         revalidatePath("/inventory");
-        return { ok: true, id: String(retry.data.id) };
+        return { ok: true, id: retryId };
       }
       return { ok: false, error: error.message };
     }
@@ -519,8 +575,20 @@ export async function createLocalInboundMove(input: {
       .update({ planned_price_uah: unitPriceUah })
       .eq("bas_ref_key", itemRefKey);
 
+    const id = String(data.id);
+    void enqueueInventoryInboundBasDraft(id).catch((e) =>
+      console.error("[bas-drafts] inbound", e)
+    );
+    await logActivity({
+      actor,
+      action: "create",
+      entityType: "inventory_move",
+      entityId: id,
+      summary: `${actor.label} оформив прихід ТМЦ`,
+      meta: { type: "inbound", qty, itemRefKey },
+    });
     revalidatePath("/inventory");
-    return { ok: true, id: String(data.id) };
+    return { ok: true, id };
   } catch (err) {
     return {
       ok: false,
@@ -583,6 +651,7 @@ export async function createLocalHarvestSale(input: {
       };
     }
 
+    const actor = await getCurrentActor();
     const payload: Record<string, unknown> = {
       item_ref_key: itemRefKey,
       field_id: null,
@@ -594,6 +663,7 @@ export async function createLocalHarvestSale(input: {
       note,
       buyer_name: buyerName,
       unit_price_uah: unitPriceUah,
+      ...actorCreateColumns(actor),
     };
     const { data, error } = await supabase
       .from("inventory_local_moves")
@@ -617,8 +687,20 @@ export async function createLocalHarvestSale(input: {
       return { ok: false, error: error.message };
     }
 
+    const id = String(data.id);
+    void enqueueInventorySaleBasDraft(id).catch((e) =>
+      console.error("[bas-drafts] sale", e)
+    );
+    await logActivity({
+      actor,
+      action: "create",
+      entityType: "inventory_move",
+      entityId: id,
+      summary: `${actor.label} оформив продаж врожаю`,
+      meta: { type: "sale", qty, itemRefKey, buyerName },
+    });
     revalidatePath("/inventory");
-    return { ok: true, id: String(data.id) };
+    return { ok: true, id };
   } catch (err) {
     return {
       ok: false,
@@ -641,16 +723,22 @@ export async function listSupplierSuggestions(): Promise<
   return listCounterpartySuggestions("supplier");
 }
 
-/** Контрагенти з реальних BAS-документів (як у Фінансах), не весь довідник. */
+/** Контрагенти з реальних BAS-документів (як у Фінансах) + локальні імена.
+ *  Якщо BAS недоступний — усе одно віддаємо локальних покупців/постачальників. */
 async function listCounterpartySuggestions(
   role: "buyer" | "supplier"
 ): Promise<{ ok: true; names: string[] } | { ok: false; error: string }> {
+  const localNames = await listLocalCounterpartyNames(role);
+  const counts = new Map<string, number>();
+  for (const name of localNames) {
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+
   try {
     const since = "2024-03-01T00:00:00";
-    const [docs, counterparties, localNames] = await Promise.all([
+    const [docs, counterparties] = await Promise.all([
       role === "buyer" ? getBasSalesSince(since) : getBasReceiptsSince(since),
       getBasCounterparties(),
-      listLocalCounterpartyNames(role),
     ]);
 
     const cpMap = new Map(
@@ -659,7 +747,6 @@ async function listCounterpartySuggestions(
         c.Description?.trim() || "",
       ])
     );
-    const counts = new Map<string, number>();
 
     for (const doc of docs) {
       const key = (doc.Контрагент_Key || "").toLowerCase();
@@ -667,27 +754,18 @@ async function listCounterpartySuggestions(
       if (!name) continue;
       counts.set(name, (counts.get(name) ?? 0) + 1);
     }
-    for (const name of localNames) {
-      counts.set(name, (counts.get(name) ?? 0) + 1);
-    }
-
-    const names = [...counts.entries()]
-      .sort(
-        (a, b) =>
-          b[1] - a[1] || a[0].localeCompare(b[0], "uk", { sensitivity: "base" })
-      )
-      .map(([name]) => name);
-
-    return { ok: true, names };
-  } catch (err) {
-    return {
-      ok: false,
-      error:
-        err instanceof Error
-          ? err.message
-          : "Не вдалося завантажити контрагентів",
-    };
+  } catch {
+    // BAS read-only / offline — локальний список уже зібраний
   }
+
+  const names = [...counts.entries()]
+    .sort(
+      (a, b) =>
+        b[1] - a[1] || a[0].localeCompare(b[0], "uk", { sensitivity: "base" })
+    )
+    .map(([name]) => name);
+
+  return { ok: true, names };
 }
 
 async function listLocalCounterpartyNames(
@@ -701,7 +779,7 @@ async function listLocalCounterpartyNames(
       .select("buyer_name")
       .eq("type", type)
       .not("buyer_name", "is", null)
-      .limit(200);
+      .limit(500);
     if (error || !data) return [];
     return [
       ...new Set(
@@ -1010,7 +1088,7 @@ export async function syncLocalMovesToBasAction(): Promise<
       error:
         err instanceof Error
           ? err.message
-          : "Не вдалося синхронізувати чернетки з 1С",
+          : "Не вдалося синхронізувати чернетки з BAS AGRO",
     };
   }
 }
@@ -1106,7 +1184,7 @@ async function aggregateLocalMoves(
           : ("outbound" as const);
     const status: "draft" | "sent_to_1c" =
       row.status === "sent_to_1c" ? "sent_to_1c" : "draft";
-    // Після mark sent → бухгалтер проводить у 1С → BAS sync.
+    // Після mark sent → бухгалтер проводить у BAS AGRO → BAS sync.
     // У віртуальний залишок / KPI лишаємо лише draft, інакше подвійний рахунок.
     if (status === "draft") {
       if (type === "inbound") {
@@ -1282,7 +1360,7 @@ export async function updateInventoryItemUnitCost(input: {
       return {
         ok: false,
         error:
-          "Позиції немає в кеші. Спочатку синхронізуй номенклатуру з 1С.",
+          "Позиції немає в кеші. Спочатку синхронізуй номенклатуру з BAS AGRO.",
       };
     }
 
@@ -1510,6 +1588,7 @@ export type LocalMoveRow = {
   note: string | null;
   buyerName: string | null;
   unitPriceUah: number | null;
+  actorName: string | null;
   attachmentCount: number;
 };
 
@@ -1537,6 +1616,7 @@ export async function listLocalMoves(input?: {
         unit_price_uah,
         item_ref_key,
         field_id,
+        actor_name,
         farm_fields ( id, name ),
         inventory_items_cache ( name, custom_name, unit, category )
       `
@@ -1559,7 +1639,8 @@ export async function listLocalMoves(input?: {
         error.message?.includes("season") ||
         error.message?.includes("note") ||
         error.message?.includes("buyer_name") ||
-        error.message?.includes("unit_price")
+        error.message?.includes("unit_price") ||
+        error.message?.includes("actor_name")
       ) {
         const legacy = await supabase
           .from("inventory_local_moves")
@@ -1628,6 +1709,7 @@ export async function getLocalMoveById(
         unit_price_uah,
         item_ref_key,
         field_id,
+        actor_name,
         farm_fields ( id, name ),
         inventory_items_cache ( name, custom_name, unit, category )
       `
@@ -1744,6 +1826,10 @@ function mapLocalMoveRows(data: Record<string, unknown>[]): LocalMoveRow[] {
           ? String(row.buyer_name)
           : null,
       unitPriceUah,
+      actorName:
+        typeof row.actor_name === "string" && row.actor_name.trim()
+          ? String(row.actor_name).trim()
+          : null,
       attachmentCount: 0,
     };
   });
@@ -1756,6 +1842,7 @@ export async function updateLocalMove(input: {
   fieldId?: string | null;
   buyerName?: string | null;
   unitPriceUah?: number | null;
+  note?: string | null;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const id = input.id?.trim();
   if (!id) return { ok: false, error: "Невірний id" };
@@ -1824,13 +1911,33 @@ export async function updateLocalMove(input: {
         input.unitPriceUah == null ? null : price;
     }
 
+    if (input.note !== undefined) {
+      patch.note = input.note?.trim() || null;
+    }
+
+    const actor = await getCurrentActor();
+    Object.assign(patch, actorUpdateColumns(actor));
+
     const { error } = await supabase
       .from("inventory_local_moves")
       .update(patch)
       .eq("id", id)
       .eq("status", "draft");
 
-    if (error) return { ok: false, error: error.message };
+    if (error) {
+      if (error.message?.includes("updated_by")) {
+        delete patch.updated_by_id;
+        delete patch.updated_by_name;
+        const retry = await supabase
+          .from("inventory_local_moves")
+          .update(patch)
+          .eq("id", id)
+          .eq("status", "draft");
+        if (retry.error) return { ok: false, error: retry.error.message };
+      } else {
+        return { ok: false, error: error.message };
+      }
+    }
 
     if (
       String(existing.type) === "inbound" &&
@@ -1842,6 +1949,15 @@ export async function updateLocalMove(input: {
         .update({ planned_price_uah: Number(input.unitPriceUah) })
         .eq("bas_ref_key", String(existing.item_ref_key).toLowerCase());
     }
+
+    await logActivity({
+      actor,
+      action: "update",
+      entityType: "inventory_move",
+      entityId: id,
+      summary: `${actor.label} змінив рух ТМЦ`,
+      meta: { type: existing.type },
+    });
 
     revalidatePath("/inventory");
     return { ok: true };
@@ -1892,6 +2008,16 @@ export async function deleteLocalMove(
       .eq("status", "draft");
 
     if (error) return { ok: false, error: error.message };
+
+    const actor = await getCurrentActor();
+    await logActivity({
+      actor,
+      action: "delete",
+      entityType: "inventory_move",
+      entityId: moveId,
+      summary: `${actor.label} видалив рух ТМЦ`,
+    });
+
     revalidatePath("/inventory");
     return { ok: true };
   } catch (err) {

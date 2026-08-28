@@ -2,6 +2,9 @@
 
 import { redirect } from "next/navigation";
 
+import { logActivity } from "@/lib/activity-log";
+import { getCurrentActor } from "@/lib/app-actor";
+import { normalizeLoginToEmail } from "@/lib/login-identity";
 import { createAuthServerSupabase } from "@/lib/supabase/auth-server";
 
 export type AuthActionResult =
@@ -9,17 +12,17 @@ export type AuthActionResult =
   | { ok: false; error: string };
 
 export async function loginWithPassword(
-  email: string,
+  login: string,
   password: string
 ): Promise<AuthActionResult> {
-  const trimmedEmail = email.trim().toLowerCase();
-  if (!trimmedEmail || !password) {
-    return { ok: false, error: "Введіть email і пароль" };
+  const email = normalizeLoginToEmail(login);
+  if (!email || !password) {
+    return { ok: false, error: "Введіть логін і пароль" };
   }
 
   const supabase = await createAuthServerSupabase();
   const { error } = await supabase.auth.signInWithPassword({
-    email: trimmedEmail,
+    email,
     password,
   });
 
@@ -28,10 +31,19 @@ export async function loginWithPassword(
       ok: false,
       error:
         error.message === "Invalid login credentials"
-          ? "Невірний email або пароль"
+          ? "Невірний логін або пароль"
           : error.message,
     };
   }
+
+  const actor = await getCurrentActor();
+  await logActivity({
+    actor,
+    action: "login",
+    entityType: "session",
+    entityId: actor.id || null,
+    summary: `${actor.label} увійшов у систему`,
+  });
 
   return { ok: true };
 }

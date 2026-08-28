@@ -15,7 +15,8 @@ type Body = {
 
 /**
  * POST /api/fuel/transactions/send-1c
- * Готує чернетку BAS (Posted: false). Жива відправка вимкнена (bas-readonly).
+ * Готує / створює чернетку BAS (Posted: false).
+ * Жива відправка: BAS_DRAFT_POST_ENABLED=true (див. lib/bas-drafts/config.ts).
  */
 export async function POST(request: Request) {
   try {
@@ -49,7 +50,7 @@ export async function POST(request: Request) {
         error:
           error instanceof Error
             ? error.message
-            : "Не вдалося підготувати чернетку 1С",
+            : "Не вдалося підготувати чернетку BAS AGRO",
       },
       { status: 500, headers: JSON_UTF8 }
     );

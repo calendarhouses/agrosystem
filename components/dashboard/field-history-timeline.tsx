@@ -84,6 +84,11 @@ function OperationEventCard({
               {event.machinery}
             </p>
           ) : null}
+          {event.closedByName || event.actorName ? (
+            <p className="mt-0.5 truncate text-[11px] text-zinc-400">
+              {event.closedByName || event.actorName}
+            </p>
+          ) : null}
         </div>
         <div className="flex shrink-0 items-start gap-1">
           <time className="shrink-0 text-[11px] font-medium tabular-nums text-zinc-400">
@@ -155,6 +160,11 @@ function MaterialEventCard({ event }: { event: Extract<FieldEvent, { type: "mate
             Внесення: {event.title}
           </p>
           <p className="mt-0.5 text-xs text-zinc-500">{event.categoryLabel}</p>
+          {event.actorName ? (
+            <p className="mt-0.5 truncate text-[11px] text-zinc-400">
+              {event.actorName}
+            </p>
+          ) : null}
         </div>
         <time className="shrink-0 text-[11px] font-medium tabular-nums text-zinc-400">
           {formatEventDate(event.date)}

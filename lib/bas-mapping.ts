@@ -1,4 +1,9 @@
-import type { BasField, BasMachinery, BasStorage } from "@/lib/bas-api";
+import type {
+  BasField,
+  BasMachinery,
+  BasNomenclature,
+  BasStorage,
+} from "@/lib/bas-api";
 
 export const UNMAPPED_VALUE = "__none__";
 
@@ -8,7 +13,7 @@ export type BasSelectOption = {
   /** Текст для авто-мапінгу */
   matchText?: string;
   areaHa?: number | null;
-  /** Номер поля з 1С: "6", "1.1", "10.1" */
+  /** Номер поля з BAS AGRO: "6", "1.1", "10.1" */
   fieldNumberKey?: string | null;
 };
 
@@ -20,12 +25,17 @@ export type MappingLocalRow = {
   areaHa?: number | null;
   /** Номер поля з Wialon / Supabase: "6", "1.1" */
   fieldNumberKey?: string | null;
+  /** Для ТМЦ — локальна позиція без реального ключа BAS AGRO */
+  isLocal?: boolean;
 };
 
 export type BasMappingTable =
   | "fuel_storages"
   | "farm_fields"
-  | "wialon_bas_mapping";
+  | "wialon_bas_mapping"
+  | "inventory_items_cache";
+
+export type MappingCatalogKind = "tmc" | "machinery" | "storages" | "fields";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -378,4 +388,77 @@ export function withUnmappedOption(
   options: BasSelectOption[]
 ): BasSelectOption[] {
   return [{ value: UNMAPPED_VALUE, label: "Не зіставлено" }, ...options];
+}
+
+export function normalizeMatchName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function nomenclatureToOptions(
+  items: BasNomenclature[]
+): BasSelectOption[] {
+  return sortByLabel(
+    items.flatMap((item) => {
+      if (item.IsFolder || item.DeletionMark) return [];
+      const name = nonEmpty(item.Description) ?? "Без назви";
+      const code = nonEmpty(item.Code);
+      const option = toOption(
+        item.Ref_Key,
+        code ? `${name} · ${code}` : name
+      );
+      if (!option) return [];
+      option.matchText = [item.Description, item.Code]
+        .map((p) => nonEmpty(p))
+        .filter((p): p is string => Boolean(p))
+        .join("\n");
+      return [option];
+    })
+  );
+}
+
+/**
+ * 100% збіг назв (нормалізованих) між AgroSystem і BAS AGRO.
+ * Не чіпає вже зіставлені рядки; один Ref_Key — максимум один рядок.
+ */
+export function autoMapByExactName(
+  rows: MappingLocalRow[],
+  options: BasSelectOption[],
+  currentValues: Record<string, string>
+): { next: Record<string, string>; filled: number } {
+  const taken = new Set<string>();
+  for (const row of rows) {
+    const current = currentValues[row.id] ?? row.basRefKey ?? UNMAPPED_VALUE;
+    if (current && current !== UNMAPPED_VALUE) taken.add(current);
+  }
+
+  const byName = new Map<string, BasSelectOption[]>();
+  for (const option of options) {
+    if (option.value === UNMAPPED_VALUE) continue;
+    const base = (option.label.split("·")[0] ?? option.label).split("(")[0] ?? option.label;
+    const key = normalizeMatchName(base);
+    if (!key) continue;
+    const list = byName.get(key) ?? [];
+    list.push(option);
+    byName.set(key, list);
+  }
+
+  const next = { ...currentValues };
+  let filled = 0;
+  for (const row of rows) {
+    const current = next[row.id] ?? row.basRefKey ?? UNMAPPED_VALUE;
+    if (current && current !== UNMAPPED_VALUE) continue;
+
+    const key = normalizeMatchName(row.title);
+    if (!key) continue;
+    const hits = (byName.get(key) ?? []).filter((o) => !taken.has(o.value));
+    if (hits.length !== 1) continue;
+    next[row.id] = hits[0].value;
+    taken.add(hits[0].value);
+    filled += 1;
+  }
+  return { next, filled };
 }

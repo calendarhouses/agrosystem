@@ -259,7 +259,7 @@ function MappingRow({
           }}
         >
           <SelectTrigger className="h-10 w-full min-w-0 rounded-lg border-[#E5DFD3] bg-[#F4F1EA] text-left text-sm text-zinc-900 data-[size=default]:h-10">
-            <SelectValue placeholder="Оберіть запис 1С" />
+            <SelectValue placeholder="Оберіть запис BAS AGRO" />
           </SelectTrigger>
           <SelectContent
             alignItemWithTrigger={false}

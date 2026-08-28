@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 
+import { enqueueFuelBasDraft } from "@/lib/fuel-bas-sync";
+import { logActivity } from "@/lib/activity-log";
+import { actorCreateColumns, getCurrentActor } from "@/lib/app-actor";
 import { resolveWialonVariance } from "@/lib/fuel-wialon-match";
 import { mapFuelTransactionRow } from "@/lib/fuel-transactions";
 import { computeTotalCost, roundLiters, roundPrice } from "@/lib/fuel-wac";
@@ -121,6 +124,7 @@ export async function POST(request: Request) {
       );
     }
 
+    const actor = await getCurrentActor();
     const insertPayload: Record<string, unknown> = {
       transaction_type: "outbound",
       from_storage_id: fromStorageId,
@@ -135,6 +139,7 @@ export async function POST(request: Request) {
       price_per_liter: donorPrice,
       total_cost: totalCost,
       sync_status: "pending_1c",
+      ...actorCreateColumns(actor),
       ...(fieldOperationId ? { field_operation_id: fieldOperationId } : {}),
     };
 
@@ -154,16 +159,25 @@ export async function POST(request: Request) {
         delete retryPayload.equipment_id;
       }
       if (
-        fieldOperationId &&
-        (txError.message?.includes("field_operation_id") ||
-          txError.code === "42703")
+        txError.message?.includes("field_operation_id") ||
+        txError.code === "42703"
       ) {
         delete retryPayload.field_operation_id;
+      }
+      if (
+        txError.message?.includes("actor_id") ||
+        txError.message?.includes("actor_name") ||
+        txError.code === "42703"
+      ) {
+        delete retryPayload.actor_id;
+        delete retryPayload.actor_name;
       }
 
       if (
         retryPayload.equipment_id !== insertPayload.equipment_id ||
-        retryPayload.field_operation_id !== insertPayload.field_operation_id
+        retryPayload.field_operation_id !== insertPayload.field_operation_id ||
+        retryPayload.actor_id !== insertPayload.actor_id ||
+        retryPayload.actor_name !== insertPayload.actor_name
       ) {
         const retry = await supabase
           .from("fuel_transactions")
@@ -172,6 +186,17 @@ export async function POST(request: Request) {
           .single();
 
         if (!retry.error && retry.data) {
+          const retryTx = retry.data as Record<string, unknown>;
+          void enqueueFuelBasDraft({
+            transactionId: String(retryTx.id),
+            transactionType: "outbound",
+            amountLiters: amount,
+            pricePerLiter: donorPrice,
+            totalCost,
+            fromStorageId,
+            toStorageId: null,
+          }).catch((e) => console.error("[bas-drafts] fuel outbound", e));
+
           return NextResponse.json(
             {
               ok: true,
@@ -180,9 +205,7 @@ export async function POST(request: Request) {
               wialonVerified,
               pricePerLiter: donorPrice,
               totalCost,
-              transaction: mapFuelTransactionRow(
-                retry.data as Record<string, unknown>
-              ),
+              transaction: mapFuelTransactionRow(retryTx),
             },
             { headers: JSON_UTF8 }
           );
@@ -203,6 +226,26 @@ export async function POST(request: Request) {
         { status: 500, headers: JSON_UTF8 }
       );
     }
+
+    const saved = tx as Record<string, unknown>;
+    void enqueueFuelBasDraft({
+      transactionId: String(saved.id),
+      transactionType: "outbound",
+      amountLiters: amount,
+      pricePerLiter: donorPrice,
+      totalCost,
+      fromStorageId,
+      toStorageId: null,
+    }).catch((e) => console.error("[bas-drafts] fuel outbound", e));
+
+    void logActivity({
+      actor,
+      action: "create",
+      entityType: "fuel_transaction",
+      entityId: String(saved.id),
+      summary: `${actor.label} оформив заправку техніки`,
+      meta: { amountLiters: amount, equipmentId, fromStorageId },
+    });
 
     return NextResponse.json(
       {

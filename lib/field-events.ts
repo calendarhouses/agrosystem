@@ -27,6 +27,8 @@ export type FieldEventMaterial = {
   unit: string;
   costUah: number;
   status: "draft" | "sent_to_1c";
+  /** Хто зберіг у системі, напр. «Юрій» */
+  actorName: string | null;
 };
 
 export type FieldEventOperation = {
@@ -50,6 +52,8 @@ export type FieldEventOperation = {
   /** Паливо + ЗП, ₴ */
   costUah: number;
   status: "completed";
+  actorName: string | null;
+  closedByName: string | null;
 };
 
 /** Автоматичний лог витрати з ДРП Wialon */
@@ -109,6 +113,7 @@ type RawMoveRow = {
   date: string;
   qty: number | string;
   status: string | null;
+  actor_name?: string | null;
   inventory_items_cache:
     | {
         category: string | null;
@@ -145,6 +150,8 @@ type RawOpRow = {
   wage_fact: number | string | null;
   wage_plan: number | string | null;
   status: string | null;
+  actor_name?: string | null;
+  closed_by_name?: string | null;
 };
 
 function mapMaterial(row: RawMoveRow): FieldEventMaterial | null {
@@ -174,6 +181,10 @@ function mapMaterial(row: RawMoveRow): FieldEventMaterial | null {
     unit,
     costUah: round2(qty * unitPrice),
     status: row.status === "sent_to_1c" ? "sent_to_1c" : "draft",
+    actorName:
+      row.actor_name != null && String(row.actor_name).trim()
+        ? String(row.actor_name).trim()
+        : null,
   };
 }
 
@@ -221,6 +232,14 @@ function mapOperation(
     fuelCostUah,
     costUah: round2(fuelCostUah + wageUah),
     status: "completed",
+    actorName:
+      row.actor_name != null && String(row.actor_name).trim()
+        ? String(row.actor_name).trim()
+        : null,
+    closedByName:
+      row.closed_by_name != null && String(row.closed_by_name).trim()
+        ? String(row.closed_by_name).trim()
+        : null,
   };
 }
 
@@ -269,6 +288,7 @@ async function fetchMaterialMoves(
       date,
       qty,
       status,
+      actor_name,
       inventory_items_cache (
         category,
         name,
@@ -381,7 +401,9 @@ const COMPLETED_OP_SELECT = `
   fuel_plan,
   wage_fact,
   wage_plan,
-  status
+  status,
+  actor_name,
+  closed_by_name
 `;
 
 function dedupeRawOps(rows: RawOpRow[]): RawOpRow[] {
@@ -444,6 +466,24 @@ async function fetchCompletedOps(
     ) {
       return [];
     }
+    if (
+      error.message?.includes("actor_name") ||
+      error.message?.includes("closed_by_name")
+    ) {
+      const legacySelect = COMPLETED_OP_SELECT.replace(
+        /,\s*actor_name,\s*closed_by_name/,
+        ""
+      );
+      const legacy = await supabase
+        .from("field_operations")
+        .select(legacySelect)
+        .eq("status", "completed")
+        .eq("season", season)
+        .or(orFilter)
+        .order("occurred_at", { ascending: false });
+      if (legacy.error) return [];
+      return dedupeRawOps((legacy.data ?? []) as unknown as RawOpRow[]);
+    }
     if (error.message?.includes("season") || error.code === "42703") {
       const year = Number(season);
       let q = supabase
@@ -454,12 +494,12 @@ async function fetchCompletedOps(
       if (Number.isFinite(year)) q = q.eq("season_year", year);
       const legacy = await q.order("occurred_at", { ascending: false });
       if (legacy.error) return [];
-      return dedupeRawOps((legacy.data ?? []) as RawOpRow[]);
+      return dedupeRawOps((legacy.data ?? []) as unknown as RawOpRow[]);
     }
     throw new Error(error.message);
   }
 
-  return dedupeRawOps((data ?? []) as RawOpRow[]);
+  return dedupeRawOps((data ?? []) as unknown as RawOpRow[]);
 }
 
 /**

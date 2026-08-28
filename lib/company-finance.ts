@@ -81,9 +81,9 @@ export type CompanyFinancialOverview = {
   burnComparesToSeasonPlan: boolean;
   /** Матриця полів, burnRate ↓ */
   fields: CompanyFieldBurnRow[];
-  /** Актуальна ціна ДТ ₴/л */
+  /** Актуальна ціна ДП ₴/л */
   dieselPriceUah: number;
-  /** Локальні продажі врожаю (тінь, лише draft — без дубля з 1С) */
+  /** Локальні продажі врожаю (тінь, лише draft — без дубля з BAS AGRO) */
   localSalesUah: number;
   /** Локальні приходи/закупки (тінь) за період */
   localInboundUah: number;
@@ -565,7 +565,7 @@ export function buildCompanyFinancialOverview(
         Math.round(fuelCostUah) > 0
           ? [
               {
-                label: "ДТ по полях (Wialon / наряди)",
+                label: "ДП по полях (Wialon / наряди)",
                 amountUah: Math.round(fuelCostUah),
               },
             ]

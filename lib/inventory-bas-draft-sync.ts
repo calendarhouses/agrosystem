@@ -1,18 +1,23 @@
 /**
  * Чернетки Лімітно-забірних карт у BAS (Document_ИНАГРО_ЛимитноЗаборнаяКарта).
  *
- * За замовчуванням DRY RUN: POST у 1С вимкнений (BAS_DRAFT_POST_ENABLED = false).
+ * POST лише через lib/bas-drafts/post.ts + isBasDraftPostEnabled().
  * Проведені документи не чіпаємо — лише Posted: false.
- * Увімкнення реального POST — лише за явним підтвердженням (див. bas-readonly).
  */
 
+import {
+  basDefaultWarehouseKey,
+  basOrganizationKey,
+  isBasDraftPostEnabled,
+} from "@/lib/bas-drafts/config";
+import { postBasDocumentDraft, toIsoDateTime } from "@/lib/bas-drafts/post";
+import {
+  markBasDraftFailure,
+  markBasDraftSuccess,
+} from "@/lib/bas-drafts/track";
 import { createServiceSupabase } from "@/lib/supabase/server";
 
-/**
- * Увімкни лише після явного підтвердження бухгалтерії / задачі.
- * true → реальний POST чернетки в OData (Posted: false).
- */
-const BAS_DRAFT_POST_ENABLED = false;
+const ENTITY = "Document_ИНАГРО_ЛимитноЗаборнаяКарта";
 
 export type LimitCardMaterialLine = {
   LineNumber: number;
@@ -27,12 +32,10 @@ export type LimitCardDraftPayload = {
   Posted: false;
   DeletionMark: false;
   Комментарий: string;
-  /** Поле BAS (підрозділ), якщо є bas_ref_key у farm_fields */
   УдалитьПодразделение_Key?: string;
   Склад_Key?: string;
   Организация_Key?: string;
   Материалы: LimitCardMaterialLine[];
-  /** Мета для логу / UI (не відправляється в 1С) */
   _meta: {
     groupKey: string;
     fieldId: string | null;
@@ -47,6 +50,7 @@ export type SyncLocalMovesToBasResult = {
   draftCount: number;
   moveCount: number;
   payloads: LimitCardDraftPayload[];
+  errors: string[];
 };
 
 type DraftMoveRow = {
@@ -55,6 +59,7 @@ type DraftMoveRow = {
   field_id: string | null;
   qty: number;
   date: string;
+  bas_draft_ref_key: string | null;
   farm_fields: {
     id: string;
     name: string;
@@ -68,30 +73,6 @@ type DraftMoveRow = {
     unit: string | null;
   } | null;
 };
-
-function requiredEnv(name: string): string {
-  const value = process.env[name]?.trim();
-  if (!value) throw new Error(`${name} не задано в env`);
-  return value;
-}
-
-function basicAuthHeader(): string {
-  const token = Buffer.from(
-    `${requiredEnv("BAS_USER")}:${requiredEnv("BAS_PASS")}`,
-    "utf8"
-  ).toString("base64");
-  return `Basic ${token}`;
-}
-
-function odataBaseUrl(): string {
-  return requiredEnv("BAS_ODATA_URL").replace(/\/+$/, "");
-}
-
-function toIsoDateTime(iso: string): string {
-  const day = iso.slice(0, 10);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(day)) return `${day}T00:00:00`;
-  return new Date(iso).toISOString().slice(0, 19);
-}
 
 function dayKey(iso: string): string {
   return iso.slice(0, 10) || "unknown-date";
@@ -117,6 +98,7 @@ function buildPayloads(rows: DraftMoveRow[]): LimitCardDraftPayload[] {
   const groups = new Map<string, Group>();
 
   for (const row of rows) {
+    if (row.bas_draft_ref_key) continue;
     const field = unwrapOne(row.farm_fields);
     const item = unwrapOne(row.inventory_items_cache);
     if (!item?.bas_ref_key) continue;
@@ -156,10 +138,8 @@ function buildPayloads(rows: DraftMoveRow[]): LimitCardDraftPayload[] {
     }
   }
 
-  const orgKey = process.env.BAS_ORGANIZATION_KEY?.trim().toLowerCase();
-  const warehouseKey = process.env.BAS_DEFAULT_WAREHOUSE_KEY
-    ?.trim()
-    .toLowerCase();
+  const orgKey = basOrganizationKey();
+  const warehouseKey = basDefaultWarehouseKey();
 
   return [...groups.values()]
     .filter((g) => g.lines.length > 0)
@@ -218,67 +198,8 @@ export function toODataBody(
 }
 
 /**
- * Реальний POST чернетки. Зараз викликається лише якщо BAS_DRAFT_POST_ENABLED.
- */
-async function postBasLimitCardDraft(
-  body: Record<string, unknown>
-): Promise<{ ok: true; refKey?: string } | { ok: false; error: string }> {
-  const url = `${odataBaseUrl()}/odata/standard.odata/${encodeURIComponent(
-    "Document_ИНАГРО_ЛимитноЗаборнаяКарта"
-  )}?$format=json`;
-
-  try {
-    const response = await fetch(url, {
-      method: "POST",
-      cache: "no-store",
-      signal: AbortSignal.timeout(60_000),
-      headers: {
-        Authorization: basicAuthHeader(),
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
-
-    const raw = await response.text();
-    let parsed: { Ref_Key?: string; "odata.error"?: { message?: { value?: string } | string } };
-    try {
-      parsed = JSON.parse(raw) as typeof parsed;
-    } catch {
-      return {
-        ok: false,
-        error: `відповідь не JSON (HTTP ${response.status})`,
-      };
-    }
-
-    if (!response.ok || parsed["odata.error"]) {
-      const err = parsed["odata.error"]?.message;
-      const msg =
-        typeof err === "string"
-          ? err
-          : err && typeof err === "object"
-            ? err.value
-            : undefined;
-      return {
-        ok: false,
-        error: `HTTP ${response.status}${msg ? ` — ${msg}` : ""}`,
-      };
-    }
-
-    return { ok: true, refKey: parsed.Ref_Key };
-  } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : "мережева помилка",
-    };
-  }
-}
-
-/**
- * Витягує draft-рухи, формує чернетки ЛЗК.
- * Dry-run: лише console.log JSON — статус sent_to_1c НЕ змінюємо ніколи тут
- * (інакше рухи зникають з /export до бухгалтера).
- * sent_to_1c — лише на /export після «Позначити як передані».
+ * Batch: усі draft outbound без bas_draft_ref_key → ЛЗК.
+ * Dry-run не пише ref у БД. sent_to_1c лишається контуром Excel (/export).
  */
 export async function syncLocalMovesToBas(): Promise<SyncLocalMovesToBasResult> {
   const supabase = createServiceSupabase();
@@ -292,6 +213,7 @@ export async function syncLocalMovesToBas(): Promise<SyncLocalMovesToBasResult> 
       field_id,
       qty,
       date,
+      bas_draft_ref_key,
       farm_fields (
         id,
         name,
@@ -308,6 +230,7 @@ export async function syncLocalMovesToBas(): Promise<SyncLocalMovesToBasResult> 
     )
     .eq("status", "draft")
     .eq("type", "outbound")
+    .is("bas_draft_ref_key", null)
     .order("date", { ascending: true });
 
   if (error) {
@@ -320,6 +243,8 @@ export async function syncLocalMovesToBas(): Promise<SyncLocalMovesToBasResult> 
     field_id: (row.field_id as string | null) ?? null,
     qty: Number(row.qty) || 0,
     date: String(row.date),
+    bas_draft_ref_key:
+      row.bas_draft_ref_key != null ? String(row.bas_draft_ref_key) : null,
     farm_fields: unwrapOne(
       row.farm_fields as
         | DraftMoveRow["farm_fields"]
@@ -332,49 +257,71 @@ export async function syncLocalMovesToBas(): Promise<SyncLocalMovesToBasResult> 
     ),
   }));
 
+  const dryRun = !isBasDraftPostEnabled();
   if (rows.length === 0) {
     return {
-      dryRun: !BAS_DRAFT_POST_ENABLED,
+      dryRun,
       draftCount: 0,
       moveCount: 0,
       payloads: [],
+      errors: [],
     };
   }
 
   const payloads = buildPayloads(rows);
   const allMoveIds = payloads.flatMap((p) => p._meta.moveIds);
+  const errors: string[] = [];
 
   for (const payload of payloads) {
-    const odataBody = toODataBody(payload);
-    console.log("DRY RUN PAYLOAD:", JSON.stringify(odataBody, null, 2));
-    console.log("DRY RUN META:", payload._meta);
+    const result = await postBasDocumentDraft(ENTITY, toODataBody(payload));
+    if (!result.ok) {
+      const msg = `${payload._meta.fieldName}: ${result.error}`;
+      errors.push(msg);
+      await markBasDraftFailure({
+        table: "inventory_local_moves",
+        ids: payload._meta.moveIds,
+        error: result.error,
+      });
+      continue;
+    }
 
-    if (BAS_DRAFT_POST_ENABLED) {
-      // Реальний POST чернетки (Posted: false) — увімкнути лише свідомо.
-      const result = await postBasLimitCardDraft(odataBody);
-      if (!result.ok) {
-        throw new Error(
-          `BAS draft POST (${payload._meta.fieldName}): ${result.error}`
-        );
-      }
-    } else {
-      console.log("DRY RUN FAKE RESPONSE:", {
-        Ref_Key: crypto.randomUUID(),
-        Posted: false,
-        Number: "DRY-RUN",
+    if (!result.dryRun) {
+      await markBasDraftSuccess({
+        table: "inventory_local_moves",
+        ids: payload._meta.moveIds,
+        refKey: result.refKey,
+        entitySet: ENTITY,
       });
     }
   }
 
-  // Статус sent_to_1c НЕ змінюємо тут — лише через /export
-  // («Позначити як передані» після завантаження Excel).
-  // Навіть після майбутнього POST чернеток у 1С бухгалтерський контур
-  // лишається на сторінці експорту.
-
   return {
-    dryRun: !BAS_DRAFT_POST_ENABLED,
+    dryRun,
     draftCount: payloads.length,
     moveCount: allMoveIds.length,
     payloads,
+    errors,
   };
+}
+
+/**
+ * Після створення списання: якщо POST увімкнено — batch ЛЗК для всіх
+ * незакритих draft outbound (група поле+день). У dry-run лише лог однієї групи.
+ */
+export async function enqueueInventoryOutboundBasDraft(
+  moveId: string
+): Promise<{ ok: boolean; dryRun: boolean; error?: string }> {
+  if (!isBasDraftPostEnabled()) {
+    // Не спамимо dry-run на кожне збереження — batch через syncLocalMovesToBasAction.
+    console.log(
+      "[bas-drafts] outbound skip auto-post (BAS_DRAFT_POST_ENABLED=false)",
+      moveId
+    );
+    return { ok: true, dryRun: true };
+  }
+  const result = await syncLocalMovesToBas();
+  if (result.errors.length > 0) {
+    return { ok: false, dryRun: false, error: result.errors[0] };
+  }
+  return { ok: true, dryRun: false };
 }

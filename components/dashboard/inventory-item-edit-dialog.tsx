@@ -135,7 +135,7 @@ export function InventoryItemEditDialog({
               className="h-10"
             />
             <p className="text-[11px] text-zinc-400">
-              Якщо порожньо — показується назва з 1С
+              Якщо порожньо — показується назва з BAS AGRO
             </p>
           </div>
 

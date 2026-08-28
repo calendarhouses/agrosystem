@@ -31,7 +31,7 @@ export default async function BasRequestPage() {
       <PageHeader
         icon={FileOutput}
         title="Заявка бухгалтеру"
-        description="Перелік змін у довіднику полів 1С, які випливають із нашого реєстру. Вносить їх бухгалтер — ми в BAS нічого не пишемо"
+        description="Перелік змін у довіднику полів BAS AGRO, які випливають із нашого реєстру. Вносить їх бухгалтер — ми в BAS нічого не пишемо"
       />
 
       <BasRequestView

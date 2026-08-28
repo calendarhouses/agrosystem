@@ -4,12 +4,14 @@ import { MappingView } from "@/components/admin/mapping-view";
 import {
   getBasFields,
   getBasMachinery,
+  getBasNomenclature,
   getBasStorages,
 } from "@/lib/bas-api";
 import {
   extractFieldNumberKey,
   fieldsToOptions,
   machineryToOptions,
+  nomenclatureToOptions,
   normalizeBasRefKey,
   storagesToOptions,
   type MappingLocalRow,
@@ -19,7 +21,7 @@ import { syncWialonGeofencesToFarmFields } from "@/lib/wialon-farm-sync";
 import { getWialonUnits, wialonLogin } from "@/lib/wialon";
 
 export const metadata: Metadata = {
-  title: "Мапінг 1С",
+  title: "Мапінг BAS AGRO",
 };
 
 export const dynamic = "force-dynamic";
@@ -174,36 +176,92 @@ async function loadMachineryRows(): Promise<MappingLocalRow[]> {
   }));
 }
 
+async function loadTmcRows(): Promise<MappingLocalRow[]> {
+  const supabase = createServiceSupabase();
+  const { data, error } = await supabase
+    .from("inventory_items_cache")
+    .select(
+      "id, bas_ref_key, name, custom_name, category, unit, is_local, is_hidden"
+    )
+    .or("is_hidden.is.null,is_hidden.eq.false")
+    .order("name", { ascending: true })
+    .limit(800);
+
+  if (error) {
+    console.error("[bas-mapping] inventory_items_cache:", error.message);
+    return [];
+  }
+
+  const categoryLabel: Record<string, string> = {
+    zzr: "ЗЗР",
+    fertilizer: "Добрива",
+    harvest: "Врожай",
+    parts: "Запчастини",
+    seed: "Насіння",
+  };
+
+  return (data ?? []).map((row) => {
+    const title = String(row.custom_name?.trim() || row.name || "ТМЦ");
+    const isLocal = row.is_local === true;
+    const basRefKey = normalizeBasRefKey(
+      row.bas_ref_key != null ? String(row.bas_ref_key) : null
+    );
+    return {
+      id: String(row.id),
+      title,
+      subtitle: [
+        categoryLabel[String(row.category)] ?? row.category,
+        row.unit ? String(row.unit) : null,
+        isLocal ? "локальна" : null,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+      basRefKey: isLocal ? null : basRefKey,
+      isLocal,
+    };
+  });
+}
+
 export default async function BasMappingPage() {
+  const props = await loadBasMappingViewProps();
+  return <MappingView {...props} />;
+}
+
+export async function loadBasMappingViewProps() {
   await Promise.all([syncWialonFieldRows(), syncWialonMappingRows()]);
 
   const [
     storages,
     fields,
     machinery,
+    tmc,
     basStorages,
     basFields,
     basMachinery,
+    basNomenclature,
   ] = await Promise.all([
     loadStorageRows(),
     loadFieldRows(),
     loadMachineryRows(),
+    loadTmcRows(),
     loadBasCatalog(getBasStorages),
     loadBasCatalog(getBasFields),
     loadBasCatalog(getBasMachinery),
+    loadBasCatalog(getBasNomenclature),
   ]);
 
-  return (
-    <MappingView
-      storages={storages}
-      fields={fields}
-      machinery={machinery}
-      storageOptions={storagesToOptions(basStorages.items)}
-      fieldOptions={fieldsToOptions(basFields.items)}
-      machineryOptions={machineryToOptions(basMachinery.items)}
-      storageError={basStorages.error}
-      fieldError={basFields.error}
-      machineryError={basMachinery.error}
-    />
-  );
+  return {
+    storages,
+    fields,
+    machinery,
+    tmc,
+    storageOptions: storagesToOptions(basStorages.items),
+    fieldOptions: fieldsToOptions(basFields.items),
+    machineryOptions: machineryToOptions(basMachinery.items),
+    tmcOptions: nomenclatureToOptions(basNomenclature.items),
+    storageError: basStorages.error,
+    fieldError: basFields.error,
+    machineryError: basMachinery.error,
+    tmcError: basNomenclature.error,
+  };
 }

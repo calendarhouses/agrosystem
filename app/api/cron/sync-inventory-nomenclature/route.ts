@@ -22,7 +22,7 @@ function authorizeCron(request: NextRequest): boolean {
 /**
  * GET/POST /api/cron/sync-inventory-nomenclature
  *
- * Синк довідника ТМЦ з BAS → inventory_items_cache (read-only GET у 1С).
+ * Синк довідника ТМЦ з BAS → inventory_items_cache (read-only GET у BAS AGRO).
  * Для cronjob.org / Vercel Cron:
  *   Authorization: Bearer $CRON_SECRET
  *

@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 
+import { logActivity } from "@/lib/activity-log";
+import { actorCloseColumns, getCurrentActor } from "@/lib/app-actor";
+import { enqueueFieldOperationBasDraft } from "@/lib/bas-drafts/field-operation-waybill";
 import { upsertFieldOperationRow } from "@/lib/field-operations-db";
 import { createServiceSupabase } from "@/lib/supabase/server";
 
@@ -41,7 +44,8 @@ function isUuid(value: string): boolean {
 
 /**
  * POST /api/field-operations/close — підтвердити факт і закрити наряд.
- * export_status = pending — заготовка під майбутній чорновик 1С.
+ * export_status = pending; чернетка шляхового листа — enqueueFieldOperationBasDraft
+ * (жива відправка лише з BAS_DRAFT_POST_ENABLED=true).
  */
 export async function POST(request: Request) {
   try {
@@ -76,13 +80,15 @@ export async function POST(request: Request) {
     const fieldKey =
       body.fieldKey?.trim() || (fieldId ? `farm:${fieldId}` : null);
 
+    const actor = await getCurrentActor();
+
     const row: Record<string, unknown> = {
       client_key: clientKey,
       field_id: fieldId,
       work_type: workType,
       crop,
       status: "completed",
-      // Майбутній експорт у чорновик 1С
+      // Майбутній експорт у чорновик BAS AGRO
       export_status: "pending",
       area_plan: body.areaPlan ?? null,
       area_fact: body.areaFact,
@@ -92,6 +98,8 @@ export async function POST(request: Request) {
       wage_fact: body.wageFact ?? null,
       agronomist_comment: body.agronomistComment?.trim() || null,
       updated_at: new Date().toISOString(),
+      // Лише хто закрив — не перезаписуємо actor_* (автор наряду)
+      ...actorCloseColumns(actor),
     };
 
     if (!body.correctOnly) {
@@ -143,6 +151,26 @@ export async function POST(request: Request) {
             result.code === "PGRST205" || result.code === "42P01" ? 503 : 500,
         }
       );
+    }
+
+    const operationId =
+      result.operation &&
+      typeof result.operation === "object" &&
+      "id" in result.operation
+        ? String((result.operation as { id: unknown }).id)
+        : null;
+    if (operationId) {
+      void enqueueFieldOperationBasDraft(operationId).catch((e) =>
+        console.error("[bas-drafts] waybill", e)
+      );
+      void logActivity({
+        actor,
+        action: "close",
+        entityType: "field_operation",
+        entityId: operationId,
+        summary: `${actor.label} закрив наряд «${workType} · ${crop}»`,
+        meta: { areaFact: body.areaFact, fieldId },
+      });
     }
 
     return NextResponse.json({

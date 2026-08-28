@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ChevronLeft,
   ChevronRight,
@@ -22,7 +23,7 @@ type RemoteAttachment = {
   signedUrl?: string | null;
 };
 
-/** Скріпка → одразу fullscreen lightbox (без проміжного sheet). */
+/** Скріпка → компактний модальний перегляд (portal у body). */
 export function AttachmentViewerButton({
   entityType,
   entityId,
@@ -78,6 +79,11 @@ export function AttachmentLightbox({
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<RemoteAttachment[]>([]);
   const [index, setIndex] = useState(0);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -117,127 +123,131 @@ export function AttachmentLightbox({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onOpenChange, items.length]);
 
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
   const active = items[index] ?? null;
   const hasMany = items.length > 1;
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[200] flex flex-col bg-zinc-950/95"
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-zinc-950/55 p-3 backdrop-blur-[2px] sm:p-6"
       role="dialog"
       aria-modal="true"
       aria-label="Накладна"
       onClick={() => onOpenChange(false)}
     >
       <div
-        className="flex items-center justify-between gap-3 px-4 py-3 text-white sm:px-6"
+        className={cn(
+          "flex max-h-[min(88vh,820px)] w-full max-w-3xl flex-col overflow-hidden",
+          "rounded-2xl border border-white/10 bg-[#0f1412] shadow-[0_24px_80px_-20px_rgba(0,0,0,0.65)]"
+        )}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold tracking-tight">
-            {loading
-              ? "Завантаження…"
-              : active?.fileName ?? (items.length === 0 ? "Немає файлів" : "")}
-          </p>
-          {hasMany ? (
-            <p className="mt-0.5 text-[11px] text-white/50 tabular-nums">
-              {index + 1} / {items.length}
+        <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3 text-white sm:px-5">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold tracking-tight">
+              {loading
+                ? "Завантаження…"
+                : active?.fileName ??
+                  (items.length === 0 ? "Немає файлів" : "")}
             </p>
-          ) : null}
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {active?.signedUrl ? (
-            <a
-              href={active.signedUrl}
-              download={active.fileName}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex h-10 items-center gap-1.5 rounded-full bg-white/10 px-3.5 text-xs font-semibold backdrop-blur transition hover:bg-white/20"
-            >
-              <Download className="h-3.5 w-3.5" />
-              Завантажити
-            </a>
-          ) : null}
-          <button
-            type="button"
-            onClick={() => onOpenChange(false)}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/10 transition hover:bg-white/20"
-            aria-label="Закрити"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
-
-      <div
-        className="relative flex min-h-0 flex-1 items-center justify-center px-4 pb-6 sm:px-10"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {loading ? (
-          <div className="flex items-center gap-2 text-sm text-white/60">
-            <Loader2 className="h-5 w-5 animate-spin" />
-            Завантаження…
+            {hasMany ? (
+              <p className="mt-0.5 text-[11px] text-white/50 tabular-nums">
+                {index + 1} / {items.length}
+              </p>
+            ) : null}
           </div>
-        ) : !active ? (
-          <p className="text-sm text-white/50">Немає вкладених файлів</p>
-        ) : active.mimeType.startsWith("image/") && active.signedUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={active.signedUrl}
-            alt={active.fileName}
-            className="max-h-full max-w-full object-contain shadow-2xl"
-          />
-        ) : active.mimeType === "application/pdf" && active.signedUrl ? (
-          <iframe
-            title={active.fileName}
-            src={active.signedUrl}
-            className="h-full w-full max-w-5xl rounded-lg bg-white shadow-2xl"
-          />
-        ) : (
-          <div className="flex flex-col items-center gap-3 text-white/70">
-            <FileText className="h-12 w-12 text-white/40" />
-            <p className="text-sm">Немає попереднього перегляду</p>
-            {active.signedUrl ? (
+          <div className="flex shrink-0 items-center gap-2">
+            {active?.signedUrl ? (
               <a
                 href={active.signedUrl}
                 download={active.fileName}
                 target="_blank"
                 rel="noreferrer"
-                className="text-xs font-semibold text-white underline"
+                className="inline-flex h-9 items-center gap-1.5 rounded-full bg-white/10 px-3 text-xs font-semibold backdrop-blur transition hover:bg-white/20"
               >
-                Відкрити файл
+                <Download className="h-3.5 w-3.5" />
+                Завантажити
               </a>
             ) : null}
+            <button
+              type="button"
+              onClick={() => onOpenChange(false)}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 transition hover:bg-white/20"
+              aria-label="Закрити"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
-        )}
+        </div>
 
-        {hasMany ? (
-          <>
-            <button
-              type="button"
-              disabled={index <= 0}
-              onClick={() => setIndex((i) => Math.max(0, i - 1))}
-              className="absolute left-2 top-1/2 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur transition hover:bg-white/20 disabled:opacity-30 sm:left-4"
-              aria-label="Попередній"
-            >
-              <ChevronLeft className="h-5 w-5" />
-            </button>
-            <button
-              type="button"
-              disabled={index >= items.length - 1}
-              onClick={() =>
-                setIndex((i) => Math.min(items.length - 1, i + 1))
-              }
-              className="absolute right-2 top-1/2 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur transition hover:bg-white/20 disabled:opacity-30 sm:right-4"
-              aria-label="Наступний"
-            >
-              <ChevronRight className="h-5 w-5" />
-            </button>
-          </>
-        ) : null}
+        <div className="relative flex min-h-0 flex-1 items-center justify-center px-3 py-4 sm:px-6">
+          {loading ? (
+            <div className="flex items-center gap-2 py-16 text-sm text-white/60">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              Завантаження…
+            </div>
+          ) : !active ? (
+            <p className="py-16 text-sm text-white/50">Немає вкладених файлів</p>
+          ) : active.mimeType.startsWith("image/") && active.signedUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={active.signedUrl}
+              alt={active.fileName}
+              className="max-h-[min(68vh,640px)] max-w-full rounded-lg object-contain shadow-2xl"
+            />
+          ) : active.mimeType === "application/pdf" && active.signedUrl ? (
+            <iframe
+              title={active.fileName}
+              src={active.signedUrl}
+              className="h-[min(68vh,640px)] w-full rounded-lg bg-white shadow-2xl"
+            />
+          ) : (
+            <div className="flex flex-col items-center gap-3 py-16 text-white/70">
+              <FileText className="h-12 w-12 text-white/40" />
+              <p className="text-sm">Немає попереднього перегляду</p>
+              {active.signedUrl ? (
+                <a
+                  href={active.signedUrl}
+                  download={active.fileName}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs font-semibold text-white underline"
+                >
+                  Відкрити файл
+                </a>
+              ) : null}
+            </div>
+          )}
+
+          {hasMany ? (
+            <>
+              <button
+                type="button"
+                disabled={index <= 0}
+                onClick={() => setIndex((i) => Math.max(0, i - 1))}
+                className="absolute left-2 top-1/2 inline-flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur transition hover:bg-white/20 disabled:opacity-30 sm:left-3"
+                aria-label="Попередній"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+              <button
+                type="button"
+                disabled={index >= items.length - 1}
+                onClick={() =>
+                  setIndex((i) => Math.min(items.length - 1, i + 1))
+                }
+                className="absolute right-2 top-1/2 inline-flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur transition hover:bg-white/20 disabled:opacity-30 sm:right-3"
+                aria-label="Наступний"
+              >
+                <ChevronRight className="h-5 w-5" />
+              </button>
+            </>
+          ) : null}
+        </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

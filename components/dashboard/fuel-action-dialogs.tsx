@@ -430,7 +430,7 @@ export function FuelActionDialogs({
   const [unitId, setUnitId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  /** Успіх закупівлі: локально + черга 1С (без POST у BAS) */
+  /** Успіх закупівлі: локально + черга BAS AGRO (без POST у BAS) */
   const [purchaseSuccess, setPurchaseSuccess] = useState<string | null>(null);
   const [pendingFiles, setPendingFiles] = useState<PendingAttachment[]>([]);
   const [transferPendingFiles, setTransferPendingFiles] = useState<

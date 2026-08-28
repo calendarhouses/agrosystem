@@ -173,7 +173,7 @@ function BasSyncBadge({
   status: FuelSyncStatus;
   onSend?: () => void;
   sending?: boolean;
-  /** Заправка (outbound) не йде в чергу 1С — лише закупівля/переміщення */
+  /** Заправка (outbound) не йде в чергу BAS AGRO — лише закупівля/переміщення */
   canQueue1c?: boolean;
 }) {
   if (status === "synced") {
@@ -186,7 +186,7 @@ function BasSyncBadge({
         )}
       >
         <CheckCircle2 className="h-3 w-3 shrink-0" strokeWidth={2.2} />
-        Проведено в 1С
+        Проведено в BAS AGRO
       </span>
     );
   }
@@ -1343,7 +1343,7 @@ export function FuelView({
                     Літри
                   </th>
                   <th className="min-w-[140px] px-4 py-3 text-left text-[11px] font-semibold tracking-wide text-zinc-500 uppercase">
-                    1С
+                    BAS AGRO
                   </th>
                   <th className="w-12" />
                 </tr>
@@ -1397,6 +1397,11 @@ export function FuelView({
                               {meta.detail ? (
                                 <p className="mt-0.5 truncate text-xs text-zinc-500">
                                   {meta.detail}
+                                </p>
+                              ) : null}
+                              {tx.actorName ? (
+                                <p className="mt-0.5 truncate text-xs text-zinc-400">
+                                  {tx.actorName}
                                 </p>
                               ) : null}
                               {tx.type === "outbound" ? (

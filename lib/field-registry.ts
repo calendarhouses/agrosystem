@@ -5,7 +5,7 @@ import type { BasFieldRef, RegistryInputRow } from "@/lib/bas-field-names";
 /**
  * Стан заявки бухгалтеру по цьому полю. Лежить у `farm_fields.bas_sync_status`:
  * `none` — заявка ще не передана, `pending` — передана на розгляд,
- * `synced` — бухгалтер завів або виправив запис у 1С, `error` — відхилив
+ * `synced` — бухгалтер завів або виправив запис у BAS AGRO, `error` — відхилив
  * (причина в `bas_sync_error`). У самій BAS ми при цьому нічого не міняємо.
  */
 export type BasRequestStatus = "none" | "pending" | "synced" | "error";
@@ -107,7 +107,7 @@ export function describeIssue(issue: RegistryIssue): string {
   }
 }
 
-/** Наші поля, яких немає в довіднику 1С — саме під них потрібні чернетки. */
+/** Наші поля, яких немає в довіднику BAS AGRO — саме під них потрібні чернетки. */
 export function fieldsMissingInBas(
   rows: FieldRegistryRow[]
 ): FieldRegistryRow[] {
@@ -121,7 +121,7 @@ export type MergedBasRecord = {
 };
 
 /**
- * Записи 1С, на які вказує кілька наших полів. У 1С такі поля обліковуються
+ * Записи BAS AGRO, на які вказує кілька наших полів. У BAS AGRO такі поля обліковуються
  * однією назвою зі спільними гектарами, хоча в Wialon вони обміряні окремо.
  * Поки бухгалтер не розділить запис, гектари з чернеток лягатимуть на нього
  * сумарно — тому агроном має бачити ці випадки явно.
@@ -148,7 +148,7 @@ export function mergedBasRecords(
       return {
         basField: basField ?? {
           refKey,
-          description: "Невідомий запис 1С",
+          description: "Невідомий запис BAS AGRO",
           code: null,
           fieldNo: null,
           areaHa: null,
@@ -170,7 +170,7 @@ export type RelinkChange = {
  * Наскільки площі можуть розійтися, щоб збіг назви ще вважався тим самим полем.
  * Бухгалтер вносить наші ж гектари, тож розбіжність має бути мізерна; великий
  * розрив означає різні ділянки з однаковою назвою (як «Поле 13.2» на 105 га
- * в 1С проти нашого на 56.63 га).
+ * в BAS AGRO проти нашого на 56.63 га).
  */
 const RELINK_AREA_TOLERANCE = 0.25;
 
@@ -229,7 +229,7 @@ export function relinkByExactName(
   return changes;
 }
 
-/** Поля 1С, на які не вказує жоден наш рядок. */
+/** Поля BAS AGRO, на які не вказує жоден наш рядок. */
 export function unmatchedBasFields(
   rows: FieldRegistryRow[],
   basFields: BasFieldSummary[]

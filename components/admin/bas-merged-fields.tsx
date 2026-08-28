@@ -12,7 +12,7 @@ function formatHa(value: number | null) {
 }
 
 /**
- * Записи 1С, які покривають кілька наших полів. Нічого не міняємо в BAS —
+ * Записи BAS AGRO, які покривають кілька наших полів. Нічого не міняємо в BAS —
  * це перелік для бухгалтера, що саме треба розділити, щоб витрати лягали
  * на конкретне поле, а не купою на спільну назву.
  */
@@ -29,10 +29,10 @@ export function BasMergedFields({ records }: { records: MergedBasRecord[] }) {
         </div>
         <div className="min-w-0">
           <h2 className="text-base font-bold text-zinc-900">
-            Злиті записи 1С
+            Злиті записи BAS AGRO
           </h2>
           <p className="mt-0.5 text-sm text-zinc-500">
-            {affected} наших полів діляться {records.length} записами в 1С. Поки
+            {affected} наших полів діляться {records.length} записами в BAS AGRO. Поки
             бухгалтер їх не розділить, гектари з чернеток лягатимуть на спільну
             назву сумарно.
           </p>
@@ -56,7 +56,7 @@ export function BasMergedFields({ records }: { records: MergedBasRecord[] }) {
                   {record.basField.description || "Без назви"}
                 </span>
                 <span className="text-xs text-zinc-500">
-                  {formatHa(record.basField.areaHa)} в 1С проти{" "}
+                  {formatHa(record.basField.areaHa)} в BAS AGRO проти{" "}
                   {formatHa(record.ourAreaHa)} у нас
                 </span>
                 {delta != null && Math.abs(delta) >= 0.5 ? (

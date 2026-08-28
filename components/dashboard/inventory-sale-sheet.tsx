@@ -13,6 +13,7 @@ import {
   Check,
   ChevronDown,
   Loader2,
+  Plus,
   ShoppingCart,
   Wheat,
 } from "lucide-react";
@@ -102,6 +103,7 @@ export function InventorySaleSheet({
 
   const [itemKey, setItemKey] = useState<string | null>(null);
   const [buyer, setBuyer] = useState("");
+  const [buyerSearch, setBuyerSearch] = useState("");
   const [buyerOpen, setBuyerOpen] = useState(false);
   const [itemOpen, setItemOpen] = useState(false);
   const [qty, setQty] = useState("");
@@ -131,11 +133,28 @@ export function InventorySaleSheet({
       : 0;
 
   const filteredBuyers = useMemo(() => {
-    const q = buyer.trim().toLowerCase();
+    const q = buyerSearch.trim().toLowerCase();
     return buyers
       .filter((n) => !q || n.toLowerCase().includes(q))
       .slice(0, 40);
-  }, [buyers, buyer]);
+  }, [buyers, buyerSearch]);
+
+  const canAddNewBuyer = useMemo(() => {
+    const q = buyerSearch.trim();
+    if (!q) return false;
+    return !buyers.some((n) => n.toLowerCase() === q.toLowerCase());
+  }, [buyers, buyerSearch]);
+
+  function selectBuyer(name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setBuyer(trimmed);
+    setBuyerSearch("");
+    setBuyerOpen(false);
+    if (!buyers.some((n) => n.toLowerCase() === trimmed.toLowerCase())) {
+      setBuyers((prev) => [trimmed, ...prev]);
+    }
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -345,12 +364,18 @@ export function InventorySaleSheet({
 
                 <section className="space-y-2">
                   <p className={fuelFieldLabelClass}>Покупець</p>
-                  <Popover open={buyerOpen} onOpenChange={setBuyerOpen}>
+                  <Popover
+                    open={buyerOpen}
+                    onOpenChange={(open) => {
+                      setBuyerOpen(open);
+                      if (open) setBuyerSearch("");
+                    }}
+                  >
                     <PopoverTrigger className={comboboxTriggerClass}>
                       <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900">
                         {buyer || (
                           <span className="font-normal text-zinc-400">
-                            Оберіть або впишіть…
+                            Оберіть або додайте нового…
                           </span>
                         )}
                       </span>
@@ -361,35 +386,51 @@ export function InventorySaleSheet({
                       sideOffset={6}
                       className="w-[min(calc(100vw-2.5rem),22rem)] rounded-2xl border border-zinc-200 bg-white p-0 shadow-xl"
                     >
-                      <Command className="rounded-2xl bg-white">
+                      <Command className="rounded-2xl bg-white" shouldFilter={false}>
                         <CommandInput
-                          placeholder="Пошук покупця…"
-                          value={buyer}
-                          onValueChange={setBuyer}
+                          placeholder="Пошук або нова назва…"
+                          value={buyerSearch}
+                          onValueChange={setBuyerSearch}
                           className="h-11"
                         />
                         <CommandList className="max-h-56 bg-white">
+                          {canAddNewBuyer ? (
+                            <CommandGroup>
+                              <CommandItem
+                                value={`__new__${buyerSearch}`}
+                                onSelect={() => selectBuyer(buyerSearch)}
+                                className="cursor-pointer rounded-xl px-3 py-2.5 text-[#276749] data-[selected=true]:bg-zinc-100"
+                              >
+                                <Plus className="mr-2 h-4 w-4 shrink-0" />
+                                <span className="min-w-0 flex-1 truncate">
+                                  Додати нового: «{buyerSearch.trim()}»
+                                </span>
+                              </CommandItem>
+                            </CommandGroup>
+                          ) : null}
                           <CommandEmpty>
-                            <button
-                              type="button"
-                              className="w-full px-3 py-2 text-left text-sm text-zinc-600"
-                              onClick={() => setBuyerOpen(false)}
-                            >
-                              Використати введений текст
-                            </button>
+                            {buyerSearch.trim()
+                              ? "Немає збігів — введіть назву й додайте нового"
+                              : "Поки немає покупців — введіть нову назву"}
                           </CommandEmpty>
-                          <CommandGroup>
+                          <CommandGroup
+                            heading={
+                              filteredBuyers.length ? "З BAS і складу" : undefined
+                            }
+                          >
                             {filteredBuyers.map((name) => (
                               <CommandItem
                                 key={name}
                                 value={name}
-                                onSelect={() => {
-                                  setBuyer(name);
-                                  setBuyerOpen(false);
-                                }}
+                                onSelect={() => selectBuyer(name)}
                                 className="cursor-pointer rounded-xl px-3 py-2.5 data-[selected=true]:bg-zinc-100"
                               >
-                                {name}
+                                <span className="min-w-0 flex-1 truncate">
+                                  {name}
+                                </span>
+                                {buyer === name ? (
+                                  <Check className="h-4 w-4 text-amber-600" />
+                                ) : null}
                               </CommandItem>
                             ))}
                           </CommandGroup>

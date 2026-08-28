@@ -3,6 +3,9 @@
 import { revalidatePath } from "next/cache";
 
 import { getSeasonRange } from "@/lib/finance-period";
+import { logActivity } from "@/lib/activity-log";
+import { getCurrentActor } from "@/lib/app-actor";
+import { createAuthServerSupabase } from "@/lib/supabase/auth-server";
 import { createServiceSupabase } from "@/lib/supabase/server";
 import { DEFAULT_SEASON, normalizeSeason } from "@/lib/season";
 
@@ -23,11 +26,14 @@ export type DraftExportMove = {
   season: string | null;
   fieldId: string | null;
   fieldName: string | null;
+  fieldBasRefKey: string | null;
   note: string | null;
   buyerName: string | null;
   unitPriceUah: number | null;
   isLocalItem: boolean;
   hasAttachment: boolean;
+  /** Ref_Key чернетки в BAS (окремо від Excel sent_to_1c) */
+  basDraftRefKey: string | null;
 };
 
 export type AccountantQueueTab =
@@ -54,15 +60,21 @@ export type AccountantQueueItem = {
   isLocalItem: boolean;
   category: string | null;
   note: string | null;
+  /** true якщо вже є непроведена чернетка в BAS */
+  basDraftSent: boolean;
+  basDraftRefKey: string | null;
   /** inventory */
   basRefKey: string | null;
   fieldId: string | null;
   fieldName: string | null;
+  fieldBasRefKey: string | null;
   buyerName: string | null;
   unitPriceUah: number | null;
   /** fuel */
   fromStorageName: string | null;
   toStorageName: string | null;
+  fromStorageBasRefKey: string | null;
+  toStorageBasRefKey: string | null;
   pricePerLiter: number | null;
 };
 
@@ -100,8 +112,8 @@ function inDateRange(
 function mapInventoryRow(row: Record<string, unknown>): DraftExportMove {
   const field = unwrapJoin(
     row.farm_fields as
-      | { id: string; name: string }
-      | { id: string; name: string }[]
+      | { id: string; name: string; bas_ref_key?: string | null }
+      | { id: string; name: string; bas_ref_key?: string | null }[]
       | null
   );
   const cache = unwrapJoin(
@@ -155,12 +167,20 @@ function mapInventoryRow(row: Record<string, unknown>): DraftExportMove {
         ? String(row.field_id)
         : null,
     fieldName: field?.name ? String(field.name) : null,
+    fieldBasRefKey:
+      field?.bas_ref_key != null && String(field.bas_ref_key).trim()
+        ? String(field.bas_ref_key).toLowerCase()
+        : null,
     note: typeof row.note === "string" ? String(row.note) : null,
     buyerName:
       typeof row.buyer_name === "string" ? String(row.buyer_name) : null,
     unitPriceUah,
     isLocalItem: cache?.is_local === true,
     hasAttachment: false,
+    basDraftRefKey:
+      row.bas_draft_ref_key != null && String(row.bas_draft_ref_key).trim()
+        ? String(row.bas_draft_ref_key).toLowerCase()
+        : null,
   };
 }
 
@@ -191,13 +211,18 @@ function inventoryToQueueItem(m: DraftExportMove): AccountantQueueItem {
     isLocalItem: m.isLocalItem,
     category: m.category,
     note: m.note,
+    basDraftSent: Boolean(m.basDraftRefKey),
+    basDraftRefKey: m.basDraftRefKey,
     basRefKey: m.basRefKey,
     fieldId: m.fieldId,
     fieldName: m.fieldName,
+    fieldBasRefKey: m.fieldBasRefKey,
     buyerName: m.buyerName,
     unitPriceUah: m.unitPriceUah,
     fromStorageName: null,
     toStorageName: null,
+    fromStorageBasRefKey: null,
+    toStorageBasRefKey: null,
     pricePerLiter: null,
   };
 }
@@ -240,7 +265,8 @@ async function fetchInventoryMoves(
       unit_price_uah,
       item_ref_key,
       field_id,
-      farm_fields ( id, name ),
+      bas_draft_ref_key,
+      farm_fields ( id, name, bas_ref_key ),
       inventory_items_cache ( name, custom_name, unit, bas_ref_key, is_local, category )
     `
     )
@@ -319,8 +345,9 @@ async function fetchFuelQueue(
       total_cost,
       transaction_date,
       sync_status,
-      from_storage:fuel_storages!fuel_transactions_from_storage_id_fkey ( name ),
-      to_storage:fuel_storages!fuel_transactions_to_storage_id_fkey ( name )
+      bas_draft_ref_key,
+      from_storage:fuel_storages!fuel_transactions_from_storage_id_fkey ( name, bas_ref_key ),
+      to_storage:fuel_storages!fuel_transactions_to_storage_id_fkey ( name, bas_ref_key )
     `
     )
     .eq("sync_status", syncStatus)
@@ -357,13 +384,20 @@ async function fetchFuelQueue(
         ),
       ];
       const nameById = new Map<string, string>();
+      const basById = new Map<string, string | null>();
       if (storageIds.length > 0) {
         const { data: storages } = await supabase
           .from("fuel_storages")
-          .select("id, name")
+          .select("id, name, bas_ref_key")
           .in("id", storageIds);
         for (const s of storages ?? []) {
           nameById.set(String(s.id), String(s.name ?? ""));
+          basById.set(
+            String(s.id),
+            s.bas_ref_key != null && String(s.bas_ref_key).trim()
+              ? String(s.bas_ref_key).toLowerCase()
+              : null
+          );
         }
       }
       return (simple.data ?? []).map((row) => {
@@ -394,7 +428,7 @@ async function fetchFuelQueue(
           kind,
           date: String(row.transaction_date).slice(0, 10),
           season: null,
-          title: kind === "fuel_transfer" ? "Переміщення ДТ" : "Закупівля ДТ",
+          title: kind === "fuel_transfer" ? "Переміщення ДП" : "Закупівля ДП",
           party:
             kind === "fuel_transfer"
               ? [fromName, toName].filter(Boolean).join(" → ") || null
@@ -406,13 +440,22 @@ async function fetchFuelQueue(
           isLocalItem: false,
           category: null,
           note: null,
+          basDraftSent: false,
+          basDraftRefKey: null,
           basRefKey: null,
           fieldId: null,
           fieldName: null,
+          fieldBasRefKey: null,
           buyerName: null,
           unitPriceUah: price,
           fromStorageName: fromName,
           toStorageName: toName,
+          fromStorageBasRefKey: row.from_storage_id
+            ? basById.get(String(row.from_storage_id)) ?? null
+            : null,
+          toStorageBasRefKey: row.to_storage_id
+            ? basById.get(String(row.to_storage_id)) ?? null
+            : null,
           pricePerLiter: price,
         };
       });
@@ -437,20 +480,30 @@ async function fetchFuelQueue(
         ? ("fuel_transfer" as const)
         : ("fuel_inbound" as const);
     const from = unwrapJoin(
-      row.from_storage as { name?: string } | { name?: string }[] | null
+      row.from_storage as
+        | { name?: string; bas_ref_key?: string | null }
+        | { name?: string; bas_ref_key?: string | null }[]
+        | null
     );
     const to = unwrapJoin(
-      row.to_storage as { name?: string } | { name?: string }[] | null
+      row.to_storage as
+        | { name?: string; bas_ref_key?: string | null }
+        | { name?: string; bas_ref_key?: string | null }[]
+        | null
     );
     const fromName = from?.name ? String(from.name) : null;
     const toName = to?.name ? String(to.name) : null;
+    const draftRef =
+      row.bas_draft_ref_key != null && String(row.bas_draft_ref_key).trim()
+        ? String(row.bas_draft_ref_key).toLowerCase()
+        : null;
     return {
       id: String(row.id),
       source: "fuel" as const,
       kind,
       date: String(row.transaction_date).slice(0, 10),
       season: null,
-      title: kind === "fuel_transfer" ? "Переміщення ДТ" : "Закупівля ДТ",
+      title: kind === "fuel_transfer" ? "Переміщення ДП" : "Закупівля ДП",
       party:
         kind === "fuel_transfer"
           ? [fromName, toName].filter(Boolean).join(" → ") || null
@@ -462,13 +515,24 @@ async function fetchFuelQueue(
       isLocalItem: false,
       category: null,
       note: null,
+      basDraftSent: Boolean(draftRef),
+      basDraftRefKey: draftRef,
       basRefKey: null,
       fieldId: null,
       fieldName: null,
+      fieldBasRefKey: null,
       buyerName: null,
       unitPriceUah: price,
       fromStorageName: fromName,
       toStorageName: toName,
+      fromStorageBasRefKey:
+        from?.bas_ref_key != null && String(from.bas_ref_key).trim()
+          ? String(from.bas_ref_key).toLowerCase()
+          : null,
+      toStorageBasRefKey:
+        to?.bas_ref_key != null && String(to.bas_ref_key).trim()
+          ? String(to.bas_ref_key).toLowerCase()
+          : null,
       pricePerLiter: price,
     };
   });
@@ -653,6 +717,7 @@ export async function markMovesSentTo1c(
 
     if (error) return { ok: false, error: error.message };
 
+    revalidatePath("/accounting");
     revalidatePath("/export");
     revalidatePath("/inventory");
     return { ok: true, data: { updated: data?.length ?? 0 } };
@@ -690,6 +755,7 @@ export async function markFuelPrepared(
 
     if (error) return { ok: false, error: error.message };
 
+    revalidatePath("/accounting");
     revalidatePath("/export");
     revalidatePath("/fuel");
     return { ok: true, data: { updated: data?.length ?? 0 } };
@@ -727,5 +793,180 @@ export async function markAccountantQueuePrepared(
     fuel = res.data.updated;
   }
 
+  const actor = await getCurrentActor();
+  await logActivity({
+    actor,
+    action: "export",
+    entityType: "accountant_queue",
+    summary: `${actor.label} позначив переданими ${inventory + fuel} операцій`,
+    meta: { inventory, fuel },
+  });
+
   return { ok: true, data: { inventory, fuel } };
+}
+
+export type AccountantArchiveItem = AccountantQueueItem & {
+  archiveId: string;
+  eventType: "transferred" | "deleted";
+  eventAt: string;
+  actorName: string | null;
+};
+
+async function resolveActorName(): Promise<{
+  actorId: string | null;
+  actorName: string;
+}> {
+  const actor = await getCurrentActor();
+  return {
+    actorId: actor.id || null,
+    actorName: actor.label,
+  };
+}
+
+/** Записати видалення в архів (перед фізичним delete). */
+export async function archiveAccountantDeletion(
+  item: AccountantQueueItem
+): Promise<ActionResult<{ archiveId: string }>> {
+  try {
+    const { actorId, actorName } = await resolveActorName();
+    const supabase = createServiceSupabase();
+    const { data, error } = await supabase
+      .from("accountant_operation_archive")
+      .insert({
+        season: item.season,
+        source: item.source,
+        original_id: item.id,
+        kind: item.kind,
+        event_type: "deleted",
+        title: item.title,
+        party: item.party,
+        qty: item.qty,
+        unit: item.unit,
+        amount_uah: item.amountUah,
+        snapshot: item,
+        actor_id: actorId,
+        actor_name: actorName,
+      })
+      .select("id")
+      .single();
+
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, data: { archiveId: String(data.id) } };
+  } catch (err) {
+    return {
+      ok: false,
+      error:
+        err instanceof Error
+          ? err.message
+          : "Не вдалося записати в архів",
+    };
+  }
+}
+
+/** Архів сезону: передані + видалені. */
+export async function listAccountantArchive(input?: {
+  season?: string;
+}): Promise<ActionResult<AccountantArchiveItem[]>> {
+  try {
+    const year = seasonYearFromInput(input?.season);
+    const season = String(year);
+    const full = getSeasonRange(year);
+
+    const [moves, fuel, deletedRes] = await Promise.all([
+      fetchInventoryMoves("sent_to_1c", season),
+      fetchFuelQueue("synced", full.startIso, full.endIso),
+      (async () => {
+        try {
+          const supabase = createServiceSupabase();
+          return await supabase
+            .from("accountant_operation_archive")
+            .select("*")
+            .eq("season", season)
+            .eq("event_type", "deleted")
+            .order("created_at", { ascending: false })
+            .limit(200);
+        } catch {
+          return { data: null, error: { message: "skip" } };
+        }
+      })(),
+    ]);
+
+    for (const f of fuel) f.season = season;
+
+    const transferred: AccountantArchiveItem[] = [
+      ...moves.map(inventoryToQueueItem),
+      ...fuel,
+    ].map((item) => ({
+      ...item,
+      archiveId: `t-${item.source}-${item.id}`,
+      eventType: "transferred" as const,
+      eventAt: item.date,
+      actorName: null,
+    }));
+
+    const deleted: AccountantArchiveItem[] = [];
+    if (!deletedRes.error && Array.isArray(deletedRes.data)) {
+      for (const row of deletedRes.data) {
+        const snap = (row.snapshot ?? {}) as Partial<AccountantQueueItem>;
+        deleted.push({
+          id: String(row.original_id ?? row.id),
+          source:
+            row.source === "fuel"
+              ? ("fuel" as const)
+              : ("inventory" as const),
+          kind: (snap.kind as AccountantQueueItem["kind"]) ||
+            (String(row.kind) as AccountantQueueItem["kind"]),
+          date: String(snap.date ?? row.created_at).slice(0, 10),
+          season: row.season ? String(row.season) : season,
+          title: String(row.title ?? snap.title ?? "Операція"),
+          party:
+            (row.party as string | null) ??
+            (snap.party as string | null) ??
+            null,
+          qty: Number(row.qty ?? snap.qty) || 0,
+          unit: String(row.unit ?? snap.unit ?? ""),
+          amountUah:
+            row.amount_uah != null
+              ? Number(row.amount_uah)
+              : snap.amountUah ?? null,
+          hasAttachment: false,
+          isLocalItem: Boolean(snap.isLocalItem),
+          category: snap.category ?? null,
+          note: snap.note ?? null,
+          basDraftSent: Boolean(snap.basDraftSent ?? snap.basDraftRefKey),
+          basDraftRefKey: snap.basDraftRefKey ?? null,
+          basRefKey: snap.basRefKey ?? null,
+          fieldId: snap.fieldId ?? null,
+          fieldName: snap.fieldName ?? null,
+          fieldBasRefKey: snap.fieldBasRefKey ?? null,
+          buyerName: snap.buyerName ?? null,
+          unitPriceUah: snap.unitPriceUah ?? null,
+          fromStorageName: snap.fromStorageName ?? null,
+          toStorageName: snap.toStorageName ?? null,
+          fromStorageBasRefKey: snap.fromStorageBasRefKey ?? null,
+          toStorageBasRefKey: snap.toStorageBasRefKey ?? null,
+          pricePerLiter: snap.pricePerLiter ?? null,
+          archiveId: String(row.id),
+          eventType: "deleted",
+          eventAt: String(row.created_at),
+          actorName:
+            typeof row.actor_name === "string" ? row.actor_name : null,
+        });
+      }
+    }
+
+    const items = [...deleted, ...transferred].sort((a, b) =>
+      b.eventAt.localeCompare(a.eventAt)
+    );
+
+    return { ok: true, data: items };
+  } catch (err) {
+    return {
+      ok: false,
+      error:
+        err instanceof Error
+          ? err.message
+          : "Не вдалося завантажити архів",
+    };
+  }
 }

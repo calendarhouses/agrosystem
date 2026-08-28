@@ -1534,7 +1534,7 @@ function InventoryItemCard({
               className="h-10 rounded-xl border-zinc-200 bg-zinc-50"
             />
             <p className="text-[11px] text-zinc-400">
-              Якщо порожньо — назва з 1С
+              Якщо порожньо — назва з BAS AGRO
             </p>
           </div>
           <div className="space-y-1.5">

@@ -943,7 +943,7 @@ export function FinanceView({
                             ? `ТМЦ ${formatHeroUah(overview.inventorySpentUah)}`
                             : null,
                           overview.fuelCostUah > 0
-                            ? `ДТ ${formatHeroUah(overview.fuelCostUah)}`
+                            ? `ДП ${formatHeroUah(overview.fuelCostUah)}`
                             : null,
                           overview.salaryUah > 0
                             ? `ЗП ${formatHeroUah(overview.salaryUah)}`
@@ -1066,7 +1066,7 @@ export function FinanceView({
               </button>
 
               <Link
-                href="/export"
+                href="/accounting"
                 className={cn(
                   "flex min-w-[220px] flex-1 items-center gap-3 rounded-xl px-3.5 py-3",
                   "bg-white/55 transition hover:bg-white/80",
@@ -1395,7 +1395,7 @@ export function FinanceView({
                                 return;
                               }
                               if (risk.id === "drafts") {
-                                window.location.href = "/export";
+                                window.location.href = "/accounting";
                               }
                             }}
                             className={cn(
@@ -1513,7 +1513,7 @@ export function FinanceView({
                 )}
                 <div className="col-span-2 px-3.5 py-3 sm:col-span-1 sm:px-4 lg:col-span-1">
                   <p className="text-[9px] font-bold tracking-wider text-zinc-400 uppercase">
-                    ДТ
+                    ДП
                   </p>
                   <p className="mt-1 font-mono text-sm font-semibold tabular-nums text-zinc-900 sm:text-base">
                     {overview.dieselPriceUah

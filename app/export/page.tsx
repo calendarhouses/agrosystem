@@ -1,13 +1,8 @@
-import type { Metadata } from "next";
-
-import { AccountantHubView } from "@/components/dashboard/accountant-hub-view";
-
-export const metadata: Metadata = {
-  title: "Бухгалтерія",
-};
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
-export default function ExportPage() {
-  return <AccountantHubView />;
+/** Застарілий шлях — увесь hub тепер на /accounting */
+export default function ExportPageRedirect() {
+  redirect("/accounting");
 }

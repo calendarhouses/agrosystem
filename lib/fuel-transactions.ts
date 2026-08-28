@@ -29,7 +29,7 @@ export type FuelTransactionRow = {
   price_per_liter?: number | null;
   /** amount_liters × price_per_liter */
   total_cost?: number | null;
-  /** Статус синхронізації з BAS 1С */
+  /** Статус синхронізації з BAS BAS AGRO */
   sync_status?: FuelSyncStatus | string | null;
   from?: { name: string } | null;
   to?: { name: string } | null;
@@ -56,6 +56,8 @@ export type FuelTransaction = {
   totalCost: number | null;
   /** pending_1c | synced | error */
   syncStatus: FuelSyncStatus;
+  /** Хто зберіг операцію в системі (підпис ролі) */
+  actorName: string | null;
   /** Кількість накладних (operation_attachments) */
   attachmentCount?: number;
 };
@@ -123,6 +125,10 @@ export function mapFuelTransactionRow(
       return Number.isFinite(n) ? n : null;
     })(),
     syncStatus: asSyncStatus(row.sync_status),
+    actorName:
+      row.actor_name != null && String(row.actor_name).trim()
+        ? String(row.actor_name).trim()
+        : null,
     attachmentCount:
       row.attachmentCount != null && Number.isFinite(Number(row.attachmentCount))
         ? Number(row.attachmentCount)

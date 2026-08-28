@@ -1,6 +1,6 @@
 /**
  * Флот моніторингу.
- * Тимчасово (до зіставлення 1С↔Wialon): джерело правди = усі юніти Wialon.
+ * Тимчасово (до зіставлення BAS AGRO↔Wialon): джерело правди = усі юніти Wialon.
  * Опційно збагачуємо mapped equipment (бак, тип), якщо wialon_id є.
  */
 
@@ -206,7 +206,7 @@ export function wialonFirstFleet(
 }
 
 /**
- * Legacy: equipment-first merge (після зіставлення 1С↔Wialon).
+ * Legacy: equipment-first merge (після зіставлення BAS AGRO↔Wialon).
  */
 export function mergeEquipmentFleet(
   equipment: FleetEquipmentRow[],

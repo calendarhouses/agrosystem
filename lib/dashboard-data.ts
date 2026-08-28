@@ -382,7 +382,7 @@ export const COMMAND_ITEMS = [
     hint: "Excel чернеток для бухгалтера",
     group: "Операції",
     icon: "chart" as const,
-    href: "/export",
+    href: "/accounting",
   },
   {
     id: "cmd-inventory",
@@ -394,7 +394,7 @@ export const COMMAND_ITEMS = [
   },
   {
     id: "cmd-bas-mapping",
-    label: "Мапінг 1С",
+    label: "Мапінг BAS AGRO",
     hint: "Зіставлення з BAS AGRO",
     group: "Адмін",
     icon: "link" as const,
@@ -403,7 +403,7 @@ export const COMMAND_ITEMS = [
   {
     id: "cmd-bas-request",
     label: "Звірка полів",
-    hint: "Заявка бухгалтеру по довіднику 1С",
+    hint: "Заявка бухгалтеру по довіднику BAS AGRO",
     group: "Адмін",
     icon: "link" as const,
     href: "/admin/bas-request",

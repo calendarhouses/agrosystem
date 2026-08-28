@@ -34,20 +34,14 @@ export function MappingView({
   storageError,
   fieldError,
   machineryError,
-}: MappingViewProps) {
-  return (
-    <main className="mx-auto h-full w-full max-w-7xl overflow-y-auto overscroll-none px-4 pt-3 pb-6 sm:px-6 lg:px-8">
-      <PageHeader
-        icon={Link2}
-        title="Мапінг BAS AGRO"
-        description="Зіставте склади, поля та техніку AgroSystem з довідниками 1С"
-      />
-
+  embedded = false,
+}: MappingViewProps & { embedded?: boolean }) {
+  const body = (
       <div className="flex flex-col gap-4">
         <MappingBlock
           icon={Fuel}
           title="Склади палива"
-          description="Склади AgroSystem ↔ довідник складів 1С. Усі 4 цистерни в BAS зведені в один склад «Паливо в цестернах» (група ППМ); бензовоз мапиться на нього ж, бо окремого складу для нього в 1С немає."
+          description="Склади AgroSystem ↔ довідник складів BAS AGRO. Усі 4 цистерни в BAS зведені в один склад «Паливо в цестернах» (група ППМ); бензовоз мапиться на нього ж, бо окремого складу для нього в BAS AGRO немає."
           rows={storages}
           options={storageOptions}
           optionsError={storageError}
@@ -60,7 +54,7 @@ export function MappingView({
         <MappingBlock
           icon={MapIcon}
           title="Поля"
-          description="Канонічні поля з реєстру ↔ довідник підрозділів 1С. Двори, городи й соцсфера сюди не потрапляють — вони позначені як не поля."
+          description="Канонічні поля з реєстру ↔ довідник підрозділів BAS AGRO. Двори, городи й соцсфера сюди не потрапляють — вони позначені як не поля."
           rows={fields}
           options={fieldOptions}
           optionsError={fieldError}
@@ -69,9 +63,9 @@ export function MappingView({
           autoMapRows={autoMapFieldRows}
           autoMapMessages={{
             success: (filled) =>
-              `Підставлено ${filled} полів за № / площею (1С). Перевірте і збережіть.`,
+              `Підставлено ${filled} полів за № / площею (BAS AGRO). Перевірте і збережіть.`,
             empty:
-              "Збігів не знайдено. Шукаємо № поля (Поле 6) або площу ±8% між Wialon і 1С.",
+              "Збігів не знайдено. Шукаємо № поля (Поле 6) або площу ±8% між Wialon і BAS AGRO.",
           }}
           onSave={(id, basRefKey) =>
             persistMapping("farm_fields", id, basRefKey)
@@ -81,7 +75,7 @@ export function MappingView({
         <MappingBlock
           icon={Tractor}
           title="Техніка"
-          description="Юніти Wialon ↔ основні засоби 1С"
+          description="Юніти Wialon ↔ основні засоби BAS AGRO"
           rows={machinery}
           options={machineryOptions}
           optionsError={machineryError}
@@ -92,13 +86,25 @@ export function MappingView({
             success: (filled) =>
               `Підставлено ${filled} збіг(ів) за держномером / кодом. Перевірте і збережіть.`,
             empty:
-              "Збігів не знайдено. Шукаємо 4+ цифри з назви Wialon у коді, повній назві або паспорті 1С.",
+              "Збігів не знайдено. Шукаємо 4+ цифри з назви Wialon у коді, повній назві або паспорті BAS AGRO.",
           }}
           onSave={(id, basRefKey) =>
             persistMapping("wialon_bas_mapping", id, basRefKey)
           }
         />
       </div>
+  );
+
+  if (embedded) return body;
+
+  return (
+    <main className="mx-auto h-full w-full max-w-7xl overflow-y-auto overscroll-none px-4 pt-3 pb-6 sm:px-6 lg:px-8">
+      <PageHeader
+        icon={Link2}
+        title="Мапінг BAS AGRO"
+        description="Зіставте склади, поля та техніку AgroSystem з довідниками BAS AGRO"
+      />
+      {body}
     </main>
   );
 }

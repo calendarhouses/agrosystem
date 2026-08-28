@@ -29,7 +29,7 @@ export type SaveFieldRegistryInput = {
   fieldNo: string;
   tract: string;
   isField: boolean;
-  /** Ref_Key наявного поля 1С; створення нових записів у BAS не робимо */
+  /** Ref_Key наявного поля BAS AGRO; створення нових записів у BAS не робимо */
   basRefKey: string | null;
 };
 

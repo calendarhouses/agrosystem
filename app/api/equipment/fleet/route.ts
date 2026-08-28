@@ -38,7 +38,7 @@ type EquipmentDbRow = {
 
 /**
  * GET /api/equipment/fleet
- * Тимчасово: джерело правди = усі юніти Wialon (до зіставлення з 1С).
+ * Тимчасово: джерело правди = усі юніти Wialon (до зіставлення з BAS AGRO).
  * Equipment / implements — опційне збагачення + «Без трекера».
  */
 export async function GET() {

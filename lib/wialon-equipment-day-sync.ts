@@ -212,7 +212,7 @@ async function persistDayStatRows(
 
 /**
  * Синхронізує денну статистику для всього Wialon-флоту
- * (equipment_id опційний — поки немає зіставлення з 1С).
+ * (equipment_id опційний — поки немає зіставлення з BAS AGRO).
  */
 export async function syncWialonEquipmentDayStats(
   dateYmd: string = todayKyivYmd(),

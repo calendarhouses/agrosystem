@@ -26,7 +26,7 @@ export type WialonFarmSyncResult = {
 /**
  * Імпортує геозони Wialon у farm_fields: оновлює лише межі, площу й вихідну
  * назву зони. Те, що веде агроном (canonical_name, field_no, tract, is_field)
- * і зв'язок з 1С (bas_ref_key), а також crop / color лишаються недоторканими.
+ * і зв'язок з BAS AGRO (bas_ref_key), а також crop / color лишаються недоторканими.
  */
 export async function syncWialonGeofencesToFarmFields(): Promise<WialonFarmSyncResult> {
   const empty: WialonFarmSyncResult = { total: 0, inserted: 0, updated: 0 };

@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { logActivity } from "@/lib/activity-log";
+import { getCurrentActor } from "@/lib/app-actor";
 import { mapFuelTransactionRow, type FuelTransactionType } from "@/lib/fuel-transactions";
 import {
   computeTotalCost,
@@ -450,6 +452,16 @@ export async function PATCH(
       );
     }
 
+    const actor = await getCurrentActor();
+    await logActivity({
+      actor,
+      action: "update",
+      entityType: "fuel_transaction",
+      entityId: id,
+      summary: `${actor.label} змінив операцію з ДП`,
+      meta: { transactionType, amountLiters: amount },
+    });
+
     return NextResponse.json(
       {
         ok: true,
@@ -529,6 +541,19 @@ export async function DELETE(
         { status: 500, headers: JSON_UTF8 }
       );
     }
+
+    const actor = await getCurrentActor();
+    await logActivity({
+      actor,
+      action: "delete",
+      entityType: "fuel_transaction",
+      entityId: id,
+      summary: `${actor.label} видалив операцію з ДП`,
+      meta: {
+        transactionType: (existing as TxRow).transaction_type,
+        amountLiters: Number((existing as TxRow).amount_liters),
+      },
+    });
 
     return NextResponse.json({ ok: true }, { headers: JSON_UTF8 });
   } catch (error) {

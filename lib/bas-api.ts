@@ -3,7 +3,7 @@
  * Креденшали лише на сервері: BAS_ODATA_URL, BAS_USER, BAS_PASS.
  *
  * База BAS належить бухгалтерії, тому тут тільки GET. Жодних POST/PATCH/DELETE:
- * зв'язок із 1С зберігається на нашому боці в колонках bas_ref_key.
+ * зв'язок із BAS AGRO зберігається на нашому боці в колонках bas_ref_key.
  * Див. .cursor/rules/bas-readonly.mdc
  */
 
@@ -30,7 +30,7 @@ export interface BasMachinery {
   Автотранспорт?: boolean | null;
 }
 
-/** Поля в 1С — Catalog_ПодразделенияОрганизаций з прапорцем ИНАГРО_ПризнакПоля */
+/** Поля в BAS AGRO — Catalog_ПодразделенияОрганизаций з прапорцем ИНАГРО_ПризнакПоля */
 export interface BasField {
   Ref_Key: string;
   Description: string | null;
@@ -158,7 +158,7 @@ async function fetchBasCatalog<T>(
 }
 
 /**
- * Склади 1С разом з назвою групи (ППМ = пально-мастильні).
+ * Склади BAS AGRO разом з назвою групи (ППМ = пально-мастильні).
  * Групи потрібні, щоб у мапінгу було видно, який склад паливний.
  */
 export async function getBasStorages(): Promise<BasStorage[]> {
@@ -200,7 +200,7 @@ export async function getBasAllAssets(): Promise<BasMachinery[]> {
 }
 
 /**
- * Агро-поля з 1С: Catalog_ПодразделенияОрганизаций (не кадастрові участки).
+ * Агро-поля з BAS AGRO: Catalog_ПодразделенияОрганизаций (не кадастрові участки).
  * Фільтр: лише записи з ІНАГРО_ПризнакПоля = true.
  */
 export async function getBasFields(): Promise<BasField[]> {
@@ -290,7 +290,7 @@ export async function getBasUnits(): Promise<BasUnit[]> {
   });
 }
 
-/** Закупки організацій з 1С за період (надходження матеріалів). */
+/** Закупки організацій з BAS AGRO за період (надходження матеріалів). */
 export async function getBasPurchasesSince(
   isoDate: string
 ): Promise<BasPurchaseMovement[]> {
@@ -304,7 +304,7 @@ export async function getBasPurchasesSince(
   );
 }
 
-/** Випуск продукції (врожай) з 1С за період. */
+/** Випуск продукції (врожай) з BAS AGRO за період. */
 export async function getBasHarvestOutputSince(
   isoDate: string
 ): Promise<BasHarvestMovement[]> {
@@ -725,7 +725,7 @@ export async function getBasDocumentLines(
 
 /**
  * Повна «накладна» / звіт з BAS: шапка + рядки.
- * PDF/друк у 1С через OData недоступні — збираємо друковану форму з даних документа.
+ * PDF/друк у BAS AGRO через OData недоступні — збираємо друковану форму з даних документа.
  */
 export async function getBasDocumentInvoice(
   type: "receipt" | "sale" | "production",

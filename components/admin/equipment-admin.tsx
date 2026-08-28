@@ -281,7 +281,7 @@ export function EquipmentAdmin({ equipment, implements_, wialonUnits }: Props) {
       {isEmpty ? (
         <div className="rounded-xl border border-dashed p-10 text-center text-sm text-muted-foreground">
           Натисніть «Синхронізувати з BAS», щоб завантажити техніку та
-          обладнання з 1С.
+          обладнання з BAS AGRO.
         </div>
       ) : (
         <Tabs defaultValue="equipment">

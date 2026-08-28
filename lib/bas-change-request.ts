@@ -5,7 +5,7 @@ import type {
 } from "@/lib/field-registry";
 
 /**
- * Заявка бухгалтеру: що саме треба доробити в 1С, щоб довідник збігся з
+ * Заявка бухгалтеру: що саме треба доробити в BAS AGRO, щоб довідник збігся з
  * реальністю. Ми нічого не пишемо в BAS — це перелік на його підтвердження.
  *
  * Все виводиться з реєстру, окремої таблиці немає: статус кожної позиції
@@ -136,7 +136,7 @@ export function allChangeItems(request: BasChangeRequest): ChangeItem[] {
 }
 
 /**
- * Запис 1С без нашого поля, назва якого збігається з уже зайнятою в нас.
+ * Запис BAS AGRO без нашого поля, назва якого збігається з уже зайнятою в нас.
  * Такий збіг найнебезпечніший: бухгалтер і агроном говорять «Поле 13.2», маючи
  * на увазі різні ділянки.
  */
@@ -181,13 +181,13 @@ export function itemStatus(item: ChangeItem): BasRequestStatus {
 export function describeStatus(status: BasRequestStatus): string {
   switch (status) {
     case "none":
-      return "Не передано";
+      return "Нове";
     case "pending":
-      return "У бухгалтера";
+      return "В роботі";
     case "synced":
-      return "Заведено в 1С";
+      return "Виконано";
     case "error":
-      return "Відхилено";
+      return "Відмінено";
   }
 }
 
@@ -203,11 +203,11 @@ function rowLabel(row: FieldRegistryRow): string {
   return tract && !name.includes(tract) ? `${name} (${tract})` : name;
 }
 
-/** Один рядок заявки простою мовою — для тексту й для CSV. */
+/** Один рядок заявки простою мовою — для екрана, тексту й CSV. */
 export function describeItem(item: ChangeItem): string {
   switch (item.kind) {
     case "create":
-      return `Завести поле «${rowLabel(item.rows[0])}» на ${ha(item.areaHa)}`;
+      return `Додати в довідник BAS AGRO поле «${rowLabel(item.rows[0])}» · ${ha(item.areaHa)}`;
     case "split": {
       const parts = item.rows
         .map((row) => `«${rowLabel(row)}» ${ha(row.areaHa ?? 0)}`)
@@ -215,29 +215,27 @@ export function describeItem(item: ChangeItem): string {
       const basArea = item.basField.areaHa;
       const head =
         basArea != null
-          ? `Розділити «${item.basField.description}» (${ha(basArea)}) на ${item.rows.length}`
-          : `Розділити «${item.basField.description}» на ${item.rows.length}`;
-      // Сума частин майже ніколи не дорівнює тому, що записано в 1С —
-      // бухгалтеру треба бачити підсумок, а не тільки перелік.
+          ? `Розділити в BAS AGRO «${item.basField.description}» (${ha(basArea)}) на ${item.rows.length} окремі поля`
+          : `Розділити в BAS AGRO «${item.basField.description}» на ${item.rows.length} окремі поля`;
       const tail =
         basArea != null && Math.abs(item.areaHa - basArea) >= AREA_TOLERANCE_HA
-          ? `. Разом ${ha(item.areaHa)} замість ${ha(basArea)}`
+          ? `. За обміром разом ${ha(item.areaHa)} замість ${ha(basArea)}`
           : "";
       return `${head}: ${parts}${tail}`;
     }
     case "area":
-      return `Уточнити площу «${item.basField.description}»: ${ha(
+      return `Уточнити в BAS AGRO площу «${item.basField.description}»: було ${ha(
         item.basField.areaHa ?? 0
-      )} → ${ha(item.areaHa)} (${item.deltaHa > 0 ? "+" : ""}${numberFormat.format(
+      )}, за обміром ${ha(item.areaHa)} (${item.deltaHa > 0 ? "+" : ""}${numberFormat.format(
         item.deltaHa
-      )})`;
+      )} га)`;
   }
 }
 
 const SECTION_TITLES: Record<ChangeKind, string> = {
-  create: "Завести нові поля",
-  split: "Розділити злиті записи",
-  area: "Уточнити площі",
+  create: "Додати нові поля в BAS AGRO",
+  split: "Розділити злиті записи в BAS AGRO",
+  area: "Уточнити площі в BAS AGRO",
 };
 
 export function requestToText(
@@ -248,8 +246,8 @@ export function requestToText(
   const lines: string[] = [
     `Заявка на оновлення довідника полів у BAS AGRO від ${date}`,
     "",
-    "Джерело даних — обміряні геозони Wialon. Площі вважаємо фактичними.",
-    "Зміни в 1С вносить бухгалтер; наша система нічого там не змінює.",
+    "Площі взято з обміру по картах / GPS. Їх вважаємо фактичними.",
+    "Зміни в довіднику BAS AGRO вносить бухгалтер. Ця система лише показує розбіжності.",
   ];
 
   for (const kind of ["create", "split", "area"] as const) {
@@ -273,8 +271,8 @@ function csvCell(value: string | number): string {
 export function requestToCsv(request: BasChangeRequest): string {
   const header = [
     "Дія",
-    "Запис у 1С",
-    "Площа в 1С, га",
+    "Запис у BAS AGRO",
+    "Площа в BAS AGRO, га",
     "Наше поле",
     "№ поля",
     "Урочище",

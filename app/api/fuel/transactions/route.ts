@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { logActivity } from "@/lib/activity-log";
+import { actorCreateColumns, getCurrentActor } from "@/lib/app-actor";
 import {
   FUEL_TRANSACTIONS_SELECT,
   mapFuelTransactionRow,
@@ -353,23 +355,27 @@ export async function POST(request: Request) {
       transactionDate = parsed.toISOString();
     }
 
-    const { data: tx, error: txError } = await supabase
+    const actor = await getCurrentActor();
+    const insertBase: Record<string, unknown> = {
+      transaction_type: transactionType,
+      amount_liters: amount,
+      from_storage_id: fromStorageId,
+      to_storage_id: toStorageId,
+      wialon_unit_id: wialonUnitId,
+      equipment_id: equipmentId,
+      operator_name: body.operatorName?.trim() || null,
+      wialon_variance: wialonVariance,
+      wialon_verified: wialonVerified,
+      price_per_liter: txPricePerLiter,
+      total_cost: txTotalCost,
+      sync_status: "pending_1c",
+      ...actorCreateColumns(actor),
+      ...(transactionDate ? { transaction_date: transactionDate } : {}),
+    };
+
+    let { data: tx, error: txError } = await supabase
       .from("fuel_transactions")
-      .insert({
-        transaction_type: transactionType,
-        amount_liters: amount,
-        from_storage_id: fromStorageId,
-        to_storage_id: toStorageId,
-        wialon_unit_id: wialonUnitId,
-        equipment_id: equipmentId,
-        operator_name: body.operatorName?.trim() || null,
-        wialon_variance: wialonVariance,
-        wialon_verified: wialonVerified,
-        price_per_liter: txPricePerLiter,
-        total_cost: txTotalCost,
-        sync_status: "pending_1c",
-        ...(transactionDate ? { transaction_date: transactionDate } : {}),
-      })
+      .insert(insertBase)
       .select("*")
       .single();
 
@@ -378,38 +384,52 @@ export async function POST(request: Request) {
       : null;
 
     if (txError || !savedRow) {
-      // До міграції 040 — без equipment_id
+      // Смуга fallback: без колонок, яких ще немає (040 equipment / 043 actor)
+      const retryPayload = { ...insertBase };
+      let stripped = false;
       if (
-        equipmentId &&
         txError &&
-        (txError.message?.includes("equipment_id") || txError.code === "42703")
+        (txError.message?.includes("equipment_id") ||
+          txError.message?.includes("actor_id") ||
+          txError.message?.includes("actor_name") ||
+          txError.code === "42703")
       ) {
+        if (
+          txError.message?.includes("equipment_id") ||
+          (equipmentId && txError.code === "42703")
+        ) {
+          delete retryPayload.equipment_id;
+          stripped = true;
+        }
+        if (
+          txError.message?.includes("actor_id") ||
+          txError.message?.includes("actor_name") ||
+          txError.code === "42703"
+        ) {
+          delete retryPayload.actor_id;
+          delete retryPayload.actor_name;
+          stripped = true;
+        }
+      }
+
+      if (stripped) {
         const retry = await supabase
           .from("fuel_transactions")
-          .insert({
-            transaction_type: transactionType,
-            amount_liters: amount,
-            from_storage_id: fromStorageId,
-            to_storage_id: toStorageId,
-            wialon_unit_id: wialonUnitId,
-            operator_name: body.operatorName?.trim() || null,
-            wialon_variance: wialonVariance,
-            wialon_verified: wialonVerified,
-            price_per_liter: txPricePerLiter,
-            total_cost: txTotalCost,
-            sync_status: "pending_1c",
-            ...(transactionDate ? { transaction_date: transactionDate } : {}),
-          })
+          .insert(retryPayload)
           .select("*")
           .single();
         if (retry.error || !retry.data) {
           await restoreAll();
           return NextResponse.json(
-            { ok: false, error: retry.error?.message ?? txError.message },
+            {
+              ok: false,
+              error: retry.error?.message ?? txError?.message ?? "Не вдалося зберегти",
+            },
             { status: 500, headers: JSON_UTF8 }
           );
         }
         savedRow = retry.data as Record<string, unknown>;
+        txError = null;
       } else {
         await restoreAll();
         return NextResponse.json(
@@ -419,7 +439,7 @@ export async function POST(request: Request) {
       }
     }
 
-    // Закупівля / переміщення → черга на чернетку 1С (зараз stub)
+    // Закупівля / переміщення → черга на чернетку BAS AGRO (зараз stub)
     if (
       (transactionType === "inbound" || transactionType === "transfer") &&
       savedRow.id
@@ -442,15 +462,29 @@ export async function POST(request: Request) {
       }
     }
 
+    await logActivity({
+      actor,
+      action: "create",
+      entityType: "fuel_transaction",
+      entityId: String(savedRow.id),
+      summary:
+        transactionType === "inbound"
+          ? `${actor.label} оформив закупівлю ДП`
+          : transactionType === "transfer"
+            ? `${actor.label} оформив переміщення ДП`
+            : `${actor.label} зберіг операцію з ДП`,
+      meta: { transactionType, amountLiters: amount },
+    });
+
     return NextResponse.json(
       {
         ok: true,
         transaction: mapFuelTransactionRow(savedRow),
         message:
           transactionType === "inbound"
-            ? "Партію збережено локально. Чернетка 1С — після узгодження з бухгалтером"
+            ? "Партію збережено локально. Чернетка BAS AGRO — після узгодження з бухгалтером"
             : transactionType === "transfer"
-              ? "Переміщення збережено локально. Чернетка 1С — після узгодження з бухгалтером"
+              ? "Переміщення збережено локально. Чернетка BAS AGRO — після узгодження з бухгалтером"
               : undefined,
       },
       { headers: JSON_UTF8 }

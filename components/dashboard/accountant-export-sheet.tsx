@@ -53,7 +53,7 @@ function formatMoveDate(iso: string): string {
 function kindLabel(kind: AccountantQueueItem["kind"]): string {
   if (kind === "inbound") return "Прихід";
   if (kind === "sale") return "Продаж";
-  if (kind === "fuel_inbound") return "Закупівля ДТ";
+  if (kind === "fuel_inbound") return "Закупівля ДП";
   if (kind === "fuel_transfer") return "Переміщення";
   return "Списання";
 }

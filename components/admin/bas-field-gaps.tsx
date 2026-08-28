@@ -8,7 +8,7 @@ const numberFormat = new Intl.NumberFormat("uk-UA", {
 });
 
 /**
- * Поля, які є в 1С, але на які не вказує жоден наш запис. Нічого не змінюємо —
+ * Поля, які є в BAS AGRO, але на які не вказує жоден наш запис. Нічого не змінюємо —
  * це підказка бухгалтеру, які записи вже застаріли після розбиття полів.
  */
 export function BasFieldGaps({ fields }: { fields: BasFieldSummary[] }) {
@@ -22,18 +22,18 @@ export function BasFieldGaps({ fields }: { fields: BasFieldSummary[] }) {
         </div>
         <div className="min-w-0">
           <h2 className="text-base font-bold text-zinc-900">
-            Поля 1С без відповідника у нас
+            Поля BAS AGRO без відповідника у нас
           </h2>
           <p className="mt-0.5 text-sm text-zinc-500">
             Тільки читаємо і показуємо. Зазвичай це записи, які ми замістили
-            розбиттям на кілька полів — долю таких вирішує бухгалтер у 1С.
+            розбиттям на кілька полів — долю таких вирішує бухгалтер у BAS AGRO.
           </p>
         </div>
       </div>
 
       {fields.length === 0 ? (
         <p className="rounded-xl border border-dashed border-[#E5DFD3] bg-zinc-100/50 px-4 py-6 text-center text-sm text-zinc-500">
-          Кожне поле 1С зіставлене з нашим записом.
+          Кожне поле BAS AGRO зіставлене з нашим записом.
         </p>
       ) : (
         <>

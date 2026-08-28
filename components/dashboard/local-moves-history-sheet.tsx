@@ -4,12 +4,15 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { format } from "date-fns";
 import { uk } from "date-fns/locale";
 import {
+  Check,
+  ChevronDown,
   History,
   Loader2,
   Lock,
   PackageMinus,
   PackagePlus,
   Pencil,
+  Plus,
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -17,13 +20,28 @@ import { toast } from "sonner";
 import {
   deleteLocalMove,
   getQuickIssueOptions,
+  listBuyerSuggestions,
   listLocalMoves,
+  listSupplierSuggestions,
   updateLocalMove,
   type LocalMoveRow,
   type QuickIssueFieldOption,
 } from "@/app/admin/inventory/actions";
 import { Button } from "@/components/ui/button";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { Input } from "@/components/ui/input";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Sheet,
   SheetContent,
@@ -33,6 +51,11 @@ import {
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { AttachmentViewerButton } from "@/components/dashboard/attachment-viewer";
+
+const editComboboxTriggerClass = cn(
+  "flex h-10 w-full items-center justify-between gap-2 rounded-xl border border-zinc-200 bg-white px-3 text-left",
+  "outline-none transition hover:bg-zinc-50 focus-visible:ring-2 focus-visible:ring-[#276749]/25"
+);
 
 export function LocalMovesHistorySheet({
   open,
@@ -269,6 +292,7 @@ function LocalMoveListItem({
               {move.unitPriceUah != null
                 ? ` · ${(move.qty * move.unitPriceUah).toLocaleString("uk-UA", { maximumFractionDigits: 2 })} ₴`
                 : ""}
+              {move.actorName ? ` · ${move.actorName}` : ""}
             </span>
           </p>
         </div>
@@ -358,7 +382,11 @@ export function EditLocalMoveInline({
   const [buyerName, setBuyerName] = useState("");
   const [unitPrice, setUnitPrice] = useState("");
   const [fields, setFields] = useState<QuickIssueFieldOption[]>([]);
-  const [fieldQuery, setFieldQuery] = useState("");
+  const [counterparties, setCounterparties] = useState<string[]>([]);
+  const [counterpartiesLoading, setCounterpartiesLoading] = useState(false);
+  const [counterpartySearch, setCounterpartySearch] = useState("");
+  const [fieldOpen, setFieldOpen] = useState(false);
+  const [counterpartyOpen, setCounterpartyOpen] = useState(false);
   const [pending, startTransition] = useTransition();
 
   const isInbound = move.type === "inbound";
@@ -376,23 +404,66 @@ export function EditLocalMoveInline({
     setFieldId(move.fieldId ?? "");
     setBuyerName(move.buyerName ?? "");
     setUnitPrice(move.unitPriceUah != null ? String(move.unitPriceUah) : "");
-    setFieldQuery("");
+    setFieldOpen(false);
+    setCounterpartyOpen(false);
+    setCounterpartySearch("");
+    setCounterparties([]);
     void getQuickIssueOptions().then((res) => {
       if (res.ok) setFields(res.fields);
     });
-  }, [move.id]);
+    const needCp = isSale || (isInbound && move.itemCategory !== "harvest");
+    if (!needCp) return;
+    setCounterpartiesLoading(true);
+    const load = isSale ? listBuyerSuggestions() : listSupplierSuggestions();
+    void load.then((res) => {
+      setCounterpartiesLoading(false);
+      if (!res.ok) return;
+      const names = [...res.names];
+      const current = (move.buyerName ?? "").trim();
+      if (current && !names.some((n) => n.toLowerCase() === current.toLowerCase())) {
+        names.unshift(current);
+      }
+      setCounterparties(names);
+    });
+  }, [move.id, move.itemCategory, move.buyerName, isSale, isInbound]);
 
-  const filteredFields = useMemo(() => {
-    const q = fieldQuery.trim().toLowerCase();
-    return fields
-      .filter(
-        (f) =>
-          !q ||
-          f.name.toLowerCase().includes(q) ||
-          f.crop.toLowerCase().includes(q)
-      )
+  const selectedField = useMemo(
+    () => fields.find((f) => f.id === fieldId) ?? null,
+    [fields, fieldId]
+  );
+
+  const filteredCounterparties = useMemo(() => {
+    const q = counterpartySearch.trim().toLowerCase();
+    return counterparties
+      .filter((n) => !q || n.toLowerCase().includes(q))
       .slice(0, 40);
-  }, [fields, fieldQuery]);
+  }, [counterparties, counterpartySearch]);
+
+  const canAddNewCounterparty = useMemo(() => {
+    const q = counterpartySearch.trim();
+    if (!q) return false;
+    return !counterparties.some(
+      (n) => n.toLowerCase() === q.toLowerCase()
+    );
+  }, [counterparties, counterpartySearch]);
+
+  function selectCounterparty(name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setBuyerName(trimmed);
+    setCounterpartySearch("");
+    setCounterpartyOpen(false);
+    if (
+      !counterparties.some((n) => n.toLowerCase() === trimmed.toLowerCase())
+    ) {
+      setCounterparties((prev) => [trimmed, ...prev]);
+    }
+  }
+
+  function openCounterpartyPicker(open: boolean) {
+    setCounterpartyOpen(open);
+    if (open) setCounterpartySearch("");
+  }
 
   function handleSave() {
     const qtyNum = Number(String(qty).replace(",", "."));
@@ -422,6 +493,15 @@ export function EditLocalMoveInline({
         return;
       }
       price = priceNum;
+    } else if (unitPrice.trim()) {
+      const priceNum = Number(String(unitPrice).replace(",", "."));
+      if (!Number.isFinite(priceNum) || priceNum < 0) {
+        toast.error("Невірна ціна");
+        return;
+      }
+      price = priceNum;
+    } else {
+      price = null;
     }
     startTransition(async () => {
       const { suppressLocalInventoryMovesRealtimeToast } = await import(
@@ -439,7 +519,7 @@ export function EditLocalMoveInline({
                 buyerName: isHarvestInbound ? null : buyer ?? null,
                 unitPriceUah: price,
               }
-            : {}),
+            : { unitPriceUah: price }),
       });
       if (!res.ok) {
         toast.error(res.error);
@@ -508,11 +588,86 @@ export function EditLocalMoveInline({
               <label className="text-[11px] font-medium text-zinc-500">
                 Покупець
               </label>
+              <Popover
+                open={counterpartyOpen}
+                onOpenChange={openCounterpartyPicker}
+              >
+                <PopoverTrigger className={editComboboxTriggerClass}>
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900">
+                    {buyerName || (
+                      <span className="font-normal text-zinc-400">
+                        Оберіть або додайте нового…
+                      </span>
+                    )}
+                  </span>
+                  <ChevronDown className="h-4 w-4 shrink-0 text-zinc-400" />
+                </PopoverTrigger>
+                <PopoverContent
+                  align="start"
+                  sideOffset={6}
+                  className="w-[var(--radix-popover-trigger-width)] min-w-[16rem] rounded-2xl border border-zinc-200 bg-white p-0 shadow-xl"
+                >
+                  <Command className="rounded-2xl bg-white" shouldFilter={false}>
+                    <CommandInput
+                      placeholder="Пошук або нова назва…"
+                      value={counterpartySearch}
+                      onValueChange={setCounterpartySearch}
+                      className="h-11"
+                    />
+                    <CommandList className="max-h-56 bg-white">
+                      {counterpartiesLoading ? (
+                        <div className="flex items-center gap-2 px-3 py-3 text-sm text-zinc-400">
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          Завантаження покупців…
+                        </div>
+                      ) : null}
+                      {canAddNewCounterparty ? (
+                        <CommandGroup>
+                          <CommandItem
+                            value={`__new__${counterpartySearch}`}
+                            onSelect={() =>
+                              selectCounterparty(counterpartySearch)
+                            }
+                            className="cursor-pointer rounded-xl px-3 py-2.5 text-[#276749]"
+                          >
+                            <Plus className="mr-2 h-4 w-4 shrink-0" />
+                            <span className="min-w-0 flex-1 truncate">
+                              Додати нового: «{counterpartySearch.trim()}»
+                            </span>
+                          </CommandItem>
+                        </CommandGroup>
+                      ) : null}
+                      <CommandEmpty>
+                        {counterpartiesLoading
+                          ? "…"
+                          : counterpartySearch.trim()
+                            ? "Немає збігів — введіть назву й додайте нового"
+                            : "Поки немає покупців — введіть нову назву"}
+                      </CommandEmpty>
+                      <CommandGroup heading={filteredCounterparties.length ? "З BAS і складу" : undefined}>
+                        {filteredCounterparties.map((name) => (
+                          <CommandItem
+                            key={name}
+                            value={name}
+                            onSelect={() => selectCounterparty(name)}
+                            className="cursor-pointer rounded-xl px-3 py-2.5"
+                          >
+                            <span className="min-w-0 flex-1 truncate">{name}</span>
+                            {buyerName.trim() === name ? (
+                              <Check className="h-4 w-4 text-amber-600" />
+                            ) : null}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
               <Input
                 value={buyerName}
                 onChange={(e) => setBuyerName(e.target.value)}
-                className="h-10 bg-white"
-                placeholder="Назва контрагента"
+                placeholder="Або введіть вручну"
+                className="h-9 bg-white text-sm"
               />
             </div>
             <div className="space-y-1">
@@ -545,48 +700,151 @@ export function EditLocalMoveInline({
                     </button>
                   ) : null}
                 </div>
-                <Input
-                  value={fieldQuery}
-                  onChange={(e) => setFieldQuery(e.target.value)}
-                  placeholder={
-                    fields.find((f) => f.id === fieldId)?.name ?? "Пошук поля…"
-                  }
-                  className="h-10 bg-white"
-                />
-                {fieldQuery.trim() || !fieldId ? (
-                  <div className="max-h-36 overflow-y-auto rounded-xl border border-zinc-200 bg-white">
-                    {filteredFields.map((f) => (
-                      <button
-                        key={f.id}
-                        type="button"
-                        onClick={() => {
-                          setFieldId(f.id);
-                          setFieldQuery("");
-                        }}
-                        className={cn(
-                          "flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-zinc-50",
-                          fieldId === f.id && "bg-sky-50 font-medium"
-                        )}
-                      >
-                        <span className="truncate">{f.name}</span>
-                        <span className="text-[11px] text-zinc-400">
-                          {f.crop}
+                <Popover open={fieldOpen} onOpenChange={setFieldOpen}>
+                  <PopoverTrigger className={editComboboxTriggerClass}>
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900">
+                      {selectedField ? (
+                        selectedField.name
+                      ) : (
+                        <span className="font-normal text-zinc-400">
+                          Оберіть поле…
                         </span>
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
+                      )}
+                    </span>
+                    <ChevronDown className="h-4 w-4 shrink-0 text-zinc-400" />
+                  </PopoverTrigger>
+                  <PopoverContent
+                    align="start"
+                    sideOffset={6}
+                    className="w-[var(--radix-popover-trigger-width)] rounded-2xl border border-zinc-200 bg-white p-0 shadow-xl"
+                  >
+                    <Command className="rounded-2xl bg-white">
+                      <CommandInput placeholder="Пошук поля…" className="h-11" />
+                      <CommandList className="max-h-56 bg-white">
+                        <CommandEmpty>Полів не знайдено</CommandEmpty>
+                        <CommandGroup>
+                          {fields.map((f) => (
+                            <CommandItem
+                              key={f.id}
+                              value={`${f.name} ${f.crop}`}
+                              onSelect={() => {
+                                setFieldId(f.id);
+                                setFieldOpen(false);
+                              }}
+                              className="cursor-pointer rounded-xl px-3 py-2.5"
+                            >
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate font-medium">
+                                  {f.name}
+                                </span>
+                                <span className="text-[11px] text-zinc-400">
+                                  {f.crop || `${f.areaHa} га`}
+                                </span>
+                              </span>
+                              {fieldId === f.id ? (
+                                <Check className="h-4 w-4 text-sky-600" />
+                              ) : null}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
               </div>
             ) : (
               <div className="space-y-1">
                 <label className="text-[11px] font-medium text-zinc-500">
                   Постачальник
                 </label>
+                <Popover
+                  open={counterpartyOpen}
+                  onOpenChange={openCounterpartyPicker}
+                >
+                  <PopoverTrigger className={editComboboxTriggerClass}>
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900">
+                      {buyerName || (
+                        <span className="font-normal text-zinc-400">
+                          Оберіть або додайте нового…
+                        </span>
+                      )}
+                    </span>
+                    <ChevronDown className="h-4 w-4 shrink-0 text-zinc-400" />
+                  </PopoverTrigger>
+                  <PopoverContent
+                    align="start"
+                    sideOffset={6}
+                    className="w-[var(--radix-popover-trigger-width)] min-w-[16rem] rounded-2xl border border-zinc-200 bg-white p-0 shadow-xl"
+                  >
+                    <Command className="rounded-2xl bg-white" shouldFilter={false}>
+                      <CommandInput
+                        placeholder="Пошук або нова назва…"
+                        value={counterpartySearch}
+                        onValueChange={setCounterpartySearch}
+                        className="h-11"
+                      />
+                      <CommandList className="max-h-56 bg-white">
+                        {counterpartiesLoading ? (
+                          <div className="flex items-center gap-2 px-3 py-3 text-sm text-zinc-400">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            Завантаження постачальників…
+                          </div>
+                        ) : null}
+                        {canAddNewCounterparty ? (
+                          <CommandGroup>
+                            <CommandItem
+                              value={`__new__${counterpartySearch}`}
+                              onSelect={() =>
+                                selectCounterparty(counterpartySearch)
+                              }
+                              className="cursor-pointer rounded-xl px-3 py-2.5 text-[#276749]"
+                            >
+                              <Plus className="mr-2 h-4 w-4 shrink-0" />
+                              <span className="min-w-0 flex-1 truncate">
+                                Додати нового: «{counterpartySearch.trim()}»
+                              </span>
+                            </CommandItem>
+                          </CommandGroup>
+                        ) : null}
+                        <CommandEmpty>
+                          {counterpartiesLoading
+                            ? "…"
+                            : counterpartySearch.trim()
+                              ? "Немає збігів — введіть назву й додайте нового"
+                              : "Поки немає постачальників — введіть нову назву"}
+                        </CommandEmpty>
+                        <CommandGroup
+                          heading={
+                            filteredCounterparties.length
+                              ? "З BAS і складу"
+                              : undefined
+                          }
+                        >
+                          {filteredCounterparties.map((name) => (
+                            <CommandItem
+                              key={name}
+                              value={name}
+                              onSelect={() => selectCounterparty(name)}
+                              className="cursor-pointer rounded-xl px-3 py-2.5"
+                            >
+                              <span className="min-w-0 flex-1 truncate">
+                                {name}
+                              </span>
+                              {buyerName.trim() === name ? (
+                                <Check className="h-4 w-4 text-sky-600" />
+                              ) : null}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
                 <Input
                   value={buyerName}
                   onChange={(e) => setBuyerName(e.target.value)}
-                  className="h-10 bg-white"
-                  placeholder="Контрагент"
+                  placeholder="Або введіть вручну"
+                  className="h-9 bg-white text-sm"
                 />
               </div>
             )}
@@ -603,51 +861,85 @@ export function EditLocalMoveInline({
             </div>
           </>
         ) : (
-          <div className="space-y-1">
-            <div className="flex items-center justify-between gap-2">
-              <label className="text-[11px] font-medium text-zinc-500">
-                {fieldRequired ? "Поле" : "Поле (опційно)"}
-              </label>
-              {fieldId ? (
-                <button
-                  type="button"
-                  onClick={() => setFieldId("")}
-                  className="text-[11px] font-semibold text-zinc-400 hover:text-zinc-700"
-                >
-                  Зняти
-                </button>
-              ) : null}
-            </div>
-            <Input
-              value={fieldQuery}
-              onChange={(e) => setFieldQuery(e.target.value)}
-              placeholder="Пошук поля…"
-              className="h-9 bg-white"
-            />
-            <div className="max-h-36 overflow-y-auto rounded-xl border border-zinc-200 bg-white">
-              {filteredFields.map((f) => {
-                const active = f.id === fieldId;
-                return (
+          <>
+            <div className="space-y-1">
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-[11px] font-medium text-zinc-500">
+                  {fieldRequired ? "Поле" : "Поле (опційно)"}
+                </label>
+                {fieldId ? (
                   <button
-                    key={f.id}
                     type="button"
-                    onClick={() => setFieldId(f.id)}
-                    className={cn(
-                      "flex w-full items-center justify-between px-3 py-2 text-left text-sm transition",
-                      active
-                        ? "bg-[#276749]/10 font-semibold text-[#276749]"
-                        : "text-zinc-700 hover:bg-zinc-50"
-                    )}
+                    onClick={() => setFieldId("")}
+                    className="text-[11px] font-semibold text-zinc-400 hover:text-zinc-700"
                   >
-                    <span className="truncate">{f.name}</span>
-                    <span className="shrink-0 text-[11px] text-zinc-400">
-                      {f.areaHa} га
-                    </span>
+                    Зняти
                   </button>
-                );
-              })}
+                ) : null}
+              </div>
+              <Popover open={fieldOpen} onOpenChange={setFieldOpen}>
+                <PopoverTrigger className={editComboboxTriggerClass}>
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900">
+                    {selectedField ? (
+                      selectedField.name
+                    ) : (
+                      <span className="font-normal text-zinc-400">
+                        Оберіть поле…
+                      </span>
+                    )}
+                  </span>
+                  <ChevronDown className="h-4 w-4 shrink-0 text-zinc-400" />
+                </PopoverTrigger>
+                <PopoverContent
+                  align="start"
+                  sideOffset={6}
+                  className="w-[var(--radix-popover-trigger-width)] rounded-2xl border border-zinc-200 bg-white p-0 shadow-xl"
+                >
+                  <Command className="rounded-2xl bg-white">
+                    <CommandInput placeholder="Пошук поля…" className="h-11" />
+                    <CommandList className="max-h-56 bg-white">
+                      <CommandEmpty>Полів не знайдено</CommandEmpty>
+                      <CommandGroup>
+                        {fields.map((f) => (
+                          <CommandItem
+                            key={f.id}
+                            value={`${f.name} ${f.crop}`}
+                            onSelect={() => {
+                              setFieldId(f.id);
+                              setFieldOpen(false);
+                            }}
+                            className="cursor-pointer rounded-xl px-3 py-2.5"
+                          >
+                            <span className="min-w-0 flex-1 truncate">
+                              {f.name}
+                            </span>
+                            <span className="shrink-0 text-[11px] text-zinc-400">
+                              {f.areaHa} га
+                            </span>
+                            {fieldId === f.id ? (
+                              <Check className="ml-1 h-4 w-4 text-[#276749]" />
+                            ) : null}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
-          </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-zinc-500">
+                Ціна ₴ / од. (опційно)
+              </label>
+              <Input
+                value={unitPrice}
+                inputMode="decimal"
+                onChange={(e) => setUnitPrice(e.target.value)}
+                className="h-10 bg-white text-base font-semibold tabular-nums"
+                placeholder="Додати ціну"
+              />
+            </div>
+          </>
         )}
       </div>
 

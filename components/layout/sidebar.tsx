@@ -4,25 +4,22 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
-  ChevronDown,
   FileSpreadsheet,
-  FileText,
   Fuel,
-  Link2,
   LogOut,
   Map as MapIcon,
   PanelLeftClose,
   PanelLeftOpen,
   PieChart,
-  Settings,
-  Sprout,
+  Radar,
   Tractor,
   Warehouse,
-  Wrench,
 } from "lucide-react";
 
+import { getMyProfileAction } from "@/app/team/actions";
 import { logoutAction } from "@/app/login/actions";
 import { SidebarNavTooltip } from "@/components/layout/sidebar-nav-tooltip";
+import { ROLE_LABEL_UK, type AppActor } from "@/lib/app-actor-shared";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
@@ -31,6 +28,12 @@ const NAV_ITEMS = [
     label: "Поля",
     hint: "Поля, контури та погода",
     icon: MapIcon,
+  },
+  {
+    href: "/calendar",
+    label: "Агро-Радар",
+    hint: "Вікна можливостей і план робіт",
+    icon: Radar,
   },
   {
     href: "/equipment",
@@ -57,44 +60,10 @@ const NAV_ITEMS = [
     icon: PieChart,
   },
   {
-    href: "/export",
+    href: "/accounting",
     label: "Бухгалтерія",
-    hint: "Черга операцій · Excel · передано",
+    hint: "Експорт · звірка · мапінг BAS AGRO",
     icon: FileSpreadsheet,
-  },
-  // Детокс: /reports тимчасово сховано — лише OPERATION_RECORDS mock
-  // {
-  //   href: "/reports",
-  //   label: "Операції / Звіти",
-  //   hint: "Журнал операцій",
-  //   icon: FileText,
-  // },
-] as const;
-
-const SETTINGS_ITEMS = [
-  {
-    href: "/admin/equipment",
-    label: "Техніка BAS",
-    hint: "Синхронізація техніки з 1С",
-    icon: Wrench,
-  },
-  {
-    href: "/admin/fields",
-    label: "Реєстр полів",
-    hint: "Назви й площі для BAS AGRO",
-    icon: Sprout,
-  },
-  {
-    href: "/admin/mapping",
-    label: "Мапінг 1С",
-    hint: "Зіставлення з BAS AGRO",
-    icon: Link2,
-  },
-  {
-    href: "/admin/bas-request",
-    label: "Звірка полів",
-    hint: "Заявка бухгалтеру по довіднику полів 1С",
-    icon: FileText,
   },
 ] as const;
 
@@ -105,10 +74,6 @@ type NavItem = {
   icon: typeof MapIcon;
 };
 
-function isSettingsPath(pathname: string): boolean {
-  return SETTINGS_ITEMS.some((item) => pathname.startsWith(item.href));
-}
-
 type SidebarProps = {
   collapsed: boolean;
   onToggleCollapsed: () => void;
@@ -118,15 +83,13 @@ type SidebarProps = {
 export function Sidebar({ collapsed, onToggleCollapsed }: SidebarProps) {
   const pathname = usePathname();
   const expanded = !collapsed;
-  const [settingsOpen, setSettingsOpen] = useState(() => isSettingsPath(pathname));
+  const [me, setMe] = useState<AppActor | null>(null);
 
   useEffect(() => {
-    if (isSettingsPath(pathname)) {
-      setSettingsOpen(true);
-    }
-  }, [pathname]);
+    void getMyProfileAction().then(setMe);
+  }, []);
 
-  function renderNavItem(item: NavItem, nested = false) {
+  function renderNavItem(item: NavItem) {
     const Icon = item.icon;
     const active =
       item.href === "/"
@@ -141,7 +104,6 @@ export function Sidebar({ collapsed, onToggleCollapsed }: SidebarProps) {
         className={cn(
           "group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
           collapsed ? "justify-center px-0" : "justify-center md:justify-start",
-          nested && !collapsed && "md:pl-9",
           active
             ? "bg-gradient-to-r from-[#C05621]/25 to-transparent text-zinc-100"
             : "text-zinc-400 hover:bg-zinc-700/30 hover:text-zinc-200"
@@ -273,62 +235,49 @@ export function Sidebar({ collapsed, onToggleCollapsed }: SidebarProps) {
 
       <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto p-2">
         {NAV_ITEMS.map((item) => renderNavItem(item))}
+      </nav>
 
-        <div className={cn("mt-4", collapsed && "mt-3")}>
-          {collapsed ? (
+      <div className="shrink-0 border-t border-zinc-700 p-2">
+        {me ? (
+          collapsed ? (
             <SidebarNavTooltip
-              title="Налаштування"
-              hint={settingsOpen ? "Згорнути" : "Розгорнути"}
+              title={me.fullName}
+              hint={ROLE_LABEL_UK[me.role]}
             >
               {(handlers) => (
-                <span className="block w-full" {...handlers}>
-                  <button
-                    type="button"
-                    onClick={() => setSettingsOpen((open) => !open)}
-                    aria-expanded={settingsOpen}
-                    aria-label="Налаштування"
-                    className={cn(
-                      "group relative flex w-full items-center justify-center rounded-lg px-0 py-2.5 text-sm font-medium transition-all duration-200",
-                      isSettingsPath(pathname)
-                        ? "bg-gradient-to-r from-[#C05621]/25 to-transparent text-zinc-100"
-                        : "text-zinc-400 hover:bg-zinc-700/30 hover:text-zinc-200"
-                    )}
-                  >
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors group-hover:text-zinc-300">
-                      <Settings className="h-5 w-5" />
+                <span className="mb-1.5 block w-full" {...handlers}>
+                  <div className="flex w-full items-center justify-center rounded-xl px-0 py-1.5">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-full border border-[#C05621]/35 bg-gradient-to-br from-[#C05621]/30 to-[#9c4221]/20 text-xs font-bold text-[#E8A87C] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+                      {me.fullName.slice(0, 1).toUpperCase()}
                     </span>
-                  </button>
+                  </div>
                 </span>
               )}
             </SidebarNavTooltip>
           ) : (
-            <button
-              type="button"
-              onClick={() => setSettingsOpen((open) => !open)}
-              aria-expanded={settingsOpen}
-              className={cn(
-                "mb-1 flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-[11px] font-semibold tracking-wide text-zinc-500 uppercase transition-colors hover:bg-zinc-700/20 hover:text-zinc-300"
-              )}
-            >
-              <Settings className="h-3.5 w-3.5 shrink-0" />
-              <span className="hidden flex-1 md:inline">Налаштування</span>
-              <ChevronDown
+            <div className="mb-1.5 hidden md:block">
+              <div
                 className={cn(
-                  "hidden h-3.5 w-3.5 shrink-0 transition-transform md:inline",
-                  settingsOpen && "rotate-180"
+                  "flex items-center gap-2.5 rounded-xl border border-white/[0.07]",
+                  "bg-gradient-to-br from-white/[0.07] to-white/[0.02] px-2.5 py-2.5",
+                  "shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
                 )}
-                aria-hidden
-              />
-            </button>
-          )}
-
-          {settingsOpen
-            ? SETTINGS_ITEMS.map((item) => renderNavItem(item, true))
-            : null}
-        </div>
-      </nav>
-
-      <div className="shrink-0 border-t border-zinc-700 p-2">
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#C05621]/35 bg-gradient-to-br from-[#C05621]/30 to-[#9c4221]/20 text-xs font-bold text-[#E8A87C]">
+                  {me.fullName.slice(0, 1).toUpperCase()}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold tracking-tight text-zinc-100">
+                    {me.fullName}
+                  </p>
+                  <p className="mt-0.5 truncate text-[11px] text-zinc-500">
+                    {ROLE_LABEL_UK[me.role]}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )
+        ) : null}
         {collapsed ? (
           <SidebarNavTooltip title="Вийти" hint="Завершити сесію">
             {(handlers) => (

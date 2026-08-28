@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { mapOperationRow, type FieldOperation } from "@/lib/field-operations";
 
-/** Колонки з міграції 008 / 022 — можуть бути відсутні на старій БД */
+/** Колонки з міграцій 008 / 022 / 043 — можуть бути відсутні на старій БД */
 const OPTIONAL_UPSERT_COLUMNS = [
   "export_status",
   "equipment_id",
@@ -13,6 +13,10 @@ const OPTIONAL_UPSERT_COLUMNS = [
   "tracker_fuel_l",
   "season",
   "season_year",
+  "actor_id",
+  "actor_name",
+  "closed_by_id",
+  "closed_by_name",
 ] as const;
 
 function isMissingColumnError(message: string, column: string): boolean {

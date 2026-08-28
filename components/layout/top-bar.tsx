@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils";
 /**
  * Верхня панель: Command Menu + глобальний перемикач агросезону.
  * На Command Center (/ та /equipment) — прозора плаваюча шапка без пошуку та сезону.
- * На /fuel, /inventory та /finance — без глобального пошуку/сезону (є локальні контроли).
+ * На /fuel, /inventory, /finance, /export та /accounting — без глобального пошуку/сезону.
  */
 export function TopBar() {
   const pathname = usePathname();
@@ -31,7 +31,13 @@ export function TopBar() {
     pathname === "/inventory" ||
     pathname?.startsWith("/inventory/") ||
     pathname === "/finance" ||
-    pathname?.startsWith("/finance/");
+    pathname?.startsWith("/finance/") ||
+    pathname === "/export" ||
+    pathname?.startsWith("/export/") ||
+    pathname === "/accounting" ||
+    pathname?.startsWith("/accounting/") ||
+    pathname === "/calendar" ||
+    pathname?.startsWith("/calendar/");
   const activeSeason = useSeasonStore((s) => s.activeSeason);
   const availableSeasons = useSeasonStore((s) => s.availableSeasons);
   const setActiveSeason = useSeasonStore((s) => s.setActiveSeason);

@@ -4,7 +4,7 @@ import type { BasChangeRequest } from "@/lib/bas-change-request";
 import type { FieldRegistryRow } from "@/lib/field-registry";
 
 /**
- * Книга Excel під штатне «Завантаження з табличного документа» в 1С.
+ * Книга Excel під штатне «Завантаження з табличного документа» в BAS AGRO.
  *
  * Чернетки для полів технічно неможливі: поля живуть у довіднику
  * `Catalog_ПодразделенияОрганизаций`, а в довідника немає ознаки проведення —
@@ -12,7 +12,7 @@ import type { FieldRegistryRow } from "@/lib/field-registry";
  * готовий файл, який бухгалтер завантажує у себе сам.
  */
 
-/** Значення, однакові в усіх 24 заповнених полях 1С — беремо їх за замовчування. */
+/** Значення, однакові в усіх 24 заповнених полях BAS AGRO — беремо їх за замовчування. */
 const DEFAULTS = {
   parentGroup: "Поля",
   fieldKind: "Пашня",
@@ -147,8 +147,8 @@ function createSheet(request: BasChangeRequest): XLSX.WorkSheet {
 
 function splitSheet(request: BasChangeRequest): XLSX.WorkSheet {
   const header: Cell[] = [
-    "Запис у 1С",
-    "Площа в 1С, га",
+    "Запис у BAS AGRO",
+    "Площа в BAS AGRO, га",
     "Нове поле",
     "Номер поля",
     "Площа за обміром, га",
@@ -174,7 +174,7 @@ function splitSheet(request: BasChangeRequest): XLSX.WorkSheet {
 
 function areaSheet(request: BasChangeRequest): XLSX.WorkSheet {
   const header: Cell[] = [
-    "Запис у 1С",
+    "Запис у BAS AGRO",
     "Площа зараз, га",
     "Площа за обміром, га",
     "Різниця, га",

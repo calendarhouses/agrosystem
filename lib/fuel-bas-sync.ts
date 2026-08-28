@@ -1,11 +1,23 @@
 /**
- * Stub інтеграції паливних операцій з BAS (1С).
+ * Паливні операції → чернетки BAS (Posted: false).
+ * Усі POST лише через lib/bas-drafts/post + isBasDraftPostEnabled().
  *
- * ВАЖЛИВО (bas-readonly): живий POST/PATCH у odata/standard.odata ЗАБОРОНЕНО
- * без явного підтвердження на чернетки (Posted: false).
- * Нижче — повний payload чернетки + enqueue; OData WRITE закоментовано.
+ * Мапінг документів:
+ * - transfer → Document_ИНАГРО_СливТоплива (склади)
+ * - outbound → Document_ИНАГРО_ПередачаТоплива (техніка)
+ * - inbound  → Document_ПоступлениеТоваровУслуг (partial)
  */
 
+import {
+  basDieselNomenclatureKey,
+  basOrganizationKey,
+  isBasDraftPostEnabled,
+} from "@/lib/bas-drafts/config";
+import { postBasDocumentDraft, toIsoDateTime } from "@/lib/bas-drafts/post";
+import {
+  markBasDraftFailure,
+  markBasDraftSuccess,
+} from "@/lib/bas-drafts/track";
 import type { FuelSyncStatus, FuelTransaction } from "@/lib/fuel-transactions";
 import {
   FUEL_TRANSACTIONS_SELECT,
@@ -24,19 +36,13 @@ export type FuelBasDraftLine = {
   equipmentHint: string | null;
 };
 
-/** Документ-чернетка для бухгалтера (готовий до OData, Posted: false) */
 export type FuelBasDraftDocument = {
-  /** Ід нашої транзакції */
   sourceTransactionId: string;
-  /** Тип операції у нашій системі */
   operationKind: "inbound" | "transfer" | "outbound";
-  /** Дата документа (ISO) */
   documentDate: string;
-  /** Завжди false — непроведена чернетка */
   posted: false;
   comment: string;
   lines: FuelBasDraftLine[];
-  /** Розширені поля для маппінгу в Document_* BAS */
   meta: {
     pricePerLiter: number | null;
     totalCost: number | null;
@@ -50,14 +56,12 @@ export type FuelBasEnqueueResult = {
   ok: true;
   status: FuelSyncStatus;
   draft: FuelBasDraftDocument;
-  /** true лише коли реально пішов POST у BAS (зараз завжди false) */
   sentToBas: boolean;
+  dryRun: boolean;
   message: string;
+  basRefKey?: string;
 };
 
-/**
- * Зібрати повну чернетку з рядка fuel_transactions (+ імена складів).
- */
 export function buildFuelBasDraftDocument(
   tx: FuelTransaction,
   options?: { equipmentHint?: string | null }
@@ -106,13 +110,169 @@ export function buildFuelBasDraftDocument(
   };
 }
 
+function entityForKind(
+  kind: FuelBasDraftDocument["operationKind"]
+): string {
+  if (kind === "transfer") return "Document_ИНАГРО_СливТоплива";
+  if (kind === "outbound") return "Document_ИНАГРО_ПередачаТоплива";
+  return "Document_ПоступлениеТоваровУслуг";
+}
+
+async function resolveFuelBasKeys(tx: FuelTransaction): Promise<{
+  fromStorageBas: string | null;
+  toStorageBas: string | null;
+  equipmentBas: string | null;
+  dieselKey: string | null;
+  orgKey: string | null;
+}> {
+  const supabase = createServiceSupabase();
+  const storageIds = [tx.fromStorageId, tx.toStorageId].filter(
+    (id): id is string => Boolean(id)
+  );
+
+  const storageBas = new Map<string, string>();
+  if (storageIds.length > 0) {
+    const { data } = await supabase
+      .from("fuel_storages")
+      .select("id, bas_ref_key")
+      .in("id", storageIds);
+    for (const row of data ?? []) {
+      if (row.bas_ref_key) {
+        storageBas.set(String(row.id), String(row.bas_ref_key).toLowerCase());
+      }
+    }
+  }
+
+  let equipmentBas: string | null = null;
+  if (tx.equipmentId) {
+    const { data } = await supabase
+      .from("equipment")
+      .select("bas_ref_key")
+      .eq("id", tx.equipmentId)
+      .maybeSingle();
+    if (data?.bas_ref_key) {
+      equipmentBas = String(data.bas_ref_key).toLowerCase();
+    }
+  }
+
+  return {
+    fromStorageBas: tx.fromStorageId
+      ? storageBas.get(tx.fromStorageId) ?? null
+      : null,
+    toStorageBas: tx.toStorageId
+      ? storageBas.get(tx.toStorageId) ?? null
+      : null,
+    equipmentBas,
+    dieselKey: basDieselNomenclatureKey(),
+    orgKey: basOrganizationKey(),
+  };
+}
+
+function buildODataBody(
+  draft: FuelBasDraftDocument,
+  keys: Awaited<ReturnType<typeof resolveFuelBasKeys>>
+): { entity: string; body: Record<string, unknown> } | { error: string } {
+  const liters = draft.lines[0]?.quantityLiters ?? 0;
+  const entity = entityForKind(draft.operationKind);
+  const date = toIsoDateTime(draft.documentDate);
+
+  if (draft.operationKind === "transfer") {
+    if (!keys.fromStorageBas || !keys.toStorageBas) {
+      return {
+        error: "для переміщення потрібні bas_ref_key складів відправника й отримувача",
+      };
+    }
+    if (!keys.dieselKey) {
+      return { error: "задайте BAS_DIESEL_NOMENCLATURE_KEY у env" };
+    }
+    const body: Record<string, unknown> = {
+      Date: date,
+      Posted: false,
+      DeletionMark: false,
+      Комментарий: `AgroSystem · ${draft.comment}`,
+      СкладОтправитель_Key: keys.fromStorageBas,
+      СкладПолучатель_Key: keys.toStorageBas,
+      Товары: [
+        {
+          LineNumber: 1,
+          Номенклатура_Key: keys.dieselKey,
+          Количество: liters,
+        },
+      ],
+      _meta: { pipeline: "fuel_transfer", txId: draft.sourceTransactionId },
+    };
+    if (keys.orgKey) body.Организация_Key = keys.orgKey;
+    return { entity, body };
+  }
+
+  if (draft.operationKind === "outbound") {
+    if (!keys.dieselKey) {
+      return { error: "задайте BAS_DIESEL_NOMENCLATURE_KEY у env" };
+    }
+    if (!keys.equipmentBas) {
+      return {
+        error: "для заправки потрібен bas_ref_key техніки (мапінг equipment)",
+      };
+    }
+    const body: Record<string, unknown> = {
+      Date: date,
+      Posted: false,
+      DeletionMark: false,
+      Комментарий: `AgroSystem · ${draft.comment}`,
+      ТранспортноеСредствоПолучатель_Key: keys.equipmentBas,
+      Товары: [
+        {
+          LineNumber: 1,
+          Номенклатура_Key: keys.dieselKey,
+          Количество: liters,
+          КоличествоВОсновномТопливеПолучатель: liters,
+          КоэффициентВОсновноеТопливоПолучатель: 1,
+        },
+      ],
+      _meta: { pipeline: "fuel_outbound_refuel", txId: draft.sourceTransactionId },
+    };
+    if (keys.orgKey) body.Организация_Key = keys.orgKey;
+    if (keys.fromStorageBas) {
+      // деякі бази тримають склад через інші поля — коментар уже є
+    }
+    return { entity, body };
+  }
+
+  // inbound
+  if (!keys.dieselKey) {
+    return { error: "задайте BAS_DIESEL_NOMENCLATURE_KEY у env" };
+  }
+  if (!keys.toStorageBas) {
+    return { error: "для закупівлі потрібен bas_ref_key складу-отримувача" };
+  }
+  const price = draft.meta.pricePerLiter ?? 0;
+  const body: Record<string, unknown> = {
+    Date: date,
+    Posted: false,
+    DeletionMark: false,
+    Комментарий: `AgroSystem · ${draft.comment}`,
+    Склад_Key: keys.toStorageBas,
+    Товары: [
+      {
+        LineNumber: 1,
+        Номенклатура_Key: keys.dieselKey,
+        Количество: liters,
+        Цена: price,
+        Сумма: draft.meta.totalCost ?? Math.round(liters * price * 100) / 100,
+      },
+    ],
+    _meta: { pipeline: "fuel_inbound", txId: draft.sourceTransactionId },
+  };
+  if (keys.orgKey) body.Организация_Key = keys.orgKey;
+  return { entity, body };
+}
+
 /**
- * Після створення inbound/transfer у нашій БД.
- * Повертає цільовий sync_status (зараз завжди pending_1c).
+ * Після створення транзакції.
+ * Live POST лише якщо isBasDraftPostEnabled(); інакше лишаємо pending_1c.
  */
 export async function enqueueFuelBasDraft(input: {
   draft?: FuelBasDraftDocument;
-  /** @deprecated legacy call from POST /transactions — зібрати мінімальну чернетку */
   transactionId?: string;
   transactionType?: "inbound" | "transfer" | "outbound";
   amountLiters?: number;
@@ -121,60 +281,29 @@ export async function enqueueFuelBasDraft(input: {
   fromStorageId?: string | null;
   toStorageId?: string | null;
 }): Promise<FuelSyncStatus> {
-  const draft =
-    input.draft ??
-    ({
-      sourceTransactionId: input.transactionId ?? "",
-      operationKind: input.transactionType ?? "inbound",
-      documentDate: new Date().toISOString(),
-      posted: false as const,
-      comment:
-        input.transactionType === "transfer"
-          ? "Внутрішнє переміщення палива"
-          : "Закупівля дизеля",
-      lines: [
-        {
-          nomenclatureHint: "diesel" as const,
-          quantityLiters: input.amountLiters ?? 0,
-          pricePerLiter: input.pricePerLiter ?? null,
-          amountUah: input.totalCost ?? null,
-          fromStorageName: null,
-          toStorageName: null,
-          wialonUnitId: null,
-          equipmentHint: null,
-        },
-      ],
-      meta: {
-        pricePerLiter: input.pricePerLiter ?? null,
-        totalCost: input.totalCost ?? null,
-        operatorName: null,
-        fieldOperationId: null,
-        syncStatus: "pending_1c" as const,
-      },
-    } satisfies FuelBasDraftDocument);
+  const txId = input.draft?.sourceTransactionId || input.transactionId;
+  if (!txId) return "pending_1c";
 
-  // --- STUB: OData WRITE вимкнено ---
-  // Увімкнути лише за явним підтвердженням (Posted: false):
-  //
-  // const base = process.env.BAS_ODATA_URL;
-  // await fetch(`${base}/odata/standard.odata/Document_...`, {
-  //   method: "POST",
-  //   headers: { "Content-Type": "application/json", Authorization: ... },
-  //   body: JSON.stringify({
-  //     Posted: false,
-  //     Date: draft.documentDate,
-  //     Comment: draft.comment,
-  //     ...mapLines(draft.lines),
-  //   }),
-  // });
-  //
-  void draft;
-  return "pending_1c";
+  if (!isBasDraftPostEnabled()) {
+    console.log(
+      "[bas-drafts] fuel skip auto-post (BAS_DRAFT_POST_ENABLED=false)",
+      txId,
+      input.transactionType ?? input.draft?.operationKind
+    );
+    return "pending_1c";
+  }
+
+  try {
+    const result = await requestFuelBasDraftSync(txId);
+    return result.status;
+  } catch (err) {
+    console.error("[fuel-bas-sync]", err);
+    return "error";
+  }
 }
 
 /**
- * Ручний «Відправити в 1С» з журналу: збирає payload, викликає stub,
- * оновлює sync_status у БД (лишається pending_1c поки WRITE вимкнено).
+ * Ручний / автоматичний POST чернетки.
  */
 export async function requestFuelBasDraftSync(
   transactionId: string,
@@ -183,7 +312,7 @@ export async function requestFuelBasDraftSync(
   const supabase = createServiceSupabase();
   const { data, error } = await supabase
     .from("fuel_transactions")
-    .select(FUEL_TRANSACTIONS_SELECT)
+    .select(`${FUEL_TRANSACTIONS_SELECT}, bas_draft_ref_key`)
     .eq("id", transactionId)
     .maybeSingle();
 
@@ -191,26 +320,95 @@ export async function requestFuelBasDraftSync(
     throw new Error(error?.message || "Транзакцію не знайдено");
   }
 
-  const tx = mapFuelTransactionRow(data as Record<string, unknown>);
+  const row = data as Record<string, unknown>;
+  const tx = mapFuelTransactionRow(row);
+  const existingRef =
+    row.bas_draft_ref_key != null ? String(row.bas_draft_ref_key) : null;
 
-  if (tx.type !== "inbound" && tx.type !== "transfer") {
-    throw new Error("У 1С чернетку зараз готуємо лише для закупівлі та переміщення");
+  if (existingRef) {
+    const draft = buildFuelBasDraftDocument(tx, options);
+    return {
+      ok: true,
+      status: tx.syncStatus,
+      draft,
+      sentToBas: true,
+      dryRun: false,
+      basRefKey: existingRef,
+      message: "Чернетка вже є в BAS",
+    };
   }
 
   const draft = buildFuelBasDraftDocument(tx, options);
-  const status = await enqueueFuelBasDraft({ draft });
+  const keys = await resolveFuelBasKeys(tx);
+  const built = buildODataBody(draft, keys);
+  const live = isBasDraftPostEnabled();
 
-  await supabase
-    .from("fuel_transactions")
-    .update({ sync_status: status })
-    .eq("id", transactionId);
+  if ("error" in built) {
+    // Без мапінгу/env — у dry-run лишаємо pending; у live — error.
+    await markBasDraftFailure({
+      table: "fuel_transactions",
+      ids: [transactionId],
+      error: built.error,
+    });
+    if (live) {
+      await supabase
+        .from("fuel_transactions")
+        .update({ sync_status: "error" })
+        .eq("id", transactionId);
+      throw new Error(built.error);
+    }
+    return {
+      ok: true,
+      status: "pending_1c",
+      draft,
+      sentToBas: false,
+      dryRun: true,
+      message: `Чернетка не готова: ${built.error}`,
+    };
+  }
+
+  const result = await postBasDocumentDraft(built.entity, built.body);
+  if (!result.ok) {
+    await markBasDraftFailure({
+      table: "fuel_transactions",
+      ids: [transactionId],
+      error: result.error,
+    });
+    if (live) {
+      await supabase
+        .from("fuel_transactions")
+        .update({ sync_status: "error" })
+        .eq("id", transactionId);
+      throw new Error(result.error);
+    }
+    return {
+      ok: true,
+      status: "pending_1c",
+      draft,
+      sentToBas: false,
+      dryRun: true,
+      message: result.error,
+    };
+  }
+
+  if (!result.dryRun) {
+    await markBasDraftSuccess({
+      table: "fuel_transactions",
+      ids: [transactionId],
+      refKey: result.refKey,
+      entitySet: built.entity,
+    });
+  }
 
   return {
     ok: true,
-    status,
+    status: "pending_1c",
     draft,
-    sentToBas: false,
-    message:
-      "Чернетку підготовлено. Відправка в BAS вимкнена (read-only) — увімкнемо після підтвердження.",
+    sentToBas: !result.dryRun,
+    dryRun: result.dryRun,
+    basRefKey: result.dryRun ? undefined : result.refKey,
+    message: result.dryRun
+      ? "Чернетку підготовлено (dry-run). Увімкніть BAS_DRAFT_POST_ENABLED для живої відправки."
+      : "Чернетку створено в BAS (Posted: false).",
   };
 }

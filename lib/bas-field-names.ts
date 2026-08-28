@@ -153,7 +153,7 @@ export function suggestFieldRegistry(
 
     if (fieldNo) assignedNumbers.add(fieldNo);
 
-    // Поле, яке впізналося в 1С, переймає їхню назву слово в слово. Так
+    // Поле, яке впізналося в BAS AGRO, переймає їхню назву слово в слово. Так
     // вивантаження підхопить наявний запис замість створення дубля.
     let canonicalName = match?.description.trim() || item.cleaned;
 

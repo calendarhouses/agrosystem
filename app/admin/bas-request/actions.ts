@@ -53,6 +53,7 @@ export async function setBasRequestStatus(
 
     revalidatePath("/admin/bas-request");
     revalidatePath("/admin/fields");
+    revalidatePath("/accounting");
     return { ok: true, data: { updated: data?.length ?? 0 } };
   } catch (error) {
     return {
@@ -98,6 +99,7 @@ export async function relinkFieldsWithBas(): Promise<
     revalidatePath("/admin/bas-request");
     revalidatePath("/admin/fields");
     revalidatePath("/admin/mapping");
+    revalidatePath("/accounting");
 
     return {
       ok: true,
@@ -160,7 +162,7 @@ async function loadContours(
 export type ImportWorkbook = { fileName: string; base64: string };
 
 /**
- * Книга Excel для штатного завантаження в 1С. Бухгалтер відкриває її у себе,
+ * Книга Excel для штатного завантаження в BAS AGRO. Бухгалтер відкриває її у себе,
  * перевіряє й завантажує сам — ми в BAS нічого не пишемо.
  */
 export async function buildImportWorkbook(): Promise<

@@ -1,6 +1,6 @@
 /**
  * Operational Inventory — синк довідника ТМЦ з BAS → Supabase.
- * BAS лишається read-only; у 1С нічого не пишемо.
+ * BAS лишається read-only; у BAS AGRO нічого не пишемо.
  */
 
 import {

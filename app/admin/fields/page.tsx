@@ -36,7 +36,7 @@ export default async function FieldRegistryPage() {
       <PageHeader
         icon={Sprout}
         title="Реєстр полів"
-        description="Wialon дає межі й площу, ви задаєте канонічну назву й номер. У 1С тільки читаємо довідник"
+        description="Wialon дає межі й площу, ви задаєте канонічну назву й номер. У BAS AGRO тільки читаємо довідник"
       />
 
       <FieldRegistry

@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, useTransition, type FormEvent } from "react";
-import { Loader2, Lock, Mail, Sprout } from "lucide-react";
+import { Loader2, Lock, Sprout, UserRound } from "lucide-react";
 
 import { loginWithPassword } from "@/app/login/actions";
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,7 @@ export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextPath = searchParams.get("next") || "/";
-  const [email, setEmail] = useState("");
+  const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -30,7 +30,7 @@ export function LoginForm() {
     e.preventDefault();
     setError(null);
     startTransition(async () => {
-      const res = await loginWithPassword(email, password);
+      const res = await loginWithPassword(login, password);
       if (!res.ok) {
         setError(res.error);
         return;
@@ -59,19 +59,19 @@ export function LoginForm() {
       <form onSubmit={onSubmit}>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="email" className="text-zinc-700">
-              Email
+            <Label htmlFor="login" className="text-zinc-700">
+              Логін
             </Label>
             <div className="relative">
-              <Mail className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+              <UserRound className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-zinc-400" />
               <Input
-                id="email"
-                type="email"
-                autoComplete="email"
+                id="login"
+                type="text"
+                autoComplete="username"
                 required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@farm.ua"
+                value={login}
+                onChange={(e) => setLogin(e.target.value)}
+                placeholder="Логін"
                 className="h-11 pl-10"
               />
             </div>
