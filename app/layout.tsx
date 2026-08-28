@@ -51,7 +51,9 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
+  userScalable: false,
   viewportFit: "cover",
+  interactiveWidget: "resizes-content",
   themeColor: "#1f5239",
 };
 
@@ -59,15 +61,20 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="uk"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} antialiased`}
     >
-      <body className="h-full overflow-hidden bg-zinc-100 font-sans text-zinc-900">
+      <body className="overflow-hidden bg-zinc-100 font-sans text-zinc-900">
         <PwaBootstrap />
         <AppShell>{children}</AppShell>
         <Toaster
           position="bottom-right"
           theme="dark"
           closeButton
+          offset={16}
+          mobileOffset={{
+            bottom: "calc(var(--app-bottom-inset) + 12px)",
+            right: "12px",
+          }}
           toastOptions={{
             classNames: {
               toast:

@@ -674,7 +674,7 @@ export function FinanceView({
     <main
       className={cn(
         "relative h-full w-full overflow-y-auto overscroll-none",
-        "min-h-screen bg-gradient-to-br from-[#E8F0EA] via-[#F4F1EA] to-[#EDE8DF]"
+        "min-h-0 h-full bg-gradient-to-br from-[#E8F0EA] via-[#F4F1EA] to-[#EDE8DF]"
       )}
     >
       <div

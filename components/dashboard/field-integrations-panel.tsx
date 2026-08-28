@@ -297,7 +297,7 @@ export function FieldIntegrationsPanel({
                   size="sm"
                   disabled={!hasPassport || syncingContour || wialonLoading}
                   onClick={() => void handleSyncContour()}
-                  className="h-9 rounded-lg border-sky-200 bg-sky-50 text-sky-900 hover:bg-sky-100"
+                  className="h-11 rounded-lg border-sky-200 bg-sky-50 text-sky-900 hover:bg-sky-100"
                 >
                   {syncingContour ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -312,7 +312,7 @@ export function FieldIntegrationsPanel({
                   size="sm"
                   disabled={!hasPassport}
                   onClick={() => void handleUnlink()}
-                  className="h-9 rounded-lg text-zinc-600"
+                  className="h-11 rounded-lg text-zinc-600"
                 >
                   Зняти привʼязку
                 </Button>
@@ -332,7 +332,7 @@ export function FieldIntegrationsPanel({
                   setWialonError(null);
                   setLinkOpen(true);
                 }}
-                className="h-9 rounded-lg bg-[#276749] text-white hover:bg-[#22543d]"
+                className="h-11 rounded-lg bg-[#276749] text-white hover:bg-[#22543d]"
               >
                 <Link2 className="h-4 w-4" />
                 Привʼязати до геозони
@@ -374,7 +374,7 @@ export function FieldIntegrationsPanel({
               size="sm"
               disabled={cacheLoading}
               onClick={loadCacheMeta}
-              className="h-8 rounded-lg"
+              className="h-11 rounded-lg"
             >
               {cacheLoading ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -417,7 +417,7 @@ export function FieldIntegrationsPanel({
             value={geofenceQuery}
             onChange={(event) => setGeofenceQuery(event.target.value)}
             placeholder="Пошук за назвою…"
-            className="h-10 rounded-xl border-[#E5DFD3] bg-white text-sm"
+            className="h-11 rounded-xl border-[#E5DFD3] bg-white text-base md:text-sm"
           />
 
           <ul className="max-h-64 space-y-1 overflow-y-auto pr-1">
@@ -439,7 +439,7 @@ export function FieldIntegrationsPanel({
                       disabled={Boolean(occupiedBy)}
                       onClick={() => setSelectedZoneId(zoneId)}
                       className={cn(
-                        "flex w-full items-start justify-between gap-2 rounded-xl border px-3 py-2.5 text-left transition-colors",
+                        "flex min-h-11 w-full items-start justify-between gap-2 rounded-xl border px-3 py-2.5 text-left transition-colors",
                         selected
                           ? "border-[#276749] bg-emerald-50/80"
                           : "border-[#E5DFD3] bg-white hover:bg-zinc-50",
@@ -475,7 +475,7 @@ export function FieldIntegrationsPanel({
             <Button
               type="button"
               variant="outline"
-              className="flex-1 rounded-xl"
+              className="h-11 flex-1 rounded-xl"
               onClick={() => setLinkOpen(false)}
             >
               Скасувати
@@ -483,7 +483,7 @@ export function FieldIntegrationsPanel({
             <Button
               type="button"
               disabled={!selectedZoneId || linking}
-              className="flex-1 rounded-xl bg-[#276749] text-white hover:bg-[#22543d]"
+              className="h-11 flex-1 rounded-xl bg-[#276749] text-white hover:bg-[#22543d]"
               onClick={() => void handleLinkGeofence()}
             >
               {linking ? (

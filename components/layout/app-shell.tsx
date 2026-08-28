@@ -45,26 +45,33 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const isCommandCenter = isCommandCenterPath(pathname);
 
+  useEffect(() => {
+    document.documentElement.dataset.appNav = isAuthScreen ? "0" : "1";
+    return () => {
+      document.documentElement.dataset.appNav = "0";
+    };
+  }, [isAuthScreen]);
+
   if (isAuthScreen) {
     return <>{children}</>;
   }
 
   return (
-    <div className="h-dvh overflow-hidden bg-zinc-100 text-zinc-900">
+    <div className="h-full overflow-hidden overscroll-none bg-zinc-100 text-zinc-900">
       <Sidebar collapsed={collapsed} onToggleCollapsed={toggleCollapsed} />
       <BottomNav />
 
       <div
         className={cn(
-          "relative flex h-full flex-col transition-[padding] duration-200 ease-out",
-          "pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0",
+          "relative flex h-full flex-col overflow-hidden overscroll-none transition-[padding] duration-200 ease-out",
+          "pb-[var(--app-bottom-inset)] md:pb-0",
           collapsed ? "md:pl-16" : "md:pl-[250px]"
         )}
       >
         <TopBar />
         <div
           className={cn(
-            "relative min-h-0 flex-1 overflow-hidden",
+            "relative min-h-0 flex-1 overflow-hidden overscroll-none",
             isCommandCenter && "h-full"
           )}
         >

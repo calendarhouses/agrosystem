@@ -60,6 +60,13 @@ body {
   --agro-green: #276749;
   --fuel-gold: #d69e2e;
 
+  --bottom-nav-height: 3.5rem;
+  --app-height: 100dvh;
+  --app-vv-offset-top: 0px;
+  --app-top-inset: env(safe-area-inset-top, 0px);
+  --app-bottom-inset: env(safe-area-inset-bottom, 0px);
+  --app-sheet-max: min(88dvh, calc(var(--app-height) - var(--app-bottom-inset) - 0.5rem));
+
   --background: #f4f4f5;
   --foreground: #18181b;
   --card: #f4f1ea;
@@ -97,12 +104,41 @@ body {
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    overscroll-behavior: none;
   }
   html {
-    @apply h-full overflow-hidden font-sans;
+    height: var(--app-height);
+    overflow: hidden;
+    overscroll-behavior: none;
+    overscroll-behavior-x: none;
+    overscroll-behavior-y: none;
+    touch-action: manipulation;
+    font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   }
   body {
-    @apply h-full overflow-hidden bg-background text-foreground;
+    height: var(--app-height);
+    overflow: hidden;
+    overscroll-behavior: none;
+    overscroll-behavior-x: none;
+    overscroll-behavior-y: none;
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    touch-action: manipulation;
+    background: var(--background);
+    color: var(--foreground);
+  }
+}
+
+html[data-app-nav="1"] {
+  --app-bottom-inset: calc(
+    var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px)
+  );
+}
+
+@media (min-width: 768px) {
+  html[data-app-nav="1"] {
+    --app-bottom-inset: 0px;
   }
 }
 
@@ -136,6 +172,27 @@ body {
 
 @utility safe-bottom-nav {
   padding-bottom: calc(3.5rem + env(safe-area-inset-bottom));
+}
+
+@utility app-sheet-bottom {
+  bottom: var(--app-bottom-inset);
+}
+
+@utility app-sheet-max {
+  max-height: var(--app-sheet-max);
+}
+
+.overflow-y-auto,
+.overflow-auto,
+.overflow-y-scroll {
+  touch-action: pan-y;
+  overscroll-behavior: none;
+}
+
+.overflow-x-auto,
+.overflow-x-scroll {
+  touch-action: pan-x;
+  overscroll-behavior: none;
 }
 
 @utility safe-top-notch {
@@ -290,6 +347,10 @@ body {
   }
 
   body {
+    position: static !important;
+    inset: auto !important;
+    height: auto !important;
+    overflow: visible !important;
     background: white !important;
     color: #18181b !important;
   }

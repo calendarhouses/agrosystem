@@ -578,7 +578,7 @@ export function AccountantHubView({
         "relative w-full overflow-y-auto overscroll-none",
         embedded
           ? "h-full min-h-0 bg-gradient-to-br from-[#E8F0EA] via-[#F4F1EA] to-[#EDE8DF]"
-          : "h-full min-h-screen bg-gradient-to-br from-[#E8F0EA] via-[#F4F1EA] to-[#EDE8DF]"
+          : "h-full min-h-0 bg-gradient-to-br from-[#E8F0EA] via-[#F4F1EA] to-[#EDE8DF]"
       )}
     >
       <div

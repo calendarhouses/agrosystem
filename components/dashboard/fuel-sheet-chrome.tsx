@@ -67,14 +67,14 @@ export const fuelFieldLabelClass =
 
 export const fuelInputClass = cn(
   "h-12 w-full rounded-2xl border border-zinc-200/90 bg-white px-4",
-  "text-sm font-medium text-zinc-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]",
+  "text-base font-medium text-zinc-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] md:text-sm",
   "outline-none transition-all placeholder:text-zinc-400",
   "focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/8"
 );
 
 export const fuelSelectTriggerClass = cn(
   "h-12 w-full min-w-0 max-w-full data-[size=default]:h-12 rounded-2xl",
-  "border border-zinc-200/90 bg-white px-4 text-sm font-medium text-zinc-900",
+  "border border-zinc-200/90 bg-white px-4 text-base font-medium text-zinc-900 md:text-sm",
   "shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]",
   "overflow-hidden outline-none transition-all",
   "focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/8",
@@ -82,7 +82,7 @@ export const fuelSelectTriggerClass = cn(
 );
 
 export const fuelSelectItemClass =
-  "cursor-pointer rounded-xl px-3 py-2.5 text-sm focus:bg-zinc-100";
+  "cursor-pointer rounded-xl px-3 py-3 text-base focus:bg-zinc-100 md:py-2.5 md:text-sm";
 
 export const fuelHeroAmountClass = cn(
   "relative flex items-center justify-center rounded-2xl",

@@ -140,7 +140,7 @@ export function FieldPassportQuickFix({
                 }
               }}
             >
-              <SelectTrigger className="h-10 w-full rounded-xl border-[#E5DFD3] bg-white text-sm">
+              <SelectTrigger className="h-11 w-full rounded-xl border-[#E5DFD3] bg-white text-base md:text-sm">
                 <SelectValue placeholder="Оберіть культуру" />
               </SelectTrigger>
               <SelectContent className="z-[200] border-[#E5DFD3] bg-white">
@@ -164,7 +164,7 @@ export function FieldPassportQuickFix({
               onChange={(e) => setDraftArea(e.target.value)}
               inputMode="decimal"
               placeholder="Напр. 22.5"
-              className="h-10 rounded-xl border-[#E5DFD3] bg-white text-sm tabular-nums"
+              className="h-11 rounded-xl border-[#E5DFD3] bg-white text-base tabular-nums md:text-sm"
             />
           </div>
         ) : null}
@@ -178,7 +178,7 @@ export function FieldPassportQuickFix({
         type="button"
         disabled={saving}
         onClick={() => void handleSave()}
-        className="mt-4 h-10 w-full rounded-xl bg-[#276749] text-sm font-semibold text-white hover:bg-[#1f5339]"
+        className="mt-4 h-11 w-full rounded-xl bg-[#276749] text-sm font-semibold text-white hover:bg-[#1f5339]"
       >
         {saving ? (
           <>

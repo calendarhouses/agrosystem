@@ -19,7 +19,7 @@ export default function InstallPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex min-h-dvh items-center justify-center bg-[#F4F1EA] text-sm text-zinc-500">
+        <div className="flex h-full min-h-0 items-center justify-center bg-[#F4F1EA] text-sm text-zinc-500">
           Завантаження…
         </div>
       }

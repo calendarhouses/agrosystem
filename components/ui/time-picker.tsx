@@ -63,7 +63,7 @@ export function TimePicker({
         type="button"
         className={cn(
           "inline-flex h-11 w-full min-w-0 items-center justify-between gap-2 rounded-xl border border-[#E5DFD3] bg-white px-3",
-          "text-sm font-semibold tabular-nums text-zinc-900 shadow-[0_1px_0_rgba(255,255,255,0.8)_inset]",
+          "text-base font-semibold tabular-nums text-zinc-900 shadow-[0_1px_0_rgba(255,255,255,0.8)_inset] md:text-sm",
           "transition-colors outline-none",
           "hover:border-[#276749]/35 focus-visible:border-[#276749]/45 focus-visible:ring-2 focus-visible:ring-[#276749]/15",
           !value && "font-medium text-zinc-400",
@@ -77,7 +77,7 @@ export function TimePicker({
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="z-[130] w-[11.5rem] overflow-hidden rounded-2xl border border-[#E5DFD3] bg-[#F4F1EA] p-0 text-zinc-900 shadow-lg"
+        className="z-[130] w-full overflow-hidden rounded-2xl border border-[#E5DFD3] bg-[#F4F1EA] p-0 text-zinc-900 shadow-lg md:w-[11.5rem]"
       >
         <div className="border-b border-[#E5DFD3]/80 bg-white/60 px-3 py-2">
           <p className="text-[10px] font-semibold tracking-[0.12em] text-zinc-500 uppercase">
@@ -85,7 +85,7 @@ export function TimePicker({
           </p>
         </div>
         <div className="grid grid-cols-2 gap-0 divide-x divide-[#E5DFD3]">
-          <div className="max-h-48 overflow-y-auto overscroll-contain p-1.5">
+          <div className="max-h-64 overflow-y-auto overscroll-contain p-1.5 md:max-h-48">
             <p className="px-2 py-1 text-[10px] font-semibold tracking-wider text-zinc-400 uppercase">
               Год
             </p>
@@ -97,7 +97,7 @@ export function TimePicker({
                   type="button"
                   onClick={() => pick(hour, m)}
                   className={cn(
-                    "flex h-8 w-full items-center justify-center rounded-lg text-sm font-semibold tabular-nums transition-colors",
+                    "flex h-11 w-full items-center justify-center rounded-lg text-base font-semibold tabular-nums transition-colors md:h-8 md:text-sm",
                     active
                       ? "bg-[#276749] text-white shadow-sm"
                       : "text-zinc-700 hover:bg-white"
@@ -108,7 +108,7 @@ export function TimePicker({
               );
             })}
           </div>
-          <div className="max-h-48 overflow-y-auto overscroll-contain p-1.5">
+          <div className="max-h-64 overflow-y-auto overscroll-contain p-1.5 md:max-h-48">
             <p className="px-2 py-1 text-[10px] font-semibold tracking-wider text-zinc-400 uppercase">
               Хв
             </p>
@@ -123,7 +123,7 @@ export function TimePicker({
                     setOpen(false);
                   }}
                   className={cn(
-                    "flex h-8 w-full items-center justify-center rounded-lg text-sm font-semibold tabular-nums transition-colors",
+                    "flex h-11 w-full items-center justify-center rounded-lg text-base font-semibold tabular-nums transition-colors md:h-8 md:text-sm",
                     active
                       ? "bg-[#276749] text-white shadow-sm"
                       : "text-zinc-700 hover:bg-white"

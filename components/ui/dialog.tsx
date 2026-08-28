@@ -3,6 +3,8 @@
 import * as React from "react"
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog"
 
+import { SwipeableSheet } from "@/components/ui/swipe-sheet"
+import { useIsMobile } from "@/lib/use-mobile"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { XIcon } from "lucide-react"
@@ -47,6 +49,9 @@ function DialogContent({
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean
 }) {
+  const isMobile = useIsMobile()
+  const closeRef = React.useRef<HTMLButtonElement>(null)
+
   return (
     <DialogPortal>
       <DialogOverlay />
@@ -54,27 +59,44 @@ function DialogContent({
         data-slot="dialog-content"
         className={cn(
           "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
-          className
+          className,
+          isMobile &&
+            "top-auto bottom-[var(--app-bottom-inset)] left-0 right-0 max-h-[var(--app-sheet-max)] max-w-none translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-t-3xl rounded-b-none p-0 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-2xl data-open:zoom-in-100"
         )}
         {...props}
       >
-        {children}
-        {showCloseButton && (
+        {isMobile ? (
+          <SwipeableSheet
+            className="max-h-[var(--app-sheet-max)]"
+            onSwipeDown={() => closeRef.current?.click()}
+          >
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-none p-4">
+              {children}
+            </div>
+          </SwipeableSheet>
+        ) : (
+          children
+        )}
+        {isMobile ? (
+          <DialogPrimitive.Close ref={closeRef} className="sr-only">
+            Закрити
+          </DialogPrimitive.Close>
+        ) : null}
+        {showCloseButton ? (
           <DialogPrimitive.Close
             data-slot="dialog-close"
             render={
               <Button
                 variant="ghost"
-                className="absolute top-2 right-2"
+                className="absolute top-2 right-2 z-10"
                 size="icon-sm"
               />
             }
           >
-            <XIcon
-            />
+            <XIcon />
             <span className="sr-only">Закрити</span>
           </DialogPrimitive.Close>
-        )}
+        ) : null}
       </DialogPrimitive.Popup>
     </DialogPortal>
   )

@@ -114,6 +114,8 @@ import type { HourlyForecastHour, WeatherSnapshot } from "@/lib/weather";
 import type { FeatureCollection, Polygon } from "geojson";
 import type { MapFieldSource } from "@/lib/map-fields";
 import { toast } from "sonner";
+import { SwipeableSheet } from "@/components/ui/swipe-sheet";
+import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -466,7 +468,7 @@ function OperationCard({
             type="button"
             onClick={() => onStart(op)}
             className={cn(
-              "inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-xl px-3 text-sm font-bold text-white",
+              "inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl px-3 text-sm font-bold text-white",
               "bg-gradient-to-r from-[#1f5239] via-[#276749] to-[#2f7a52]",
               "shadow-[0_8px_20px_-8px_rgba(39,103,73,0.55)]",
               "transition-all hover:-translate-y-px hover:brightness-105 active:translate-y-0"
@@ -482,7 +484,7 @@ function OperationCard({
             type="button"
             onClick={() => onComplete(op)}
             className={cn(
-              "inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-xl px-3 text-sm font-bold text-white",
+              "inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl px-3 text-sm font-bold text-white",
               "bg-gradient-to-r from-[#1f5239] via-[#276749] to-[#2f7a52]",
               "shadow-[0_8px_20px_-8px_rgba(39,103,73,0.55)]",
               "transition-all hover:-translate-y-px hover:brightness-105 active:translate-y-0"
@@ -497,7 +499,7 @@ function OperationCard({
           <button
             type="button"
             onClick={() => onCorrect(op)}
-            className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-xl border border-[#C9D4CA] bg-white px-3 text-sm font-semibold text-zinc-800 shadow-sm transition-colors hover:bg-zinc-50"
+            className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-[#C9D4CA] bg-white px-3 text-sm font-semibold text-zinc-800 shadow-sm transition-colors hover:bg-zinc-50"
           >
             <Edit3 className="h-4 w-4 text-zinc-500" />
             Коригувати
@@ -508,7 +510,7 @@ function OperationCard({
           <button
             type="button"
             onClick={() => onEdit(op)}
-            className="inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-3.5 text-sm font-semibold text-zinc-700 shadow-sm transition-colors hover:bg-zinc-50"
+            className="inline-flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-3.5 text-sm font-semibold text-zinc-700 shadow-sm transition-colors hover:bg-zinc-50"
             aria-label="Редагувати"
           >
             <Pencil className="h-4 w-4 text-zinc-500" />
@@ -519,7 +521,7 @@ function OperationCard({
         <button
           type="button"
           onClick={() => onDelete(op)}
-          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-transparent text-zinc-400 transition-colors hover:border-red-100 hover:bg-red-50 hover:text-red-600"
+          className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-transparent text-zinc-400 transition-colors hover:border-red-100 hover:bg-red-50 hover:text-red-600"
           aria-label="Видалити"
         >
           <Trash2 className="h-4 w-4" />
@@ -980,7 +982,7 @@ function PlanWorkPanel({
 
   const fieldControlClass = cn(
     "box-border h-11 w-full max-w-full min-w-0 rounded-xl border border-[#E5DFD3] bg-white px-3",
-    "text-sm text-zinc-900 shadow-[0_1px_0_rgba(255,255,255,0.8)_inset]",
+    "text-base text-zinc-900 shadow-[0_1px_0_rgba(255,255,255,0.8)_inset] md:text-sm",
     "transition-colors outline-none",
     "focus-visible:border-[#276749]/45 focus-visible:ring-2 focus-visible:ring-[#276749]/15"
   );
@@ -996,14 +998,14 @@ function PlanWorkPanel({
 
   const cellClass = "flex min-w-0 flex-col space-y-1.5";
   const row2Class =
-    "grid grid-cols-2 gap-3 p-4 [grid-template-columns:minmax(0,1fr)_minmax(0,1fr)]";
+    "grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 sm:[grid-template-columns:minmax(0,1fr)_minmax(0,1fr)]";
   const row3Class =
-    "grid grid-cols-3 gap-3 p-4 [grid-template-columns:minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]";
+    "grid grid-cols-1 gap-3 p-4 sm:grid-cols-3 sm:[grid-template-columns:minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]";
 
   return (
     <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="relative overflow-hidden border-b border-[#E5DFD3]/80 bg-gradient-to-br from-[#E8F0EA] via-[#F4F1EA] to-[#EDE8DF] px-6 py-5">
+        <div className="relative overflow-hidden border-b border-[#E5DFD3]/80 bg-gradient-to-br from-[#E8F0EA] via-[#F4F1EA] to-[#EDE8DF] px-4 py-4 md:px-6 md:py-5">
           <div
             className="pointer-events-none absolute -top-12 -right-10 h-36 w-36 rounded-full bg-[#276749]/10 blur-3xl"
             aria-hidden
@@ -1011,7 +1013,7 @@ function PlanWorkPanel({
           <button
             type="button"
             onClick={onBack}
-            className="relative mb-3 inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-zinc-600 transition-colors hover:bg-white/70 hover:text-zinc-900"
+            className="relative mb-3 inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-zinc-600 transition-colors hover:bg-white/70 hover:text-zinc-900"
           >
             <ChevronLeft className="h-4 w-4" />
             Назад до поля
@@ -1041,7 +1043,7 @@ function PlanWorkPanel({
           </div>
         </div>
 
-        <div className="space-y-4 px-6 py-5 pb-6">
+        <div className="space-y-4 px-4 py-5 pb-6 md:px-6">
           {/* Операція */}
           <section className="overflow-hidden rounded-2xl border border-[#E5DFD3] bg-white shadow-sm">
             <div className="border-b border-[#E5DFD3]/80 bg-[#FAFAF8] px-4 py-2.5">
@@ -1084,8 +1086,8 @@ function PlanWorkPanel({
                 Розклад
               </p>
             </div>
-            <div className={row3Class}>
-              <div className={cellClass}>
+            <div className="grid grid-cols-2 gap-3 p-4 md:grid-cols-3">
+              <div className={cn(cellClass, "col-span-2 md:col-span-1")}>
                 <Label className={labelClass}>Дата</Label>
                 <DatePicker
                   date={
@@ -1293,7 +1295,7 @@ function PlanWorkPanel({
         </div>
       </div>
 
-      <div className="shrink-0 space-y-3 border-t border-[#E5DFD3] bg-gradient-to-t from-[#EDE8DF] to-[#F4F1EA] px-6 py-4">
+      <div className="shrink-0 space-y-3 border-t border-[#E5DFD3] bg-gradient-to-t from-[#EDE8DF] to-[#F4F1EA] px-4 py-4 md:px-6">
         {fieldPassportBlocked && farmFieldId ? (
           <FieldPassportQuickFix
             fieldId={farmFieldId}
@@ -1410,6 +1412,7 @@ export function FieldDetailSheet({
   occupiedWialonZones = {},
   onIntegrationsFieldUpdated,
 }: FieldDetailSheetProps) {
+  const isMobile = useIsMobile();
   const activeSeason = useSeasonStore((s) => s.activeSeason);
   const setActiveSeason = useSeasonStore((s) => s.setActiveSeason);
   const seasonYear = Number(activeSeason) || 2026;
@@ -1704,6 +1707,29 @@ export function FieldDetailSheet({
     setCorrectOp(null);
   }
 
+  function handlePanelSwipeDown() {
+    if (correctOp) {
+      setCorrectOp(null);
+      return;
+    }
+    if (completeOp) {
+      setCompleteOp(null);
+      return;
+    }
+    if (planOpen) {
+      setPlanOpen(false);
+      setPlanPastWork(false);
+      setPlanPrefill(null);
+      setEditingOp(null);
+      return;
+    }
+    if (quickIssueOpen) {
+      setQuickIssueOpen(false);
+      return;
+    }
+    closeHub();
+  }
+
   const hubInner = (
       <>
         {field ? (
@@ -1815,10 +1841,10 @@ export function FieldDetailSheet({
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
               <div
                 className={cn(
-                  "relative shrink-0 overflow-hidden border-b px-5 py-4",
+                  "relative shrink-0 overflow-hidden border-b px-4 py-3 md:px-6 md:py-5",
                   variant === "panel"
-                    ? "border-white/35 bg-gradient-to-br from-white/55 via-[#F4F1EA]/40 to-emerald-50/30 px-6 py-5"
-                    : "border-[#E5DFD3] bg-gradient-to-br from-[#E8F0EA] via-[#F4F1EA] to-[#EDE8DF] px-6 py-5"
+                    ? "border-white/35 bg-gradient-to-br from-white/55 via-[#F4F1EA]/40 to-emerald-50/30"
+                    : "border-[#E5DFD3] bg-gradient-to-br from-[#E8F0EA] via-[#F4F1EA] to-[#EDE8DF]"
                 )}
               >
                 <div
@@ -1836,7 +1862,7 @@ export function FieldDetailSheet({
                       <button
                         type="button"
                         onClick={closeHub}
-                        className="mb-3 inline-flex items-center gap-1 text-xs font-semibold text-zinc-500 transition-colors hover:text-zinc-900"
+                        className="mb-2 inline-flex min-h-11 items-center gap-1 rounded-lg px-1 text-sm font-semibold text-zinc-500 transition-colors hover:text-zinc-900 md:mb-3 md:min-h-0 md:text-xs"
                       >
                         <ChevronLeft className="h-3.5 w-3.5" />
                         До списку
@@ -1855,10 +1881,10 @@ export function FieldDetailSheet({
                         </span>
                       )}
                       <div className="min-w-0">
-                        <h2 className="truncate text-[1.65rem] leading-tight font-extrabold tracking-tight text-zinc-900">
+                        <h2 className="truncate text-xl leading-tight font-extrabold tracking-tight text-zinc-900 md:text-[1.65rem]">
                           {field.name}
                         </h2>
-                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <div className="mt-2 flex flex-wrap items-center gap-2 md:mt-3">
                           <span className="inline-flex items-center gap-1.5 rounded-full border border-[#276749]/15 bg-white/80 px-3 py-1 text-xs font-semibold text-[#276749] shadow-sm">
                             <Leaf className="h-3.5 w-3.5" />
                             {field.crop || "Без культури"}
@@ -1892,7 +1918,7 @@ export function FieldDetailSheet({
                 className="flex min-h-0 flex-1 flex-col gap-0"
               >
                 <div className="shrink-0 space-y-0 border-b border-[#E5DFD3] bg-[#F7F4EE]">
-                  <div className="px-3 pt-3 pb-2 sm:px-6">
+                  <div className="px-3 pt-2 pb-2 sm:px-6 sm:pt-3">
                     <TabsList
                       variant="default"
                       className={cn(
@@ -1908,7 +1934,7 @@ export function FieldDetailSheet({
                             key={tab.value}
                             value={tab.value}
                             className={cn(
-                              "group/hubtab h-10 min-w-0 gap-1.5 rounded-[14px] border-0 bg-transparent px-2 text-[12px] font-semibold tracking-tight shadow-none",
+                              "group/hubtab h-10 min-w-0 gap-1 rounded-[14px] border-0 bg-transparent px-1.5 text-[11px] font-semibold tracking-tight shadow-none sm:gap-1.5 sm:px-2 sm:text-[12px]",
                               "text-zinc-500 transition-all duration-200",
                               "hover:bg-white/55 hover:text-zinc-800",
                               "focus-visible:ring-2 focus-visible:ring-[#276749]/25",
@@ -1943,7 +1969,7 @@ export function FieldDetailSheet({
                         >
                           <PopoverTrigger
                             className={cn(
-                              "inline-flex h-9 shrink-0 items-center gap-2 rounded-xl border px-2.5 text-left text-xs font-semibold transition-all",
+                              "inline-flex h-11 shrink-0 items-center gap-2 rounded-xl border px-2.5 text-left text-sm font-semibold transition-all md:h-9 md:text-xs",
                               period === "Сезон"
                                 ? "border-[#276749] bg-[#276749] text-white shadow-[0_6px_16px_-6px_rgba(39,103,73,0.55)]"
                                 : "border-[#E0DBD0] bg-white text-zinc-700 hover:border-[#276749]/35"
@@ -2023,7 +2049,7 @@ export function FieldDetailSheet({
                               type="button"
                               onClick={() => setPeriod(option)}
                               className={cn(
-                                "h-8 rounded-[10px] px-2.5 text-xs font-semibold transition-all sm:px-3",
+                                "h-11 rounded-[10px] px-2.5 text-xs font-semibold transition-all sm:px-3 md:h-8",
                                 period === option
                                   ? "bg-[#276749] text-white shadow-[0_4px_12px_-4px_rgba(39,103,73,0.55)]"
                                   : "text-zinc-500 hover:bg-white/70 hover:text-zinc-800"
@@ -2043,7 +2069,7 @@ export function FieldDetailSheet({
                         >
                           <PopoverTrigger
                             className={cn(
-                              "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-semibold transition-all",
+                              "inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl border px-2.5 text-sm font-semibold transition-all md:h-9 md:text-xs",
                               period === "custom"
                                 ? "border-[#276749] bg-[#276749] text-white shadow-[0_6px_16px_-6px_rgba(39,103,73,0.55)]"
                                 : "border-[#E0DBD0] bg-white text-zinc-700 hover:border-[#276749]/35"
@@ -2108,7 +2134,7 @@ export function FieldDetailSheet({
                                   setPeriod("Сезон");
                                   setRangeOpen(false);
                                 }}
-                                className="h-9 flex-1 rounded-xl border border-zinc-200 bg-white text-xs font-semibold text-zinc-600 hover:bg-zinc-50"
+                                className="h-11 flex-1 rounded-xl border border-zinc-200 bg-white text-sm font-semibold text-zinc-600 hover:bg-zinc-50"
                               >
                                 Скинути
                               </button>
@@ -2126,7 +2152,7 @@ export function FieldDetailSheet({
                                   setPeriod("custom");
                                   setRangeOpen(false);
                                 }}
-                                className="h-9 flex-[1.4] rounded-xl bg-[#276749] text-xs font-bold text-white hover:bg-[#22543d] disabled:opacity-50"
+                                className="h-11 flex-[1.4] rounded-xl bg-[#276749] text-sm font-bold text-white hover:bg-[#22543d] disabled:opacity-50"
                               >
                                 Застосувати
                               </button>
@@ -2140,7 +2166,7 @@ export function FieldDetailSheet({
                   <HubTabPanel
                     tab="overview"
                     activeTab={activeTab}
-                    className="px-6 py-5 outline-none"
+                    className="px-4 py-4 outline-none md:px-6 md:py-5"
                   >
                     <FieldMicroclimate
                       weather={weather}
@@ -2204,7 +2230,7 @@ export function FieldDetailSheet({
                   <HubTabPanel
                     tab="history"
                     activeTab={activeTab}
-                    className="space-y-6 px-6 py-5 outline-none"
+                    className="space-y-6 px-4 py-4 outline-none md:px-6 md:py-5"
                   >
                     {!farmFieldId ? (
                       <div className="rounded-2xl border border-dashed border-zinc-200 bg-white/70 px-4 py-4 text-center">
@@ -2312,7 +2338,7 @@ export function FieldDetailSheet({
 
                   <div
                     className={cn(
-                      "px-6 py-5 outline-none",
+                      "px-4 py-4 outline-none md:px-6 md:py-5",
                       activeTab !== "tech" && "hidden"
                     )}
                     hidden={activeTab !== "tech"}
@@ -2354,7 +2380,7 @@ export function FieldDetailSheet({
                   <HubTabPanel
                     tab="settings"
                     activeTab={activeTab}
-                    className="px-6 py-5 outline-none"
+                    className="px-4 py-4 outline-none md:px-6 md:py-5"
                   >
                     <FieldPassportForm
                       mode={passportMode}
@@ -2403,13 +2429,13 @@ export function FieldDetailSheet({
             </div>
 
             {showStickyActionFooter ? (
-              <footer className="sticky bottom-0 z-20 shrink-0 border-t border-[#E5DFD3]/80 bg-[#F4F1EA]/92 px-5 py-4 backdrop-blur-md">
-                <div className="grid w-full grid-cols-2 gap-3">
+              <footer className="sticky bottom-0 z-20 shrink-0 border-t border-[#E5DFD3]/80 bg-[#F4F1EA]/92 px-3 py-3 backdrop-blur-md md:px-5 md:py-4">
+                <div className="grid w-full grid-cols-2 gap-2 md:gap-3">
                   <button
                     type="button"
                     onClick={() => setQuickIssueOpen(true)}
                     className={cn(
-                      "flex h-[4.25rem] items-center gap-3 rounded-2xl px-3.5 text-left text-white",
+                      "flex min-h-[4.25rem] items-center gap-2.5 rounded-2xl px-3 text-left text-white md:gap-3 md:px-3.5",
                       "bg-gradient-to-br from-[#1a3d2c] via-[#276749] to-[#3a8f5e]",
                       "shadow-[0_16px_36px_-12px_rgba(39,103,73,0.65)]",
                       "transition-transform duration-200 hover:-translate-y-0.5"
@@ -2435,7 +2461,7 @@ export function FieldDetailSheet({
                       setPlanPastWork(false);
                       setPlanOpen(true);
                     }}
-                    className="flex h-[4.25rem] items-center gap-3 rounded-2xl border border-[#D8D2C6] bg-white/85 px-3.5 text-left shadow-sm transition-colors hover:bg-white"
+                    className="flex min-h-[4.25rem] items-center gap-2.5 rounded-2xl border border-[#D8D2C6] bg-white/85 px-3 text-left shadow-sm transition-colors hover:bg-white md:gap-3 md:px-3.5"
                   >
                     <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#276749]/10 text-[#276749]">
                       <Tractor className="h-5 w-5" />
@@ -2476,7 +2502,14 @@ export function FieldDetailSheet({
     if (!open) return null;
     return (
       <div className="flex h-full min-h-0 flex-col overflow-hidden bg-transparent">
-        {hubInner}
+        <SwipeableSheet
+          className="h-full min-h-0"
+          disabled={!isMobile}
+          showHandle={isMobile}
+          onSwipeDown={handlePanelSwipeDown}
+        >
+          {hubInner}
+        </SwipeableSheet>
       </div>
     );
   }

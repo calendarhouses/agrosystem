@@ -578,7 +578,7 @@ export function OperationClosePanel({
   return (
     <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="relative overflow-hidden border-b border-[#E5DFD3]/80 bg-gradient-to-br from-emerald-50 via-[#F4F1EA] to-[#EDE8DF] px-6 py-5">
+        <div className="relative overflow-hidden border-b border-[#E5DFD3]/80 bg-gradient-to-br from-emerald-50 via-[#F4F1EA] to-[#EDE8DF] px-4 py-4 md:px-6 md:py-5">
           <div
             className="pointer-events-none absolute -top-16 right-0 h-40 w-40 rounded-full bg-emerald-400/15 blur-3xl"
             aria-hidden
@@ -586,7 +586,7 @@ export function OperationClosePanel({
           <button
             type="button"
             onClick={onBack}
-            className="relative mb-3 inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-zinc-600 transition-colors hover:bg-white/70 hover:text-zinc-900"
+            className="relative mb-3 inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-zinc-600 transition-colors hover:bg-white/70 hover:text-zinc-900"
           >
             <ChevronLeft className="h-4 w-4" />
             Назад до поля
@@ -614,7 +614,7 @@ export function OperationClosePanel({
           </div>
         </div>
 
-        <div className="space-y-4 px-6 py-5 pb-6">
+        <div className="space-y-4 px-4 py-5 pb-6 md:px-6">
           {(op.machinery || op.implement) && (
             <div className="flex items-center gap-3 rounded-2xl border border-[#E5DFD3] bg-white px-4 py-3 shadow-sm">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
@@ -879,7 +879,7 @@ export function OperationClosePanel({
               placeholder="Зауваження до наряду…"
               className={cn(
                 "w-full resize-none rounded-xl border border-[#E5DFD3] bg-white px-3 py-2.5",
-                "text-sm text-zinc-900 outline-none",
+                "text-base text-zinc-900 outline-none md:text-sm",
                 "focus-visible:border-[#276749]/45 focus-visible:ring-2 focus-visible:ring-[#276749]/15"
               )}
             />
@@ -893,7 +893,7 @@ export function OperationClosePanel({
         </div>
       </div>
 
-      <div className="shrink-0 border-t border-[#E5DFD3] bg-gradient-to-t from-[#EDE8DF] to-[#F4F1EA] px-6 py-4">
+      <div className="shrink-0 border-t border-[#E5DFD3] bg-gradient-to-t from-[#EDE8DF] to-[#F4F1EA] px-4 py-4 md:px-6">
         <button
           type="submit"
           disabled={saving}

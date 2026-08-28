@@ -335,7 +335,7 @@ export function FieldHistoryTimeline({
           <button
             type="button"
             onClick={onRetry}
-            className="mt-3 text-xs font-semibold underline-offset-2 hover:underline"
+            className="mt-3 inline-flex min-h-11 items-center justify-center rounded-xl px-3 text-sm font-semibold underline-offset-2 hover:underline"
           >
             Спробувати знову
           </button>

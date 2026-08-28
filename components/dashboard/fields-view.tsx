@@ -1008,7 +1008,11 @@ export function FieldsView() {
 
   return (
     <div className="absolute inset-0 overflow-hidden">
-      <div ref={mapHostRef} className="absolute inset-0 z-0 bg-zinc-950">
+      <div
+        ref={mapHostRef}
+        className="absolute inset-0 z-0 bg-zinc-950"
+        data-allow-pan="true"
+      >
         <FieldsMap
           ref={fieldsMapRef}
           className="h-full w-full"

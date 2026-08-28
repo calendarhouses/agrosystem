@@ -359,14 +359,14 @@ export function QuickIssueSheet({
 
   const issueHeader =
     variant === "panel" ? (
-      <div className="shrink-0 border-b border-zinc-200/70 bg-white px-5 py-4 text-left">
+      <div className="shrink-0 border-b border-zinc-200/70 bg-white px-4 py-3 text-left md:px-5 md:py-4">
         <button
           type="button"
           onClick={() => {
             onBack?.();
             onOpenChange(false);
           }}
-          className="mb-2 inline-flex items-center gap-1 text-xs font-semibold text-zinc-500 transition-colors hover:text-zinc-900"
+          className="mb-2 inline-flex min-h-11 items-center gap-1 rounded-lg px-1 text-sm font-semibold text-zinc-500 transition-colors hover:text-zinc-900 md:min-h-0 md:text-xs"
         >
           <ChevronLeft className="h-3.5 w-3.5" />
           Назад до поля

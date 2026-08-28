@@ -91,7 +91,7 @@ function MapToolButton({
       aria-label={title}
       onClick={onClick}
       className={cn(
-        "inline-flex h-10 min-w-10 items-center justify-center rounded-xl text-foreground/80 transition-all",
+        "inline-flex h-11 min-w-11 items-center justify-center rounded-xl text-foreground/80 transition-all md:h-10 md:min-w-10",
         "hover:bg-foreground/10 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40",
         active && "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90",
         className
@@ -1465,10 +1465,13 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         {/* —— Плаваючі панелі —— */}
         <div
           className={cn(
-            "absolute bottom-3 z-40 flex flex-col items-end gap-2",
+            "absolute z-40 flex flex-col items-end gap-2",
             chrome === "detail"
-              ? cn("right-3", COMMAND_CENTER_DETAIL_FLOAT_INSET_CLASS)
-              : "right-3"
+              ? cn(
+                  "top-[4.75rem] right-3 md:top-auto md:bottom-3",
+                  COMMAND_CENTER_DETAIL_FLOAT_INSET_CLASS
+                )
+              : "right-3 bottom-[5.25rem] md:bottom-3"
           )}
         >
           {searchOpen ? (
@@ -1478,7 +1481,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 placeholder="Адреса або 50.45, 30.52"
-                className="h-10 rounded-xl border-border bg-background/60 text-sm"
+                className="h-11 rounded-xl border-border bg-background/60 text-base md:h-10 md:text-sm"
               />
               <p className="mt-1.5 text-[11px] text-muted-foreground">
                 Населений пункт або координати lat, lng
@@ -1501,7 +1504,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
                           setSearchQuery("");
                           setSearchResults([]);
                         }}
-                        className="w-full rounded-xl px-2.5 py-2 text-left text-sm transition-colors hover:bg-foreground/5"
+                        className="w-full rounded-xl px-2.5 py-2.5 text-left text-sm transition-colors hover:bg-foreground/5"
                       >
                         {result.label}
                       </button>
@@ -1552,12 +1555,12 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
                   title={drawSave.label}
                   onClick={drawSave.onSave}
                   className={cn(
-                    "inline-flex h-10 items-center gap-1.5 rounded-xl bg-primary px-3 text-sm font-semibold text-primary-foreground shadow-sm transition-all",
+                    "inline-flex h-11 items-center gap-1.5 rounded-xl bg-primary px-3 text-sm font-semibold text-primary-foreground shadow-sm transition-all md:h-10",
                     "hover:bg-primary/90 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
                   )}
                 >
                   <Save className="h-4 w-4 shrink-0" />
-                  <span className="hidden sm:inline">{drawSave.label}</span>
+                  <span className="max-sm:sr-only sm:inline">{drawSave.label}</span>
                 </button>
               </>
             ) : null}
@@ -1592,7 +1595,12 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
               Клікайте по карті для створення контуру. Натисніть Enter для
               завершення
               <span className="mt-1 block text-xs font-normal text-muted-foreground">
-                Esc — скасувати · замкніть полігон кліком на першу точку
+                <span className="md:hidden">
+                  Замкніть полігон тапом на першу точку
+                </span>
+                <span className="hidden md:inline">
+                  Esc — скасувати · замкніть полігон кліком на першу точку
+                </span>
               </span>
             </div>
           </div>
@@ -1601,13 +1609,13 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         {mapViewMode === "economics" && !focusMode ? (
           <div
             className={cn(
-              "pointer-events-auto absolute bottom-[5.25rem] z-30 flex justify-center px-3",
+              "pointer-events-auto absolute z-30 flex justify-center px-3",
               chrome === "detail"
                 ? cn(
-                    "left-3 right-3",
+                    "top-[4.75rem] right-3 left-3 md:top-auto md:bottom-[5.25rem]",
                     COMMAND_CENTER_DETAIL_FLOAT_INSET_CLASS
                   )
-                : "left-3 right-3 md:left-[calc(0.75rem+min(400px,calc(100%-1.5rem))+12px)]"
+                : "right-3 bottom-[5.5rem] left-3 md:bottom-[5.25rem] md:left-[calc(0.75rem+min(400px,calc(100%-1.5rem))+12px)]"
             )}
           >
             <div className="w-full max-w-lg rounded-2xl border border-[#E5DFD3] bg-[#F4F1EA]/95 px-4 py-3.5 shadow-lg backdrop-blur-xl">

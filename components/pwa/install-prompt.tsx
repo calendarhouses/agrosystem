@@ -59,7 +59,7 @@ export function InstallPrompt() {
       />
 
       {guidePlatform ? null : (
-        <div className="relative flex min-h-dvh flex-col overflow-hidden bg-[#F4F1EA] text-zinc-900">
+        <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-[#F4F1EA] text-zinc-900">
           <div
             className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(39,103,73,0.14),_transparent_55%),radial-gradient(ellipse_at_bottom_right,_rgba(192,86,33,0.1),_transparent_50%)]"
             aria-hidden

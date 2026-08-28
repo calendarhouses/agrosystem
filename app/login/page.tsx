@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function LoginPage() {
   return (
-    <div className="relative flex min-h-dvh items-center justify-center overflow-hidden bg-[#F4F1EA] px-4 py-10">
+    <div className="relative flex h-full min-h-0 items-center justify-center overflow-hidden bg-[#F4F1EA] px-4 py-10">
       <div
         className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(39,103,73,0.12),_transparent_55%),radial-gradient(ellipse_at_bottom_right,_rgba(192,86,33,0.08),_transparent_50%)]"
         aria-hidden

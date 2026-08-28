@@ -43,7 +43,7 @@ export function DatePicker({
         type="button"
         className={cn(
           "inline-flex h-11 w-full min-w-0 items-center justify-start gap-2 rounded-xl border border-[#E5DFD3] bg-white px-3",
-          "text-sm font-semibold text-zinc-900 shadow-[0_1px_0_rgba(255,255,255,0.8)_inset]",
+          "text-base font-semibold text-zinc-900 shadow-[0_1px_0_rgba(255,255,255,0.8)_inset] md:text-sm",
           "transition-colors outline-none",
           "hover:border-[#276749]/35 focus-visible:border-[#276749]/45 focus-visible:ring-2 focus-visible:ring-[#276749]/15",
           !date && "font-medium text-zinc-400",

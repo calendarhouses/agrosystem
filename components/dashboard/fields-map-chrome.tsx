@@ -203,13 +203,13 @@ export function FieldsMapChrome({ align = "end" }: FieldsMapChromeProps) {
           <PopoverTrigger
             type="button"
             aria-label="Налаштування погоди"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-zinc-500 transition-colors hover:bg-white/70 hover:text-zinc-800"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-zinc-500 transition-colors hover:bg-white/70 hover:text-zinc-800 md:h-8 md:w-8"
           >
-            <Settings2 className="h-3.5 w-3.5" />
+            <Settings2 className="h-4 w-4 md:h-3.5 md:w-3.5" />
           </PopoverTrigger>
-          <PopoverContent
+            <PopoverContent
             align="end"
-            className="w-80 rounded-2xl border border-white/50 bg-background/95 p-3 text-zinc-900 shadow-xl backdrop-blur-xl"
+            className="w-[min(calc(100vw-1.5rem),20rem)] rounded-2xl border border-white/50 bg-background/95 p-3 text-zinc-900 shadow-xl backdrop-blur-xl"
           >
             <PopoverHeader>
               <PopoverTitle className="flex items-center gap-2 text-sm font-bold text-zinc-900">
@@ -222,7 +222,7 @@ export function FieldsMapChrome({ align = "end" }: FieldsMapChromeProps) {
               value={placeQuery}
               onChange={(event) => setPlaceQuery(event.target.value)}
               placeholder="Село, місто або вулиця…"
-              className="mt-2 h-9 rounded-xl text-sm"
+              className="mt-2 h-11 rounded-xl text-base md:h-9 md:text-sm"
             />
             <p className="mt-1 text-[11px] text-zinc-500">
               Пошук локації погоди · не навігація по карті
@@ -252,7 +252,7 @@ export function FieldsMapChrome({ align = "end" }: FieldsMapChromeProps) {
                           longitude: result.longitude,
                         })
                       }
-                      className="w-full rounded-xl px-2.5 py-2 text-left text-xs text-zinc-800 transition-colors hover:bg-white"
+                      className="w-full rounded-xl px-2.5 py-2.5 text-left text-sm text-zinc-800 transition-colors hover:bg-white"
                     >
                       {result.label}
                     </button>
@@ -269,7 +269,7 @@ export function FieldsMapChrome({ align = "end" }: FieldsMapChromeProps) {
                 <Input
                   value={latDraft}
                   onChange={(event) => setLatDraft(event.target.value)}
-                  className="h-9 rounded-xl text-sm"
+                  className="h-11 rounded-xl text-base md:h-9 md:text-sm"
                 />
               </div>
               <div className="space-y-1">
@@ -279,14 +279,14 @@ export function FieldsMapChrome({ align = "end" }: FieldsMapChromeProps) {
                 <Input
                   value={lngDraft}
                   onChange={(event) => setLngDraft(event.target.value)}
-                  className="h-9 rounded-xl text-sm"
+                  className="h-11 rounded-xl text-base md:h-9 md:text-sm"
                 />
               </div>
             </div>
             <button
               type="button"
               onClick={applyCustomCoords}
-              className="mt-2 inline-flex h-9 w-full items-center justify-center rounded-xl bg-emerald-700 text-xs font-bold text-white transition-colors hover:bg-emerald-800"
+              className="mt-2 inline-flex h-11 w-full items-center justify-center rounded-xl bg-emerald-700 text-sm font-bold text-white transition-colors hover:bg-emerald-800"
             >
               Застосувати координати
             </button>

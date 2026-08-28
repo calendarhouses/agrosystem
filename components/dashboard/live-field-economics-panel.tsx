@@ -307,7 +307,7 @@ function UnpricedCategoryPopover({
                         }
                       }}
                       placeholder="0"
-                      className="h-8 pr-14 text-xs tabular-nums"
+                      className="h-11 pr-14 text-base tabular-nums md:h-8 md:text-xs"
                       disabled={isSaving}
                     />
                     <span className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-[10px] text-zinc-400">

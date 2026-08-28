@@ -89,7 +89,7 @@ export function FieldPassportForm({
         <Input
           value={fieldName}
           onChange={(event) => onFieldNameChange(event.target.value)}
-          className="h-11 rounded-xl border-[#E5DFD3] bg-white text-sm"
+          className="h-11 rounded-xl border-[#E5DFD3] bg-white text-base md:text-sm"
         />
       </div>
 
@@ -105,7 +105,7 @@ export function FieldPassportForm({
             }
           }}
         >
-          <SelectTrigger className="h-11 w-full rounded-xl border-[#E5DFD3] bg-white text-sm">
+          <SelectTrigger className="h-11 w-full rounded-xl border-[#E5DFD3] bg-white text-base md:text-sm">
             <SelectValue placeholder="Оберіть культуру" />
           </SelectTrigger>
           <SelectContent className="z-[120] border-[#E5DFD3] bg-white">
@@ -128,7 +128,7 @@ export function FieldPassportForm({
           step={0.01}
           value={areaHa}
           onChange={(event) => onAreaHaChange(Number(event.target.value) || 0)}
-          className="h-11 rounded-xl border-[#E5DFD3] bg-white text-sm tabular-nums"
+          className="h-11 rounded-xl border-[#E5DFD3] bg-white text-base tabular-nums md:text-sm"
         />
       </div>
 
@@ -144,7 +144,7 @@ export function FieldPassportForm({
               title={option.label}
               onClick={() => onColorChange(option.value)}
               className={cn(
-                "h-9 w-9 rounded-full border-2 transition-transform",
+                "h-11 w-11 rounded-full border-2 transition-transform md:h-9 md:w-9",
                 color === option.value
                   ? "scale-110 border-zinc-900"
                   : "border-white/80 hover:scale-105"
@@ -159,7 +159,7 @@ export function FieldPassportForm({
         <button
           type="button"
           onClick={onEditGeometry}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[#E5DFD3] bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50"
+          className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#E5DFD3] bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50"
         >
           <Pentagon className="h-4 w-4" />
           Редагувати контур на карті
@@ -207,7 +207,7 @@ export function FieldPassportForm({
                 type="button"
                 disabled={busy}
                 onClick={onDelete}
-                className="inline-flex h-10 flex-1 items-center justify-center rounded-xl bg-red-600 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-60"
+                className="inline-flex h-11 flex-1 items-center justify-center rounded-xl bg-red-600 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-60"
               >
                 Так, видалити
               </button>
@@ -216,7 +216,7 @@ export function FieldPassportForm({
               type="button"
               onClick={() => onConfirmDeleteChange?.(false)}
               className={cn(
-                "inline-flex h-10 items-center justify-center rounded-xl border border-[#E5DFD3] bg-white text-sm font-semibold text-zinc-700 hover:bg-zinc-50",
+                "inline-flex h-11 items-center justify-center rounded-xl border border-[#E5DFD3] bg-white text-sm font-semibold text-zinc-700 hover:bg-zinc-50",
                 canDelete ? "flex-1" : "w-full"
               )}
             >
@@ -227,7 +227,7 @@ export function FieldPassportForm({
       ) : (
         <button
           type="button"
-          className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-red-50 py-3 text-sm font-medium text-red-700 transition-colors hover:bg-red-100"
+          className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-red-50 py-3 text-sm font-medium text-red-700 transition-colors hover:bg-red-100"
           onClick={() => onConfirmDeleteChange?.(true)}
         >
           <Trash2 className="h-4 w-4" />

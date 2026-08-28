@@ -448,7 +448,7 @@ export const EquipmentCommandMap = forwardRef<EquipmentCommandMapHandle, Props>(
       : null;
 
     return (
-      <div className={cn("absolute inset-0 z-0 bg-zinc-950", className)}>
+      <div className={cn("absolute inset-0 z-0 bg-zinc-950", className)} data-allow-pan="true">
         <div className="absolute inset-0 overflow-hidden bg-zinc-950">
           <MapboxMap
           ref={mapRef}

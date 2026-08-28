@@ -553,7 +553,7 @@ export function InventoryView({ dashboard, error }: Props) {
     <main
       className={cn(
         "h-full w-full overflow-y-auto overscroll-none",
-        "min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))]",
+        "bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))]",
         "from-slate-100 to-zinc-100 dark:from-slate-950 dark:to-zinc-950"
       )}
     >

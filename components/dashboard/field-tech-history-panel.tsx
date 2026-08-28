@@ -376,7 +376,7 @@ function EquipmentHistoryCard({
         <button
           type="button"
           onClick={() => onCreateOrder(entry)}
-          className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50/80 py-2 text-xs font-semibold text-amber-900 transition-colors hover:bg-amber-100"
+          className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50/80 py-2.5 text-sm font-semibold text-amber-900 transition-colors hover:bg-amber-100"
         >
           <ClipboardPlus className="h-3.5 w-3.5" />
           Створити наряд

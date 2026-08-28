@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 
 import { COMMAND_CENTER_GLASS_PANEL_CLASS } from "@/lib/equipment-command-center-layout";
+import { SwipeableSheet } from "@/components/ui/swipe-sheet";
+import { useIsMobile } from "@/lib/use-mobile";
 import type { MapFieldItem } from "@/lib/map-fields";
 import { formatCountPlural } from "@/lib/plural";
 import { cn } from "@/lib/utils";
@@ -124,7 +126,7 @@ function FieldRow({
       onFocus={() => onHover(field.id)}
       onBlur={() => onHover(null)}
       className={cn(
-        "group relative flex w-full items-center gap-2.5 rounded-xl px-2 py-1.5 text-left transition-colors",
+        "group relative flex w-full min-h-11 items-center gap-2.5 rounded-xl px-2 py-2.5 text-left transition-colors md:min-h-0 md:py-1.5",
         active
           ? "bg-emerald-600/12 ring-1 ring-emerald-500/35"
           : hovered
@@ -348,7 +350,7 @@ export function FieldsGlassPanel({
   const list = (
     <div className="flex h-full min-h-0 flex-col">
       <div className="border-b border-white/30 px-3 py-3">
-        <div className="flex items-center gap-2">
+        <div className="hidden items-center gap-2 md:flex">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-600/90 text-white shadow-md">
             <MapIcon className="h-3.5 w-3.5" />
           </div>
@@ -399,24 +401,24 @@ export function FieldsGlassPanel({
             type="button"
             title="Показати всі на карті"
             onClick={onFitAll}
-            className="rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-white/50 hover:text-zinc-800"
+            className="rounded-md p-2.5 text-zinc-500 transition-colors hover:bg-white/50 hover:text-zinc-800 md:p-1.5"
           >
             <Focus className="h-4 w-4" />
           </button>
         </div>
-        <div className="relative mt-2.5">
+        <div className="relative mt-0 md:mt-2.5">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Назва або культура"
-            className="h-8 w-full rounded-lg border border-white/40 bg-white/45 pr-2.5 pl-8 text-xs font-medium text-zinc-800 outline-none placeholder:text-zinc-400 focus:border-emerald-400/50 focus:bg-white/70"
+            className="h-11 w-full rounded-lg border border-white/40 bg-white/45 pr-2.5 pl-8 text-base font-medium text-zinc-800 outline-none placeholder:text-zinc-400 focus:border-emerald-400/50 focus:bg-white/70 md:h-8 md:text-xs"
           />
         </div>
       </div>
 
       <div
-        className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-2 py-2"
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-none px-2 py-2"
         onMouseLeave={() => onHover(null)}
       >
         {loading ? (
@@ -506,43 +508,56 @@ export function FieldsGlassPanel({
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 md:hidden">
         <div
           className={cn(
-            "pointer-events-auto mx-2 mb-2 overflow-hidden rounded-t-2xl border border-white/40 shadow-2xl transition-[max-height] duration-300",
-            "bg-background/85 backdrop-blur-2xl",
-            mobileExpanded ? "max-h-[min(78vh,680px)]" : "max-h-14"
+            "pointer-events-auto mx-2 mb-1 flex flex-col overflow-hidden rounded-t-3xl border border-white/40 shadow-2xl transition-[height] duration-300",
+            "bg-background/90 backdrop-blur-2xl",
+            mobileExpanded ? "h-[min(78%,680px)]" : "h-[4.75rem]"
           )}
         >
-          <button
-            type="button"
-            onClick={() => onMobileExpandedChange(!mobileExpanded)}
-            className="flex w-full items-center justify-between border-b border-white/30 px-4 py-3"
+          <SwipeableSheet
+            onSwipeDown={() => onMobileExpandedChange(false)}
+            onSwipeUp={() => onMobileExpandedChange(true)}
           >
-            <div className="flex items-center gap-2">
-              <MapIcon className="h-4 w-4 text-emerald-700" />
-              <span className="text-sm font-bold text-zinc-900">
-                Поля ({fields.length})
-              </span>
-            </div>
+            <button
+              type="button"
+              onClick={() => onMobileExpandedChange(!mobileExpanded)}
+              className="flex min-h-11 w-full items-center justify-between border-b border-white/30 px-4 py-2.5"
+            >
+              <div className="flex min-w-0 items-center gap-2">
+                <MapIcon className="h-4 w-4 shrink-0 text-emerald-700" />
+                <span className="truncate text-sm font-bold text-zinc-900">
+                  Поля ({fields.length})
+                </span>
+              </div>
+              {mobileExpanded ? (
+                <ChevronDown className="h-5 w-5 shrink-0 text-zinc-500" />
+              ) : (
+                <ChevronUp className="h-5 w-5 shrink-0 text-zinc-500" />
+              )}
+            </button>
             {mobileExpanded ? (
-              <ChevronDown className="h-4 w-4 text-zinc-500" />
-            ) : (
-              <ChevronUp className="h-4 w-4 text-zinc-500" />
-            )}
-          </button>
-          {mobileExpanded ? (
-            <div className="flex h-[min(72vh,640px)] flex-col">{list}</div>
-          ) : null}
+              <div className="flex min-h-0 flex-1 flex-col overscroll-none">
+                {list}
+              </div>
+            ) : null}
+          </SwipeableSheet>
         </div>
       </div>
     </>
   );
 }
 
-export function FieldsDetailGlassFrame({ children }: { children: ReactNode }) {
+export function FieldsDetailGlassFrame({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  const isMobile = useIsMobile();
+
   return (
     <aside
       className={cn(
         "pointer-events-auto absolute z-20 flex flex-col overflow-hidden border border-white/30 bg-[#F4F1EA]/88 shadow-2xl backdrop-blur-2xl",
-        "inset-x-2 bottom-2 h-[min(82vh,720px)] rounded-t-2xl",
+        "inset-x-0 bottom-0 h-[min(88%,760px)] max-h-full rounded-t-3xl",
         "md:inset-x-auto md:top-3 md:right-3 md:bottom-3 md:h-auto md:w-[min(100%,580px)] md:rounded-2xl"
       )}
     >
@@ -550,9 +565,9 @@ export function FieldsDetailGlassFrame({ children }: { children: ReactNode }) {
         <motion.div
           key="field-detail"
           className="flex h-full min-h-0 flex-col"
-          initial={{ x: 28, opacity: 0 }}
-          animate={{ x: 0, opacity: 1 }}
-          exit={{ x: 28, opacity: 0 }}
+          initial={isMobile ? { y: 28, opacity: 0 } : { x: 28, opacity: 0 }}
+          animate={isMobile ? { y: 0, opacity: 1 } : { x: 0, opacity: 1 }}
+          exit={isMobile ? { y: 28, opacity: 0 } : { x: 28, opacity: 0 }}
           transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
         >
           {children}

@@ -3,6 +3,8 @@
 import * as React from "react"
 import { Popover as PopoverPrimitive } from "@base-ui/react/popover"
 
+import { SwipeableSheet } from "@/components/ui/swipe-sheet"
+import { useIsMobile } from "@/lib/use-mobile"
 import { cn } from "@/lib/utils"
 
 function Popover({ ...props }: PopoverPrimitive.Root.Props) {
@@ -19,12 +21,60 @@ function PopoverContent({
   alignOffset = 0,
   side = "bottom",
   sideOffset = 4,
+  children,
   ...props
 }: PopoverPrimitive.Popup.Props &
   Pick<
     PopoverPrimitive.Positioner.Props,
     "align" | "alignOffset" | "side" | "sideOffset"
   >) {
+  const isMobile = useIsMobile()
+  const closeRef = React.useRef<HTMLButtonElement>(null)
+
+  const popup = (
+    <PopoverPrimitive.Popup
+      data-slot="popover-content"
+      className={cn(
+        "z-50 flex w-72 origin-(--transform-origin) flex-col gap-2.5 rounded-lg bg-popover p-2.5 text-sm text-popover-foreground shadow-md ring-1 ring-foreground/10 outline-hidden duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+        className,
+        isMobile &&
+          "fixed inset-x-0 top-auto z-50 max-h-[var(--app-sheet-max)] w-full max-w-none origin-bottom gap-0 overflow-hidden rounded-t-3xl rounded-b-none p-0 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-2xl ring-0 data-[side=bottom]:slide-in-from-bottom-4 data-open:zoom-in-100 bottom-[var(--app-bottom-inset)]"
+      )}
+      {...props}
+    >
+      {isMobile ? (
+        <>
+          <SwipeableSheet
+            className="max-h-[var(--app-sheet-max)]"
+            onSwipeDown={() => closeRef.current?.click()}
+          >
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-none p-4">
+              {children}
+            </div>
+          </SwipeableSheet>
+          <PopoverPrimitive.Close
+            ref={closeRef}
+            className="sr-only"
+            tabIndex={-1}
+          >
+            Закрити
+          </PopoverPrimitive.Close>
+        </>
+      ) : (
+        children
+      )}
+    </PopoverPrimitive.Popup>
+  )
+
+  if (isMobile) {
+    return (
+      <PopoverPrimitive.Portal>
+        <PopoverPrimitive.Backdrop className="fixed inset-0 z-50 bg-black/40 supports-backdrop-filter:backdrop-blur-[2px]" />
+        {popup}
+      </PopoverPrimitive.Portal>
+    )
+  }
+
   return (
     <PopoverPrimitive.Portal>
       <PopoverPrimitive.Positioner
@@ -34,14 +84,7 @@ function PopoverContent({
         sideOffset={sideOffset}
         className="isolate z-50"
       >
-        <PopoverPrimitive.Popup
-          data-slot="popover-content"
-          className={cn(
-            "z-50 flex w-72 origin-(--transform-origin) flex-col gap-2.5 rounded-lg bg-popover p-2.5 text-sm text-popover-foreground shadow-md ring-1 ring-foreground/10 outline-hidden duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
-            className
-          )}
-          {...props}
-        />
+        {popup}
       </PopoverPrimitive.Positioner>
     </PopoverPrimitive.Portal>
   )

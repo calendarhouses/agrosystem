@@ -332,8 +332,8 @@ export function AgroRadarView() {
   return (
     <div
       className={cn(
-        "custom-scrollbar h-full overflow-y-auto",
-        "min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))]",
+        "custom-scrollbar h-full overflow-y-auto overscroll-none",
+        "bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))]",
         "from-slate-100 to-zinc-100 dark:from-slate-950 dark:to-zinc-950"
       )}
     >
