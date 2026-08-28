@@ -30,11 +30,15 @@ function closestScrollable(start: EventTarget | null): HTMLElement | null {
 
 function syncAppHeight() {
   const vv = window.visualViewport;
-  const height = Math.round(vv?.height ?? window.innerHeight);
+  const inner = window.innerHeight;
+  const vvH = Math.round(vv?.height ?? inner);
   const offsetTop = Math.round(vv?.offsetTop ?? 0);
+  const keyboardOpen = inner - vvH > 80;
   const root = document.documentElement;
-  root.style.setProperty("--app-height", `${height}px`);
+  root.style.setProperty("--app-height", `${inner}px`);
+  root.style.setProperty("--vv-height", `${vvH}px`);
   root.style.setProperty("--app-vv-offset-top", `${offsetTop}px`);
+  root.classList.toggle("keyboard-open", keyboardOpen);
 }
 
 export function lockAppViewport(): () => void {

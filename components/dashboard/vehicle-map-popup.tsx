@@ -47,7 +47,7 @@ export function VehicleMapPopup({ unit, onClose }: VehicleMapPopupProps) {
   const lastContact = lastContactLabel(unit);
 
   return (
-    <div className="absolute bottom-[5.5rem] left-3 z-50 flex w-[min(100%-1.5rem,320px)] max-h-[min(100%-1.5rem,420px)] flex-col overflow-hidden rounded-2xl border border-[#E5DFD3] bg-white text-zinc-900 shadow-xl md:bottom-3">
+    <div className="absolute bottom-[4rem] left-3 z-50 flex w-[min(100%-1.5rem,320px)] max-h-[min(100%-1.5rem,420px)] flex-col overflow-hidden rounded-2xl border border-[#E5DFD3] bg-white text-zinc-900 shadow-xl md:bottom-3">
       <div className="custom-scrollbar min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-3.5 pt-3.5 pb-2">
         <div className="mb-3 flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">

@@ -32,6 +32,7 @@ export function SheetDragHandle({
 type SwipeableSheetProps = {
   children: ReactNode;
   className?: string;
+  handleClassName?: string;
   /** Свайп вниз — згорнути або закрити */
   onSwipeDown: () => void;
   /** Свайп вгору — розгорнути */
@@ -44,6 +45,7 @@ type SwipeableSheetProps = {
 export function SwipeableSheet({
   children,
   className,
+  handleClassName,
   onSwipeDown,
   onSwipeUp,
   disabled = false,
@@ -78,6 +80,7 @@ export function SwipeableSheet({
     >
       {showHandle && !disabled ? (
         <SheetDragHandle
+          className={handleClassName}
           onPointerDown={(event) => {
             dragControls.start(event);
           }}

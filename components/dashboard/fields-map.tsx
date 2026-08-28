@@ -1462,27 +1462,35 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
           </Map>
         </div>
 
-        {/* —— Плаваючі панелі —— */}
-        <div
-          className={cn(
-            "absolute z-40 flex flex-col items-end gap-2",
-            chrome === "detail"
-              ? cn(
-                  "top-[4.75rem] right-3 md:top-auto md:bottom-3",
-                  COMMAND_CENTER_DETAIL_FLOAT_INSET_CLASS
-                )
-              : "right-3 bottom-[5.25rem] md:bottom-3"
-          )}
-        >
-          {searchOpen ? (
-            <div className="w-[min(calc(100vw-2rem),340px)] rounded-2xl border border-border bg-background/80 p-3 shadow-lg backdrop-blur-xl">
-              <Input
-                autoFocus
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Адреса або 50.45, 30.52"
-                className="h-11 rounded-xl border-border bg-background/60 text-base md:h-10 md:text-sm"
-              />
+        {searchOpen ? (
+          <div
+            className="absolute inset-x-3 z-50 md:left-auto md:right-3 md:w-[min(calc(100vw-2rem),340px)]"
+            style={{ top: "max(0.75rem, env(safe-area-inset-top, 0px))" }}
+          >
+            <div className="rounded-2xl border border-border bg-background/92 p-3 shadow-lg backdrop-blur-xl">
+              <div className="flex items-center gap-2">
+                <Input
+                  autoFocus
+                  enterKeyHint="search"
+                  inputMode="search"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="Адреса або 50.45, 30.52"
+                  className="h-11 rounded-xl border-border bg-background/60 text-base md:h-10 md:text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchOpen(false);
+                    setSearchQuery("");
+                    setSearchResults([]);
+                  }}
+                  className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-foreground/8 text-foreground md:h-10 md:w-10"
+                  aria-label="Закрити пошук"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
               <p className="mt-1.5 text-[11px] text-muted-foreground">
                 Населений пункт або координати lat, lng
               </p>
@@ -1493,7 +1501,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
                 <p className="mt-3 text-xs text-destructive">{searchError}</p>
               ) : null}
               {searchResults.length > 0 ? (
-                <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto">
+                <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto overscroll-none">
                   {searchResults.map((result) => (
                     <li key={result.id}>
                       <button
@@ -1513,8 +1521,20 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
                 </ul>
               ) : null}
             </div>
-          ) : null}
+          </div>
+        ) : null}
 
+        <div
+          className={cn(
+            "absolute z-40 flex flex-col items-end gap-2",
+            chrome === "detail"
+              ? cn(
+                  "top-[calc(env(safe-area-inset-top,0px)+4.75rem)] right-3 md:top-auto md:bottom-3",
+                  COMMAND_CENTER_DETAIL_FLOAT_INSET_CLASS
+                )
+              : "right-3 bottom-[3.85rem] md:bottom-3"
+          )}
+        >
           <div
             className={FLOAT_BAR_CLASS}
             role="toolbar"
@@ -1585,7 +1605,8 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         {isDrawing ? (
           <div
             className={cn(
-              "pointer-events-none absolute top-4 z-50 flex justify-center px-4",
+              "pointer-events-none absolute z-50 flex justify-center px-4",
+              "top-[max(1rem,env(safe-area-inset-top,0px))]",
               chrome === "detail"
                 ? "inset-x-0 md:right-[calc(0.75rem+min(580px,calc(100%-1.5rem)))]"
                 : "inset-x-0 md:left-[calc(0.75rem+min(400px,calc(100%-1.5rem)))]"
@@ -1606,28 +1627,27 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
           </div>
         ) : null}
 
-        {mapViewMode === "economics" && !focusMode ? (
+        {mapViewMode === "economics" && !focusMode && !searchOpen ? (
           <div
             className={cn(
               "pointer-events-auto absolute z-30 flex justify-center px-3",
+              "top-[calc(env(safe-area-inset-top,0px)+5.75rem)] left-3 right-3",
+              "md:top-auto md:bottom-[5.25rem]",
               chrome === "detail"
-                ? cn(
-                    "top-[4.75rem] right-3 left-3 md:top-auto md:bottom-[5.25rem]",
-                    COMMAND_CENTER_DETAIL_FLOAT_INSET_CLASS
-                  )
-                : "right-3 bottom-[5.5rem] left-3 md:bottom-[5.25rem] md:left-[calc(0.75rem+min(400px,calc(100%-1.5rem))+12px)]"
+                ? COMMAND_CENTER_DETAIL_FLOAT_INSET_CLASS
+                : "md:left-[calc(0.75rem+min(400px,calc(100%-1.5rem))+12px)]"
             )}
           >
-            <div className="w-full max-w-lg rounded-2xl border border-[#E5DFD3] bg-[#F4F1EA]/95 px-4 py-3.5 shadow-lg backdrop-blur-xl">
+            <div className="w-full max-w-lg rounded-2xl border border-[#E5DFD3] bg-[#F4F1EA]/95 px-3 py-2.5 shadow-lg backdrop-blur-xl md:px-4 md:py-3.5">
               <p className="text-sm font-bold text-zinc-900">
                 Колір = скільки витрачено від бюджету
               </p>
-              <p className="mt-1 text-xs leading-relaxed text-zinc-600">
+              <p className="mt-1 hidden text-xs leading-relaxed text-zinc-600 md:block">
                 Порівняння фактичних витрат (паливо, ЗП, ТМЦ) з плановим
                 бюджетом поля за сезон {activeSeason}. Бюджет задається у
                 паспорті поля.
               </p>
-              <ul className="mt-3 grid gap-2 sm:grid-cols-2">
+              <ul className="mt-2 grid grid-cols-2 gap-1.5 md:mt-3 md:gap-2">
                 <li className="flex items-start gap-2.5 rounded-xl bg-white/80 px-2.5 py-2">
                   <span
                     className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded-sm ring-1 ring-black/10"

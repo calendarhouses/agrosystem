@@ -41,8 +41,8 @@ export function BottomNav() {
       <nav
         className={cn(
           "fixed inset-x-0 bottom-0 z-50 md:hidden",
-          "border-t border-zinc-700/80 bg-zinc-900/95 text-zinc-400 backdrop-blur-xl",
-          "pb-[env(safe-area-inset-bottom)]"
+          "border-t border-zinc-700/80 bg-zinc-900 text-zinc-400",
+          "pb-[env(safe-area-inset-bottom,0px)]"
         )}
         aria-label="Головна навігація"
       >

@@ -413,6 +413,8 @@ export function FieldsGlassPanel({
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Назва або культура"
             className="h-11 w-full rounded-lg border border-white/40 bg-white/45 pr-2.5 pl-8 text-base font-medium text-zinc-800 outline-none placeholder:text-zinc-400 focus:border-emerald-400/50 focus:bg-white/70 md:h-8 md:text-xs"
+            enterKeyHint="search"
+            autoComplete="off"
           />
         </div>
       </div>
@@ -508,34 +510,44 @@ export function FieldsGlassPanel({
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 md:hidden">
         <div
           className={cn(
-            "pointer-events-auto mx-2 mb-1 flex flex-col overflow-hidden rounded-t-3xl border border-white/40 shadow-2xl transition-[height] duration-300",
-            "bg-background/90 backdrop-blur-2xl",
-            mobileExpanded ? "h-[min(78%,680px)]" : "h-[4.75rem]"
+            "pointer-events-auto flex flex-col overflow-hidden border-t border-[#E5DFD3]/80",
+            "bg-[#F4F1EA]/96 shadow-[0_-12px_40px_-16px_rgba(24,24,27,0.35)] backdrop-blur-2xl",
+            mobileExpanded
+              ? "h-[calc(100%-max(0.5rem,env(safe-area-inset-top,0px)))] rounded-t-3xl"
+              : "h-14 rounded-t-[1.35rem]"
           )}
         >
           <SwipeableSheet
+            handleClassName="pt-1.5 pb-0"
             onSwipeDown={() => onMobileExpandedChange(false)}
             onSwipeUp={() => onMobileExpandedChange(true)}
           >
             <button
               type="button"
               onClick={() => onMobileExpandedChange(!mobileExpanded)}
-              className="flex min-h-11 w-full items-center justify-between border-b border-white/30 px-4 py-2.5"
+              className="flex h-11 w-full shrink-0 items-center gap-3 px-4"
             >
-              <div className="flex min-w-0 items-center gap-2">
-                <MapIcon className="h-4 w-4 shrink-0 text-emerald-700" />
-                <span className="truncate text-sm font-bold text-zinc-900">
-                  Поля ({fields.length})
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#276749] text-white shadow-sm">
+                <MapIcon className="h-3.5 w-3.5" />
+              </span>
+              <span className="min-w-0 flex-1 text-left">
+                <span className="block truncate text-[15px] font-bold tracking-tight text-zinc-900">
+                  Поля
                 </span>
-              </div>
+                <span className="block truncate text-[11px] font-medium text-zinc-500">
+                  {loading
+                    ? "Завантаження…"
+                    : `${formatCountPlural(fields.length, ["ділянка", "ділянки", "ділянок"])} · ${totalHa.toLocaleString("uk-UA")} га`}
+                </span>
+              </span>
               {mobileExpanded ? (
-                <ChevronDown className="h-5 w-5 shrink-0 text-zinc-500" />
+                <ChevronDown className="h-5 w-5 shrink-0 text-zinc-400" />
               ) : (
-                <ChevronUp className="h-5 w-5 shrink-0 text-zinc-500" />
+                <ChevronUp className="h-5 w-5 shrink-0 text-zinc-400" />
               )}
             </button>
             {mobileExpanded ? (
-              <div className="flex min-h-0 flex-1 flex-col overscroll-none">
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden overscroll-none border-t border-[#E5DFD3]/70">
                 {list}
               </div>
             ) : null}
@@ -557,7 +569,7 @@ export function FieldsDetailGlassFrame({
     <aside
       className={cn(
         "pointer-events-auto absolute z-20 flex flex-col overflow-hidden border border-white/30 bg-[#F4F1EA]/88 shadow-2xl backdrop-blur-2xl",
-        "inset-x-0 bottom-0 h-[min(88%,760px)] max-h-full rounded-t-3xl",
+        "inset-x-0 bottom-0 h-[calc(100%-max(0.5rem,env(safe-area-inset-top,0px)))] max-h-full rounded-t-3xl",
         "md:inset-x-auto md:top-3 md:right-3 md:bottom-3 md:h-auto md:w-[min(100%,580px)] md:rounded-2xl"
       )}
     >

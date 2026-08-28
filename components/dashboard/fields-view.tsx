@@ -1036,7 +1036,8 @@ export function FieldsView() {
 
       <div
         className={cn(
-          "pointer-events-none z-30 p-3",
+          "pointer-events-none z-30 px-3 pb-3",
+          "pt-[max(0.75rem,env(safe-area-inset-top,0px))]",
           sheetOpen
             ? COMMAND_CENTER_MAP_AREA_RIGHT_CLASS
             : COMMAND_CENTER_MAP_AREA_CLASS
