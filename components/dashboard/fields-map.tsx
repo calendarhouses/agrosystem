@@ -886,13 +886,9 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       []
     );
 
-    // Не монтуємо Map, поки Wialon не відповів; стартуємо вже над полями
+    // Не скидаємо mapReady при повторному завантаженні Wialon — карта лишається інтерактивною.
     useEffect(() => {
-      if (wialonLoading) {
-        setViewSettled(false);
-        setMapReady(false);
-        return;
-      }
+      if (wialonLoading) return;
       setZoom(mountBootView.zoom);
       mapCenterRef.current = {
         lng: mountBootView.longitude,
@@ -903,7 +899,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
 
     useEffect(() => {
       if (wialonLoading || viewSettled || !mapReady) return;
-      const fallback = window.setTimeout(() => setViewSettled(true), 3500);
+      const fallback = window.setTimeout(() => setViewSettled(true), 1200);
       return () => window.clearTimeout(fallback);
     }, [wialonLoading, viewSettled, mapReady]);
 
@@ -1312,7 +1308,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       );
     }
 
-    const showBootOverlay = wialonLoading || !viewSettled;
+    const showBootOverlay = !mapReady || !viewSettled;
     const showTractor = zoom >= 7 && !focusMode;
     const tractorScale = tractorScaleFromZoom(zoom);
 
@@ -1321,7 +1317,6 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         ref={mapContainerRef}
         className={cn("relative h-full min-h-0 w-full bg-zinc-950", className)}
       >
-        {!wialonLoading ? (
         <>
         <div className="absolute inset-0 overflow-hidden bg-zinc-950">
           <Map
@@ -1812,7 +1807,6 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
           />
         ) : null}
         </>
-        ) : null}
         <CommandCenterMapBootOverlay
           visible={showBootOverlay}
           icon={MapIcon}

@@ -1,7 +1,7 @@
 /** Фіксує висоту PWA під visualViewport і глушить гумовий скрол iOS/Android. */
 
 const PAN_SURFACE =
-  "canvas, .mapboxgl-map, .mapboxgl-canvas-container, [data-allow-pan], input, textarea, select, [contenteditable='true'], [data-vaul-drawer], [data-vaul-overlay], [data-vaul-handle], [data-slot='drawer-content'], [data-slot='drawer-overlay'], [data-slot='drawer-handle']";
+  "canvas, .mapboxgl-map, .mapboxgl-canvas-container, [data-allow-pan], input, textarea, select, button, a, label, [contenteditable='true'], [data-vaul-drawer], [data-vaul-overlay], [data-vaul-handle], [data-slot='drawer-content'], [data-slot='drawer-overlay'], [data-slot='drawer-handle']";
 
 function isPanSurface(target: EventTarget | null): boolean {
   return target instanceof Element && Boolean(target.closest(PAN_SURFACE));
@@ -52,7 +52,7 @@ function measureSafeArea() {
   root.style.setProperty("--safe-bottom", `${Math.round(bottom)}px`);
 }
 
-function syncAppHeight() {
+function applyAppHeight() {
   const vv = window.visualViewport;
   const inner = window.innerHeight;
   const vvH = Math.round(vv?.height ?? inner);
@@ -63,17 +63,40 @@ function syncAppHeight() {
   root.style.setProperty("--vv-height", `${vvH}px`);
   root.style.setProperty("--app-vv-offset-top", `${offsetTop}px`);
   root.classList.toggle("keyboard-open", keyboardOpen);
+}
+
+/** Легка ініціалізація без touch-lock (login / install). */
+export function initAppViewport(): () => void {
   measureSafeArea();
+  applyAppHeight();
+
+  let raf = 0;
+  const scheduleHeightSync = () => {
+    if (raf) return;
+    raf = window.requestAnimationFrame(() => {
+      raf = 0;
+      applyAppHeight();
+    });
+  };
+
+  const vv = window.visualViewport;
+  vv?.addEventListener("resize", scheduleHeightSync);
+  window.addEventListener("resize", scheduleHeightSync);
+  window.addEventListener("orientationchange", () => {
+    measureSafeArea();
+    scheduleHeightSync();
+  });
+
+  return () => {
+    if (raf) window.cancelAnimationFrame(raf);
+    vv?.removeEventListener("resize", scheduleHeightSync);
+    window.removeEventListener("resize", scheduleHeightSync);
+    window.removeEventListener("orientationchange", scheduleHeightSync);
+  };
 }
 
 export function lockAppViewport(): () => void {
-  syncAppHeight();
-
-  const vv = window.visualViewport;
-  vv?.addEventListener("resize", syncAppHeight);
-  vv?.addEventListener("scroll", syncAppHeight);
-  window.addEventListener("resize", syncAppHeight);
-  window.addEventListener("orientationchange", syncAppHeight);
+  const unlockHeight = initAppViewport();
 
   let startX = 0;
   let startY = 0;
@@ -121,10 +144,7 @@ export function lockAppViewport(): () => void {
   document.addEventListener("touchmove", onTouchMove, { passive: false });
 
   return () => {
-    vv?.removeEventListener("resize", syncAppHeight);
-    vv?.removeEventListener("scroll", syncAppHeight);
-    window.removeEventListener("resize", syncAppHeight);
-    window.removeEventListener("orientationchange", syncAppHeight);
+    unlockHeight();
     document.removeEventListener("touchstart", onTouchStart);
     document.removeEventListener("touchmove", onTouchMove);
   };

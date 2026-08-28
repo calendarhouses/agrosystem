@@ -9,6 +9,7 @@ import {
 } from "@/lib/wialon";
 
 export const runtime = "nodejs";
+export const maxDuration = 25;
 
 /**
  * GET /api/wialon — READ-ONLY: техніка + геозони (поля) як GeoJSON.
@@ -20,8 +21,10 @@ const JSON_UTF8 = {
 export async function GET() {
   try {
     const eid = await wialonLogin();
-    const units = await getWialonUnits(eid);
-    const resources = await getWialonGeofences(eid);
+    const [units, resources] = await Promise.all([
+      getWialonUnits(eid),
+      getWialonGeofences(eid),
+    ]);
     const geofences = wialonResourcesToGeofenceGeoJSON(resources);
 
     return NextResponse.json(

@@ -455,6 +455,11 @@ export function FieldsView() {
 
   useEffect(() => {
     const controller = new AbortController();
+    let timedOut = false;
+    const timeout = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, 12_000);
     setWialonBootLoading(true);
     setWialonLoadError(null);
 
@@ -477,7 +482,15 @@ export function FieldsView() {
         setWialonLoadError(null);
       })
       .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted) {
+          if (!timedOut) return;
+          setWialonSeedUnits([]);
+          setWialonGeofences(EMPTY_GEOFENCES);
+          setWialonLoadError(
+            "Wialon не відповів за 12 с — показуємо збережені поля"
+          );
+          return;
+        }
         console.error(error);
         setWialonSeedUnits([]);
         setWialonGeofences(EMPTY_GEOFENCES);
@@ -488,10 +501,14 @@ export function FieldsView() {
         );
       })
       .finally(() => {
-        if (!controller.signal.aborted) setWialonBootLoading(false);
+        window.clearTimeout(timeout);
+        setWialonBootLoading(false);
       });
 
-    return () => controller.abort();
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
   }, []);
 
   /** Автостатус: запланована техніка заїхала на поле → in_progress */

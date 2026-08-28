@@ -96,8 +96,10 @@ export function bootstrapPwaInstallCapture() {
     (window as Window & { __levadaPwaCapture?: boolean }).__levadaPwaCapture = true;
   }
   void (async () => {
-    await resetPoisonedServiceWorkers();
     await registerServiceWorker();
+    window.setTimeout(() => {
+      void resetPoisonedServiceWorkers();
+    }, 5000);
   })();
 }
 

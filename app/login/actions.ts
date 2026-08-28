@@ -37,12 +37,14 @@ export async function loginWithPassword(
   }
 
   const actor = await getCurrentActor();
-  await logActivity({
+  void logActivity({
     actor,
     action: "login",
     entityType: "session",
     entityId: actor.id || null,
     summary: `${actor.label} увійшов у систему`,
+  }).catch(() => {
+    /* не блокуємо вхід через журнал */
   });
 
   return { ok: true };
