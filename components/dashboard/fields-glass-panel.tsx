@@ -507,53 +507,68 @@ export function FieldsGlassPanel({
         {list}
       </aside>
 
-      <div className="pointer-events-none absolute inset-0 z-20 flex flex-col md:hidden">
+      <div className="pointer-events-none fixed inset-x-0 z-30 md:hidden" style={{ bottom: "var(--app-bottom-inset)" }}>
         <div
           className={cn(
-            "pointer-events-auto flex min-h-0 flex-col overflow-hidden",
-            "border-t border-[#E5DFD3]/90 bg-[#F4F1EA]",
-            "shadow-[0_-18px_48px_-18px_rgba(24,24,27,0.4)]",
+            "pointer-events-auto mx-auto flex max-w-lg flex-col overflow-hidden",
+            "rounded-t-[1.35rem] border border-b-0 border-zinc-700/60",
+            "bg-gradient-to-b from-zinc-800 to-zinc-900",
+            "shadow-[0_-12px_40px_-8px_rgba(0,0,0,0.45)]",
             mobileExpanded
-              ? "mt-[max(10px,var(--safe-top))] flex-1 rounded-t-[1.75rem]"
-              : "mt-auto shrink-0 rounded-t-[1.35rem]"
+              ? "max-h-[min(78dvh,calc(var(--app-height)-var(--safe-top)-var(--app-bottom-inset)-0.5rem))]"
+              : "max-h-[var(--fields-peek-height)]"
           )}
         >
-          <SwipeableSheet
-            className="min-h-0 flex-1"
-            handleClassName="pt-1.5 pb-0"
-            onSwipeDown={() => onMobileExpandedChange(false)}
-            onSwipeUp={() => onMobileExpandedChange(true)}
+          <div
+            className={cn(
+              "flex min-h-0 flex-col overflow-hidden bg-[#F4F1EA]",
+              mobileExpanded ? "min-h-0 flex-1 rounded-t-[1.2rem]" : "rounded-t-[1.2rem]"
+            )}
           >
-            <button
-              type="button"
-              onClick={() => onMobileExpandedChange(!mobileExpanded)}
-              className="flex h-12 w-full shrink-0 items-center gap-3 px-4"
+            <SwipeableSheet
+              className="min-h-0"
+              handleClassName="pt-2 pb-0"
+              lockDragWhenScrolled={mobileExpanded}
+              onSwipeDown={() => onMobileExpandedChange(false)}
+              onSwipeUp={() => onMobileExpandedChange(true)}
+              dragHandle={
+                <button
+                  type="button"
+                  onClick={() => onMobileExpandedChange(!mobileExpanded)}
+                  className="flex h-[var(--fields-peek-height)] w-full shrink-0 items-center gap-3 px-4"
+                >
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#276749] text-white shadow-md shadow-[#276749]/25">
+                    <MapIcon className="h-4 w-4" />
+                  </span>
+                  <span className="min-w-0 flex-1 text-left">
+                    <span className="block truncate text-[15px] font-bold tracking-tight text-zinc-900">
+                      Поля
+                    </span>
+                    <span className="block truncate text-[11px] font-medium text-zinc-500">
+                      {loading
+                        ? "Завантаження…"
+                        : `${formatCountPlural(fields.length, ["ділянка", "ділянки", "ділянок"])} · ${totalHa.toLocaleString("uk-UA")} га`}
+                    </span>
+                  </span>
+                  {mobileExpanded ? (
+                    <ChevronDown className="h-5 w-5 shrink-0 text-zinc-400" />
+                  ) : (
+                    <ChevronUp className="h-5 w-5 shrink-0 text-zinc-400" />
+                  )}
+                </button>
+              }
+              showHandle
             >
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#276749] text-white shadow-sm">
-                <MapIcon className="h-3.5 w-3.5" />
-              </span>
-              <span className="min-w-0 flex-1 text-left">
-                <span className="block truncate text-[15px] font-bold tracking-tight text-zinc-900">
-                  Поля
-                </span>
-                <span className="block truncate text-[11px] font-medium text-zinc-500">
-                  {loading
-                    ? "Завантаження…"
-                    : `${formatCountPlural(fields.length, ["ділянка", "ділянки", "ділянок"])} · ${totalHa.toLocaleString("uk-UA")} га`}
-                </span>
-              </span>
               {mobileExpanded ? (
-                <ChevronDown className="h-5 w-5 shrink-0 text-zinc-400" />
-              ) : (
-                <ChevronUp className="h-5 w-5 shrink-0 text-zinc-400" />
-              )}
-            </button>
-            {mobileExpanded ? (
-              <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden overscroll-none border-t border-[#E5DFD3]/70">
-                {list}
-              </div>
-            ) : null}
-          </SwipeableSheet>
+                <div
+                  className="flex min-h-0 flex-1 flex-col overflow-hidden overscroll-none border-t border-[#E5DFD3]/70"
+                  data-allow-pan="true"
+                >
+                  {list}
+                </div>
+              ) : null}
+            </SwipeableSheet>
+          </div>
         </div>
       </div>
     </>
@@ -571,7 +586,7 @@ export function FieldsDetailGlassFrame({
     <aside
       className={cn(
         "pointer-events-auto absolute z-20 flex flex-col overflow-hidden border border-white/30 bg-[#F4F1EA] shadow-2xl",
-        "inset-x-0 bottom-0 top-[max(10px,var(--safe-top))] rounded-t-[1.75rem]",
+        "inset-x-0 bottom-[var(--app-bottom-inset)] top-[max(10px,var(--safe-top))] rounded-t-[1.75rem]",
         "md:inset-x-auto md:top-3 md:right-3 md:bottom-3 md:h-auto md:w-[min(100%,580px)] md:rounded-2xl md:bg-[#F4F1EA]/88 md:backdrop-blur-2xl"
       )}
     >

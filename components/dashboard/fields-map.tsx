@@ -379,6 +379,11 @@ type FieldsMapProps = {
   /** Зсув floating chrome під ліву / праву glass-панель */
   chrome?: "list" | "detail";
   onSearchOpenChange?: (open: boolean) => void;
+  onMapChromeChange?: (state: {
+    searchOpen: boolean;
+    drawing: boolean;
+    economics: boolean;
+  }) => void;
   onRequestDeleteSelection?: () => void;
   onEscape?: () => void;
 };
@@ -547,6 +552,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       overlayActive = false,
       chrome = "list",
       onSearchOpenChange,
+      onMapChromeChange,
       onRequestDeleteSelection,
       onEscape,
     },
@@ -604,6 +610,23 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
     useEffect(() => {
       if (overlayActive && chrome === "list") setSearchOpen(false);
     }, [overlayActive, chrome]);
+
+    const isDrawing = activeTool === "draw";
+    const focusMode = isDrawing || geometryEditMode;
+
+    useEffect(() => {
+      onMapChromeChange?.({
+        searchOpen,
+        drawing: isDrawing,
+        economics: mapViewMode === "economics",
+      });
+      return () =>
+        onMapChromeChange?.({
+          searchOpen: false,
+          drawing: false,
+          economics: false,
+        });
+    }, [searchOpen, isDrawing, mapViewMode, onMapChromeChange]);
     const mapCenterRef = useRef<{ lng: number; lat: number }>({
       lng: mountBootView.longitude,
       lat: mountBootView.latitude,
@@ -622,8 +645,6 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
     /** Hover зі списку має пріоритет над кліком — превʼю поля без відкриття sheet */
     const focusFieldId = hoveredFieldId || selectedFieldId;
 
-    const isDrawing = activeTool === "draw";
-    const focusMode = isDrawing || geometryEditMode;
     const blockingOverlay = overlayActive;
 
     const visibleSavedGeoJson: FeatureCollection = {
@@ -800,6 +821,24 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       hasWialonGeofences,
       savedFieldsGeoJson?.features,
       wialonGeofences.features,
+    ]);
+
+    const didAutoFitRef = useRef(false);
+    useEffect(() => {
+      if (!mapReady || wialonLoading || didAutoFitRef.current) return;
+      const hasFields =
+        wialonGeofences.features.length > 0 ||
+        (savedFieldsGeoJson?.features?.length ?? 0) > 0;
+      if (!hasFields) return;
+      didAutoFitRef.current = true;
+      const timer = window.setTimeout(() => fitAllFields(), 150);
+      return () => window.clearTimeout(timer);
+    }, [
+      fitAllFields,
+      mapReady,
+      savedFieldsGeoJson?.features?.length,
+      wialonGeofences.features.length,
+      wialonLoading,
     ]);
 
     const flyTo = useCallback(
@@ -1544,7 +1583,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
                   "top-[calc(var(--safe-top)+4.75rem)] right-3 md:top-auto md:bottom-3",
                   COMMAND_CENTER_DETAIL_FLOAT_INSET_CLASS
                 )
-              : "right-3 bottom-[3.85rem] md:bottom-3"
+              : "right-3 bottom-[calc(var(--app-bottom-inset)+var(--fields-peek-height)+4.75rem)] md:bottom-3"
           )}
         >
           <div
@@ -1619,7 +1658,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
           <div
             className={cn(
               "pointer-events-none absolute z-50 flex justify-center px-4",
-              "top-[max(1rem,var(--safe-top))]",
+              "top-[calc(var(--safe-top)+0.75rem)]",
               chrome === "detail"
                 ? "inset-x-0 md:right-[calc(0.75rem+min(580px,calc(100%-1.5rem)))]"
                 : "inset-x-0 md:left-[calc(0.75rem+min(400px,calc(100%-1.5rem)))]"
@@ -1646,55 +1685,51 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         !(overlayActive && chrome === "list") ? (
           <div
             className={cn(
-              "pointer-events-auto absolute z-30",
-              "top-[calc(var(--safe-top)+0.55rem)] left-3",
-              "md:top-auto md:bottom-[5.25rem]",
+              "pointer-events-auto absolute z-30 left-3 max-w-[min(100%,17rem)]",
+              "bottom-[calc(var(--app-bottom-inset)+var(--fields-peek-height)+5.25rem)]",
+              "md:top-auto md:bottom-[5.25rem] md:max-w-sm",
               chrome === "detail"
                 ? COMMAND_CENTER_DETAIL_FLOAT_INSET_CLASS
                 : "md:left-[calc(0.75rem+min(400px,calc(100%-1.5rem))+12px)]"
             )}
           >
-            <div className="flex max-w-[min(100%,calc(100vw-9.5rem))] items-center gap-2 overflow-x-auto rounded-full border border-[#E5DFD3]/90 bg-[#F4F1EA]/92 px-2.5 py-1.5 shadow-lg backdrop-blur-xl md:max-w-md md:flex-col md:items-stretch md:gap-2 md:rounded-2xl md:px-3 md:py-2.5">
-              <p className="hidden text-[11px] font-bold text-zinc-800 md:block">
-                Витрати від бюджету · {activeSeason}
+            <div className="rounded-2xl border border-[#E5DFD3]/90 bg-[#F4F1EA]/95 px-3 py-2.5 shadow-lg backdrop-blur-xl">
+              <p className="text-xs font-bold text-zinc-900">
+                Бюджет полів · {activeSeason}
               </p>
-              <ul className="flex items-center gap-2.5 md:grid md:grid-cols-2 md:gap-1.5">
+              <p className="mt-0.5 text-[10px] leading-snug text-zinc-600">
+                Колір контуру = % витрат від планового бюджету
+              </p>
+              <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1.5">
                 {(
                   [
                     {
                       color: BUDGET_COLOR_GREEN,
-                      short: "<70%",
-                      label: "У нормі",
+                      label: "<70% норма",
                     },
                     {
                       color: BUDGET_COLOR_YELLOW,
-                      short: "70–100%",
-                      label: "Близько",
+                      label: "70–100%",
                     },
                     {
                       color: BUDGET_COLOR_RED,
-                      short: ">100%",
-                      label: "Понад",
+                      label: ">100%",
                     },
                     {
                       color: BUDGET_COLOR_NEUTRAL,
-                      short: "—",
-                      label: "Немає",
+                      label: "немає плану",
                     },
                   ] as const
                 ).map((item) => (
                   <li
-                    key={item.short}
-                    className="flex shrink-0 items-center gap-1.5 md:rounded-xl md:bg-white/80 md:px-2 md:py-1.5"
+                    key={item.label}
+                    className="flex items-center gap-1.5"
                   >
                     <span
                       className="h-2.5 w-2.5 shrink-0 rounded-sm ring-1 ring-black/10"
                       style={{ backgroundColor: item.color }}
                     />
-                    <span className="text-[10px] font-semibold tabular-nums text-zinc-700 md:hidden">
-                      {item.short}
-                    </span>
-                    <span className="hidden text-[11px] font-semibold text-zinc-800 md:inline">
+                    <span className="text-[10px] font-semibold text-zinc-700">
                       {item.label}
                     </span>
                   </li>

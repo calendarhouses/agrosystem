@@ -61,6 +61,7 @@ body {
   --fuel-gold: #d69e2e;
 
   --bottom-nav-height: 4rem;
+  --fields-peek-height: 3.25rem;
   --app-height: 100dvh;
   --vv-height: 100dvh;
   --app-vv-offset-top: 0px;
@@ -142,6 +143,12 @@ html[data-app-nav="1"] {
   --app-bottom-inset: calc(
     var(--bottom-nav-height) + max(var(--safe-bottom), env(safe-area-inset-bottom, 0px))
   );
+}
+
+@media (max-width: 767px) {
+  html[data-app-nav="1"] {
+    background: #18181b;
+  }
 }
 
 @media (min-width: 768px) {

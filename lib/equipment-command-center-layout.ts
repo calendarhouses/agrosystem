@@ -36,7 +36,7 @@ export function commandCenterFitPadding(
   right: number;
 } {
   if (!isDesktop) {
-    return { top: 56, bottom: 220, left: 24, right: 24 };
+    return { top: 64, bottom: 168, left: 28, right: 28 };
   }
   if (panel === "right") {
     return {

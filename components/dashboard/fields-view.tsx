@@ -119,6 +119,7 @@ export function FieldsView() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [mobileListExpanded, setMobileListExpanded] = useState(false);
   const [mapSearchOpen, setMapSearchOpen] = useState(false);
+  const [mapToolActive, setMapToolActive] = useState(false);
   const [hubInitialTab, setHubInitialTab] = useState<FieldHubTab>("overview");
   const [hubConfirmDelete, setHubConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -1019,6 +1020,11 @@ export function FieldsView() {
           className="h-full w-full"
           chrome={sheetOpen ? "detail" : "list"}
           onSearchOpenChange={setMapSearchOpen}
+          onMapChromeChange={(state) =>
+            setMapToolActive(
+              state.searchOpen || state.drawing || state.economics
+            )
+          }
           onFieldClick={openFieldById}
           onDrawnFeaturesChange={handleDrawnFeaturesChange}
           savedFieldsGeoJson={savedGeoJson}
@@ -1045,7 +1051,7 @@ export function FieldsView() {
             : COMMAND_CENTER_MAP_AREA_CLASS
         )}
       >
-        {!mapSearchOpen && !mobileListExpanded ? (
+        {!mapSearchOpen && !mobileListExpanded && !mapToolActive ? (
           <div
             className={cn(
               "flex",

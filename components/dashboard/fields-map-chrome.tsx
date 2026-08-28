@@ -23,7 +23,14 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { searchPlaces, type GeoSearchResult } from "@/lib/geocode";
+import { useIsMobile } from "@/lib/use-mobile";
 import {
   DEFAULT_WEATHER_LOCATION,
   fetchWeather,
@@ -49,8 +56,105 @@ type FieldsMapChromeProps = {
   align?: "start" | "end";
 };
 
+function WeatherSettingsForm({
+  placeQuery,
+  setPlaceQuery,
+  placeLoading,
+  placeError,
+  placeResults,
+  latDraft,
+  setLatDraft,
+  lngDraft,
+  setLngDraft,
+  onPickPlace,
+  onApplyCoords,
+}: {
+  placeQuery: string;
+  setPlaceQuery: (value: string) => void;
+  placeLoading: boolean;
+  placeError: string | null;
+  placeResults: GeoSearchResult[];
+  latDraft: string;
+  setLatDraft: (value: string) => void;
+  lngDraft: string;
+  setLngDraft: (value: string) => void;
+  onPickPlace: (result: GeoSearchResult) => void;
+  onApplyCoords: () => void;
+}) {
+  return (
+    <>
+      <Input
+        value={placeQuery}
+        onChange={(event) => setPlaceQuery(event.target.value)}
+        placeholder="Село, місто або вулиця…"
+        className="mt-2 h-11 rounded-xl text-base md:h-9 md:text-sm"
+      />
+      <p className="mt-1 text-[11px] text-zinc-500">
+        Пошук локації погоди · не навігація по карті
+      </p>
+
+      {placeLoading ? (
+        <p className="mt-2 inline-flex items-center gap-2 text-xs text-zinc-500">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          Шукаємо…
+        </p>
+      ) : null}
+      {placeError ? (
+        <p className="mt-2 text-xs text-amber-800">{placeError}</p>
+      ) : null}
+
+      {placeResults.length > 0 ? (
+        <ul className="mt-2 max-h-44 space-y-1 overflow-y-auto overscroll-none">
+          {placeResults.map((result) => (
+            <li key={result.id}>
+              <button
+                type="button"
+                onClick={() => onPickPlace(result)}
+                className="w-full rounded-xl px-2.5 py-2.5 text-left text-sm text-zinc-800 transition-colors hover:bg-white"
+              >
+                {result.label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      <div className="mt-3 grid grid-cols-2 gap-2 border-t border-border/60 pt-3">
+        <div className="space-y-1">
+          <Label className="text-[10px] tracking-wider text-zinc-500 uppercase">
+            Lat
+          </Label>
+          <Input
+            value={latDraft}
+            onChange={(event) => setLatDraft(event.target.value)}
+            className="h-11 rounded-xl text-base md:h-9 md:text-sm"
+          />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-[10px] tracking-wider text-zinc-500 uppercase">
+            Lng
+          </Label>
+          <Input
+            value={lngDraft}
+            onChange={(event) => setLngDraft(event.target.value)}
+            className="h-11 rounded-xl text-base md:h-9 md:text-sm"
+          />
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={onApplyCoords}
+        className="mt-2 inline-flex h-11 w-full items-center justify-center rounded-xl bg-emerald-700 text-sm font-bold text-white transition-colors hover:bg-emerald-800"
+      >
+        Застосувати координати
+      </button>
+    </>
+  );
+}
+
 /** Погода — плаваюче скло на карті (сезон обирається в деталях поля) */
 export function FieldsMapChrome({ align = "end" }: FieldsMapChromeProps) {
+  const isMobile = useIsMobile();
   const [location, setLocation] = useState<WeatherLocation>(
     DEFAULT_WEATHER_LOCATION
   );
@@ -159,6 +263,40 @@ export function FieldsMapChrome({ align = "end" }: FieldsMapChromeProps) {
     });
   }
 
+  const settingsTrigger = (
+    <button
+      type="button"
+      aria-label="Налаштування погоди"
+      onClick={() => setSettingsOpen(true)}
+      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-zinc-500 transition-colors hover:bg-white/70 hover:text-zinc-800 md:h-8 md:w-8"
+    >
+      <Settings2 className="h-4 w-4 md:h-3.5 md:w-3.5" />
+    </button>
+  );
+
+  const settingsForm = (
+    <WeatherSettingsForm
+      placeQuery={placeQuery}
+      setPlaceQuery={setPlaceQuery}
+      placeLoading={placeLoading}
+      placeError={placeError}
+      placeResults={placeResults}
+      latDraft={latDraft}
+      setLatDraft={setLatDraft}
+      lngDraft={lngDraft}
+      setLngDraft={setLngDraft}
+      onPickPlace={(result) =>
+        applyLocation({
+          id: result.id,
+          label: result.label,
+          latitude: result.latitude,
+          longitude: result.longitude,
+        })
+      }
+      onApplyCoords={applyCustomCoords}
+    />
+  );
+
   return (
     <div
       className={cn(
@@ -199,99 +337,49 @@ export function FieldsMapChrome({ align = "end" }: FieldsMapChromeProps) {
           </div>
         </div>
 
-        <Popover open={settingsOpen} onOpenChange={setSettingsOpen}>
-          <PopoverTrigger
-            type="button"
-            aria-label="Налаштування погоди"
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-zinc-500 transition-colors hover:bg-white/70 hover:text-zinc-800 md:h-8 md:w-8"
-          >
-            <Settings2 className="h-4 w-4 md:h-3.5 md:w-3.5" />
-          </PopoverTrigger>
-            <PopoverContent
-            align="end"
-            className="w-[min(calc(100vw-1.5rem),20rem)] rounded-2xl border border-white/50 bg-background/95 p-3 text-zinc-900 shadow-xl backdrop-blur-xl"
-          >
-            <PopoverHeader>
-              <PopoverTitle className="flex items-center gap-2 text-sm font-bold text-zinc-900">
-                <MapPin className="h-4 w-4 text-emerald-700" />
-                Локація погоди
-              </PopoverTitle>
-            </PopoverHeader>
-
-            <Input
-              value={placeQuery}
-              onChange={(event) => setPlaceQuery(event.target.value)}
-              placeholder="Село, місто або вулиця…"
-              className="mt-2 h-11 rounded-xl text-base md:h-9 md:text-sm"
-            />
-            <p className="mt-1 text-[11px] text-zinc-500">
-              Пошук локації погоди · не навігація по карті
-            </p>
-
-            {placeLoading ? (
-              <p className="mt-2 inline-flex items-center gap-2 text-xs text-zinc-500">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Шукаємо…
-              </p>
-            ) : null}
-            {placeError ? (
-              <p className="mt-2 text-xs text-amber-800">{placeError}</p>
-            ) : null}
-
-            {placeResults.length > 0 ? (
-              <ul className="mt-2 max-h-44 space-y-1 overflow-y-auto">
-                {placeResults.map((result) => (
-                  <li key={result.id}>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        applyLocation({
-                          id: result.id,
-                          label: result.label,
-                          latitude: result.latitude,
-                          longitude: result.longitude,
-                        })
-                      }
-                      className="w-full rounded-xl px-2.5 py-2.5 text-left text-sm text-zinc-800 transition-colors hover:bg-white"
-                    >
-                      {result.label}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-
-            <div className="mt-3 grid grid-cols-2 gap-2 border-t border-border/60 pt-3">
-              <div className="space-y-1">
-                <Label className="text-[10px] tracking-wider text-zinc-500 uppercase">
-                  Lat
-                </Label>
-                <Input
-                  value={latDraft}
-                  onChange={(event) => setLatDraft(event.target.value)}
-                  className="h-11 rounded-xl text-base md:h-9 md:text-sm"
-                />
+        {isMobile ? (
+          <>
+            {settingsTrigger}
+            <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
+              <SheetContent
+                side="bottom"
+                className="gap-0 rounded-t-3xl border-zinc-200 bg-[#F4F1EA] px-4 pb-[max(1rem,var(--safe-bottom))]"
+              >
+              <SheetHeader className="border-b border-[#E5DFD3] pb-3 text-left">
+                <SheetTitle className="flex items-center gap-2 text-base font-bold text-zinc-900">
+                  <MapPin className="h-4 w-4 text-emerald-700" />
+                  Локація погоди
+                </SheetTitle>
+              </SheetHeader>
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-none py-3">
+                {settingsForm}
               </div>
-              <div className="space-y-1">
-                <Label className="text-[10px] tracking-wider text-zinc-500 uppercase">
-                  Lng
-                </Label>
-                <Input
-                  value={lngDraft}
-                  onChange={(event) => setLngDraft(event.target.value)}
-                  className="h-11 rounded-xl text-base md:h-9 md:text-sm"
-                />
-              </div>
-            </div>
-            <button
+              </SheetContent>
+            </Sheet>
+          </>
+        ) : (
+          <Popover open={settingsOpen} onOpenChange={setSettingsOpen}>
+            <PopoverTrigger
               type="button"
-              onClick={applyCustomCoords}
-              className="mt-2 inline-flex h-11 w-full items-center justify-center rounded-xl bg-emerald-700 text-sm font-bold text-white transition-colors hover:bg-emerald-800"
+              aria-label="Налаштування погоди"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-zinc-500 transition-colors hover:bg-white/70 hover:text-zinc-800 md:h-8 md:w-8"
             >
-              Застосувати координати
-            </button>
-          </PopoverContent>
-        </Popover>
+              <Settings2 className="h-4 w-4 md:h-3.5 md:w-3.5" />
+            </PopoverTrigger>
+            <PopoverContent
+              align="end"
+              className="w-[min(calc(100vw-1.5rem),20rem)] rounded-2xl border border-white/50 bg-background/95 p-3 text-zinc-900 shadow-xl backdrop-blur-xl"
+            >
+              <PopoverHeader>
+                <PopoverTitle className="flex items-center gap-2 text-sm font-bold text-zinc-900">
+                  <MapPin className="h-4 w-4 text-emerald-700" />
+                  Локація погоди
+                </PopoverTitle>
+              </PopoverHeader>
+              {settingsForm}
+            </PopoverContent>
+          </Popover>
+        )}
       </div>
     </div>
   );
