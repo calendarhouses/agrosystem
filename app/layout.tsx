@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import Script from "next/script";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "sonner";
 
@@ -51,6 +52,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="uk"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <Script id="levada-pwa-early" strategy="beforeInteractive">
+        {`window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();window.__levadaDeferredInstall=e;window.dispatchEvent(new Event('levada-pwa-install-ready'));});if('serviceWorker'in navigator){navigator.serviceWorker.register('/sw.js',{scope:'/'});}`}
+      </Script>
       <body className="h-full overflow-hidden bg-zinc-100 font-sans text-zinc-900">
         <PwaBootstrap />
         <AppShell>{children}</AppShell>

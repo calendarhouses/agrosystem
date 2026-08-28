@@ -51,10 +51,48 @@ export function markInstallPromptCompleted(): void {
 
 export type InstallPlatform = "ios" | "android" | "desktop";
 
+export type AndroidBrowserKind = "chrome" | "samsung" | "other";
+
 export function detectInstallPlatform(): InstallPlatform {
   if (typeof window === "undefined") return "desktop";
   const ua = window.navigator.userAgent.toLowerCase();
   if (/iphone|ipad|ipod/.test(ua)) return "ios";
   if (/android/.test(ua)) return "android";
   return "desktop";
+}
+
+export function detectAndroidBrowser(userAgent?: string): AndroidBrowserKind {
+  const ua = (userAgent ?? (typeof navigator !== "undefined" ? navigator.userAgent : "")).toLowerCase();
+  if (/samsungbrowser/i.test(ua)) return "samsung";
+  if (/chrome|crios|crmo/i.test(ua) && !/edg/i.test(ua)) return "chrome";
+  return "other";
+}
+
+/** Слухачі для автопереходу кроків, коли відкривається системне меню (iOS Share). */
+export function onSystemSheetOpened(listener: () => void) {
+  if (typeof window === "undefined") return () => {};
+  function handleHidden() {
+    if (document.visibilityState === "hidden") listener();
+  }
+  window.addEventListener("visibilitychange", handleHidden);
+  window.addEventListener("pagehide", handleHidden);
+  return () => {
+    window.removeEventListener("visibilitychange", handleHidden);
+    window.removeEventListener("pagehide", handleHidden);
+  };
+}
+
+export function onSystemSheetClosed(listener: () => void) {
+  if (typeof window === "undefined") return () => {};
+  function handleVisible() {
+    if (document.visibilityState === "visible") listener();
+  }
+  window.addEventListener("visibilitychange", handleVisible);
+  window.addEventListener("pageshow", handleVisible);
+  window.addEventListener("focus", handleVisible);
+  return () => {
+    window.removeEventListener("visibilitychange", handleVisible);
+    window.removeEventListener("pageshow", handleVisible);
+    window.removeEventListener("focus", handleVisible);
+  };
 }

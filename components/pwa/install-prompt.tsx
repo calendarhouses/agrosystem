@@ -7,11 +7,7 @@ import { Sprout } from "lucide-react";
 import { AndroidInstallGuide } from "@/components/pwa/android-install-guide";
 import { IosInstallGuide } from "@/components/pwa/ios-install-guide";
 import { Button } from "@/components/ui/button";
-import {
-  getDeferredInstallPrompt,
-  onInstallPromptReady,
-  triggerInstallPrompt,
-} from "@/lib/pwa-install-prompt";
+import { tryInstallWithWait } from "@/lib/pwa-install-prompt";
 import {
   APP_BRAND_NAME,
   isMobileUserAgent,
@@ -25,11 +21,9 @@ export function InstallPrompt() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextPath = searchParams.get("next") || "/login";
-  const [nativeInstallReady, setNativeInstallReady] = useState(
-    () => getDeferredInstallPrompt() != null
-  );
   const [iosGuideOpen, setIosGuideOpen] = useState(false);
   const [androidGuideOpen, setAndroidGuideOpen] = useState(false);
+  const [androidTrying, setAndroidTrying] = useState(false);
 
   useEffect(() => {
     if (!isMobileUserAgent()) {
@@ -40,12 +34,6 @@ export function InstallPrompt() {
       router.replace(nextPath.startsWith("/") ? nextPath : "/login");
     }
   }, [nextPath, router]);
-
-  useEffect(() => {
-    return onInstallPromptReady(() => {
-      setNativeInstallReady(true);
-    });
-  }, []);
 
   function goNext() {
     router.replace(nextPath.startsWith("/") ? nextPath : "/login");
@@ -60,18 +48,24 @@ export function InstallPrompt() {
     setIosGuideOpen(true);
   }
 
-  function onInstallAndroid() {
+  async function onInstallAndroid() {
+    setAndroidTrying(true);
+    try {
+      const outcome = await tryInstallWithWait(4500);
+      if (outcome === "accepted") {
+        markInstallPromptCompleted();
+        goNext();
+        return;
+      }
+    } finally {
+      setAndroidTrying(false);
+    }
     setAndroidGuideOpen(true);
   }
 
   function onGuideDone() {
     markInstallPromptCompleted();
     goNext();
-  }
-
-  async function onTryNativeInstall(): Promise<boolean> {
-    const outcome = await triggerInstallPrompt();
-    return outcome === "accepted";
   }
 
   return (
@@ -86,8 +80,6 @@ export function InstallPrompt() {
         open={androidGuideOpen}
         onClose={() => setAndroidGuideOpen(false)}
         onDone={onGuideDone}
-        nativeAvailable={nativeInstallReady}
-        onTryNative={onTryNativeInstall}
       />
 
       <div className="relative flex min-h-dvh flex-col overflow-hidden bg-[#F4F1EA] text-zinc-900">
@@ -115,6 +107,7 @@ export function InstallPrompt() {
               type="button"
               size="lg"
               className="h-12 w-full rounded-2xl bg-[#276749] text-base font-semibold text-white hover:bg-[#1f5239]"
+              disabled={androidTrying}
               onClick={onInstallIos}
             >
               Встановити для iOS
@@ -124,9 +117,10 @@ export function InstallPrompt() {
               type="button"
               size="lg"
               className="h-12 w-full rounded-2xl bg-[#276749] text-base font-semibold text-white hover:bg-[#1f5239]"
-              onClick={onInstallAndroid}
+              disabled={androidTrying}
+              onClick={() => void onInstallAndroid()}
             >
-              Встановити для Android
+              {androidTrying ? "Перевіряємо…" : "Встановити для Android"}
             </Button>
 
             <Button
@@ -134,6 +128,7 @@ export function InstallPrompt() {
               size="lg"
               variant="secondary"
               className="h-12 w-full rounded-2xl border border-[#E5DFD3] bg-zinc-200/80 text-base font-semibold text-zinc-700 hover:bg-zinc-300/80"
+              disabled={androidTrying}
               onClick={onSkip}
             >
               Пропустити зараз
