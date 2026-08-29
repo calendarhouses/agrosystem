@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/drawer";
 import type { MapFieldItem } from "@/lib/map-fields";
 import { formatCountPlural } from "@/lib/plural";
+import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
 
 /** Єдина висота мобільних шторок полів (список / деталі / наряд / списання) */
@@ -287,8 +288,10 @@ export function FieldsGlassPanel({
   onHover,
   onFitAll,
 }: FieldsGlassPanelProps) {
+  const isMobile = useIsMobile();
   const [query, setQuery] = useState("");
-  const showFullSnap = mobileDetailOpen || mobileExpanded;
+  // Drawer порталиться в body — md:hidden батька його НЕ ховає. Лише JS-гард.
+  const showFullSnap = isMobile && (mobileDetailOpen || mobileExpanded);
   const drawerOpenedAtRef = useRef(0);
   const peekSwipeRef = useRef<{ y: number; t: number } | null>(null);
 
@@ -619,6 +622,7 @@ export function FieldsGlassPanel({
 
   return (
     <>
+      {/* ПК-список: ховається ззовні (fields-view), коли відкриті деталі */}
       <aside
         className={cn(
           COMMAND_CENTER_GLASS_PANEL_CLASS,
@@ -628,8 +632,9 @@ export function FieldsGlassPanel({
         {list}
       </aside>
 
-      {/* Мобільна шторка — лише md:hidden. Не чіпати з ПК-гілки (FieldsDetailGlassFrame). */}
-      <div className="md:hidden" data-fields-mobile-chrome="">
+      {/* Мобільна шторка: mount лише на <768px — інакше vaul portal лізе на ПК */}
+      {isMobile ? (
+      <div data-fields-mobile-chrome="">
         {!mobileDetailOpen && !mobileExpanded ? (
           mobileDrawerVisible ? (
             <button
@@ -750,6 +755,7 @@ export function FieldsGlassPanel({
           </DrawerContent>
         </Drawer>
       </div>
+      ) : null}
     </>
   );
 }

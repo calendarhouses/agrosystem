@@ -1138,6 +1138,8 @@ export function FieldsView() {
         ) : null}
       </div>
 
+      {/* ПК: при деталях список ховаємо. Моб: панель завжди (peek/drawer). */}
+      {isMobile || !sheetOpen ? (
       <FieldsGlassPanel
         fields={mapFields}
         loading={wialonLoading}
@@ -1155,7 +1157,7 @@ export function FieldsView() {
         onMobileExpandedChange={setMobileListExpanded}
         mobileDrawerVisible={mobileDrawerVisible}
         onMobileDrawerVisibleChange={setMobileDrawerVisible}
-        mobileDetailOpen={sheetOpen}
+        mobileDetailOpen={isMobile && sheetOpen}
         onMobileDetailClose={handleMobileDetailClose}
         mobileDetail={
           sheetOpen && isMobile ? (
@@ -1229,6 +1231,7 @@ export function FieldsView() {
         onHover={scheduleListHover}
         onFitAll={() => fieldsMapRef.current?.fitAllFields()}
       />
+      ) : null}
 
       {/* ПК-тільки: glass справа. Мобільні деталі — лише через FieldsGlassPanel + embeddedInMobileDrawer. */}
       {sheetOpen && !isMobile ? (
