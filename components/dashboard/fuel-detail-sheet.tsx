@@ -390,39 +390,35 @@ export function FuelDetailSheet({
               }
             />
 
-            <div className={fuelSheetBodyClass}>
+            <div
+              className={fuelSheetBodyClass}
+              data-vaul-no-drag=""
+              data-allow-pan="true"
+            >
               {/* Динаміка залишку */}
               <section className="space-y-3 rounded-2xl border border-zinc-200/70 bg-white/80 p-4 shadow-sm">
-                <div className="flex items-end justify-between gap-3">
-                  <div>
-                    <p className="text-[11px] font-semibold tracking-[0.08em] text-zinc-500 uppercase">
-                      Динаміка залишку · 7 днів
-                    </p>
-                    <p className="mt-1 text-2xl font-bold tracking-tight tabular-nums text-zinc-900">
-                      {formatLiters(storage.currentVolume)}{" "}
-                      <span className="text-sm font-semibold text-zinc-500">
-                        л
-                      </span>
-                    </p>
-                  </div>
-                  <div className="flex gap-3 text-right">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="min-w-0 text-[11px] font-semibold tracking-[0.08em] text-zinc-500 uppercase">
+                    Динаміка залишку · 7 днів
+                  </p>
+                  <div className="flex shrink-0 gap-3 text-right">
                     <div>
-                      <p className="inline-flex items-center gap-1 text-[10px] font-semibold tracking-wide text-zinc-500 uppercase">
+                      <p className="inline-flex items-center justify-end gap-1 text-[10px] font-semibold tracking-wide text-zinc-500 uppercase">
                         <TrendingDown className="h-3 w-3" />
                         Витрата
                       </p>
-                      <p className="text-sm font-semibold tabular-nums text-zinc-800">
+                      <p className="mt-0.5 text-sm font-semibold tabular-nums text-zinc-800">
                         {dailyBurnL != null
                           ? `${formatLiters(dailyBurnL)} л/д`
                           : "—"}
                       </p>
                     </div>
                     <div>
-                      <p className="inline-flex items-center gap-1 text-[10px] font-semibold tracking-wide text-zinc-500 uppercase">
+                      <p className="inline-flex items-center justify-end gap-1 text-[10px] font-semibold tracking-wide text-zinc-500 uppercase">
                         <Calendar className="h-3 w-3" />
                         Запас
                       </p>
-                      <p className="text-sm font-semibold tabular-nums text-zinc-800">
+                      <p className="mt-0.5 text-sm font-semibold tabular-nums text-zinc-800">
                         {daysLeft != null
                           ? `~${daysLeft} ${daysWord(daysLeft)}`
                           : "—"}
@@ -430,6 +426,10 @@ export function FuelDetailSheet({
                     </div>
                   </div>
                 </div>
+                <p className="text-2xl font-bold tracking-tight tabular-nums text-zinc-900">
+                  {formatLiters(storage.currentVolume)}{" "}
+                  <span className="text-sm font-semibold text-zinc-500">л</span>
+                </p>
 
                 <div className="min-w-0 pt-1">
                   {historyLoading && sparkline.length === 0 ? (
@@ -440,27 +440,36 @@ export function FuelDetailSheet({
                 </div>
               </section>
 
-              {/* GPS KPI */}
-              <section className="flex items-center justify-between gap-4 rounded-2xl border border-zinc-200/70 bg-white/80 p-4 shadow-sm">
-                <div className="flex min-w-0 items-center gap-3">
-                  <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-700 ring-1 ring-amber-500/15">
-                    <Radar className="h-4 w-4" strokeWidth={2} />
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-zinc-900">
-                      Підтверджено Wialon
-                    </p>
-                    <p className="truncate text-[11px] text-zinc-500">
-                      {gpsAccuracy.total === 0
-                        ? "Немає outbound за період"
-                        : `${gpsAccuracy.confirmed}/${gpsAccuracy.total} заправок (±${WIALON_MATCH_TOLERANCE_L} л)`}
-                    </p>
+              {/* GPS-звірка — інформативний KPI, не кнопка */}
+              {gpsAccuracy.total > 0 ? (
+                <section className="rounded-2xl border border-zinc-200/70 bg-white/80 p-4 shadow-sm">
+                  <div className="flex items-start gap-3">
+                    <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-700 ring-1 ring-amber-500/15">
+                      <Radar className="h-4 w-4" strokeWidth={2} />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-zinc-900">
+                            Звірка з GPS (Wialon)
+                          </p>
+                          <p className="mt-0.5 text-[12px] leading-snug text-zinc-500">
+                            Скільки заправок з цього складу підтвердив датчик
+                            рівня палива (±{WIALON_MATCH_TOLERANCE_L} л).
+                          </p>
+                        </div>
+                        <p className="shrink-0 text-2xl font-bold tracking-tight tabular-nums text-zinc-900">
+                          {gpsAccuracy.pct}%
+                        </p>
+                      </div>
+                      <p className="mt-2 text-[11px] font-medium tabular-nums text-zinc-600">
+                        {gpsAccuracy.confirmed} з {gpsAccuracy.total} заправок
+                        збіглись із ДУТ
+                      </p>
+                    </div>
                   </div>
-                </div>
-                <p className="shrink-0 text-3xl font-bold tracking-tight tabular-nums text-zinc-900">
-                  {gpsAccuracy.pct != null ? `${gpsAccuracy.pct}%` : "—"}
-                </p>
-              </section>
+                </section>
+              ) : null}
 
               {/* Виписка */}
               <section className="space-y-2">

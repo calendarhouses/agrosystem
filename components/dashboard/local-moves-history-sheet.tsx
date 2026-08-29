@@ -27,6 +27,11 @@ import {
   type LocalMoveRow,
   type QuickIssueFieldOption,
 } from "@/app/admin/inventory/actions";
+import {
+  FuelPanelShell,
+  FuelSheetHeader,
+  fuelSheetBodyClass,
+} from "@/components/dashboard/fuel-sheet-chrome";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -42,13 +47,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { AttachmentViewerButton } from "@/components/dashboard/attachment-viewer";
 
@@ -103,51 +101,52 @@ export function LocalMovesHistorySheet({
   }, [open]);
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="right"
-        className={cn(
-          "flex w-full flex-col gap-0 border-l border-border/50 bg-background p-0 sm:max-w-md",
-          "[&_[data-slot=sheet-close]]:text-muted-foreground"
-        )}
-      >
-        <SheetHeader className="shrink-0 border-b border-border/50 bg-card/40 px-6 py-5 pr-14 text-left backdrop-blur-md">
-          <SheetTitle className="text-xl font-semibold tracking-tight">
-            Історія операцій
-          </SheetTitle>
-          <SheetDescription className="text-sm text-muted-foreground">
-            Локальні приходи й списання · залишок на хабі — за всі сезони
-          </SheetDescription>
-          {season ? (
+    <FuelPanelShell
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Історія операцій"
+    >
+      <FuelSheetHeader
+        icon={History}
+        accent="zinc"
+        title="Історія операцій"
+        description="Локальні приходи й списання · залишок на хабі — за всі сезони"
+        meta={
+          season ? (
             <button
               type="button"
               onClick={() => setSeasonOnly((v) => !v)}
-              className="mt-2 w-fit rounded-full border border-border/60 px-2.5 py-1 text-[11px] font-semibold text-muted-foreground transition hover:bg-muted/60"
+              className="rounded-full border border-[#E5DFD3] bg-white px-2.5 py-1 text-[11px] font-semibold text-zinc-600 transition hover:bg-zinc-50"
             >
               {seasonOnly
                 ? `Сезон ${season} · показати всі`
                 : "Усі сезони · лише активний"}
             </button>
-          ) : null}
-        </SheetHeader>
+          ) : null
+        }
+      />
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-5">
+      <div
+        className={cn(fuelSheetBodyClass, "gap-0 space-y-0 px-0 sm:px-0")}
+        data-vaul-no-drag=""
+        data-allow-pan="true"
+      >
           {loading ? (
-            <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
+            <div className="flex items-center justify-center gap-2 py-16 text-sm text-zinc-500">
               <Loader2 className="h-5 w-5 animate-spin" />
               Завантаження…
             </div>
           ) : error ? (
-            <div className="my-4 rounded-xl border border-amber-200/80 bg-amber-50/80 px-4 py-3 text-sm text-amber-900">
+            <div className="mx-5 my-4 rounded-xl border border-amber-200/80 bg-amber-50/80 px-4 py-3 text-sm text-amber-900">
               {error}
             </div>
           ) : moves.length === 0 ? (
-            <p className="py-16 text-center text-sm text-muted-foreground">
+            <p className="py-16 text-center text-sm text-zinc-500">
               Поки немає локальних операцій
               {seasonOnly && season ? ` за сезон ${season}` : ""}
             </p>
           ) : (
-            <ul>
+            <ul className="px-5">
               {moves.map((move) => (
                 <LocalMoveListItem
                   key={move.id}
@@ -169,9 +168,8 @@ export function LocalMovesHistorySheet({
               ))}
             </ul>
           )}
-        </div>
-      </SheetContent>
-    </Sheet>
+      </div>
+    </FuelPanelShell>
   );
 }
 
@@ -602,7 +600,7 @@ export function EditLocalMoveInline({
                   </span>
                   <ChevronDown className="h-4 w-4 shrink-0 text-zinc-400" />
                 </PopoverTrigger>
-                <PopoverContent
+                <PopoverContent sheetOnMobile={false}
                   align="start"
                   sideOffset={6}
                   className="w-[var(--radix-popover-trigger-width)] min-w-[16rem] rounded-2xl border border-zinc-200 bg-white p-0 shadow-xl"
@@ -713,7 +711,7 @@ export function EditLocalMoveInline({
                     </span>
                     <ChevronDown className="h-4 w-4 shrink-0 text-zinc-400" />
                   </PopoverTrigger>
-                  <PopoverContent
+                  <PopoverContent sheetOnMobile={false}
                     align="start"
                     sideOffset={6}
                     className="w-[var(--radix-popover-trigger-width)] rounded-2xl border border-zinc-200 bg-white p-0 shadow-xl"
@@ -771,7 +769,7 @@ export function EditLocalMoveInline({
                     </span>
                     <ChevronDown className="h-4 w-4 shrink-0 text-zinc-400" />
                   </PopoverTrigger>
-                  <PopoverContent
+                  <PopoverContent sheetOnMobile={false}
                     align="start"
                     sideOffset={6}
                     className="w-[var(--radix-popover-trigger-width)] min-w-[16rem] rounded-2xl border border-zinc-200 bg-white p-0 shadow-xl"
@@ -890,7 +888,7 @@ export function EditLocalMoveInline({
                   </span>
                   <ChevronDown className="h-4 w-4 shrink-0 text-zinc-400" />
                 </PopoverTrigger>
-                <PopoverContent
+                <PopoverContent sheetOnMobile={false}
                   align="start"
                   sideOffset={6}
                   className="w-[var(--radix-popover-trigger-width)] rounded-2xl border border-zinc-200 bg-white p-0 shadow-xl"

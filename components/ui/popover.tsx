@@ -49,7 +49,17 @@ function PopoverContent({
     sheetOnMobile?: boolean
   }) {
   const isMobile = useIsMobile()
-  const insideDrawer = useInsideDrawer()
+  /** Portal поза деревом Drawer/Sheet → context часто false; дивимось і DOM. */
+  const insideDrawerCtx = useInsideDrawer()
+  const [overlayOpenInDom, setOverlayOpenInDom] = React.useState(false)
+  React.useLayoutEffect(() => {
+    setOverlayOpenInDom(
+      !!document.querySelector(
+        '[data-slot="drawer-content"][data-state="open"], [data-slot="sheet-content"][data-state="open"]'
+      )
+    )
+  }, [])
+  const insideDrawer = insideDrawerCtx || overlayOpenInDom
   const closeRef = React.useRef<HTMLButtonElement>(null)
   const useSheet = isMobile && sheetOnMobile && !insideDrawer
 

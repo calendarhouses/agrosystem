@@ -43,13 +43,7 @@ import {
 import { mergeEquipmentOpsOptions } from "@/lib/equipment-ops-options";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -1234,7 +1228,7 @@ export function FuelView({
       />
 
       {isMobile ? (
-        <div className="sticky top-0 z-30 border-b border-[#E5DFD3]/80 bg-[#F4F1EA]/92 px-4 pt-3 pb-2.5 backdrop-blur-xl">
+        <div className="sticky top-0 z-30 border-b border-[#E5DFD3]/80 bg-[#F4F1EA]/92 px-4 pt-[max(0.75rem,var(--safe-top))] pb-2.5 backdrop-blur-xl">
           <div
             className="inline-flex w-full rounded-2xl border border-[#E5DFD3]/90 bg-white/85 p-1 shadow-sm"
             role="tablist"
@@ -1796,121 +1790,45 @@ export function FuelView({
         onSuccess={refreshStorages}
       />
 
-      <Dialog
+      <ConfirmDeleteDialog
         open={deleteStorage != null}
         onOpenChange={(open) => {
           if (!open && !deletingStorage) setDeleteStorage(null);
         }}
-      >
-        <DialogContent
-          showCloseButton={false}
-          className={cn(
-            "gap-0 overflow-hidden rounded-3xl border border-zinc-200/80 bg-white p-8 text-zinc-900 shadow-2xl sm:max-w-md",
-            "[&_[data-slot=dialog-close]]:hidden"
-          )}
-        >
-          <div className="flex flex-col items-center text-center">
-            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-rose-100">
-              <Trash2 className="text-rose-600" size={24} />
-            </div>
-            <DialogHeader className="items-center text-center">
-              <DialogTitle className="text-xl font-bold text-zinc-900">
-                Видалити склад?
-              </DialogTitle>
-              <DialogDescription className="mt-2 text-base text-zinc-500">
-                «
-                <strong className="font-semibold text-zinc-900">
-                  {deleteStorage?.name}
-                </strong>
-                » зникне з обліку. Можна лише якщо залишок 0 л і немає операцій
-                в журналі.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="mt-6 flex w-full gap-3">
-              <Button
-                type="button"
-                variant="secondary"
-                disabled={deletingStorage}
-                onClick={() => setDeleteStorage(null)}
-                className="h-11 flex-1 rounded-xl"
-              >
-                Скасувати
-              </Button>
-              <Button
-                type="button"
-                disabled={deletingStorage}
-                onClick={() => void confirmDeleteStorage()}
-                className="h-11 flex-1 rounded-xl bg-rose-600 text-white hover:bg-rose-700"
-              >
-                {deletingStorage ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  "Видалити"
-                )}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+        title="Видалити склад?"
+        description={
+          <>
+            «
+            <strong className="font-semibold text-zinc-800">
+              {deleteStorage?.name}
+            </strong>
+            » зникне з обліку. Можна лише якщо залишок 0 л і немає операцій в
+            журналі.
+          </>
+        }
+        pending={deletingStorage}
+        onConfirm={() => void confirmDeleteStorage()}
+      />
 
-      <Dialog
+      <ConfirmDeleteDialog
         open={deleteTx != null}
         onOpenChange={(open) => {
           if (!open && !deleting) setDeleteTx(null);
         }}
-      >
-        <DialogContent
-          showCloseButton={false}
-          className={cn(
-            "gap-0 overflow-hidden rounded-3xl border border-zinc-200/80 bg-white p-8 text-zinc-900 shadow-2xl sm:max-w-md",
-            "[&_[data-slot=dialog-close]]:hidden"
-          )}
-        >
-          <div className="flex flex-col items-center text-center">
-            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-rose-100">
-              <Trash2 className="text-rose-600" size={24} />
-            </div>
-            <DialogHeader className="items-center text-center">
-              <DialogTitle className="text-xl font-bold text-zinc-900">
-                Видалити операцію?
-              </DialogTitle>
-              <DialogDescription className="mt-2 text-base text-zinc-500">
-                Запис на{" "}
-                <strong className="font-semibold text-zinc-900">
-                  {deleteTx
-                    ? `${formatLiters(deleteTx.amountLiters)} L`
-                    : "—"}
-                </strong>{" "}
-                буде видалено з журналу, а залишки палива відкотяться відповідно
-                до типу операції.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="mt-6 grid w-full grid-cols-2 gap-3">
-              <Button
-                type="button"
-                variant="ghost"
-                className="h-12 rounded-xl border-none bg-zinc-100 font-medium text-zinc-700 hover:bg-zinc-200"
-                onClick={() => setDeleteTx(null)}
-                disabled={deleting}
-              >
-                Скасувати
-              </Button>
-              <Button
-                type="button"
-                className="h-12 rounded-xl border-none bg-rose-500 font-medium text-white hover:bg-rose-600"
-                onClick={() => void confirmDelete()}
-                disabled={deleting}
-              >
-                {deleting ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  "Так, видалити"
-                )}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+        title="Видалити операцію?"
+        description={
+          <>
+            Запис на{" "}
+            <strong className="font-semibold text-zinc-800">
+              {deleteTx ? `${formatLiters(deleteTx.amountLiters)} л` : "—"}
+            </strong>{" "}
+            зникне з журналу, а залишки палива відкотяться відповідно до типу
+            операції.
+          </>
+        }
+        pending={deleting}
+        onConfirm={() => void confirmDelete()}
+      />
 
       <FuelDetailSheet
         open={fuelSheetOpen}

@@ -58,8 +58,11 @@ export const fuelSheetContentClass = cn(
   "[&_[data-slot=sheet-close]]:hover:bg-white [&_[data-slot=sheet-close]]:hover:text-zinc-800"
 );
 
-export const fuelSheetBodyClass =
-  "flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-5 py-5 sm:px-6";
+export const fuelSheetBodyClass = cn(
+  "flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto overscroll-contain",
+  "touch-pan-y px-5 py-5",
+  "pb-[max(2.75rem,calc(1.5rem+var(--safe-bottom)))] sm:px-6"
+);
 
 export const fuelSheetStickyFooterClass = cn(
   "mt-auto shrink-0 border-t border-[#E5DFD3]/80",
@@ -125,18 +128,22 @@ export function FuelPanelShell({
 
   if (isMobile) {
     return (
-      <Drawer open={open} onOpenChange={onOpenChange}>
+      <Drawer open={open} onOpenChange={onOpenChange} handleOnly>
         <DrawerContent
           className={cn(
             FUEL_MOBILE_DRAWER_SIZE,
-            "flex flex-col overflow-hidden border-[#E5DFD3]/90 bg-[#F4F1EA]",
+            "flex flex-col overflow-hidden border-[#E5DFD3]/90 bg-[#F4F1EA] pb-0",
             className
           )}
           overlayClassName="pointer-events-auto! bg-black/55"
+          showCloseButton={false}
         >
           <DrawerHandle />
           <DrawerTitle className="sr-only">{title}</DrawerTitle>
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div
+            className="flex min-h-0 flex-1 flex-col overflow-hidden"
+            data-vaul-no-drag=""
+          >
             {children}
           </div>
         </DrawerContent>

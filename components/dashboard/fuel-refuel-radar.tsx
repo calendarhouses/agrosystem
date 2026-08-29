@@ -295,7 +295,7 @@ export function FuelRefuelRadar({
           }
         />
 
-        <div className={cn(fuelSheetBodyClass, "gap-3")}>
+        <div className={cn(fuelSheetBodyClass, "gap-3")} data-vaul-no-drag="" data-allow-pan="true">
           {events.length === 0 ? (
             <div className="flex flex-col items-center gap-3 rounded-2xl border border-zinc-200/70 bg-white/80 py-12 text-center shadow-sm">
               <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 ring-1 ring-emerald-500/20">
@@ -436,7 +436,10 @@ export function FuelRefuelRadar({
                               : null}
                           </SelectValue>
                         </SelectTrigger>
-                        <SelectContent className="z-[80] rounded-2xl border border-zinc-200 bg-white p-1.5 text-zinc-900 shadow-lg">
+                        <SelectContent
+                          sheetOnMobile={false}
+                          className="z-[80] rounded-2xl border border-zinc-200 bg-white p-1.5 text-zinc-900 shadow-lg"
+                        >
                           {storages.length === 0 ? (
                             <SelectItem value="__none" disabled>
                               Немає складів

@@ -143,7 +143,7 @@ export function FuelStorageDialog({
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
           onSubmit={handleSubmit}
         >
-          <div className={fuelSheetBodyClass}>
+          <div className={fuelSheetBodyClass} data-vaul-no-drag="" data-allow-pan="true">
             <div className="space-y-1.5">
               <Label htmlFor="storage-name" className={fuelFieldLabelClass}>
                 Назва складу
@@ -178,7 +178,10 @@ export function FuelStorageDialog({
                       : "Стаціонарний"}
                   </SelectValue>
                 </SelectTrigger>
-                <SelectContent className="z-[80] rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-lg">
+                <SelectContent
+                  sheetOnMobile={false}
+                  className="z-[80] rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-lg"
+                >
                   <SelectItem
                     value="stationary"
                     className={fuelSelectItemClass}

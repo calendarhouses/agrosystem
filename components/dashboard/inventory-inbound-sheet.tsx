@@ -36,6 +36,7 @@ import {
   type PendingAttachment,
 } from "@/components/dashboard/attachment-dropzone";
 import {
+  FuelPanelShell,
   FuelSheetHeader,
   fuelFieldLabelClass,
   fuelHeroAmountClass,
@@ -44,7 +45,6 @@ import {
   fuelSelectItemClass,
   fuelSelectTriggerClass,
   fuelSheetBodyClass,
-  fuelSheetContentClass,
   fuelSheetStickyFooterClass,
 } from "@/components/dashboard/fuel-sheet-chrome";
 import { Button } from "@/components/ui/button";
@@ -68,7 +68,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { useSeasonStore } from "@/lib/season-store";
 import { cn } from "@/lib/utils";
 
@@ -336,11 +335,11 @@ export function InventoryInboundSheet({
   const isHarvest = category === "harvest";
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="right"
-        className={cn("flex flex-col", fuelSheetContentClass)}
-      >
+    <FuelPanelShell
+      open={open}
+      onOpenChange={onOpenChange}
+      title={isHarvest ? "Прийом врожаю" : "Прихід на склад"}
+    >
         <FuelSheetHeader
           icon={isHarvest ? Wheat : PackagePlus}
           title={isHarvest ? "Прийом врожаю" : "Прихід на склад"}
@@ -353,7 +352,11 @@ export function InventoryInboundSheet({
         />
 
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
-          <div className={cn(fuelSheetBodyClass, "space-y-5")}>
+          <div
+            className={cn(fuelSheetBodyClass, "space-y-5")}
+            data-vaul-no-drag=""
+            data-allow-pan="true"
+          >
             {loading ? (
               <div className="flex items-center justify-center gap-2 py-20 text-sm text-zinc-500">
                 <Loader2 className="h-5 w-5 animate-spin" />
@@ -390,7 +393,7 @@ export function InventoryInboundSheet({
                         {categoryLabel}
                       </SelectValue>
                     </SelectTrigger>
-                    <SelectContent
+                    <SelectContent sheetOnMobile={false}
                       align="start"
                       className="z-[80] rounded-2xl border border-zinc-200 bg-white p-1.5 text-zinc-900 shadow-xl"
                     >
@@ -472,7 +475,7 @@ export function InventoryInboundSheet({
                         </span>
                         <ChevronDown className="h-4 w-4 shrink-0 text-zinc-400" />
                       </PopoverTrigger>
-                      <PopoverContent
+                      <PopoverContent sheetOnMobile={false}
                         align="start"
                         sideOffset={6}
                         className="w-[min(calc(100vw-2.5rem),22rem)] rounded-2xl border border-zinc-200 bg-white p-0 text-zinc-900 shadow-xl"
@@ -552,7 +555,7 @@ export function InventoryInboundSheet({
                         </span>
                         <ChevronDown className="h-4 w-4 shrink-0 text-zinc-400" />
                       </PopoverTrigger>
-                      <PopoverContent
+                      <PopoverContent sheetOnMobile={false}
                         align="start"
                         sideOffset={6}
                         className="w-[min(calc(100vw-2.5rem),22rem)] rounded-2xl border border-zinc-200 bg-white p-0 shadow-xl"
@@ -656,7 +659,7 @@ export function InventoryInboundSheet({
                       </span>
                       <ChevronDown className="h-4 w-4 shrink-0 text-zinc-400" />
                     </PopoverTrigger>
-                    <PopoverContent
+                    <PopoverContent sheetOnMobile={false}
                       align="start"
                       sideOffset={6}
                       className="w-[min(calc(100vw-2.5rem),22rem)] rounded-2xl border border-zinc-200 bg-white p-0 shadow-xl"
@@ -762,8 +765,7 @@ export function InventoryInboundSheet({
             </Button>
           </div>
         </form>
-      </SheetContent>
-    </Sheet>
+    </FuelPanelShell>
   );
 }
 

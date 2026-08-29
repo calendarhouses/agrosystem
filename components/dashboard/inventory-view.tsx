@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   endOfDay,
@@ -30,6 +30,7 @@ import {
   Pencil,
   Plus,
   Search,
+  ShoppingCart,
   Sprout,
   Trash2,
   Wheat,
@@ -54,7 +55,6 @@ import { AttachmentViewerButton } from "@/components/dashboard/attachment-viewer
 import { QuickIssueSheet } from "@/components/dashboard/quick-issue-sheet";
 import { InventoryInboundSheet } from "@/components/dashboard/inventory-inbound-sheet";
 import {
-  InventorySaleButton,
   InventorySaleSheet,
 } from "@/components/dashboard/inventory-sale-sheet";
 import {
@@ -62,6 +62,12 @@ import {
   LocalMovesHistorySheet,
 } from "@/components/dashboard/local-moves-history-sheet";
 
+import {
+  FuelPanelShell,
+  FuelSheetHeader,
+  type FuelSheetAccent,
+  fuelSheetBodyClass,
+} from "@/components/dashboard/fuel-sheet-chrome";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -83,13 +89,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
-import {
   filterDashboardByRange,
   formatInventoryMoney,
   formatInventoryQty,
@@ -102,7 +101,16 @@ import {
 } from "@/lib/inventory-bas";
 import { useSeasonStore } from "@/lib/season-store";
 import { useFieldRealtime } from "@/lib/use-field-realtime";
+import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
+
+type FlowFilter = "purchase" | "sale" | "harvest";
+
+const FLOW_FILTER_LABEL: Record<FlowFilter, string> = {
+  purchase: "Закупки",
+  sale: "Продажі",
+  harvest: "Випуск",
+};
 
 const CATEGORY_ORDER: InventoryCategory[] = INVENTORY_CATEGORIES;
 const CATEGORY_ICONS: Record<InventoryCategory, LucideIcon> = {
@@ -142,6 +150,14 @@ const CATEGORY_CARD_STYLE: Record<
     icon: "bg-zinc-800 text-white shadow-zinc-800/20",
     chip: "bg-zinc-100 text-zinc-700",
   },
+};
+
+const CATEGORY_SHEET_ACCENT: Record<InventoryCategory, FuelSheetAccent> = {
+  zzr: "emerald",
+  fertilizer: "amber",
+  harvest: "amber",
+  seed: "emerald",
+  parts: "zinc",
 };
 
 type HistoryPeriod =
@@ -230,7 +246,9 @@ type Props = {
 
 export function InventoryView({ dashboard, error }: Props) {
   const router = useRouter();
+  const isMobile = useIsMobile();
   const [category, setCategory] = useState<InventoryCategory | null>(null);
+  const [flowFilter, setFlowFilter] = useState<FlowFilter | null>(null);
   const [query, setQuery] = useState("");
   const [onlyActive, setOnlyActive] = useState(true);
   const [openItemId, setOpenItemId] = useState<string | null>(null);
@@ -262,7 +280,6 @@ export function InventoryView({ dashboard, error }: Props) {
   const [seasonOpen, setSeasonOpen] = useState(false);
   const [rangeOpen, setRangeOpen] = useState(false);
   const [customRange, setCustomRange] = useState<DateRange | undefined>();
-  const rangePickStarted = useRef(false);
 
   async function refreshOperational() {
     const [movesRes, metaRes] = await Promise.all([
@@ -359,6 +376,33 @@ export function InventoryView({ dashboard, error }: Props) {
     return map;
   }, [view]);
 
+  /** Позиції з відповідним типом руху за період (BAS + локальні). */
+  const flowMatchedIds = useMemo(() => {
+    const purchase = new Set<string>();
+    const sale = new Set<string>();
+    const harvest = new Set<string>();
+    if (view) {
+      for (const m of view.moves) {
+        const id = m.itemId.toLowerCase();
+        if (m.kind === "purchase") purchase.add(id);
+        else if (m.kind === "sale") sale.add(id);
+        else if (m.kind === "harvest") harvest.add(id);
+      }
+    }
+    const startIso = toIsoDay(dateRange.start);
+    const endIso = toIsoDay(dateRange.end);
+    for (const row of localMoveRows) {
+      if (row.status === "sent_to_1c") continue;
+      if (!row.dateYmd || row.dateYmd < startIso || row.dateYmd > endIso) {
+        continue;
+      }
+      const id = row.ref.toLowerCase();
+      if (row.type === "inbound") purchase.add(id);
+      else if (row.type === "sale") sale.add(id);
+    }
+    return { purchase, sale, harvest } as const;
+  }, [view, localMoveRows, dateRange]);
+
   /** Позиції з рухами BAS/локальними за вибраний період (+ локальні SKU без BAS). */
   const periodScopedItems = useMemo(() => {
     if (!view) return [];
@@ -401,7 +445,14 @@ export function InventoryView({ dashboard, error }: Props) {
   const items = useMemo(() => {
     const q = query.trim().toLowerCase();
     return periodScopedItems.filter((item) => {
-      if (!category || item.category !== category) return false;
+      if (category && item.category !== category) return false;
+      if (!category && !flowFilter) return false;
+
+      if (flowFilter) {
+        const id = item.id.toLowerCase();
+        if (!flowMatchedIds[flowFilter].has(id)) return false;
+      }
+
       const meta =
         cacheMetaByRef[item.id] ?? cacheMetaByRef[item.id.toLowerCase()];
       const hidden = meta?.isHidden ?? false;
@@ -430,6 +481,8 @@ export function InventoryView({ dashboard, error }: Props) {
   }, [
     periodScopedItems,
     category,
+    flowFilter,
+    flowMatchedIds,
     query,
     showHidden,
     onlyActive,
@@ -438,13 +491,19 @@ export function InventoryView({ dashboard, error }: Props) {
     localPeriodByRef,
   ]);
 
-  const periodPillBtn = (active: boolean) =>
-    cn(
-      "inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-semibold transition-all sm:px-3.5",
-      active
-        ? "bg-white text-zinc-900 shadow-sm"
-        : "text-zinc-500 hover:text-zinc-800"
-    );
+  const showingItems = category != null || flowFilter != null;
+
+  function applyPeriod(next: HistoryPeriod) {
+    setSeasonOpen(false);
+    if (next !== "custom") setRangeOpen(false);
+    setPeriod(next);
+  }
+
+  function toggleFlowFilter(next: FlowFilter) {
+    setFlowFilter((prev) => (prev === next ? null : next));
+    setOpenItemId(null);
+    setQuery("");
+  }
 
   const categorySummaries = view?.categories ?? [];
 
@@ -566,56 +625,74 @@ export function InventoryView({ dashboard, error }: Props) {
         aria-hidden
       />
 
-      <div className="relative mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
-        <div className="mb-4 flex flex-col gap-3 sm:mb-5 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <h1 className="text-2xl font-extrabold tracking-tight text-zinc-900 sm:text-3xl">
-              Склад
-            </h1>
-            <p className="mt-1 text-sm text-zinc-500">Оперативний облік ТМЦ</p>
-          </div>
+      <div
+        className={cn(
+          "relative mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8",
+          isMobile
+            ? "pt-[max(0.75rem,var(--safe-top))] pb-2"
+            : "py-5 sm:py-6"
+        )}
+      >
+        <div
+          className={cn(
+            "mb-4 flex flex-col gap-3 sm:mb-5",
+            !isMobile && "sm:flex-row sm:items-center sm:justify-between"
+          )}
+        >
+          {!isMobile ? (
+            <div className="min-w-0">
+              <h1 className="text-2xl font-extrabold tracking-tight text-zinc-900 sm:text-3xl">
+                Склад
+              </h1>
+              <p className="mt-1 text-sm text-zinc-500">Оперативний облік ТМЦ</p>
+            </div>
+          ) : null}
 
-          <div className="flex shrink-0 flex-wrap items-center gap-1.5 sm:gap-2">
-            <div className="flex items-center rounded-xl border border-[#E5DFD3]/90 bg-white/90 p-0.5 shadow-sm">
+          <div className="flex w-full shrink-0 flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+            <button
+              type="button"
+              onClick={() => setInboundOpen(true)}
+              className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-sky-200/90 bg-sky-50 px-3.5 text-sm font-bold text-sky-950 shadow-sm transition hover:bg-sky-100 sm:flex-none sm:px-4"
+            >
+              <PackagePlus className="h-4 w-4" />
+              Прихід
+            </button>
+            <button
+              type="button"
+              onClick={() => setQuickIssueOpen(true)}
+              className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-zinc-900 px-3.5 text-sm font-bold text-white shadow-sm shadow-zinc-900/25 transition hover:bg-zinc-800 sm:flex-none sm:px-4"
+            >
+              <PackageMinus className="h-4 w-4" />
+              Списати
+            </button>
+            <button
+              type="button"
+              onClick={() => setSaleOpen(true)}
+              className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-amber-200/90 bg-amber-50 px-3.5 text-sm font-bold text-amber-950 shadow-sm transition hover:bg-amber-100 sm:flex-none sm:px-4"
+            >
+              <ShoppingCart className="h-4 w-4" />
+              Продаж
+            </button>
+            <div className="flex w-full items-center gap-1.5 sm:ml-1 sm:w-auto">
               <button
                 type="button"
                 onClick={() => setHistoryOpen(true)}
-                className="inline-flex h-9 items-center gap-1.5 rounded-[10px] px-2.5 text-xs font-semibold text-zinc-600 transition hover:bg-[#F4F1EA] hover:text-zinc-900 sm:px-3"
+                className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border border-[#E5DFD3]/90 bg-white/90 px-3 text-sm font-semibold text-zinc-600 shadow-sm transition hover:bg-[#F4F1EA] hover:text-zinc-900 sm:flex-none sm:px-3.5"
                 title="Історія"
               >
-                <History className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Історія</span>
+                <History className="h-4 w-4" />
+                Історія
               </button>
               <button
                 type="button"
                 onClick={() => setExportOpen(true)}
-                className="inline-flex h-9 items-center gap-1.5 rounded-[10px] px-2.5 text-xs font-semibold text-zinc-600 transition hover:bg-[#F4F1EA] hover:text-zinc-900 sm:px-3"
+                className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border border-[#E5DFD3]/90 bg-white/90 px-3 text-sm font-semibold text-zinc-600 shadow-sm transition hover:bg-[#F4F1EA] hover:text-zinc-900 sm:flex-none sm:px-3.5"
                 title="Експорт"
               >
-                <Download className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Експорт</span>
+                <Download className="h-4 w-4" />
+                Експорт
               </button>
             </div>
-            <button
-              type="button"
-              onClick={() => setInboundOpen(true)}
-              className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-sky-200/90 bg-sky-50 px-3 text-xs font-semibold text-sky-900 shadow-sm transition hover:bg-sky-100 sm:px-3.5"
-            >
-              <PackagePlus className="h-3.5 w-3.5" />
-              Прихід
-            </button>
-            {category === "harvest" ? (
-              <InventorySaleButton onClick={() => setSaleOpen(true)} />
-            ) : (
-              <button
-                type="button"
-                onClick={() => setQuickIssueOpen(true)}
-                className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[#276749] px-3 text-xs font-semibold text-white shadow-sm shadow-emerald-900/20 transition hover:bg-[#1f5339] sm:px-3.5"
-              >
-                <PackageMinus className="h-3.5 w-3.5" />
-                Списати
-              </button>
-            )}
           </div>
         </div>
 
@@ -688,35 +765,53 @@ export function InventoryView({ dashboard, error }: Props) {
           <>
             <div className="mb-5 space-y-3">
               <div className="flex flex-wrap items-center gap-2">
-                <div className="inline-flex items-center rounded-full border border-[#E5DFD3]/90 bg-white/90 p-1 shadow-sm">
-                  {PERIOD_OPTIONS.map((option) => (
-                    <button
-                      key={option}
-                      type="button"
-                      onClick={() => setPeriod(option)}
-                      className={periodPillBtn(period === option)}
-                    >
-                      {option}
-                    </button>
-                  ))}
-
-                  <Popover
-                    open={seasonOpen}
-                    onOpenChange={(next) => {
-                      setSeasonOpen(next);
-                      if (next) setPeriod("Сезон");
-                    }}
+                <Popover
+                  open={seasonOpen}
+                  onOpenChange={(next) => {
+                    setSeasonOpen(next);
+                    if (next) {
+                      setRangeOpen(false);
+                      setPeriod("Сезон");
+                    }
+                  }}
+                >
+                  <PopoverTrigger
+                    className={cn(
+                      "inline-flex h-11 shrink-0 items-center gap-2 rounded-xl border px-2.5 text-left text-sm font-semibold transition-all md:h-9 md:text-xs",
+                      period === "Сезон"
+                        ? "border-[#276749] bg-[#276749] text-white shadow-[0_6px_16px_-6px_rgba(39,103,73,0.55)]"
+                        : "border-[#E0DBD0] bg-white text-zinc-700 hover:border-[#276749]/35"
+                    )}
+                    aria-label="Обрати агросезон"
                   >
-                    <PopoverTrigger
-                      className={periodPillBtn(period === "Сезон")}
+                    <span
+                      className={cn(
+                        "inline-flex h-6 w-6 items-center justify-center rounded-lg",
+                        period === "Сезон"
+                          ? "bg-white/15 text-white"
+                          : "bg-[#276749]/12 text-[#276749]"
+                      )}
                     >
-                      Сезон {seasonYear}
-                      <ChevronDown className="h-3.5 w-3.5 opacity-70" />
-                    </PopoverTrigger>
-                    <PopoverContent
-                      align="start"
-                      className="z-[100] w-40 rounded-xl border border-zinc-200 bg-white p-1 shadow-xl"
-                    >
+                      <Sprout className="h-3.5 w-3.5" />
+                    </span>
+                    <span className="tabular-nums">Сезон {seasonYear}</span>
+                    <ChevronDown
+                      className={cn(
+                        "h-3.5 w-3.5",
+                        period === "Сезон" ? "text-white/80" : "text-zinc-400"
+                      )}
+                    />
+                  </PopoverTrigger>
+                  <PopoverContent
+                    align="start"
+                    sideOffset={6}
+                    sheetOnMobile={false}
+                    className="w-[min(100vw-3rem,20rem)] rounded-2xl border border-zinc-200 bg-white p-2 shadow-xl"
+                  >
+                    <p className="px-2.5 pt-1.5 pb-2 text-[11px] leading-snug text-zinc-500">
+                      Фільтр обороту ТМЦ за агросезоном (березень–лютий).
+                    </p>
+                    <div className="space-y-1">
                       {SEASON_OPTIONS.map((year) => (
                         <button
                           key={year}
@@ -727,77 +822,148 @@ export function InventoryView({ dashboard, error }: Props) {
                             setSeasonOpen(false);
                           }}
                           className={cn(
-                            "flex w-full items-center rounded-lg px-3 py-2 text-left text-sm transition-colors",
-                            seasonYear === year && period === "Сезон"
-                              ? "bg-emerald-50 font-semibold text-emerald-800"
-                              : "text-zinc-700 hover:bg-zinc-50"
+                            "flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left transition-colors",
+                            seasonYear === year
+                              ? "bg-[#276749] text-white"
+                              : "text-zinc-800 hover:bg-zinc-50"
                           )}
                         >
-                          Сезон {year}
+                          <span className="text-sm font-semibold">
+                            Сезон {year}
+                          </span>
+                          <span
+                            className={cn(
+                              "text-[11px] font-medium",
+                              seasonYear === year
+                                ? "text-white/75"
+                                : "text-zinc-400"
+                            )}
+                          >
+                            бер {year} – лют {year + 1}
+                          </span>
                         </button>
                       ))}
-                    </PopoverContent>
-                  </Popover>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+
+                <div className="inline-flex w-fit max-w-full flex-wrap items-center gap-0.5 rounded-xl bg-[#EDE8DF] p-0.5">
+                  {PERIOD_OPTIONS.map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() => applyPeriod(option)}
+                      className={cn(
+                        "h-11 rounded-[10px] px-2.5 text-xs font-semibold transition-all sm:px-3 md:h-8",
+                        period === option
+                          ? "bg-[#276749] text-white shadow-[0_4px_12px_-4px_rgba(39,103,73,0.55)]"
+                          : "text-zinc-500 hover:bg-white/70 hover:text-zinc-800"
+                      )}
+                    >
+                      {option}
+                    </button>
+                  ))}
                 </div>
 
                 <Popover
                   open={rangeOpen}
-                  onOpenChange={(open) => {
-                    setRangeOpen(open);
-                    if (open) rangePickStarted.current = false;
+                  onOpenChange={(next) => {
+                    setRangeOpen(next);
+                    if (next) {
+                      setSeasonOpen(false);
+                      applyPeriod("custom");
+                    }
                   }}
                 >
                   <PopoverTrigger
                     className={cn(
-                      "inline-flex h-8 items-center gap-2 rounded-full border border-zinc-200/90 px-3 text-xs font-semibold shadow-sm transition-all",
+                      "inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl border px-2.5 text-sm font-semibold transition-all md:h-9 md:text-xs",
                       period === "custom"
-                        ? "bg-white text-zinc-900"
-                        : "bg-white/80 text-zinc-500 hover:text-zinc-800"
+                        ? "border-[#276749] bg-[#276749] text-white shadow-[0_6px_16px_-6px_rgba(39,103,73,0.55)]"
+                        : "border-[#E0DBD0] bg-white text-zinc-700 hover:border-[#276749]/35"
                     )}
                   >
-                    <CalendarIcon className="h-3.5 w-3.5 shrink-0 opacity-70" />
+                    <CalendarIcon
+                      className={cn(
+                        "h-3.5 w-3.5 shrink-0",
+                        period === "custom" ? "text-white/90" : "opacity-70"
+                      )}
+                    />
                     {period === "custom" && customRange?.from
                       ? `${format(customRange.from, "d MMM", { locale: uk })}${
                           customRange.to
                             ? ` – ${format(customRange.to, "d MMM", { locale: uk })}`
-                            : ""
+                            : " → …"
                         }`
                       : "Діапазон"}
                   </PopoverTrigger>
                   <PopoverContent
                     align="start"
-                    className="z-[100] w-auto rounded-2xl border border-zinc-200 bg-white p-2 shadow-xl"
+                    sideOffset={6}
+                    sheetOnMobile={false}
+                    className="w-auto rounded-2xl border border-zinc-200 bg-white p-3 shadow-xl"
                   >
+                    <p className="mb-2 px-1 text-[11px] text-zinc-500">
+                      {customRange?.from && customRange?.to
+                        ? "Натисніть дату, щоб обрати новий початок"
+                        : customRange?.from
+                          ? "Тепер оберіть кінець періоду"
+                          : "Оберіть початок, потім кінець періоду"}
+                    </p>
                     <Calendar
                       mode="range"
                       numberOfMonths={1}
                       selected={customRange}
-                      onSelect={(range) => {
-                        setPeriod("custom");
-                        if (!range?.from) {
-                          setCustomRange(undefined);
-                          rangePickStarted.current = false;
+                      defaultMonth={customRange?.from ?? new Date()}
+                      onSelect={(range, triggerDate) => {
+                        applyPeriod("custom");
+                        if (
+                          customRange?.from &&
+                          customRange?.to &&
+                          triggerDate
+                        ) {
+                          setCustomRange({
+                            from: triggerDate,
+                            to: undefined,
+                          });
                           return;
                         }
-
-                        if (!rangePickStarted.current) {
-                          rangePickStarted.current = true;
-                          setCustomRange({ from: range.from, to: undefined });
-                          return;
-                        }
-
-                        if (!range.to) {
-                          setCustomRange({ from: range.from, to: undefined });
-                          return;
-                        }
-
                         setCustomRange(range);
-                        rangePickStarted.current = false;
-                        setRangeOpen(false);
                       }}
                       locale={uk}
                       className="rounded-xl"
                     />
+                    <div className="mt-3 flex items-center gap-2 border-t border-zinc-100 pt-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomRange(undefined);
+                          applyPeriod("Сезон");
+                          setRangeOpen(false);
+                        }}
+                        className="h-11 flex-1 rounded-xl border border-zinc-200 bg-white text-sm font-semibold text-zinc-600 hover:bg-zinc-50"
+                      >
+                        Скинути
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!customRange?.from}
+                        onClick={() => {
+                          if (!customRange?.from) return;
+                          if (!customRange.to) {
+                            setCustomRange({
+                              from: customRange.from,
+                              to: customRange.from,
+                            });
+                          }
+                          setPeriod("custom");
+                          setRangeOpen(false);
+                        }}
+                        className="h-11 flex-[1.4] rounded-xl bg-[#276749] text-sm font-bold text-white hover:bg-[#22543d] disabled:opacity-50"
+                      >
+                        Застосувати
+                      </button>
+                    </div>
                   </PopoverContent>
                 </Popover>
               </div>
@@ -806,6 +972,7 @@ export function InventoryView({ dashboard, error }: Props) {
                 {(
                   [
                     {
+                      id: "purchase" as const,
                       label: "Закупки",
                       value: formatCompactUah(
                         view.totalReceipts + localPeriodFinance.receiptsUah
@@ -815,8 +982,11 @@ export function InventoryView({ dashboard, error }: Props) {
                         localPeriodFinance.receiptDocs
                       } док.`,
                       tone: "from-white via-zinc-50/80 to-emerald-50/40",
+                      activeTone:
+                        "border-emerald-400/70 ring-2 ring-emerald-500/20",
                     },
                     {
+                      id: "sale" as const,
                       label: "Продажі",
                       value: formatCompactUah(
                         view.totalSales + localPeriodFinance.salesUah
@@ -826,39 +996,56 @@ export function InventoryView({ dashboard, error }: Props) {
                         localPeriodFinance.saleDocs
                       } док.`,
                       tone: "from-white via-zinc-50/80 to-sky-50/40",
+                      activeTone: "border-sky-400/70 ring-2 ring-sky-500/20",
                     },
                     {
+                      id: "harvest" as const,
                       label: "Випуск",
                       value: formatCompactUah(
                         view.totalHarvest + localPeriodFinance.harvestUah
                       ),
                       hint: "собівартість",
                       tone: "from-white via-zinc-50/80 to-amber-50/40",
+                      activeTone:
+                        "border-amber-400/70 ring-2 ring-amber-500/20",
                     },
                   ] as const
-                ).map((kpi) => (
-                  <div
-                    key={kpi.label}
-                    className={cn(
-                      "min-h-[5.5rem] rounded-2xl border border-[#E5DFD3]/90 bg-gradient-to-br p-3 shadow-[0_8px_24px_rgb(39,33,24,0.05)] sm:p-4",
-                      kpi.tone
-                    )}
-                    title={kpi.value}
-                  >
-                    <p className="text-[10px] font-semibold tracking-[0.14em] text-zinc-400 uppercase">
-                      {kpi.label}
-                    </p>
-                    <p className="mt-1.5 truncate text-lg font-bold tracking-tight text-zinc-900 tabular-nums sm:text-xl">
-                      {kpi.value}
-                    </p>
-                    <p className="mt-0.5 text-[10px] text-zinc-400">{kpi.hint}</p>
-                  </div>
-                ))}
+                ).map((kpi) => {
+                  const active = flowFilter === kpi.id;
+                  return (
+                    <button
+                      key={kpi.id}
+                      type="button"
+                      onClick={() => toggleFlowFilter(kpi.id)}
+                      className={cn(
+                        "min-h-[5.25rem] rounded-2xl border bg-gradient-to-br p-3 text-left shadow-[0_8px_24px_rgb(39,33,24,0.05)] transition sm:min-h-[5.5rem] sm:p-4",
+                        "hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgb(39,33,24,0.08)]",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#276749]/30",
+                        kpi.tone,
+                        active
+                          ? kpi.activeTone
+                          : "border-[#E5DFD3]/90"
+                      )}
+                      title={`${kpi.label}: ${kpi.value}`}
+                      aria-pressed={active}
+                    >
+                      <p className="text-[10px] font-semibold tracking-[0.14em] text-zinc-400 uppercase">
+                        {kpi.label}
+                      </p>
+                      <p className="mt-1.5 truncate text-lg font-bold tracking-tight text-zinc-900 tabular-nums sm:text-xl">
+                        {kpi.value}
+                      </p>
+                      <p className="mt-0.5 text-[10px] text-zinc-400">
+                        {active ? "Фільтр · натисніть ще раз" : kpi.hint}
+                      </p>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
-            {category == null ? (
-              <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {!showingItems ? (
+              <section className="grid grid-cols-2 gap-2 sm:grid-cols-2 sm:gap-3 xl:grid-cols-3">
                 {CATEGORY_ORDER.map((cat) => {
                   const card =
                     categorySummaries.find((c) => c.category === cat) ??
@@ -883,45 +1070,51 @@ export function InventoryView({ dashboard, error }: Props) {
                         setQuery("");
                       }}
                       className={cn(
-                        "group relative min-h-[148px] overflow-hidden rounded-3xl border p-5 text-left shadow-[0_8px_30px_rgb(39,33,24,0.05)] transition-all sm:min-h-[168px] sm:p-6",
+                        "group relative overflow-hidden rounded-2xl border text-left shadow-[0_8px_30px_rgb(39,33,24,0.05)] transition-all",
+                        "p-3 sm:min-h-[168px] sm:rounded-3xl sm:p-6",
                         "hover:-translate-y-0.5 hover:shadow-[0_12px_32px_rgb(39,33,24,0.08)]",
                         style.card
                       )}
                     >
-                      <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start justify-between gap-2 sm:gap-3">
                         <div
                           className={cn(
-                            "flex h-12 w-12 items-center justify-center rounded-2xl shadow-md",
+                            "flex items-center justify-center rounded-xl shadow-md sm:rounded-2xl",
+                            "h-9 w-9 sm:h-12 sm:w-12",
                             style.icon
                           )}
                         >
-                          <Icon className="h-5 w-5" strokeWidth={1.9} />
+                          <Icon
+                            className="h-4 w-4 sm:h-5 sm:w-5"
+                            strokeWidth={1.9}
+                          />
                         </div>
                         <span
                           className={cn(
-                            "rounded-full px-2.5 py-1 text-[11px] font-bold tabular-nums",
+                            "rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums sm:px-2.5 sm:py-1 sm:text-[11px]",
                             style.chip
                           )}
                         >
-                          {count} поз.
+                          {count}
+                          <span className="hidden sm:inline"> поз.</span>
                         </span>
                       </div>
-                      <p className="mt-5 text-xl font-extrabold tracking-tight text-zinc-900">
+                      <p className="mt-2.5 text-[13px] font-extrabold tracking-tight text-zinc-900 sm:mt-5 sm:text-xl">
                         {meta.label}
                       </p>
-                      <p className="mt-1 text-sm text-zinc-500">
+                      <p className="mt-0.5 hidden text-sm text-zinc-500 sm:mt-1 sm:block">
                         {meta.description}
                       </p>
-                      <div className="mt-4 flex items-end justify-between gap-2">
-                        <div>
-                          <p className="text-[10px] font-semibold tracking-wider text-zinc-400 uppercase">
+                      <div className="mt-2 flex items-end justify-between gap-2 sm:mt-4">
+                        <div className="min-w-0">
+                          <p className="hidden text-[10px] font-semibold tracking-wider text-zinc-400 uppercase sm:block">
                             Оборот за період
                           </p>
-                          <p className="mt-0.5 text-base font-bold tabular-nums text-zinc-900">
+                          <p className="truncate text-sm font-bold tabular-nums text-zinc-900 sm:mt-0.5 sm:text-base">
                             {formatCompactUah(periodCost)}
                           </p>
                         </div>
-                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-zinc-400 transition group-hover:text-zinc-700">
+                        <span className="hidden items-center gap-1 text-xs font-semibold text-zinc-400 transition group-hover:text-zinc-700 sm:inline-flex">
                           Відкрити
                           <ChevronDown className="h-3.5 w-3.5 -rotate-90" />
                         </span>
@@ -936,31 +1129,53 @@ export function InventoryView({ dashboard, error }: Props) {
                   <button
                     type="button"
                     onClick={() => {
-                      setCategory(null);
+                      if (category) {
+                        setCategory(null);
+                        setOpenItemId(null);
+                        setQuery("");
+                        return;
+                      }
+                      setFlowFilter(null);
                       setOpenItemId(null);
                       setQuery("");
                     }}
                     className="inline-flex h-9 items-center gap-1.5 rounded-full border border-zinc-200/90 bg-white px-3 text-xs font-semibold text-zinc-600 shadow-sm transition hover:text-zinc-900"
                   >
                     <ChevronLeft className="h-3.5 w-3.5" />
-                    Усі категорії
+                    {category ? "Усі категорії" : "До огляду"}
                   </button>
-                  <div
-                    className={cn(
-                      "inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-semibold",
-                      CATEGORY_CARD_STYLE[category].chip
-                    )}
-                  >
-                    {(() => {
-                      const Icon = CATEGORY_ICONS[category];
-                      return <Icon className="h-3.5 w-3.5" strokeWidth={2} />;
-                    })()}
-                    {INVENTORY_CATEGORY_META[category].label}
-                  </div>
+                  {category ? (
+                    <div
+                      className={cn(
+                        "inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-semibold",
+                        CATEGORY_CARD_STYLE[category].chip
+                      )}
+                    >
+                      {(() => {
+                        const Icon = CATEGORY_ICONS[category];
+                        return <Icon className="h-3.5 w-3.5" strokeWidth={2} />;
+                      })()}
+                      {INVENTORY_CATEGORY_META[category].label}
+                    </div>
+                  ) : null}
+                  {flowFilter ? (
+                    <button
+                      type="button"
+                      onClick={() => setFlowFilter(null)}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-[#276749]/25 bg-[#276749]/10 px-3 py-1.5 text-xs font-semibold text-[#1f5339]"
+                    >
+                      {FLOW_FILTER_LABEL[flowFilter]}
+                      <span className="text-[#276749]/60">×</span>
+                    </button>
+                  ) : null}
                   {category ? (
                     <span className="text-xs text-zinc-400">
                       {categoryCounts[category]?.active ?? 0} за період ·{" "}
                       {categoryCounts[category]?.total ?? 0} у списку
+                    </span>
+                  ) : flowFilter ? (
+                    <span className="text-xs text-zinc-400">
+                      {items.length} поз. · {FLOW_FILTER_LABEL[flowFilter]}
                     </span>
                   ) : null}
                 </div>
@@ -1728,17 +1943,21 @@ function ItemDocumentsSheet({
     setKindFilter("all");
   }, [item?.id]);
 
+  const titleName = (displayName.trim() || item?.name || "Позиція").trim();
+
   if (!item) {
     return (
-      <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent side="right" className="w-full p-0 sm:max-w-md" />
-      </Sheet>
+      <FuelPanelShell open={open} onOpenChange={onOpenChange} title="Позиція">
+        <div className="px-5 py-10 text-center text-sm text-zinc-500">
+          Позицію не знайдено
+        </div>
+      </FuelPanelShell>
     );
   }
 
   const meta = INVENTORY_CATEGORY_META[item.category];
   const SheetIcon = CATEGORY_ICONS[item.category];
-  const titleName = displayName.trim() || item.name;
+  const accent = CATEGORY_SHEET_ACCENT[item.category];
 
   type SheetDoc = {
     key: string;
@@ -1838,56 +2057,60 @@ function ItemDocumentsSheet({
     localMoves
       .filter((r) => r.type === "sale")
       .reduce((s, r) => s + r.qty, 0);
+  const periodIssued = localMoves
+    .filter((r) => r.type !== "inbound" && r.type !== "sale")
+    .reduce((s, r) => s + r.qty, 0);
+
+  const inLabel = item.category === "harvest" ? "Випуск" : "Надходження";
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="right"
-        overlayClassName="bg-black/20 backdrop-blur-sm supports-backdrop-filter:backdrop-blur-sm"
-        className={cn(
-          "flex w-full flex-col gap-0 border-l border-border bg-background p-0 sm:max-w-md",
-          "[&_[data-slot=sheet-close]]:text-muted-foreground [&_[data-slot=sheet-close]]:hover:bg-muted"
-        )}
-      >
-        <SheetHeader className="shrink-0 border-b border-border/50 bg-background px-6 py-5 pr-14 text-left">
-          <div className="flex items-start gap-3">
-            <div
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
-              style={{
-                backgroundColor: `${meta.accent}14`,
-                color: meta.accent,
-              }}
-            >
-              <SheetIcon className="h-5 w-5" strokeWidth={1.8} />
-            </div>
-            <div className="min-w-0">
-              <SheetTitle className="text-lg font-semibold tracking-tight text-foreground">
-                {titleName}
-              </SheetTitle>
-              <SheetDescription className="mt-0.5 text-xs text-muted-foreground">
-                {item.code ? `${item.code} · ` : ""}
-                {meta.label} · за період
-              </SheetDescription>
-              <p className="mt-2 text-xs text-muted-foreground tabular-nums">
-                {item.category === "harvest" ? "Випуск" : "Надходження"}{" "}
-                <span className="font-medium text-foreground">
-                  {formatInventoryQty(periodIn, item.unit)}
-                </span>
-                {" · "}
-                Продано{" "}
-                <span className="font-medium text-foreground">
-                  {formatInventoryQty(periodOut, item.unit)}
-                </span>
-              </p>
-            </div>
-          </div>
-        </SheetHeader>
+    <FuelPanelShell open={open} onOpenChange={onOpenChange} title={titleName}>
+      <FuelSheetHeader
+        icon={SheetIcon}
+        accent={accent}
+        title={titleName}
+        description={
+          <>
+            {item.code ? `${item.code} · ` : ""}
+            {meta.label} · рухи за період
+          </>
+        }
+      />
 
-        <div className="flex shrink-0 items-center gap-1.5 border-b border-border/50 bg-background px-5 py-2.5">
+      <div
+        className={cn(fuelSheetBodyClass, "gap-4")}
+        data-vaul-no-drag=""
+        data-allow-pan="true"
+      >
+        <div className="grid grid-cols-2 gap-2">
+          <div className="rounded-2xl border border-[#E5DFD3]/90 bg-white/90 p-3.5 shadow-sm">
+            <p className="text-[10px] font-semibold tracking-[0.12em] text-zinc-400 uppercase">
+              {inLabel}
+            </p>
+            <p className="mt-1 text-lg font-bold tracking-tight tabular-nums text-emerald-700">
+              {formatInventoryQty(periodIn, item.unit)}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-[#E5DFD3]/90 bg-white/90 p-3.5 shadow-sm">
+            <p className="text-[10px] font-semibold tracking-[0.12em] text-zinc-400 uppercase">
+              {item.category === "harvest" || periodOut > 0
+                ? "Продано"
+                : "Списано"}
+            </p>
+            <p className="mt-1 text-lg font-bold tracking-tight tabular-nums text-zinc-900">
+              {formatInventoryQty(
+                periodOut > 0 ? periodOut : periodIssued,
+                item.unit
+              )}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1 rounded-xl bg-[#EDE8DF] p-0.5">
           {(
             [
               ["all", "Усі"],
-              ["in", item.category === "harvest" ? "Випуск" : "Надходження"],
+              ["in", inLabel],
               ["sale", "Продажі"],
             ] as const
           ).map(([id, label]) => (
@@ -1896,55 +2119,57 @@ function ItemDocumentsSheet({
               type="button"
               onClick={() => setKindFilter(id)}
               className={cn(
-                "rounded-full px-3 py-1.5 text-[11px] font-medium transition",
+                "h-9 flex-1 rounded-[10px] px-2 text-[11px] font-semibold transition",
                 kindFilter === id
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-muted-foreground hover:bg-muted"
+                  ? "bg-[#276749] text-white shadow-[0_4px_12px_-4px_rgba(39,103,73,0.55)]"
+                  : "text-zinc-500 hover:bg-white/70 hover:text-zinc-800"
               )}
             >
               {label}
             </button>
           ))}
-          <span className="ml-auto text-[11px] text-muted-foreground">
-            {filtered.length} док.
+        </div>
+
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[11px] font-semibold tracking-[0.08em] text-zinc-500 uppercase">
+            Документи
+          </p>
+          <span className="text-[11px] font-medium tabular-nums text-zinc-400">
+            {filtered.length}
           </span>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto bg-background">
-          {filtered.length === 0 ? (
-            <p className="py-12 text-center text-sm text-muted-foreground">
-              Немає документів у цьому фільтрі
-            </p>
-          ) : (
-            <div>
-              {filtered.map((doc) => (
-                <SheetDocumentRow
-                  key={doc.key}
-                  doc={doc}
-                  unit={item.unit}
-                  editMove={
-                    doc.localId && editMove?.id === doc.localId
-                      ? editMove
-                      : null
-                  }
-                  editLoading={
-                    doc.localId != null && editLoadingId === doc.localId
-                  }
-                  onEditLocal={
-                    doc.localId
-                      ? () => onEditLocal(doc.localId!)
-                      : undefined
-                  }
-                  onCancelEdit={onCancelEdit}
-                  onSavedEdit={onSavedEdit}
-                  onDeletedLocal={onDeletedLocal}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      </SheetContent>
-    </Sheet>
+        {filtered.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-[#E5DFD3] bg-white/60 px-4 py-12 text-center text-sm text-zinc-500">
+            Немає документів у цьому фільтрі
+          </div>
+        ) : (
+          <ul className="overflow-hidden rounded-2xl border border-[#E5DFD3]/90 bg-white/90 shadow-sm">
+            {filtered.map((doc) => (
+              <SheetDocumentRow
+                key={doc.key}
+                doc={doc}
+                unit={item.unit}
+                editMove={
+                  doc.localId && editMove?.id === doc.localId
+                    ? editMove
+                    : null
+                }
+                editLoading={
+                  doc.localId != null && editLoadingId === doc.localId
+                }
+                onEditLocal={
+                  doc.localId ? () => onEditLocal(doc.localId!) : undefined
+                }
+                onCancelEdit={onCancelEdit}
+                onSavedEdit={onSavedEdit}
+                onDeletedLocal={onDeletedLocal}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
+    </FuelPanelShell>
   );
 }
 
@@ -2001,43 +2226,43 @@ function SheetDocumentRow({
 
   if (editMove) {
     return (
-      <div className="border-b border-border/50 p-3 last:border-0">
+      <li className="border-b border-[#E5DFD3]/80 bg-[#F4F1EA]/50 p-3 last:border-0">
         <EditLocalMoveInline
           move={editMove}
           onCancel={() => onCancelEdit?.()}
           onSaved={() => onSavedEdit?.()}
         />
-      </div>
+      </li>
     );
   }
 
   const rowClass =
-    "group flex w-full items-center justify-between gap-3 border-b border-border/50 p-4 text-left transition-colors last:border-0 hover:bg-muted/50";
+    "group flex w-full items-center justify-between gap-3 border-b border-[#E5DFD3]/80 px-3.5 py-3.5 text-left transition-colors last:border-0 hover:bg-[#F4F1EA]/70";
 
   const body = (
     <>
       <div className="flex min-w-0 items-center gap-3">
         <div
           className={cn(
-            "flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
+            "flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl",
             inbound
-              ? "bg-emerald-500/10 text-emerald-600"
-              : "bg-rose-500/10 text-rose-500"
+              ? "bg-emerald-500/10 text-emerald-700 ring-1 ring-emerald-500/15"
+              : "bg-rose-500/10 text-rose-700 ring-1 ring-rose-500/15"
           )}
         >
           <Icon className="h-4 w-4" strokeWidth={1.8} />
         </div>
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-foreground">
+          <p className="truncate text-sm font-semibold text-zinc-900">
             {doc.title}
           </p>
-          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+          <p className="mt-0.5 truncate text-[11px] text-zinc-500">
             {doc.subtitle}
             {doc.amountLabel ? ` · ${doc.amountLabel}` : ""}
           </p>
         </div>
       </div>
-      <div className="flex shrink-0 items-center gap-1.5">
+      <div className="flex shrink-0 items-center gap-1">
         {doc.localId && (doc.attachmentCount ?? 0) > 0 ? (
           <AttachmentViewerButton
             entityType="inventory_move"
@@ -2054,7 +2279,7 @@ function SheetDocumentRow({
                 onEditLocal?.();
               }}
               disabled={deleting || editLoading}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-800"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition hover:bg-white hover:text-zinc-800"
               title="Редагувати"
             >
               {editLoading ? (
@@ -2083,14 +2308,14 @@ function SheetDocumentRow({
         ) : null}
         <p
           className={cn(
-            "min-w-[4.5rem] text-right text-lg font-medium tabular-nums",
-            inbound ? "text-emerald-600" : "text-foreground"
+            "min-w-[4.5rem] text-right text-base font-bold tabular-nums",
+            inbound ? "text-emerald-700" : "text-zinc-900"
           )}
         >
           {formatSignedQty(doc.qty, unit, inbound)}
         </p>
         {canOpenBas ? (
-          <ExternalLink className="h-3.5 w-3.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+          <ExternalLink className="h-3.5 w-3.5 text-zinc-300 opacity-0 transition-opacity group-hover:opacity-100" />
         ) : null}
       </div>
     </>
@@ -2098,17 +2323,19 @@ function SheetDocumentRow({
 
   if (canOpenBas && doc.basMove) {
     return (
-      <button
-        type="button"
-        onClick={() => openDocument(doc.basMove!)}
-        className={rowClass}
-      >
-        {body}
-      </button>
+      <li>
+        <button
+          type="button"
+          onClick={() => openDocument(doc.basMove!)}
+          className={rowClass}
+        >
+          {body}
+        </button>
+      </li>
     );
   }
 
-  return <div className={rowClass}>{body}</div>;
+  return <li className={rowClass}>{body}</li>;
 }
 
 function formatSignedQty(qty: number, unit: string, inbound: boolean): string {

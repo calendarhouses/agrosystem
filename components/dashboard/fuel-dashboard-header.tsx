@@ -9,7 +9,9 @@ import {
   Plus,
   Tractor,
   Warehouse,
+  X,
 } from "lucide-react";
+import { useState } from "react";
 
 import type {
   FieldFuelBreakdownRow,
@@ -17,6 +19,12 @@ import type {
 } from "@/app/fuel/actions";
 import { FuelRefuelRadar } from "@/components/dashboard/fuel-refuel-radar";
 import { Button } from "@/components/ui/button";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerHandle,
+  DrawerTitle,
+} from "@/components/ui/drawer";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,9 +34,6 @@ import {
 import {
   Popover,
   PopoverContent,
-  PopoverDescription,
-  PopoverHeader,
-  PopoverTitle,
   PopoverTrigger,
 } from "@/components/ui/popover";
 import type { FuelStorage } from "@/lib/fuel-storages";
@@ -195,6 +200,9 @@ function KpiValue({
   breakdownRows: Array<{ title: string; subtitle?: string; liters: number }>;
   accentClass?: string;
 }) {
+  const isMobile = useIsMobile();
+  const [mobileOpen, setMobileOpen] = useState(false);
+
   if (loading) {
     return (
       <div className="flex h-10 items-center">
@@ -239,6 +247,59 @@ function KpiValue({
 
   if (!interactive) return value;
 
+  const breakdown = (
+    <KpiBreakdownList emptyLabel={breakdownEmpty} rows={breakdownRows} />
+  );
+
+  /** Моб: окрема Drawer — Popover→bottom-sheet раніше валив сторінку */
+  if (isMobile) {
+    return (
+      <>
+        <button
+          type="button"
+          className="group inline-flex text-left outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/20 rounded-xl"
+          onClick={() => setMobileOpen(true)}
+        >
+          {value}
+        </button>
+        <Drawer open={mobileOpen} onOpenChange={setMobileOpen} handleOnly>
+          <DrawerContent
+            className="flex max-h-[min(70dvh,calc(100dvh-var(--app-bottom-inset)-1rem))] flex-col border-[#E5DFD3]/90 bg-[#F4F1EA] pb-0"
+            overlayClassName="pointer-events-auto! bg-black/50"
+            showCloseButton={false}
+          >
+            <DrawerHandle />
+            <div className="flex items-start justify-between gap-3 border-b border-[#E5DFD3]/80 px-5 py-3">
+              <div className="min-w-0">
+                <DrawerTitle className="text-base font-bold text-zinc-900">
+                  {popoverTitle}
+                </DrawerTitle>
+                <p className="mt-0.5 text-[12px] text-zinc-500">
+                  {popoverDescription}
+                </p>
+              </div>
+              <button
+                type="button"
+                aria-label="Закрити"
+                onClick={() => setMobileOpen(false)}
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-zinc-500 shadow-sm ring-1 ring-[#E5DFD3]"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div
+              className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 pb-8 touch-pan-y"
+              data-vaul-no-drag=""
+              data-allow-pan="true"
+            >
+              {breakdown}
+            </div>
+          </DrawerContent>
+        </Drawer>
+      </>
+    );
+  }
+
   return (
     <Popover>
       <PopoverTrigger
@@ -252,15 +313,14 @@ function KpiValue({
       <PopoverContent
         align="start"
         side="bottom"
+        sheetOnMobile={false}
         className="w-[20rem] rounded-2xl border border-zinc-200 bg-white p-3 text-zinc-900 shadow-xl"
       >
-        <PopoverHeader className="mb-2 gap-0.5 px-1">
-          <PopoverTitle className="text-sm font-bold">{popoverTitle}</PopoverTitle>
-          <PopoverDescription className="text-[11px] text-zinc-500">
-            {popoverDescription}
-          </PopoverDescription>
-        </PopoverHeader>
-        <KpiBreakdownList emptyLabel={breakdownEmpty} rows={breakdownRows} />
+        <div className="mb-2 gap-0.5 px-1">
+          <p className="text-sm font-bold text-zinc-900">{popoverTitle}</p>
+          <p className="text-[11px] text-zinc-500">{popoverDescription}</p>
+        </div>
+        {breakdown}
       </PopoverContent>
     </Popover>
   );

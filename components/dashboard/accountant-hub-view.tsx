@@ -44,6 +44,7 @@ import {
 import { AttachmentViewerButton } from "@/components/dashboard/attachment-viewer";
 import { EditLocalMoveInline } from "@/components/dashboard/local-moves-history-sheet";
 import { Button } from "@/components/ui/button";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import {
   Dialog,
   DialogContent,
@@ -1560,7 +1561,10 @@ export function AccountantHubView({
       </div>
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent className="max-w-md rounded-3xl border-[#E5DFD3] bg-[#FDFBF7]">
+        <DialogContent
+          presentation="center"
+          className="max-w-md rounded-3xl border-[#E5DFD3] bg-[#FDFBF7]"
+        >
           <DialogHeader>
             <DialogTitle>Позначити як передані?</DialogTitle>
             <DialogDescription>
@@ -1595,62 +1599,26 @@ export function AccountantHubView({
         </DialogContent>
       </Dialog>
 
-      <Dialog
+      <ConfirmDeleteDialog
         open={Boolean(deleteTarget)}
         onOpenChange={(o) => {
           if (!o) setDeleteTarget(null);
         }}
-      >
-        <DialogContent className="max-w-md gap-0 overflow-hidden rounded-[1.75rem] border border-red-100 bg-[#FDFBF7] p-0 shadow-[0_24px_60px_-20px_rgba(127,29,29,0.35)] sm:max-w-md">
-          <div className="px-7 pt-8 pb-2">
-            <DialogHeader className="gap-2.5 space-y-0 text-left">
-              <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-red-50 text-red-700 ring-1 ring-red-100">
-                  <Trash2 className="h-5 w-5" />
-                </div>
-                <DialogTitle className="text-xl font-bold tracking-tight text-zinc-900">
-                  Видалити операцію?
-                </DialogTitle>
-              </div>
-              <DialogDescription className="text-[14px] leading-relaxed text-zinc-500">
-                {deleteTarget ? (
-                  <>
-                    <span className="font-semibold text-zinc-800">
-                      «{deleteTarget.title}»
-                    </span>{" "}
-                    зникне зі складу або палива. Запис про видалення залишиться
-                    в архіві сезону {seasonYear}.
-                  </>
-                ) : null}
-              </DialogDescription>
-            </DialogHeader>
-          </div>
-          <div className="flex gap-3 px-7 pt-5 pb-7">
-            <Button
-              type="button"
-              variant="outline"
-              disabled={pending}
-              onClick={() => setDeleteTarget(null)}
-              className="h-11 flex-1 rounded-2xl border-[#E5DFD3] bg-white text-sm font-semibold"
-            >
-              Скасувати
-            </Button>
-            <Button
-              type="button"
-              disabled={pending}
-              onClick={confirmDelete}
-              className="h-11 flex-1 rounded-2xl bg-[#B42318] text-sm font-bold text-white hover:bg-[#912018]"
-            >
-              {pending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Trash2 className="h-4 w-4" />
-              )}
-              Видалити
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+        title="Видалити операцію?"
+        description={
+          deleteTarget ? (
+            <>
+              <span className="font-semibold text-zinc-800">
+                «{deleteTarget.title}»
+              </span>{" "}
+              зникне зі складу або палива. Запис про видалення залишиться в
+              архіві сезону {seasonYear}.
+            </>
+          ) : null
+        }
+        pending={pending}
+        onConfirm={confirmDelete}
+      />
     </div>
   );
 }

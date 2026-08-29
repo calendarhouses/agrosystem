@@ -380,7 +380,7 @@ function StorageSelect({
             {storages.find((s) => s.id === value)?.name ?? null}
           </SelectValue>
         </SelectTrigger>
-        <SelectContent className="z-[80] rounded-2xl border border-zinc-200 bg-white p-1.5 text-zinc-900 shadow-lg">
+        <SelectContent sheetOnMobile={false} className="z-[80] rounded-2xl border border-zinc-200 bg-white p-1.5 text-zinc-900 shadow-lg">
           {storages.map((storage) => (
             <SelectItem
               key={storage.id}
@@ -768,7 +768,7 @@ export function FuelActionDialogs({
               })();
             }}
           >
-            <div className={cn(fuelSheetBodyClass, "space-y-6")}>
+            <div className={cn(fuelSheetBodyClass, "space-y-6")} data-vaul-no-drag="" data-allow-pan="true">
               <StorageSelect
                 label="Куди зливаємо"
                 value={toStorage}
@@ -920,7 +920,7 @@ export function FuelActionDialogs({
               )
             }
           >
-            <div className={cn(fuelSheetBodyClass, "space-y-6")}>
+            <div className={cn(fuelSheetBodyClass, "space-y-6")} data-vaul-no-drag="" data-allow-pan="true">
               <StorageSelect
                 label="Звідки"
                 value={fromStorage}
@@ -1065,7 +1065,7 @@ export function FuelActionDialogs({
               )
             }
           >
-            <div className={cn(fuelSheetBodyClass, "space-y-6")}>
+            <div className={cn(fuelSheetBodyClass, "space-y-6")} data-vaul-no-drag="" data-allow-pan="true">
               <StorageSelect
                 label="Звідки"
                 value={fromStorage}
@@ -1096,6 +1096,7 @@ export function FuelActionDialogs({
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent
+                    sheetOnMobile={false}
                     alignItemWithTrigger
                     className="z-[80] max-w-[min(100vw-2rem,28rem)] rounded-2xl border border-zinc-200 bg-white p-1.5 text-zinc-900 shadow-lg"
                   >

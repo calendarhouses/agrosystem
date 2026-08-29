@@ -83,7 +83,17 @@ function SelectContent({
     sheetOnMobile?: boolean
   }) {
   const isMobile = useIsMobile()
-  const insideDrawer = useInsideDrawer()
+  /** Portal поза деревом Drawer → context часто false; дивимось і DOM. */
+  const insideDrawerCtx = useInsideDrawer()
+  const [drawerOpenInDom, setDrawerOpenInDom] = React.useState(false)
+  React.useLayoutEffect(() => {
+    setDrawerOpenInDom(
+      !!document.querySelector(
+        '[data-slot="drawer-content"][data-state="open"], [data-slot="sheet-content"][data-state="open"]'
+      )
+    )
+  }, [])
+  const insideDrawer = insideDrawerCtx || drawerOpenInDom
   const backdropRef = React.useRef<HTMLDivElement>(null)
   const useSheet = isMobile && sheetOnMobile && !insideDrawer
   const alignWithTrigger = !useSheet && !insideDrawer && alignItemWithTrigger

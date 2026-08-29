@@ -16,6 +16,11 @@ import {
   markAccountantQueuePrepared,
   type AccountantQueueItem,
 } from "@/app/export/actions";
+import {
+  FuelPanelShell,
+  FuelSheetHeader,
+  fuelSheetBodyClass,
+} from "@/components/dashboard/fuel-sheet-chrome";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -25,13 +30,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
 import { getSeasonRange, toIsoRange } from "@/lib/finance-period";
 import { downloadAccountantPackageExcel } from "@/lib/inventory-excel-export";
 import { useSeasonStore } from "@/lib/season-store";
@@ -164,24 +162,23 @@ export function AccountantExportSheet({
 
   return (
     <>
-      <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent
-          side="right"
-          className={cn(
-            "flex w-full flex-col gap-0 border-l border-[#E5DFD3] bg-[#FAF8F4] p-0 text-zinc-900 sm:max-w-lg",
-            "[&_[data-slot=sheet-close]]:text-zinc-500"
-          )}
-        >
-          <SheetHeader className="shrink-0 border-b border-[#E5DFD3] bg-white px-6 py-5 pr-14 text-left">
-            <SheetTitle className="text-xl font-bold tracking-tight">
-              Експорт для бухгалтерії
-            </SheetTitle>
-            <SheetDescription className="text-sm text-zinc-500">
-              Завантаження Excel і позначення переданих операцій
-            </SheetDescription>
-          </SheetHeader>
+      <FuelPanelShell
+        open={open}
+        onOpenChange={onOpenChange}
+        title="Експорт для бухгалтерії"
+      >
+        <FuelSheetHeader
+          icon={FileSpreadsheet}
+          accent="zinc"
+          title="Експорт для бухгалтерії"
+          description="Завантаження Excel і позначення переданих операцій"
+        />
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">
+        <div
+          className={fuelSheetBodyClass}
+          data-vaul-no-drag=""
+          data-allow-pan="true"
+        >
             {loading ? (
               <div className="flex items-center justify-center gap-2 py-16 text-sm text-zinc-500">
                 <Loader2 className="h-5 w-5 animate-spin" />
@@ -208,12 +205,12 @@ export function AccountantExportSheet({
                   </p>
                 </div>
 
-                <p className="mt-4 text-[12px] leading-relaxed text-zinc-500">
+                <p className="text-[12px] leading-relaxed text-zinc-500">
                   1) Завантажте Excel і передайте бухгалтеру.
                   2) Коли файл забрано — позначте обрані як передані.
                 </p>
 
-                <div className="mt-5 space-y-2.5">
+                <div className="space-y-2.5">
                   <Button
                     type="button"
                     disabled={empty || pending || selectedCount === 0}
@@ -240,11 +237,11 @@ export function AccountantExportSheet({
                 </div>
 
                 {empty ? (
-                  <p className="mt-8 text-center text-sm text-zinc-500">
+                  <p className="mt-4 text-center text-sm text-zinc-500">
                     Немає операцій у черзі за сезон
                   </p>
                 ) : (
-                  <div className="mt-6">
+                  <div>
                     <div className="mb-2 flex items-center justify-between">
                       <p className="text-[11px] font-semibold tracking-wider text-zinc-400 uppercase">
                         Черга
@@ -300,13 +297,14 @@ export function AccountantExportSheet({
                 )}
               </>
             )}
-          </div>
-        </SheetContent>
-      </Sheet>
+        </div>
+      </FuelPanelShell>
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent className="rounded-2xl border border-[#E5DFD3] bg-white sm:max-w-md">
-          <DialogHeader>
+        <DialogContent
+          presentation="center"
+          className="rounded-2xl border border-[#E5DFD3] bg-white sm:max-w-md"
+        >          <DialogHeader>
             <DialogTitle>Позначити як передані?</DialogTitle>
             <DialogDescription>
               {selectedCount} обраних операцій зникнуть з черги. Редагувати їх
