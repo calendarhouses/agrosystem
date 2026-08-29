@@ -586,7 +586,7 @@ export function FieldsView() {
 
   const handleMobileDetailClose = useCallback(() => {
     setSheetOpen(false);
-    setMobileDrawerVisible(false);
+    setMobileDrawerVisible(true);
     setMobileListExpanded(false);
     setHubConfirmDelete(false);
     if (pendingFeature && !selectedItem) {
@@ -626,7 +626,9 @@ export function FieldsView() {
       syncPassportFromItem(item);
       setHubInitialTab(options?.tab ?? "overview");
       setMobileDrawerVisible(true);
-      setMobileListExpanded(true);
+      // Деталі самі відкривають шторку (showFullSnap); не форсуємо список —
+      // інакше подвійний open + refit камери валить UI на швидкому тапі.
+      setMobileListExpanded(false);
       setSheetOpen(true);
       setPendingFeature(null);
 
@@ -674,10 +676,17 @@ export function FieldsView() {
     fieldsMapRef.current?.previewFieldFocus(item.geometry);
   }, [hoveredFieldId, mapFields, sheetOpen]);
 
+  const openFieldLockRef = useRef(false);
+
+  const handleMapSearchOpenChange = useCallback((open: boolean) => {
+    setMapSearchOpen(open);
+    if (open) setMobileListExpanded(false);
+  }, []);
+
   const openFieldById = useCallback(
     (fieldId: string) => {
       const needle = fieldId.trim();
-      if (!needle) return;
+      if (!needle || openFieldLockRef.current) return;
       const item =
         mapFields.find((field) => field.id === needle) ??
         mapFields.find((field) => field.farmField?.id === needle) ??
@@ -685,7 +694,14 @@ export function FieldsView() {
           (field) => field.farmField?.wialonZoneId?.trim() === needle
         );
       if (!item) return;
-      selectField(item, { fly: true });
+      openFieldLockRef.current = true;
+      // Відкладаємо після gesture — інакше ghost-click по оверлею шторки її одразу закриває
+      window.setTimeout(() => {
+        selectField(item, { fly: true });
+        window.setTimeout(() => {
+          openFieldLockRef.current = false;
+        }, 600);
+      }, 50);
     },
     [mapFields, selectField]
   );
@@ -1075,10 +1091,7 @@ export function FieldsView() {
           ref={fieldsMapRef}
           className="h-full w-full"
           chrome={sheetOpen ? "detail" : "list"}
-          onSearchOpenChange={(open) => {
-            setMapSearchOpen(open);
-            if (open) setMobileListExpanded(false);
-          }}
+          onSearchOpenChange={handleMapSearchOpenChange}
           onMapChromeChange={(state) =>
             setMapToolActive(
               state.searchOpen || state.drawing || state.economics

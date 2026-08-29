@@ -11,6 +11,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import MapboxDraw from "@mapbox/mapbox-gl-draw";
 import type {
   Feature,
@@ -29,7 +30,6 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import "@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css";
 
 import { VehicleMapPopup } from "@/components/dashboard/vehicle-map-popup";
-import { Input } from "@/components/ui/input";
 import {
   FIELDS_GEOJSON,
   UKRAINE_MAX_BOUNDS,
@@ -675,17 +675,34 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
     const [searchLoading, setSearchLoading] = useState(false);
     const [searchError, setSearchError] = useState<string | null>(null);
     const [searchResults, setSearchResults] = useState<GeoSearchResult[]>([]);
+    const searchInputRef = useRef<HTMLInputElement | null>(null);
     const activeSeason = useSeasonStore((s) => s.activeSeason);
     const [mapViewMode, setMapViewMode] = useState<MapViewMode>("standard");
 
     useEffect(() => {
       onSearchOpenChange?.(searchOpen);
-      return () => onSearchOpenChange?.(false);
     }, [searchOpen, onSearchOpenChange]);
 
     useEffect(() => {
-      if (overlayActive && chrome === "list") setSearchOpen(false);
-    }, [overlayActive, chrome]);
+      return () => onSearchOpenChange?.(false);
+      // лише при unmount карти
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    useEffect(() => {
+      // Peek-шторка не overlayActive — пошу закриваємо пошук лише для деталей/повного списку
+      if (overlayActive) setSearchOpen(false);
+    }, [overlayActive]);
+
+    useEffect(() => {
+      if (!searchOpen) return;
+      const id = window.setTimeout(() => {
+        const el = searchInputRef.current;
+        if (!el) return;
+        el.focus({ preventScroll: true });
+      }, 100);
+      return () => window.clearTimeout(id);
+    }, [searchOpen]);
 
     const isDrawing = activeTool === "draw";
     const focusMode = isDrawing || geometryEditMode;
@@ -824,6 +841,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       (geometry: Geometry, chromeOverride?: "list" | "detail") => {
         const bounds = boundsFromGeometry(geometry);
         if (!bounds) return;
+        userMapNavigationRef.current = true;
         const mode = chromeOverride ?? chrome;
         focusBounds(bounds, {
           padding: chromePadding(mode),
@@ -838,6 +856,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       (geometry: Geometry) => {
         const bounds = boundsFromGeometry(geometry);
         if (!bounds) return;
+        userMapNavigationRef.current = true;
         focusBounds(bounds, {
           padding: chromePadding(chrome),
           maxZoom: 15.1,
@@ -899,6 +918,66 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
     }, [syncDrawnFeatures]);
 
     const userMapNavigationRef = useRef(false);
+    const settleAfterCameraRef = useRef<(() => void) | null>(null);
+
+    const markViewSettled = useCallback(() => {
+      setViewSettled(true);
+    }, []);
+
+    /** Чекаємо кінець камери (moveend) + idle тайлів — інакше прелоадер гасне посеред анімації. */
+    const waitForCameraSettle = useCallback(
+      (map: NonNullable<ReturnType<MapRef["getMap"]>>, minDelayMs = 280) => {
+        settleAfterCameraRef.current?.();
+        let done = false;
+        let idleHandler: (() => void) | null = null;
+        let moveEndHandler: (() => void) | null = null;
+        let fallbackTimer = 0;
+        let minTimer = 0;
+
+        const finish = () => {
+          if (done) return;
+          done = true;
+          if (idleHandler) map.off("idle", idleHandler);
+          if (moveEndHandler) map.off("moveend", moveEndHandler);
+          if (fallbackTimer) window.clearTimeout(fallbackTimer);
+          if (minTimer) window.clearTimeout(minTimer);
+          settleAfterCameraRef.current = null;
+          markViewSettled();
+        };
+
+        settleAfterCameraRef.current = () => {
+          done = true;
+          if (idleHandler) map.off("idle", idleHandler);
+          if (moveEndHandler) map.off("moveend", moveEndHandler);
+          if (fallbackTimer) window.clearTimeout(fallbackTimer);
+          if (minTimer) window.clearTimeout(minTimer);
+          settleAfterCameraRef.current = null;
+        };
+
+        minTimer = window.setTimeout(() => {
+          const armIdle = () => {
+            idleHandler = () => finish();
+            map.once("idle", idleHandler);
+            // Якщо вже idle — все одно дочекаємось наступного кадру
+            requestAnimationFrame(() => {
+              if (!done && !map.isMoving() && !map.isZooming()) {
+                finish();
+              }
+            });
+          };
+
+          if (map.isMoving() || map.isZooming()) {
+            moveEndHandler = () => armIdle();
+            map.once("moveend", moveEndHandler);
+          } else {
+            armIdle();
+          }
+        }, minDelayMs);
+
+        fallbackTimer = window.setTimeout(finish, 4500);
+      },
+      [markViewSettled]
+    );
 
     const fitAllFields = useCallback(() => {
       userMapNavigationRef.current = false;
@@ -930,10 +1009,12 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
           padding,
           maxZoom: 14,
         });
+        waitForCameraSettle(map, 320);
         return;
       }
 
       focusBounds(merged, { padding });
+      if (map) waitForCameraSettle(map, 320);
     }, [
       chrome,
       chromePadding,
@@ -941,6 +1022,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       showDemoFields,
       savedFieldsGeoJson?.features,
       wialonGeofences.features,
+      waitForCameraSettle,
     ]);
 
     const didAutoFitRef = useRef(false);
@@ -951,6 +1033,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         (savedFieldsGeoJson?.features?.length ?? 0) > 0;
       if (!hasFields) return;
       didAutoFitRef.current = true;
+      setViewSettled(false);
       const timer = window.setTimeout(() => fitAllFields(), 200);
       return () => window.clearTimeout(timer);
     }, [
@@ -961,11 +1044,15 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       wialonLoading,
     ]);
 
+    const fitAllFieldsRef = useRef(fitAllFields);
+    fitAllFieldsRef.current = fitAllFields;
+
     useEffect(() => {
       if (!mapReady || wialonLoading || userMapNavigationRef.current) return;
-      const timer = window.setTimeout(() => fitAllFields(), 80);
+      const timer = window.setTimeout(() => fitAllFieldsRef.current(), 80);
       return () => window.clearTimeout(timer);
-    }, [mapViewMode, mapReady, wialonLoading, fitAllFields]);
+      // лише зміна шару економіки — НЕ chrome/padding (інакше бійка з фокусом поля)
+    }, [mapViewMode, mapReady, wialonLoading]);
 
     useEffect(() => {
       if (!mapReady || wialonLoading) return;
@@ -974,14 +1061,14 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         if (window.innerWidth >= 768) return;
         if (userMapNavigationRef.current) return;
         if (timer) window.clearTimeout(timer);
-        timer = window.setTimeout(() => fitAllFields(), 180);
+        timer = window.setTimeout(() => fitAllFieldsRef.current(), 180);
       };
       window.addEventListener("orientationchange", refit);
       return () => {
         window.removeEventListener("orientationchange", refit);
         window.clearTimeout(timer);
       };
-    }, [fitAllFields, mapReady, wialonLoading]);
+    }, [mapReady, wialonLoading]);
 
     const flyTo = useCallback(
       (longitude: number, latitude: number, nextZoom = 14) => {
@@ -1000,7 +1087,11 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
 
     // Не скидаємо mapReady при повторному завантаженні Wialon — карта лишається інтерактивною.
     useEffect(() => {
-      if (wialonLoading) return;
+      if (wialonLoading) {
+        setViewSettled(false);
+        settleAfterCameraRef.current?.();
+        return;
+      }
       setZoom(mountBootView.zoom);
       mapCenterRef.current = {
         lng: mountBootView.longitude,
@@ -1011,7 +1102,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
 
     useEffect(() => {
       if (wialonLoading || viewSettled || !mapReady) return;
-      const fallback = window.setTimeout(() => setViewSettled(true), 1200);
+      const fallback = window.setTimeout(() => setViewSettled(true), 5000);
       return () => window.clearTimeout(fallback);
     }, [wialonLoading, viewSettled, mapReady]);
 
@@ -1375,6 +1466,8 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
     isDrawingRef.current = isDrawing;
     const blockingOverlayRef = useRef(blockingOverlay);
     blockingOverlayRef.current = blockingOverlay;
+    const searchOpenRef = useRef(searchOpen);
+    searchOpenRef.current = searchOpen;
     const isMobileRef = useRef(isMobile);
     isMobileRef.current = isMobile;
 
@@ -1391,6 +1484,9 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         setTouchPreviewFieldId(null);
       }
     }, [selectedFieldId]);
+
+    const touchPreviewFieldIdRef = useRef<string | null>(null);
+    touchPreviewFieldIdRef.current = touchPreviewFieldId;
 
     useEffect(() => {
       if (!mapReady || !isMobile) return;
@@ -1414,6 +1510,13 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         }
       };
 
+      const clearFieldPreview = () => {
+        clearPreviewDismiss();
+        setHover(null);
+        setTouchPreviewFieldId(null);
+        longPressTriggeredRef.current = false;
+      };
+
       const resetTouchTracking = () => {
         clearLongPress();
         touchStartRef.current = null;
@@ -1431,12 +1534,13 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         const feature = fieldFeatureAtPoint(map, { x, y });
         const rawId = feature?.properties?.id ?? feature?.id;
         if (rawId == null || !onFieldClickRef.current) return false;
-        setHover(null);
-        setTouchPreviewFieldId(null);
+        clearFieldPreview();
         setSelectedTractor(null);
-        clearPreviewDismiss();
         suppressNextClickRef.current = true;
         onFieldClickRef.current(String(rawId));
+        window.setTimeout(() => {
+          suppressNextClickRef.current = false;
+        }, 450);
         return true;
       };
 
@@ -1444,6 +1548,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         if (
           isDrawingRef.current ||
           blockingOverlayRef.current ||
+          searchOpenRef.current ||
           event.touches.length !== 1
         ) {
           return;
@@ -1453,7 +1558,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         touchStartRef.current = { x, y, time: Date.now() };
         longPressTriggeredRef.current = false;
         clearLongPress();
-        clearPreviewDismiss();
+        // Не скидаємо активний тултип на touchstart — лише на tap поза полем / pan
 
         longPressTimerRef.current = window.setTimeout(() => {
           const feature = fieldFeatureAtPoint(map, { x, y });
@@ -1465,12 +1570,13 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
           if (typeof navigator !== "undefined" && "vibrate" in navigator) {
             navigator.vibrate(12);
           }
-          // Автоскидання підсвітки, якщо не відкрили деталі
           clearPreviewDismiss();
           previewClearTimer = window.setTimeout(() => {
-            setHover(null);
-            setTouchPreviewFieldId(null);
+            clearFieldPreview();
           }, 3200);
+          window.setTimeout(() => {
+            suppressNextClickRef.current = false;
+          }, 450);
         }, MOBILE_LONG_PRESS_MS);
       };
 
@@ -1481,11 +1587,10 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         if (
           Math.hypot(x - start.x, y - start.y) > MOBILE_TAP_MOVE_THRESHOLD_PX
         ) {
-          const wasPreview = longPressTriggeredRef.current;
           resetTouchTracking();
-          if (!wasPreview) {
-            setHover(null);
-            setTouchPreviewFieldId(null);
+          // Пан карти — знімаємо long-press підсвітку, знову всі поля
+          if (touchPreviewFieldIdRef.current) {
+            clearFieldPreview();
           }
         }
       };
@@ -1496,11 +1601,16 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         clearLongPress();
         touchStartRef.current = null;
 
+        // Підняли палець після long-press — тултип лишається до тапу зовні
+        if (wasLongPress) {
+          return;
+        }
+
         if (
-          wasLongPress ||
           !start ||
           isDrawingRef.current ||
-          blockingOverlayRef.current
+          blockingOverlayRef.current ||
+          searchOpenRef.current
         ) {
           return;
         }
@@ -1517,8 +1627,33 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
           return;
         }
 
-        // Тап по полю → деталі (клік Mapbox інколи губиться після long-press)
-        openFieldAt(x, y);
+        const previewId = touchPreviewFieldIdRef.current;
+        const feature = fieldFeatureAtPoint(map, { x, y });
+        const rawId =
+          feature?.properties?.id != null
+            ? String(feature.properties.id)
+            : feature?.id != null
+              ? String(feature.id)
+              : null;
+
+        if (previewId) {
+          // Тап по тому ж підсвіченому полі → відкрити деталі
+          if (rawId === previewId) {
+            openFieldAt(x, y);
+            return;
+          }
+          // Тап будь-де інде — зняти тултип і показати всі поля
+          clearFieldPreview();
+          suppressNextClickRef.current = true;
+          window.setTimeout(() => {
+            suppressNextClickRef.current = false;
+          }, 450);
+          return;
+        }
+
+        if (rawId != null) {
+          openFieldAt(x, y);
+        }
       };
 
       container.addEventListener("touchstart", onTouchStart, { passive: true });
@@ -1585,7 +1720,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       );
     }
 
-    const showBootOverlay = !mapReady || !viewSettled;
+    const showBootOverlay = !mapReady || !viewSettled || wialonLoading;
     const showTractor = zoom >= 7 && !focusMode;
     const tractorScale = tractorScaleFromZoom(zoom);
 
@@ -1663,13 +1798,18 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
                         }
                       );
                     }
+                    waitForCameraSettle(map, 200);
+                    return;
                   } catch {
                     // ignore invalid bounds
                   }
                 }
               }
 
-              map.once("idle", () => setViewSettled(true));
+              // Полів ще немає / Wialon грузиться — не гасимо прелоадер на першому idle
+              if (!wialonLoading) {
+                waitForCameraSettle(map, 400);
+              }
             }}
             style={{
               width: "100%",
@@ -1824,72 +1964,83 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
           </Map>
         </div>
 
-        {searchOpen ? (
-          <div
-            className="absolute inset-x-3 z-[160] md:left-auto md:right-3 md:w-[min(calc(100vw-2rem),340px)]"
-            style={{ top: "calc(var(--safe-top) + 0.5rem)" }}
-            data-vaul-no-drag=""
-            onPointerDown={(event) => event.stopPropagation()}
-          >
-            <div className="rounded-2xl border border-border bg-background/95 p-3 shadow-lg backdrop-blur-xl">
-              <div className="flex items-center gap-2">
-                <Input
-                  autoFocus
-                  enterKeyHint="search"
-                  inputMode="search"
-                  autoComplete="off"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="Адреса або 50.45, 30.52"
-                  className="h-11 rounded-xl border-border bg-background text-base md:h-10 md:text-sm"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearchOpen(false);
-                    setSearchQuery("");
-                    setSearchResults([]);
-                  }}
-                  className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-foreground/8 text-foreground md:h-10 md:w-10"
-                  aria-label="Закрити пошук"
+        {searchOpen && typeof document !== "undefined"
+          ? createPortal(
+              <div
+                className="pointer-events-auto fixed inset-x-3 z-[220] md:left-auto md:right-3 md:w-[min(calc(100vw-2rem),340px)]"
+                style={{ top: "calc(var(--safe-top) + 0.5rem)" }}
+                data-vaul-no-drag=""
+                role="search"
+              >
+                <div
+                  className="rounded-2xl border border-[#E5DFD3]/90 bg-[#F4F1EA] p-3 shadow-xl"
                 >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-              <p className="mt-1.5 text-[11px] text-muted-foreground">
-                Населений пункт або координати lat, lng
-              </p>
-              {searchLoading ? (
-                <p className="mt-3 text-xs text-muted-foreground">Шукаємо…</p>
-              ) : null}
-              {searchError ? (
-                <p className="mt-3 text-xs text-destructive">{searchError}</p>
-              ) : null}
-              {searchResults.length > 0 ? (
-                <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto overscroll-none">
-                  {searchResults.map((result) => (
-                    <li key={result.id}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          flyTo(result.longitude, result.latitude, 13.8);
-                          setSearchOpen(false);
-                          setSearchQuery("");
-                          setSearchResults([]);
-                        }}
-                        className="w-full rounded-xl px-2.5 py-2.5 text-left text-sm transition-colors hover:bg-foreground/5"
-                      >
-                        {result.label}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
+                  <div className="flex items-center gap-2">
+                    <input
+                      ref={searchInputRef}
+                      type="text"
+                      enterKeyHint="search"
+                      inputMode="search"
+                      autoComplete="off"
+                      autoCorrect="off"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      value={searchQuery}
+                      onChange={(event) => setSearchQuery(event.target.value)}
+                      onTouchEnd={(event) => {
+                        // iOS: гарантований фокус по тапу в поле
+                        event.currentTarget.focus();
+                      }}
+                      placeholder="Адреса або 50.45, 30.52"
+                      className="h-11 min-w-0 flex-1 touch-manipulation rounded-xl border border-[#E5DFD3] bg-white px-3 text-base text-zinc-900 outline-none ring-emerald-700/30 placeholder:text-zinc-400 focus:ring-2 md:h-10 md:text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchOpen(false);
+                        setSearchQuery("");
+                        setSearchResults([]);
+                      }}
+                      className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-zinc-900/8 text-zinc-800 md:h-10 md:w-10"
+                      aria-label="Закрити пошук"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <p className="mt-1.5 text-[11px] text-zinc-500">
+                    Населений пункт або координати lat, lng
+                  </p>
+                  {searchLoading ? (
+                    <p className="mt-3 text-xs text-zinc-500">Шукаємо…</p>
+                  ) : null}
+                  {searchError ? (
+                    <p className="mt-3 text-xs text-amber-800">{searchError}</p>
+                  ) : null}
+                  {searchResults.length > 0 ? (
+                    <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto overscroll-contain">
+                      {searchResults.map((result) => (
+                        <li key={result.id}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              flyTo(result.longitude, result.latitude, 13.8);
+                              setSearchOpen(false);
+                              setSearchQuery("");
+                              setSearchResults([]);
+                            }}
+                            className="w-full rounded-xl px-2.5 py-2.5 text-left text-sm text-zinc-800 transition-colors hover:bg-white active:bg-white"
+                          >
+                            {result.label}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+              </div>,
+              document.body
+            )
+          : null}
 
         {!(overlayActive && chrome === "list") ? (
         <div

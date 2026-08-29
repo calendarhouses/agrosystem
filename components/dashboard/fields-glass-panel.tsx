@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity,
@@ -231,6 +231,11 @@ export function FieldsGlassPanel({
 }: FieldsGlassPanelProps) {
   const [query, setQuery] = useState("");
   const showFullSnap = mobileDetailOpen || mobileExpanded;
+  const drawerOpenedAtRef = useRef(0);
+
+  useEffect(() => {
+    if (showFullSnap) drawerOpenedAtRef.current = Date.now();
+  }, [showFullSnap]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -536,72 +541,29 @@ export function FieldsGlassPanel({
         {list}
       </aside>
 
-      {/* Мобільна шторка: список ↔ деталі з горизонтальним слайдом */}
+      {/* Мобільна шторка: peek фіксований (без vaul snap); повний список/деталі — drawer */}
       <div className="md:hidden">
-        {!mobileDrawerVisible && !mobileDetailOpen ? (
-          <button
-            type="button"
-            aria-label="Показати список полів"
-            onClick={() => onMobileDrawerVisibleChange?.(true)}
-            className="pointer-events-auto fixed inset-x-4 z-20 flex items-center gap-3 rounded-2xl border border-[#E5DFD3]/90 bg-[#F4F1EA]/95 px-4 py-3 shadow-lg backdrop-blur-xl touch-manipulation bottom-[calc(var(--app-bottom-inset)+0.5rem)]"
-          >
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#276749] text-white shadow-sm shadow-[#276749]/25">
-              <MapIcon className="h-4 w-4" />
-            </span>
-            <span className="min-w-0 flex-1 text-left">
-              <span className="block truncate text-[14px] font-bold leading-tight tracking-tight text-zinc-900">
-                Поля
-              </span>
-              <span className="block truncate text-[11px] font-medium leading-tight text-zinc-500">
-                {loading
-                  ? "Завантаження…"
-                  : `${formatCountPlural(fields.length, ["ділянка", "ділянки", "ділянок"])} · ${totalHa.toLocaleString("uk-UA")} га`}
-              </span>
-            </span>
-            <ChevronUp className="h-4 w-4 shrink-0 text-zinc-400" />
-          </button>
-        ) : null}
-        <Drawer
-          open={mobileDrawerVisible || mobileDetailOpen}
-          onOpenChange={(open) => {
-            if (open) {
-              onMobileDrawerVisibleChange?.(true);
-              return;
-            }
-            if (mobileDetailOpen) {
-              onMobileDetailClose?.();
-            }
-          }}
-          snapPoints={[FIELDS_DRAWER_PEEK, FIELDS_DRAWER_FULL]}
-          activeSnapPoint={showFullSnap ? FIELDS_DRAWER_FULL : FIELDS_DRAWER_PEEK}
-          setActiveSnapPoint={(point) => {
-            if (mobileDetailOpen) return;
-            onMobileExpandedChange(point !== FIELDS_DRAWER_PEEK);
-          }}
-          fadeFromIndex={1}
-          handleOnly={false}
-          dismissible={mobileDetailOpen}
-          modal={showFullSnap}
-          shouldScaleBackground={false}
-          noBodyStyles
-        >
-          <DrawerContent
-            className="bottom-[var(--app-bottom-inset)] max-h-[calc(96dvh-var(--app-bottom-inset))] border-[#E5DFD3]/90 bg-[#F4F1EA] pb-0"
-            overlayClassName={
-              showFullSnap ? undefined : "bg-transparent opacity-0"
-            }
-          >
-            <DrawerTitle className="sr-only">
-              {mobileDetailOpen ? "Деталі поля" : "Список полів"}
-            </DrawerTitle>
-            <DrawerHandle className="bg-zinc-400/90" />
-            {!mobileDetailOpen && !mobileExpanded ? (
+        {!mobileDetailOpen && !mobileExpanded ? (
+          mobileDrawerVisible ? (
+            <div
+              className="pointer-events-auto fixed inset-x-0 z-[140] border-t border-[#E5DFD3]/90 bg-[#F4F1EA] shadow-[0_-8px_30px_-12px_rgba(24,24,27,0.35)]"
+              style={{
+                bottom: "var(--app-bottom-inset)",
+                height: "var(--fields-peek-height)",
+                borderTopLeftRadius: "1.25rem",
+                borderTopRightRadius: "1.25rem",
+              }}
+            >
+              <div
+                className="mx-auto mt-2 h-1.5 w-12 rounded-full bg-zinc-400/90"
+                aria-hidden
+              />
               <button
                 type="button"
                 aria-expanded={false}
                 aria-label="Розгорнути список полів"
                 onClick={() => onMobileExpandedChange(true)}
-                className="flex w-full shrink-0 items-center gap-3 px-4 pb-2 text-left touch-manipulation"
+                className="flex h-[calc(var(--fields-peek-height)-0.75rem)] w-full items-center gap-3 px-4 pb-2 text-left touch-manipulation"
               >
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#276749] text-white shadow-sm shadow-[#276749]/25">
                   <MapIcon className="h-4 w-4" />
@@ -618,7 +580,61 @@ export function FieldsGlassPanel({
                 </span>
                 <ChevronUp className="h-4 w-4 shrink-0 text-zinc-400" />
               </button>
-            ) : null}
+            </div>
+          ) : (
+            <button
+              type="button"
+              aria-label="Показати список полів"
+              onClick={() => onMobileDrawerVisibleChange?.(true)}
+              className="pointer-events-auto fixed inset-x-4 z-[140] flex items-center gap-3 rounded-2xl border border-[#E5DFD3]/90 bg-[#F4F1EA]/95 px-4 py-3 shadow-lg backdrop-blur-xl touch-manipulation bottom-[calc(var(--app-bottom-inset)+0.5rem)]"
+            >
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#276749] text-white shadow-sm shadow-[#276749]/25">
+                <MapIcon className="h-4 w-4" />
+              </span>
+              <span className="min-w-0 flex-1 text-left">
+                <span className="block truncate text-[14px] font-bold leading-tight tracking-tight text-zinc-900">
+                  Поля
+                </span>
+                <span className="block truncate text-[11px] font-medium leading-tight text-zinc-500">
+                  {loading
+                    ? "Завантаження…"
+                    : `${formatCountPlural(fields.length, ["ділянка", "ділянки", "ділянок"])} · ${totalHa.toLocaleString("uk-UA")} га`}
+                </span>
+              </span>
+              <ChevronUp className="h-4 w-4 shrink-0 text-zinc-400" />
+            </button>
+          )
+        ) : null}
+
+        <Drawer
+          open={showFullSnap}
+          onOpenChange={(open) => {
+            if (open) {
+              onMobileDrawerVisibleChange?.(true);
+              if (!mobileDetailOpen) onMobileExpandedChange(true);
+              return;
+            }
+            // Ігноруємо миттєве закриття від ghost-click після тапу по мапі
+            if (mobileDetailOpen && Date.now() - drawerOpenedAtRef.current < 500) {
+              return;
+            }
+            if (mobileDetailOpen) {
+              onMobileDetailClose?.();
+              return;
+            }
+            onMobileExpandedChange(false);
+            onMobileDrawerVisibleChange?.(true);
+          }}
+          dismissible
+          modal
+          shouldScaleBackground={false}
+          noBodyStyles
+        >
+          <DrawerContent className="bottom-[var(--app-bottom-inset)] max-h-[calc(92dvh-var(--app-bottom-inset))] border-[#E5DFD3]/90 bg-[#F4F1EA] pb-0">
+            <DrawerTitle className="sr-only">
+              {mobileDetailOpen ? "Деталі поля" : "Список полів"}
+            </DrawerTitle>
+            <DrawerHandle className="bg-zinc-400/90" />
             <div className="relative min-h-0 flex-1 overflow-hidden">
               <motion.div
                 className="flex h-full min-h-0"
