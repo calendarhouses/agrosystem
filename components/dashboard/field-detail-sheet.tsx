@@ -137,6 +137,10 @@ type FieldDetailSheetProps = {
   onOpenChange: (open: boolean) => void;
   /** sheet — класичний оверлей; panel — вбудована права glass-панель */
   variant?: "sheet" | "panel";
+  /** Мобільна шторка vaul — без SwipeableSheet, свайп вниз ззовні */
+  embeddedInMobileDrawer?: boolean;
+  /** «До списку» — горизонтальний перехід назад, не закриття на мапу */
+  onBackToList?: () => void;
   initialTab?: FieldHubTab;
   /** Відкрити вкладку «Налаштування» з підтвердженням видалення (Delete на карті) */
   initialConfirmDelete?: boolean;
@@ -656,6 +660,11 @@ function PlanWorkPanel({
     [unitOptions]
   );
 
+  const typeSelectItems = useMemo(
+    () => OPERATION_TYPES.map((item) => ({ value: item, label: item })),
+    []
+  );
+
   const [type, setType] = useState<string>(OPERATION_TYPES[0]);
   const [crop, setCrop] = useState(field.crop || "");
   const [date, setDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
@@ -670,6 +679,18 @@ function PlanWorkPanel({
   const [implementOptions, setImplementOptions] = useState<ImplementOption[]>(
     []
   );
+
+  const implementSelectItems = useMemo(
+    () =>
+      implementOptions.map((item) => ({
+        value: item.id,
+        label: `${item.name}${
+          item.workingWidthM > 0 ? ` · ${item.workingWidthM} м` : " · 0 м"
+        }`,
+      })),
+    [implementOptions]
+  );
+
   const [areaDone, setAreaDone] = useState(String(areaDefault));
   const [fuelUsed, setFuelUsed] = useState(() =>
     String(estimatePlanFuelLiters(OPERATION_TYPES[0], areaDefault))
@@ -1054,11 +1075,15 @@ function PlanWorkPanel({
             <div className={row2Class}>
               <div className={cellClass}>
                 <Label className={labelClass}>Тип робіт</Label>
-                <Select value={type} onValueChange={handleTypeChange}>
+                <Select
+                  items={typeSelectItems}
+                  value={type}
+                  onValueChange={handleTypeChange}
+                >
                   <SelectTrigger className={selectTriggerClass}>
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="z-[120] border-[#E5DFD3] bg-white">
+                  <SelectContent className="border-[#E5DFD3] bg-white">
                     {OPERATION_TYPES.map((item) => (
                       <SelectItem key={item} value={item}>
                         {item}
@@ -1143,7 +1168,7 @@ function PlanWorkPanel({
                     <SelectTrigger className={selectTriggerClass}>
                       <SelectValue placeholder="Оберіть техніку" />
                     </SelectTrigger>
-                    <SelectContent className="z-[120] max-h-64 border-[#E5DFD3] bg-white">
+                    <SelectContent className="max-h-64 border-[#E5DFD3] bg-white">
                       {trackedUnitOptions.length > 0 ? (
                         <SelectGroup>
                           <SelectLabel>З GPS</SelectLabel>
@@ -1183,6 +1208,7 @@ function PlanWorkPanel({
                 <Label className={labelClass}>Знаряддя</Label>
                 {implementOptions.length > 0 ? (
                   <Select
+                    items={implementSelectItems}
                     value={implementId}
                     onValueChange={(v) => {
                       if (typeof v === "string" && v) handleImplementSelect(v);
@@ -1191,7 +1217,7 @@ function PlanWorkPanel({
                     <SelectTrigger className={selectTriggerClass}>
                       <SelectValue placeholder="Оберіть знаряддя" />
                     </SelectTrigger>
-                    <SelectContent className="z-[120] max-h-64 border-[#E5DFD3] bg-white">
+                    <SelectContent className="max-h-64 border-[#E5DFD3] bg-white">
                       {implementOptions.map((item) => (
                         <SelectItem key={item.id} value={item.id}>
                           {item.name}
@@ -1381,6 +1407,8 @@ export function FieldDetailSheet({
   open,
   onOpenChange,
   variant = "sheet",
+  embeddedInMobileDrawer = false,
+  onBackToList,
   initialTab = "overview",
   initialConfirmDelete = false,
   units = [],
@@ -1414,9 +1442,9 @@ export function FieldDetailSheet({
 }: FieldDetailSheetProps) {
   const isMobile = useIsMobile();
   const activeSeason = useSeasonStore((s) => s.activeSeason);
-  const setActiveSeason = useSeasonStore((s) => s.setActiveSeason);
-  const seasonYear = Number(activeSeason) || 2026;
-  const setSeasonYear = (year: number) => setActiveSeason(String(year));
+  const operationSeasonYear = Number(activeSeason) || 2026;
+  const [historySeasonYear, setHistorySeasonYear] = useState(operationSeasonYear);
+  const historySeason = String(historySeasonYear);
 
   const [period, setPeriod] = useState<HistoryPeriod>("Сезон");
   const [customRange, setCustomRange] = useState<DateRange | undefined>();
@@ -1455,6 +1483,12 @@ export function FieldDetailSheet({
 
   useEffect(() => {
     if (open) {
+      setHistorySeasonYear(operationSeasonYear);
+    }
+  }, [open, field?.id, operationSeasonYear]);
+
+  useEffect(() => {
+    if (open) {
       setActiveTab(initialTab);
       setConfirmDelete(initialConfirmDelete);
       // Не тримаємо GPS-панель з попереднього поля — вона валила відкриття деталей
@@ -1469,7 +1503,13 @@ export function FieldDetailSheet({
   const liveEconomics = useLiveFieldEconomics(
     farmFieldId,
     open && !!field,
-    realtimeVersion
+    realtimeVersion,
+    historySeason
+  );
+
+  const historyWindow = useMemo(
+    () => getPeriodRange(period, historySeasonYear, customRange),
+    [period, historySeasonYear, customRange]
   );
 
   /** Sticky footer — overview та історія (не settings/tech) */
@@ -1486,7 +1526,7 @@ export function FieldDetailSheet({
     const requestId = ++fieldEventsRequestRef.current;
     setEventsLoading(true);
     setEventsError(null);
-    const res = await getFieldEvents(farmFieldId, activeSeason);
+    const res = await getFieldEvents(farmFieldId, historySeason);
     if (requestId !== fieldEventsRequestRef.current) return;
     setEventsLoading(false);
     if (!res.ok) {
@@ -1586,7 +1626,7 @@ export function FieldDetailSheet({
     setEventsLoading(true);
     setEventsError(null);
 
-    void getFieldEvents(farmFieldId, activeSeason).then((res) => {
+    void getFieldEvents(farmFieldId, historySeason).then((res) => {
       if (cancelled || requestId !== fieldEventsRequestRef.current) return;
       setEventsLoading(false);
       if (!res.ok) {
@@ -1599,16 +1639,16 @@ export function FieldDetailSheet({
     return () => {
       cancelled = true;
     };
-  }, [open, farmFieldId, activeSeason, realtimeVersion]);
+  }, [open, farmFieldId, historySeason, realtimeVersion]);
 
   const activeOperations = useMemo(() => {
     if (!resolvedFieldKey) return [];
-    const { start, end } = getPeriodRange(period, seasonYear, customRange);
+    const { start, end } = getPeriodRange(period, historySeasonYear, customRange);
     return operations
       .filter((op) => op.status === "planned" || op.status === "in_progress")
       .filter((op) => {
         if (period === "Сезон") {
-          return op.seasonYear === seasonYear;
+          return op.seasonYear === historySeasonYear;
         }
         if (op.status === "in_progress") return true;
         const day = startOfDay(new Date(`${op.occurredAt}T12:00:00`));
@@ -1619,7 +1659,7 @@ export function FieldDetailSheet({
         if (b.status === "in_progress" && a.status !== "in_progress") return 1;
         return b.occurredAt.localeCompare(a.occurredAt);
       });
-  }, [operations, seasonYear, period, customRange, resolvedFieldKey]);
+  }, [operations, historySeasonYear, period, customRange, resolvedFieldKey]);
 
   const daysSinceSowing = useMemo(() => {
     const sowingOps = operations.filter(
@@ -1645,12 +1685,12 @@ export function FieldDetailSheet({
     // Сезон уже відфільтровано на API (колонка season) — не обрізати
     // календарним вікном бер–лют, інакше події з «пізнішою» датою зникають.
     if (period === "Сезон") return fieldEvents;
-    const { start, end } = getPeriodRange(period, seasonYear, customRange);
+    const { start, end } = getPeriodRange(period, historySeasonYear, customRange);
     return fieldEvents.filter((event) => {
       const day = startOfDay(new Date(`${event.date}T12:00:00`));
       return day >= start && day <= end;
     });
-  }, [fieldEvents, period, seasonYear, customRange]);
+  }, [fieldEvents, period, historySeasonYear, customRange]);
 
   async function persistOperation(op: FieldOperation) {
     if (!resolvedFieldKey) {
@@ -1696,8 +1736,7 @@ export function FieldDetailSheet({
     return operations.find((row) => row.id === key) ?? null;
   }
 
-  function closeHub() {
-    onOpenChange(false);
+  function resetHubOverlays() {
     setPlanOpen(false);
     setPlanPastWork(false);
     setPlanPrefill(null);
@@ -1705,6 +1744,20 @@ export function FieldDetailSheet({
     setEditingOp(null);
     setCompleteOp(null);
     setCorrectOp(null);
+  }
+
+  function closeHub() {
+    resetHubOverlays();
+    onOpenChange(false);
+  }
+
+  function backToList() {
+    resetHubOverlays();
+    if (onBackToList) {
+      onBackToList();
+      return;
+    }
+    onOpenChange(false);
   }
 
   function handlePanelSwipeDown() {
@@ -1773,7 +1826,7 @@ export function FieldDetailSheet({
                   areaHa: passportAreaHa > 0 ? passportAreaHa : field.areaHa,
                 }}
                 farmFieldId={farmFieldId}
-                seasonYear={seasonYear}
+                seasonYear={operationSeasonYear}
                 units={units}
                 fieldGeometry={fieldGeometry}
                 initial={editingOp}
@@ -1798,7 +1851,7 @@ export function FieldDetailSheet({
                       setPlanPastWork(false);
                       setPlanPrefill(null);
                       setActiveTab("history");
-                      setSeasonYear(saved.seasonYear);
+                      setHistorySeasonYear(saved.seasonYear);
                       setPeriod("Сезон");
                       toast.success(
                         planPastWork && !editingOp
@@ -1861,7 +1914,7 @@ export function FieldDetailSheet({
                     {variant === "panel" ? (
                       <button
                         type="button"
-                        onClick={closeHub}
+                        onClick={backToList}
                         className="mb-2 inline-flex min-h-11 items-center gap-1 rounded-lg px-1 text-sm font-semibold text-zinc-500 transition-colors hover:text-zinc-900 md:mb-3 md:min-h-0 md:text-xs"
                       >
                         <ChevronLeft className="h-3.5 w-3.5" />
@@ -1957,7 +2010,7 @@ export function FieldDetailSheet({
                 </div>
 
                 <div className="min-h-0 flex-1 overflow-y-auto">
-                  {activeTab === "history" ? (
+                  {(activeTab === "history" || activeTab === "tech") ? (
                     <div className="border-b border-[#E5DFD3]/70 px-3 py-2.5 sm:px-6">
                       <div className="flex flex-wrap items-center gap-2">
                         <Popover
@@ -1987,7 +2040,7 @@ export function FieldDetailSheet({
                               <Sprout className="h-3.5 w-3.5" />
                             </span>
                             <span className="tabular-nums">
-                              Сезон {seasonYear}
+                              Сезон {historySeasonYear}
                             </span>
                             <ChevronDown
                               className={cn(
@@ -2000,7 +2053,7 @@ export function FieldDetailSheet({
                           </PopoverTrigger>
                           <PopoverContent
                             align="start"
-                            className="z-[100] w-[min(100vw-3rem,20rem)] rounded-2xl border border-zinc-200 bg-white p-2 shadow-xl"
+                            className="w-[min(100vw-3rem,20rem)] rounded-2xl border border-zinc-200 bg-white p-2 shadow-xl"
                           >
                             <p className="px-2.5 pt-1.5 pb-2 text-[11px] leading-snug text-zinc-500">
                               Фільтр витрат, ТМЦ і нарядів за агросезоном
@@ -2012,13 +2065,13 @@ export function FieldDetailSheet({
                                   key={year}
                                   type="button"
                                   onClick={() => {
-                                    setSeasonYear(year);
+                                    setHistorySeasonYear(year);
                                     setPeriod("Сезон");
                                     setSeasonOpen(false);
                                   }}
                                   className={cn(
                                     "flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left transition-colors",
-                                    seasonYear === year
+                                    historySeasonYear === year
                                       ? "bg-[#276749] text-white"
                                       : "text-zinc-800 hover:bg-zinc-50"
                                   )}
@@ -2029,7 +2082,7 @@ export function FieldDetailSheet({
                                   <span
                                     className={cn(
                                       "text-[11px] font-medium",
-                                      seasonYear === year
+                                      historySeasonYear === year
                                         ? "text-white/75"
                                         : "text-zinc-400"
                                     )}
@@ -2093,7 +2146,7 @@ export function FieldDetailSheet({
                           </PopoverTrigger>
                           <PopoverContent
                             align="end"
-                            className="z-[100] w-auto rounded-2xl border border-zinc-200 bg-white p-3 shadow-xl"
+                            className="w-auto rounded-2xl border border-zinc-200 bg-white p-3 shadow-xl"
                           >
                             <p className="mb-2 px-1 text-[11px] text-zinc-500">
                               {customRange?.from && customRange?.to
@@ -2329,7 +2382,7 @@ export function FieldDetailSheet({
                         }}
                         emptyHint={
                           farmFieldId
-                            ? `За обраний період у сезоні ${seasonYear} подій не зафіксовано.`
+                            ? `За обраний період у сезоні ${historySeasonYear} подій не зафіксовано.`
                             : "Після створення паспорта тут зʼявиться єдина історія поля."
                         }
                       />
@@ -2352,6 +2405,20 @@ export function FieldDetailSheet({
                         fieldAreaHa={passportAreaHa || field.areaHa}
                         units={units}
                         realtimeVersion={realtimeVersion}
+                        historySeason={historySeason}
+                        windowFrom={historyWindow.start}
+                        windowTo={historyWindow.end}
+                        periodLabel={
+                          period === "custom" && customRange?.from
+                            ? `${format(customRange.from, "d MMM", { locale: uk })}${
+                                customRange.to
+                                  ? ` – ${format(customRange.to, "d MMM", { locale: uk })}`
+                                  : ""
+                              }`
+                            : period === "Сезон"
+                              ? `Сезон ${historySeasonYear}`
+                              : period
+                        }
                         onCreateOrderFromGps={(entry) => {
                           setEditingOp(null);
                           setPlanPrefill({
@@ -2500,6 +2567,13 @@ export function FieldDetailSheet({
 
   if (variant === "panel") {
     if (!open) return null;
+    if (embeddedInMobileDrawer) {
+      return (
+        <div className="flex h-full min-h-0 flex-col overflow-hidden bg-transparent">
+          {hubInner}
+        </div>
+      );
+    }
     return (
       <div className="flex h-full min-h-0 flex-col overflow-hidden bg-transparent">
         <SwipeableSheet

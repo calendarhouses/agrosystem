@@ -488,9 +488,12 @@ export function useLiveFieldEconomics(
   farmFieldId: string | null,
   enabled: boolean,
   /** Інкремент з useFieldRealtime — жорстко перезавантажує економіку */
-  realtimeVersion = 0
+  realtimeVersion = 0,
+  /** Окремий сезон для вкладки «Історія» (не глобальний store) */
+  seasonOverride?: string
 ) {
-  const activeSeason = useSeasonStore((s) => s.activeSeason);
+  const globalSeason = useSeasonStore((s) => s.activeSeason);
+  const activeSeason = seasonOverride ?? globalSeason;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<LiveFieldEconomics | null>(null);

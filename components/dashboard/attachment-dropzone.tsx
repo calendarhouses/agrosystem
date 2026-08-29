@@ -215,8 +215,9 @@ export function AttachmentDropzone({
               )}
               <button
                 type="button"
+                aria-label="Видалити вкладення"
                 onClick={() => removePending(p.id)}
-                className="absolute top-1 right-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-zinc-900/80 text-white opacity-0 transition group-hover:opacity-100"
+                className="absolute top-1 right-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-zinc-900/80 text-white opacity-100 md:h-5 md:w-5 md:opacity-0 md:transition md:group-hover:opacity-100"
               >
                 <X className="h-3 w-3" />
               </button>
@@ -242,8 +243,9 @@ export function AttachmentDropzone({
               )}
               <button
                 type="button"
+                aria-label="Видалити вкладення"
                 onClick={() => void removeRemote(a.id)}
-                className="absolute top-1 right-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-zinc-900/80 text-white opacity-0 transition group-hover:opacity-100"
+                className="absolute top-1 right-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-zinc-900/80 text-white opacity-100 md:h-5 md:w-5 md:opacity-0 md:transition md:group-hover:opacity-100"
               >
                 <Trash2 className="h-3 w-3" />
               </button>

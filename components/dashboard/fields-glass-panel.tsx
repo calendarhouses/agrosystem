@@ -17,10 +17,19 @@ import {
   DrawerHandle,
   DrawerTitle,
 } from "@/components/ui/drawer";
-import { useIsMobile } from "@/lib/use-mobile";
 import type { MapFieldItem } from "@/lib/map-fields";
 import { formatCountPlural } from "@/lib/plural";
 import { cn } from "@/lib/utils";
+
+/** Peek-висота шторки (sync з --fields-peek-height у globals.css) */
+export const FIELDS_DRAWER_PEEK = "4.75rem";
+export const FIELDS_DRAWER_FULL = 0.88;
+
+const SLIDE_TRANSITION = {
+  type: "tween" as const,
+  duration: 0.38,
+  ease: [0.32, 0.72, 0, 1] as const,
+};
 
 type FieldsGlassPanelProps = {
   fields: MapFieldItem[];
@@ -37,6 +46,11 @@ type FieldsGlassPanelProps = {
   budgetByFieldId?: Record<string, number | null>;
   mobileExpanded: boolean;
   onMobileExpandedChange: (v: boolean) => void;
+  mobileDrawerVisible?: boolean;
+  onMobileDrawerVisibleChange?: (v: boolean) => void;
+  mobileDetailOpen?: boolean;
+  mobileDetail?: ReactNode;
+  onMobileDetailClose?: () => void;
   onSelect: (field: MapFieldItem) => void;
   onHover: (fieldId: string | null) => void;
   onFitAll: () => void;
@@ -206,11 +220,17 @@ export function FieldsGlassPanel({
   budgetByFieldId = {},
   mobileExpanded,
   onMobileExpandedChange,
+  mobileDrawerVisible = true,
+  onMobileDrawerVisibleChange,
+  mobileDetailOpen = false,
+  mobileDetail = null,
+  onMobileDetailClose,
   onSelect,
   onHover,
   onFitAll,
 }: FieldsGlassPanelProps) {
   const [query, setQuery] = useState("");
+  const showFullSnap = mobileDetailOpen || mobileExpanded;
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -354,7 +374,12 @@ export function FieldsGlassPanel({
   const list = (
     <div className="flex h-full min-h-0 flex-col">
       <div className="border-b border-white/30 px-3 py-3">
-        <div className="hidden items-center gap-2 md:flex">
+        <div
+          className={cn(
+            "items-center gap-2",
+            mobileExpanded || mobileDetailOpen ? "flex" : "hidden md:flex"
+          )}
+        >
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-600/90 text-white shadow-md">
             <MapIcon className="h-3.5 w-3.5" />
           </div>
@@ -511,26 +536,15 @@ export function FieldsGlassPanel({
         {list}
       </aside>
 
-      {/* Мобільна шторка — md:hidden замість useIsMobile (без flash після hydration) */}
-      <div
-        className={cn(
-          "pointer-events-none fixed inset-x-0 z-40 md:hidden",
-          mobileExpanded && "hidden"
-        )}
-        style={{ bottom: "var(--app-bottom-inset)" }}
-      >
-        <button
-          type="button"
-          aria-expanded={mobileExpanded}
-          aria-label="Відкрити список полів"
-          onClick={() => onMobileExpandedChange(true)}
-          className={cn(
-            "pointer-events-auto relative mx-auto flex h-[var(--fields-peek-height)] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl",
-            "bg-[#F4F1EA] shadow-[0_-14px_34px_-18px_rgba(0,0,0,0.4)]"
-          )}
-        >
-          <span className="mx-auto mt-2.5 mb-2 block h-1 w-10 shrink-0 rounded-full bg-zinc-400/70" />
-          <span className="flex min-h-0 flex-1 items-center gap-3 px-4 pb-3.5">
+      {/* Мобільна шторка: список ↔ деталі з горизонтальним слайдом */}
+      <div className="md:hidden">
+        {!mobileDrawerVisible && !mobileDetailOpen ? (
+          <button
+            type="button"
+            aria-label="Показати список полів"
+            onClick={() => onMobileDrawerVisibleChange?.(true)}
+            className="pointer-events-auto fixed inset-x-4 z-20 flex items-center gap-3 rounded-2xl border border-[#E5DFD3]/90 bg-[#F4F1EA]/95 px-4 py-3 shadow-lg backdrop-blur-xl touch-manipulation bottom-[calc(var(--app-bottom-inset)+0.5rem)]"
+          >
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#276749] text-white shadow-sm shadow-[#276749]/25">
               <MapIcon className="h-4 w-4" />
             </span>
@@ -545,34 +559,85 @@ export function FieldsGlassPanel({
               </span>
             </span>
             <ChevronUp className="h-4 w-4 shrink-0 text-zinc-400" />
-          </span>
-        </button>
-      </div>
-
-      <Drawer
-        open={mobileExpanded}
-        onOpenChange={onMobileExpandedChange}
-        shouldScaleBackground={false}
-        noBodyStyles
-      >
-        {mobileExpanded ? (
-          <DrawerContent className="border-[#E5DFD3]/90 bg-[#F4F1EA]">
-            <DrawerTitle className="sr-only">Список полів</DrawerTitle>
+          </button>
+        ) : null}
+        <Drawer
+          open={mobileDrawerVisible || mobileDetailOpen}
+          onOpenChange={(open) => {
+            if (open) {
+              onMobileDrawerVisibleChange?.(true);
+              return;
+            }
+            if (mobileDetailOpen) {
+              onMobileDetailClose?.();
+            }
+          }}
+          snapPoints={[FIELDS_DRAWER_PEEK, FIELDS_DRAWER_FULL]}
+          activeSnapPoint={showFullSnap ? FIELDS_DRAWER_FULL : FIELDS_DRAWER_PEEK}
+          setActiveSnapPoint={(point) => {
+            if (mobileDetailOpen) return;
+            onMobileExpandedChange(point !== FIELDS_DRAWER_PEEK);
+          }}
+          fadeFromIndex={1}
+          handleOnly={false}
+          dismissible={mobileDetailOpen}
+          modal={showFullSnap}
+          shouldScaleBackground={false}
+          noBodyStyles
+        >
+          <DrawerContent className="bottom-[var(--app-bottom-inset)] max-h-[calc(96dvh-var(--app-bottom-inset))] border-[#E5DFD3]/90 bg-[#F4F1EA]">
+            <DrawerTitle className="sr-only">
+              {mobileDetailOpen ? "Деталі поля" : "Список полів"}
+            </DrawerTitle>
             <DrawerHandle className="bg-zinc-400/90" />
-            <div
-              className="flex min-h-0 flex-1 flex-col overflow-hidden"
-              data-vaul-no-drag
-            >
-              <div
-                className="flex-1 overflow-y-auto overscroll-contain"
-                data-allow-pan="true"
+            {!mobileDetailOpen && !mobileExpanded ? (
+              <button
+                type="button"
+                aria-expanded={false}
+                aria-label="Розгорнути список полів"
+                onClick={() => onMobileExpandedChange(true)}
+                className="flex w-full shrink-0 items-center gap-3 px-4 pb-2 text-left touch-manipulation"
               >
-                {list}
-              </div>
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#276749] text-white shadow-sm shadow-[#276749]/25">
+                  <MapIcon className="h-4 w-4" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[14px] font-bold leading-tight tracking-tight text-zinc-900">
+                    Поля
+                  </span>
+                  <span className="block truncate text-[11px] font-medium leading-tight text-zinc-500">
+                    {loading
+                      ? "Завантаження…"
+                      : `${formatCountPlural(fields.length, ["ділянка", "ділянки", "ділянок"])} · ${totalHa.toLocaleString("uk-UA")} га`}
+                  </span>
+                </span>
+                <ChevronUp className="h-4 w-4 shrink-0 text-zinc-400" />
+              </button>
+            ) : null}
+            <div className="relative min-h-0 flex-1 overflow-hidden">
+              <motion.div
+                className="flex h-full min-h-0"
+                style={{ width: "200%" }}
+                initial={false}
+                animate={{ x: mobileDetailOpen ? "-50%" : "0%" }}
+                transition={SLIDE_TRANSITION}
+              >
+                <div className="flex w-1/2 min-w-0 flex-col overflow-hidden">
+                  <div
+                    className="flex-1 overflow-y-auto overscroll-contain"
+                    data-allow-pan="true"
+                  >
+                    {list}
+                  </div>
+                </div>
+                <div className="flex w-1/2 min-w-0 flex-col overflow-hidden">
+                  {mobileDetail}
+                </div>
+              </motion.div>
             </div>
           </DrawerContent>
-        ) : null}
-      </Drawer>
+        </Drawer>
+      </div>
     </>
   );
 }
@@ -582,12 +647,10 @@ export function FieldsDetailGlassFrame({
 }: {
   children: ReactNode;
 }) {
-  const isMobile = useIsMobile();
-
   return (
     <aside
       className={cn(
-        "pointer-events-auto absolute z-20 flex flex-col overflow-hidden border border-white/30 bg-[#F4F1EA] shadow-2xl",
+        "pointer-events-auto absolute z-20 hidden flex-col overflow-hidden border border-white/30 bg-[#F4F1EA] shadow-2xl md:flex",
         "inset-x-0 bottom-[var(--app-bottom-inset)] top-[max(10px,var(--safe-top))] rounded-t-3xl",
         "md:inset-x-auto md:top-3 md:right-3 md:bottom-3 md:h-auto md:w-[min(100%,580px)] md:rounded-2xl md:bg-[#F4F1EA]/88 md:backdrop-blur-2xl"
       )}
@@ -596,9 +659,9 @@ export function FieldsDetailGlassFrame({
         <motion.div
           key="field-detail"
           className="flex h-full min-h-0 flex-col"
-          initial={isMobile ? { y: 28, opacity: 0 } : { x: 28, opacity: 0 }}
-          animate={isMobile ? { y: 0, opacity: 1 } : { x: 0, opacity: 1 }}
-          exit={isMobile ? { y: 28, opacity: 0 } : { x: 28, opacity: 0 }}
+          initial={{ x: 28, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          exit={{ x: 28, opacity: 0 }}
           transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
         >
           {children}

@@ -44,7 +44,7 @@ import type {
   WialonGeofenceProperties,
   WialonUnit,
 } from "@/lib/wialon";
-import { DEFAULT_WEATHER_LOCATION } from "@/lib/weather";
+import { FARM_BASE_LOCATION } from "@/lib/farm-base-location";
 import { useSeasonStore } from "@/lib/season-store";
 import {
   CommandCenterMapBootOverlay,
@@ -55,8 +55,18 @@ import {
   mapCameraPadding,
 } from "@/lib/equipment-command-center-layout";
 import { cn } from "@/lib/utils";
+import { useIsMobile } from "@/lib/use-mobile";
 
 export type MapViewMode = "standard" | "economics";
+
+const FIELD_HIT_LAYERS = [
+  "wialon-geofences-fill",
+  "fields-fill",
+  "saved-fields-fill",
+] as const;
+
+const MOBILE_LONG_PRESS_MS = 420;
+const MOBILE_TAP_MOVE_THRESHOLD_PX = 14;
 
 const ECONOMICS_LAYER = {
   id: "economics" as const,
@@ -314,6 +324,47 @@ export type FieldHoverInfo = {
   y: number;
 };
 
+function fieldFeatureAtPoint(
+  map: NonNullable<ReturnType<MapRef["getMap"]>>,
+  point: { x: number; y: number }
+) {
+  const features = map.queryRenderedFeatures([point.x, point.y], {
+    layers: [...FIELD_HIT_LAYERS],
+  });
+  const feature = features[0];
+  if (!feature?.properties?.id) return null;
+  return feature;
+}
+
+function hoverInfoFromFeature(
+  feature: GeoJSON.Feature,
+  x: number,
+  y: number
+): FieldHoverInfo {
+  const areaRaw = feature.properties?.areaHa;
+  const budgetRaw = feature.properties?.budgetPct;
+  const budgetPct =
+    budgetRaw != null && budgetRaw !== "" && Number.isFinite(Number(budgetRaw))
+      ? Number(budgetRaw)
+      : null;
+
+  return {
+    id: String(feature.properties?.id),
+    name: String(feature.properties?.name ?? "Поле"),
+    crop: String(feature.properties?.crop ?? ""),
+    areaHa:
+      typeof areaRaw === "number"
+        ? areaRaw
+        : areaRaw != null
+          ? Number(areaRaw)
+          : null,
+    budgetPct,
+    color: String(feature.properties?.color ?? "#276749"),
+    x,
+    y,
+  };
+}
+
 type FitPadding =
   | number
   | { top: number; bottom: number; left: number; right: number };
@@ -387,10 +438,10 @@ type FieldsMapProps = {
   onEscape?: () => void;
 };
 
-/** Стартовий кадр — завжди Іванівка; zoom підбирає fitBounds */
+/** Стартовий кадр — Іванівка біля Узина; zoom підбирає fitBounds */
 const IVANIVKA_BOOT_VIEW: MapBootView = {
-  longitude: DEFAULT_WEATHER_LOCATION.longitude,
-  latitude: DEFAULT_WEATHER_LOCATION.latitude,
+  longitude: FARM_BASE_LOCATION.longitude,
+  latitude: FARM_BASE_LOCATION.latitude,
   zoom: 11.5,
 };
 
@@ -441,7 +492,7 @@ function focusFieldsAroundAnchor(
   const bottom = typeof padding === "number" ? padding : (padding.bottom ?? 0);
 
   map.easeTo({
-    center: [IVANIVKA_BOOT_VIEW.longitude, IVANIVKA_BOOT_VIEW.latitude],
+    center: [FARM_BASE_LOCATION.longitude, FARM_BASE_LOCATION.latitude],
     zoom: fittedZoom,
     offset: [0, -(bottom - top) / 2],
     duration,
@@ -597,7 +648,11 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
     const [activeTool, setActiveTool] = useState<DrawTool>("edit");
     const [hasSelection, setHasSelection] = useState(false);
     const [zoom, setZoom] = useState<number>(mountBootView.zoom);
+    const isMobile = useIsMobile();
     const [hover, setHover] = useState<FieldHoverInfo | null>(null);
+    const [touchPreviewFieldId, setTouchPreviewFieldId] = useState<
+      string | null
+    >(null);
     const [searchOpen, setSearchOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const [searchLoading, setSearchLoading] = useState(false);
@@ -645,9 +700,18 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
     onRequestDeleteSelectionRef.current = onRequestDeleteSelection;
     const selectedFieldIdRef = useRef(selectedFieldId);
     selectedFieldIdRef.current = selectedFieldId;
+    const onFieldClickRef = useRef(onFieldClick);
+    onFieldClickRef.current = onFieldClick;
+    const longPressTimerRef = useRef<number | null>(null);
+    const longPressTriggeredRef = useRef(false);
+    const suppressNextClickRef = useRef(false);
+    const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(
+      null
+    );
 
     /** Hover зі списку має пріоритет над кліком — превʼю поля без відкриття sheet */
-    const focusFieldId = hoveredFieldId || selectedFieldId;
+    const focusFieldId =
+      hoveredFieldId || selectedFieldId || touchPreviewFieldId;
 
     const blockingOverlay = overlayActive;
 
@@ -766,7 +830,26 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       [chrome, chromePadding, focusBounds]
     );
 
-    const startDraw = useCallback(() => {
+    const cancelDraw = useCallback(() => {
+      const draw = drawRef.current;
+      if (!isDrawAlive(draw)) return;
+      try {
+        if (draw.getMode() === "draw_polygon") {
+          draw.trash();
+        }
+        draw.changeMode("simple_select");
+      } catch {
+        // draw уже скинуто
+      }
+      setActiveTool("edit");
+      syncDrawnFeatures();
+    }, [syncDrawnFeatures]);
+
+    const toggleDraw = useCallback(() => {
+      if (activeTool === "draw") {
+        cancelDraw();
+        return;
+      }
       const draw = drawRef.current;
       if (!isDrawAlive(draw)) return;
       setSelectedTractor(null);
@@ -775,7 +858,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       setMapViewMode("standard");
       draw.changeMode("draw_polygon");
       setActiveTool("draw");
-    }, []);
+    }, [activeTool, cancelDraw]);
 
     const startEdit = useCallback(() => {
       const draw = drawRef.current;
@@ -798,7 +881,10 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       }
     }, [syncDrawnFeatures]);
 
+    const userMapNavigationRef = useRef(false);
+
     const fitAllFields = useCallback(() => {
+      userMapNavigationRef.current = false;
       const wialonBounds = wialonGeofences.features.map((feature) =>
         boundsFromGeometry(feature.geometry)
       );
@@ -859,7 +945,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
     ]);
 
     useEffect(() => {
-      if (!mapReady || wialonLoading) return;
+      if (!mapReady || wialonLoading || userMapNavigationRef.current) return;
       const timer = window.setTimeout(() => fitAllFields(), 80);
       return () => window.clearTimeout(timer);
     }, [mapViewMode, mapReady, wialonLoading, fitAllFields]);
@@ -869,15 +955,13 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       let timer: number | undefined;
       const refit = () => {
         if (window.innerWidth >= 768) return;
+        if (userMapNavigationRef.current) return;
         if (timer) window.clearTimeout(timer);
         timer = window.setTimeout(() => fitAllFields(), 180);
       };
-      const onViewportChange = () => refit();
-      window.addEventListener("orientationchange", onViewportChange);
-      window.visualViewport?.addEventListener("resize", onViewportChange);
+      window.addEventListener("orientationchange", refit);
       return () => {
-        window.removeEventListener("orientationchange", onViewportChange);
-        window.visualViewport?.removeEventListener("resize", onViewportChange);
+        window.removeEventListener("orientationchange", refit);
         window.clearTimeout(timer);
       };
     }, [fitAllFields, mapReady, wialonLoading]);
@@ -886,6 +970,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       (longitude: number, latitude: number, nextZoom = 14) => {
         const map = mapRef.current;
         if (!map) return;
+        userMapNavigationRef.current = true;
         map.flyTo({
           center: [longitude, latitude],
           zoom: nextZoom,
@@ -1014,7 +1099,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
             return null;
           }
         },
-        startDrawMode: startDraw,
+        startDrawMode: toggleDraw,
         startEditMode: startEdit,
       }),
       [
@@ -1024,7 +1109,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         focusFieldForInspector,
         focusGeometry,
         previewFieldFocus,
-        startDraw,
+        toggleDraw,
         startEdit,
         syncDrawnFeatures,
       ]
@@ -1143,8 +1228,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
           }
           const draw = drawRef.current;
           if (isDrawAlive(draw) && draw.getMode() === "draw_polygon") {
-            draw.changeMode("simple_select");
-            setActiveTool("edit");
+            cancelDraw();
             event.preventDefault();
             return;
           }
@@ -1158,7 +1242,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
           !geometryEditMode &&
           (event.key === "d" || event.key === "D")
         ) {
-          startDraw();
+          toggleDraw();
           return;
         }
 
@@ -1184,10 +1268,14 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
 
       window.addEventListener("keydown", onKeyDown);
       return () => window.removeEventListener("keydown", onKeyDown);
-    }, [deleteSelected, geometryEditMode, hasSelection, searchOpen, startDraw, syncDrawnFeatures]);
+    }, [cancelDraw, deleteSelected, geometryEditMode, hasSelection, searchOpen, toggleDraw, syncDrawnFeatures]);
 
     const handleMapClick = useCallback(
       (event: MapMouseEvent) => {
+        if (suppressNextClickRef.current) {
+          suppressNextClickRef.current = false;
+          return;
+        }
         if (searchOpen) setSearchOpen(false);
         const draw = drawRef.current;
         const mode = isDrawAlive(draw) ? draw.getMode() : null;
@@ -1203,18 +1291,26 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         const feature = event.features?.[0];
         const rawId = feature?.properties?.id ?? feature?.id;
         if (rawId != null && onFieldClick) {
+          if (isMobile) return;
           setSelectedTractor(null);
+          setHover(null);
+          setTouchPreviewFieldId(null);
           onFieldClick(String(rawId));
           return;
         }
 
+        if (isMobile) {
+          setHover(null);
+          setTouchPreviewFieldId(null);
+        }
         if (selectedTractor) setSelectedTractor(null);
       },
-      [isDrawing, onFieldClick, searchOpen, selectedTractor]
+      [isDrawing, isMobile, onFieldClick, searchOpen, selectedTractor]
     );
 
     const handleMouseMove = useCallback(
       (event: MapMouseEvent) => {
+        if (isMobile) return;
         if (isDrawing || blockingOverlay || selectedTractor) {
           setHover(null);
           return;
@@ -1226,48 +1322,184 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
           return;
         }
 
-        const areaRaw = feature.properties.areaHa;
-        const budgetRaw = feature.properties.budgetPct;
-        const budgetPct =
-          budgetRaw != null && budgetRaw !== "" && Number.isFinite(Number(budgetRaw))
-            ? Number(budgetRaw)
-            : null;
-        setHover({
-          id: String(feature.properties.id),
-          name: String(feature.properties.name ?? "Поле"),
-          crop: String(feature.properties.crop ?? ""),
-          areaHa:
-            typeof areaRaw === "number"
-              ? areaRaw
-              : areaRaw != null
-                ? Number(areaRaw)
-                : null,
-          budgetPct,
-          color: String(feature.properties.color ?? "#276749"),
-          x: event.point.x,
-          y: event.point.y,
-        });
+        setHover(
+          hoverInfoFromFeature(feature as GeoJSON.Feature, event.point.x, event.point.y)
+        );
       },
-      [blockingOverlay, isDrawing, selectedTractor]
+      [blockingOverlay, isDrawing, isMobile, selectedTractor]
     );
 
     const handleMouseLeave = useCallback(() => {
+      if (isMobile) return;
       setHover(null);
-    }, []);
+    }, [isMobile]);
 
-    const handleMove = useCallback((event: ViewStateChangeEvent) => {
-      setZoom(event.viewState.zoom);
-      zoomRef.current = event.viewState.zoom;
-      mapCenterRef.current = {
-        lng: event.viewState.longitude,
-        lat: event.viewState.latitude,
-      };
-    }, []);
+    const handleMove = useCallback(
+      (event: ViewStateChangeEvent) => {
+        setZoom(event.viewState.zoom);
+        zoomRef.current = event.viewState.zoom;
+        mapCenterRef.current = {
+          lng: event.viewState.longitude,
+          lat: event.viewState.latitude,
+        };
+        if (isMobile) {
+          setHover(null);
+          setTouchPreviewFieldId(null);
+          longPressTriggeredRef.current = false;
+        }
+      },
+      [isMobile]
+    );
 
     const toggleEconomicsLayer = useCallback(() => {
       if (focusMode) return;
       setMapViewMode((prev) => (prev === "economics" ? "standard" : "economics"));
     }, [focusMode]);
+
+    const isDrawingRef = useRef(isDrawing);
+    isDrawingRef.current = isDrawing;
+    const blockingOverlayRef = useRef(blockingOverlay);
+    blockingOverlayRef.current = blockingOverlay;
+    const isMobileRef = useRef(isMobile);
+    isMobileRef.current = isMobile;
+
+    useEffect(() => {
+      if (blockingOverlay) {
+        setHover(null);
+        setTouchPreviewFieldId(null);
+      }
+    }, [blockingOverlay]);
+
+    useEffect(() => {
+      if (selectedFieldId) {
+        setHover(null);
+        setTouchPreviewFieldId(null);
+      }
+    }, [selectedFieldId]);
+
+    useEffect(() => {
+      if (!mapReady || !isMobile) return;
+      const map = mapRef.current?.getMap();
+      if (!map) return;
+
+      const canvas = map.getCanvas();
+
+      const clearLongPress = () => {
+        if (longPressTimerRef.current) {
+          window.clearTimeout(longPressTimerRef.current);
+          longPressTimerRef.current = null;
+        }
+      };
+
+      const resetTouchTracking = () => {
+        clearLongPress();
+        touchStartRef.current = null;
+      };
+
+      const touchPoint = (touch: Touch) => {
+        const rect = canvas.getBoundingClientRect();
+        return {
+          x: touch.clientX - rect.left,
+          y: touch.clientY - rect.top,
+        };
+      };
+
+      const onTouchStart = (event: TouchEvent) => {
+        if (
+          isDrawingRef.current ||
+          blockingOverlayRef.current ||
+          event.touches.length !== 1
+        ) {
+          return;
+        }
+
+        const { x, y } = touchPoint(event.touches[0]!);
+        touchStartRef.current = { x, y, time: Date.now() };
+        longPressTriggeredRef.current = false;
+        clearLongPress();
+
+        longPressTimerRef.current = window.setTimeout(() => {
+          const feature = fieldFeatureAtPoint(map, { x, y });
+          if (!feature) return;
+          longPressTriggeredRef.current = true;
+          suppressNextClickRef.current = true;
+          const fieldId = String(feature.properties?.id);
+          setTouchPreviewFieldId(fieldId);
+          setHover(hoverInfoFromFeature(feature as GeoJSON.Feature, x, y));
+          if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+            navigator.vibrate(12);
+          }
+        }, MOBILE_LONG_PRESS_MS);
+      };
+
+      const onTouchMove = (event: TouchEvent) => {
+        const start = touchStartRef.current;
+        if (!start || event.touches.length !== 1) return;
+        const { x, y } = touchPoint(event.touches[0]!);
+        if (
+          Math.hypot(x - start.x, y - start.y) > MOBILE_TAP_MOVE_THRESHOLD_PX
+        ) {
+          resetTouchTracking();
+          if (!longPressTriggeredRef.current) {
+            setHover(null);
+            setTouchPreviewFieldId(null);
+          }
+        }
+      };
+
+      const onTouchEnd = (event: TouchEvent) => {
+        const start = touchStartRef.current;
+        const wasLongPress = longPressTriggeredRef.current;
+        clearLongPress();
+        touchStartRef.current = null;
+
+        if (
+          wasLongPress ||
+          !start ||
+          isDrawingRef.current ||
+          blockingOverlayRef.current
+        ) {
+          return;
+        }
+
+        const { x, y } = touchPoint(event.changedTouches[0]!);
+        const duration = Date.now() - start.time;
+        const moved = Math.hypot(x - start.x, y - start.y);
+        if (
+          duration >= MOBILE_LONG_PRESS_MS ||
+          moved > MOBILE_TAP_MOVE_THRESHOLD_PX
+        ) {
+          return;
+        }
+
+        const feature = fieldFeatureAtPoint(map, { x, y });
+        const rawId = feature?.properties?.id ?? feature?.id;
+        if (rawId != null && onFieldClickRef.current) {
+          setHover(null);
+          setTouchPreviewFieldId(null);
+          setSelectedTractor(null);
+          suppressNextClickRef.current = true;
+          onFieldClickRef.current(String(rawId));
+          return;
+        }
+
+        setHover(null);
+        setTouchPreviewFieldId(null);
+      };
+
+      canvas.addEventListener("touchstart", onTouchStart, { passive: true });
+      canvas.addEventListener("touchmove", onTouchMove, { passive: true });
+      canvas.addEventListener("touchend", onTouchEnd, { passive: true });
+      canvas.addEventListener("touchcancel", onTouchEnd, { passive: true });
+
+      return () => {
+        resetTouchTracking();
+        canvas.removeEventListener("touchstart", onTouchStart);
+        canvas.removeEventListener("touchmove", onTouchMove);
+        canvas.removeEventListener("touchend", onTouchEnd);
+        canvas.removeEventListener("touchcancel", onTouchEnd);
+      };
+    }, [isMobile, mapReady]);
 
     /** Mapbox інколи не перемальовує fill-color при зміні mode — синхронізуємо вручну. */
     useEffect(() => {
@@ -1647,8 +1879,8 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
               <MapToolButton
                 active={isDrawing}
                 disabled={!drawReady}
-                title="Малювати (D)"
-                onClick={startDraw}
+                title={isDrawing ? "Скасувати малювання" : "Малювати (D)"}
+                onClick={toggleDraw}
               >
                 <Pentagon className="h-[18px] w-[18px]" />
               </MapToolButton>
@@ -1791,31 +2023,62 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
 
         {hover && !blockingOverlay && !selectedTractor ? (
           <div
-            className="pointer-events-none absolute z-30 -translate-x-1/2 -translate-y-[120%] rounded-lg border border-[#E5DFD3] bg-[#F4F1EA]/95 px-3 py-2 shadow-lg backdrop-blur-sm"
+            className={cn(
+              "pointer-events-none absolute z-30 -translate-x-1/2",
+              isMobile
+                ? "-translate-y-[calc(100%+16px)]"
+                : "-translate-y-[120%]"
+            )}
             style={{ left: hover.x, top: hover.y }}
           >
-            <div className="flex items-center gap-2">
-              <span
-                className="h-2 w-2 rounded-full"
-                style={{ backgroundColor: hover.color }}
-              />
-              <p className="text-xs font-bold text-zinc-900">
-                {hover.name}
-                {hover.crop ? `: ${hover.crop}` : ""}
-              </p>
-            </div>
-            {hover.areaHa != null && Number.isFinite(hover.areaHa) ? (
-              <p className="mt-0.5 pl-4 text-[11px] tabular-nums text-zinc-500">
-                {hover.areaHa} га
-              </p>
-            ) : null}
-            {mapViewMode === "economics" ? (
-              <p className="mt-0.5 pl-4 text-[11px] font-medium text-zinc-700">
-                {hover.budgetPct != null
-                  ? `Витрачено ${Math.round(hover.budgetPct)}% бюджету`
-                  : "Бюджет не задано"}
-              </p>
-            ) : null}
+            {isMobile ? (
+              <div className="min-w-[9.5rem] max-w-[14rem] rounded-2xl border border-white/15 bg-zinc-950/92 px-3.5 py-2.5 shadow-2xl shadow-black/40 backdrop-blur-md">
+                <div className="flex items-center gap-2.5">
+                  <span
+                    className="h-3 w-3 shrink-0 rounded-full ring-2 ring-white/25"
+                    style={{ backgroundColor: hover.color }}
+                  />
+                  <p className="truncate text-[13px] font-semibold leading-tight text-white">
+                    {hover.name}
+                  </p>
+                </div>
+                {hover.crop ? (
+                  <p className="mt-1 pl-[1.375rem] text-[11px] leading-tight text-zinc-300">
+                    {hover.crop}
+                  </p>
+                ) : null}
+                {hover.areaHa != null && Number.isFinite(hover.areaHa) ? (
+                  <p className="mt-0.5 pl-[1.375rem] text-[11px] tabular-nums text-zinc-400">
+                    {hover.areaHa} га
+                  </p>
+                ) : null}
+              </div>
+            ) : (
+              <div className="rounded-lg border border-[#E5DFD3] bg-[#F4F1EA]/95 px-3 py-2 shadow-lg backdrop-blur-sm">
+                <div className="flex items-center gap-2">
+                  <span
+                    className="h-2 w-2 rounded-full"
+                    style={{ backgroundColor: hover.color }}
+                  />
+                  <p className="text-xs font-bold text-zinc-900">
+                    {hover.name}
+                    {hover.crop ? `: ${hover.crop}` : ""}
+                  </p>
+                </div>
+                {hover.areaHa != null && Number.isFinite(hover.areaHa) ? (
+                  <p className="mt-0.5 pl-4 text-[11px] tabular-nums text-zinc-500">
+                    {hover.areaHa} га
+                  </p>
+                ) : null}
+                {mapViewMode === "economics" ? (
+                  <p className="mt-0.5 pl-4 text-[11px] font-medium text-zinc-700">
+                    {hover.budgetPct != null
+                      ? `Витрачено ${Math.round(hover.budgetPct)}% бюджету`
+                      : "Бюджет не задано"}
+                  </p>
+                ) : null}
+              </div>
+            )}
           </div>
         ) : null}
 

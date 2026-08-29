@@ -55,7 +55,7 @@ export function DatePicker({
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="z-[130] w-auto overflow-hidden rounded-2xl border border-[#E5DFD3] bg-[#F4F1EA] p-2 text-zinc-900 shadow-lg"
+        className="w-auto overflow-hidden rounded-2xl border border-[#E5DFD3] bg-[#F4F1EA] p-2 text-zinc-900 shadow-lg"
       >
         <Calendar
           mode="single"

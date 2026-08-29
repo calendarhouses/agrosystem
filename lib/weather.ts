@@ -1,5 +1,7 @@
 /** Погода через Open-Meteo (без API-ключа) */
 
+import { FARM_BASE_LOCATION } from "@/lib/farm-base-location";
+
 export type WeatherSnapshot = {
   tempC: number;
   humidityPercent: number;
@@ -29,12 +31,12 @@ export function shortWeatherPlaceLabel(label: string): string {
   return first || trimmed;
 }
 
-/** Дефолт: Іванівка, Білоцерківський район (Київська обл.) */
+/** Дефолт: Іванівка біля Узина (Фастівський р.) — де поля господарства */
 export const DEFAULT_WEATHER_LOCATION: WeatherLocation = {
-  id: "ivanivka-bilotserkivskyi",
-  label: "Ivanivka",
-  latitude: 49.87417,
-  longitude: 30.40083,
+  id: FARM_BASE_LOCATION.id,
+  label: FARM_BASE_LOCATION.label,
+  latitude: FARM_BASE_LOCATION.latitude,
+  longitude: FARM_BASE_LOCATION.longitude,
 };
 
 export const WEATHER_BASE_LOCATIONS: WeatherLocation[] = [

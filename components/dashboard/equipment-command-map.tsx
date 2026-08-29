@@ -33,13 +33,13 @@ import {
   type WialonGeofenceProperties,
   type WialonTrackLineFeature,
 } from "@/lib/wialon";
-import { DEFAULT_WEATHER_LOCATION } from "@/lib/weather";
+import { FARM_BASE_LOCATION } from "@/lib/farm-base-location";
 import { cn } from "@/lib/utils";
 
 /** Дефолтний центр карти — база (Іванівка), не Київ */
 const FARM_DEFAULT_CENTER: [number, number] = [
-  DEFAULT_WEATHER_LOCATION.longitude,
-  DEFAULT_WEATHER_LOCATION.latitude,
+  FARM_BASE_LOCATION.longitude,
+  FARM_BASE_LOCATION.latitude,
 ];
 
 function computeFleetBounds(

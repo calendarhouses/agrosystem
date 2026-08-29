@@ -244,6 +244,7 @@ export function FieldIntegrationsPanel({
 
   return (
     <section
+      data-vaul-no-drag=""
       className={cn(
         "rounded-2xl border border-[#E5DFD3] bg-white/80 p-4 shadow-sm",
         className

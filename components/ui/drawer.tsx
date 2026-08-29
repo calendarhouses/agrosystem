@@ -2,12 +2,13 @@
 
 import * as React from "react"
 import { Drawer as DrawerPrimitive } from "vaul"
+import "vaul/style.css"
 
 import { cn } from "@/lib/utils"
 
 function Drawer({
   shouldScaleBackground = false,
-  handleOnly = true,
+  handleOnly = false,
   noBodyStyles = true,
   ...props
 }: React.ComponentProps<typeof DrawerPrimitive.Root>) {
@@ -47,7 +48,11 @@ function DrawerOverlay({
   return (
     <DrawerPrimitive.Overlay
       data-slot="drawer-overlay"
-      className={cn("fixed inset-0 z-[150] bg-black/45", className)}
+      className={cn(
+        "fixed inset-0 z-[150] bg-black/45",
+        "data-[state=closed]:pointer-events-none data-[state=open]:pointer-events-auto",
+        className
+      )}
       {...props}
     />
   )
@@ -64,7 +69,7 @@ function DrawerContent({
       <DrawerPrimitive.Content
         data-slot="drawer-content"
         className={cn(
-          "fixed inset-x-0 bottom-0 z-[150] flex h-[80vh] flex-col rounded-t-3xl border border-[#E5DFD3]/80 bg-[#F4F1EA] outline-none",
+          "fixed inset-x-0 bottom-0 z-[150] flex max-h-[96dvh] flex-col rounded-t-3xl border border-[#E5DFD3]/80 bg-[#F4F1EA] outline-none",
           "pb-[calc(12px+env(safe-area-inset-bottom,0px))]",
           "data-[state=closed]:pointer-events-none data-[state=open]:pointer-events-auto",
           className
@@ -85,7 +90,7 @@ function DrawerHandle({
     <DrawerPrimitive.Handle
       data-slot="drawer-handle"
       className={cn(
-        "mx-auto my-4 h-1.5 w-12 shrink-0 rounded-full bg-muted",
+        "mx-auto my-3 h-1.5 w-12 shrink-0 rounded-full bg-muted touch-none",
         className
       )}
       {...props}

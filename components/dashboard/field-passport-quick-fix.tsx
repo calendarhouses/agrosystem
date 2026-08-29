@@ -133,6 +133,10 @@ export function FieldPassportQuickFix({
               Культура
             </Label>
             <Select
+              items={FIELD_CROP_OPTIONS.map((option) => ({
+                value: option,
+                label: option,
+              }))}
               value={draftCrop}
               onValueChange={(value) => {
                 if (typeof value === "string" && value) {
@@ -140,10 +144,10 @@ export function FieldPassportQuickFix({
                 }
               }}
             >
-              <SelectTrigger className="h-11 w-full rounded-xl border-[#E5DFD3] bg-white text-base md:text-sm">
+              <SelectTrigger className="h-11 w-full min-w-0 rounded-xl border-[#E5DFD3] bg-white text-base md:text-sm">
                 <SelectValue placeholder="Оберіть культуру" />
               </SelectTrigger>
-              <SelectContent className="z-[200] border-[#E5DFD3] bg-white">
+              <SelectContent className="border-[#E5DFD3] bg-white">
                 {FIELD_CROP_OPTIONS.map((option) => (
                   <SelectItem key={option} value={option}>
                     {option}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { endOfDay, format, startOfDay } from "date-fns";
 import {
   AlertTriangle,
   ClipboardPlus,
@@ -28,11 +29,9 @@ import {
   currentSeasonYear,
   formatVisitClock,
   liveUnitsToVisits,
-  recentWindowInSeason,
-  seasonDateRange,
+  type FieldTechDateRange,
   type FieldTechVisit,
 } from "@/lib/field-tech-history";
-import { useSeasonStore } from "@/lib/season-store";
 import type { WialonUnit } from "@/lib/wialon";
 import { cn } from "@/lib/utils";
 
@@ -44,6 +43,13 @@ type FieldTechHistoryPanelProps = {
   units?: WialonUnit[];
   /** Інкремент з Realtime — оновити наряди (треки з кешу) */
   realtimeVersion?: number;
+  /** Сезон для нарядів з БД (з фільтра історії) */
+  historySeason: string;
+  /** Вікно GPS / фільтрації записів */
+  windowFrom: Date;
+  windowTo: Date;
+  /** Підпис обраного періоду для UI */
+  periodLabel?: string;
   onCreateOrderFromGps?: (entry: FieldEquipmentHistoryEntry) => void;
   className?: string;
 };
@@ -61,6 +67,7 @@ type DbCacheEntry = {
 };
 
 const TRACK_CACHE_TTL_MS = 12 * 60 * 1000;
+const TRACK_CHUNK_DAYS = 7;
 const trackCache = new Map<string, TrackCacheEntry>();
 const dbCache = new Map<string, DbCacheEntry>();
 
@@ -175,6 +182,57 @@ async function fetchTrackVisits(args: {
     throw new Error(data.error || "Не вдалося завантажити GPS-треки");
   }
   return data.visits ?? [];
+}
+
+function splitWindowIntoChunks(from: Date, to: Date): FieldTechDateRange[] {
+  const chunks: FieldTechDateRange[] = [];
+  let cursor = startOfDay(from);
+  const end = endOfDay(to);
+  while (cursor.getTime() <= end.getTime()) {
+    const chunkEnd = new Date(cursor);
+    chunkEnd.setDate(chunkEnd.getDate() + TRACK_CHUNK_DAYS - 1);
+    if (chunkEnd.getTime() > end.getTime()) {
+      chunkEnd.setTime(end.getTime());
+    } else {
+      chunkEnd.setHours(23, 59, 59, 999);
+    }
+    chunks.push({ from: new Date(cursor), to: chunkEnd });
+    const next = new Date(chunkEnd);
+    next.setDate(next.getDate() + 1);
+    next.setHours(0, 0, 0, 0);
+    cursor = next;
+  }
+  return chunks;
+}
+
+async function fetchTrackVisitsForWindow(args: {
+  geometry: FieldGeometry;
+  units: WialonUnit[];
+  from: Date;
+  to: Date;
+  signal: AbortSignal;
+}): Promise<FieldTechVisit[]> {
+  const dayMs = 86_400_000;
+  const spanDays =
+    Math.ceil((args.to.getTime() - args.from.getTime()) / dayMs) + 1;
+  if (spanDays <= TRACK_CHUNK_DAYS) {
+    return fetchTrackVisits(args);
+  }
+
+  const chunks = splitWindowIntoChunks(args.from, args.to);
+  const merged = new Map<string, FieldTechVisit>();
+  for (const chunk of chunks) {
+    if (args.signal.aborted) break;
+    const visits = await fetchTrackVisits({
+      ...args,
+      from: chunk.from,
+      to: chunk.to,
+    });
+    for (const visit of visits) {
+      merged.set(`${visit.unitId}:${visit.startUnix}:${visit.endUnix}`, visit);
+    }
+  }
+  return Array.from(merged.values());
 }
 
 function OperationSourceBadge({ entry }: { entry: FieldEquipmentHistoryEntry }) {
@@ -394,20 +452,14 @@ export function FieldTechHistoryPanel({
   fieldAreaHa = null,
   units = [],
   realtimeVersion = 0,
+  historySeason,
+  windowFrom,
+  windowTo,
+  periodLabel = "обраний період",
   onCreateOrderFromGps,
   className,
 }: FieldTechHistoryPanelProps) {
-  const activeSeason = useSeasonStore((s) => s.activeSeason);
-  const seasonYear = Number(activeSeason) || currentSeasonYear();
-
-  const dateRange = useMemo(
-    () => seasonDateRange(seasonYear),
-    [seasonYear]
-  );
-  const quickWindow = useMemo(
-    () => recentWindowInSeason(dateRange, 7),
-    [dateRange]
-  );
+  const seasonYear = Number(historySeason) || currentSeasonYear();
 
   const unitsKey = useMemo(() => unitSignature(units), [units]);
   // Не JSON.stringify(geometry) — важкі полігони + ризик падіння рендеру деталей
@@ -416,13 +468,15 @@ export function FieldTechHistoryPanel({
     : fieldGeometry
       ? `geom:${fieldGeometry.type}:${Array.isArray(fieldGeometry.coordinates) ? fieldGeometry.coordinates.length : 0}`
       : "";
-  const windowFromMs = quickWindow.from.getTime();
-  const windowToMs = quickWindow.to.getTime();
+  const windowFromMs = windowFrom.getTime();
+  const windowToMs = windowTo.getTime();
+  const windowFromYmd = format(windowFrom, "yyyy-MM-dd");
+  const windowToYmd = format(windowTo, "yyyy-MM-dd");
   const tracksKey =
     farmFieldId != null
-      ? trackCacheKey(farmFieldId, activeSeason, windowFromMs, windowToMs)
+      ? trackCacheKey(farmFieldId, historySeason, windowFromMs, windowToMs)
       : geometryKey
-        ? trackCacheKey(geometryKey, activeSeason, windowFromMs, windowToMs)
+        ? trackCacheKey(geometryKey, historySeason, windowFromMs, windowToMs)
         : "";
 
   const unitsRef = useRef(units);
@@ -448,7 +502,7 @@ export function FieldTechHistoryPanel({
       setTrackError(null);
       return;
     }
-    const db = readDbCache(farmFieldId, activeSeason, realtimeVersion);
+    const db = readDbCache(farmFieldId, historySeason, realtimeVersion);
     if (db) {
       setDbEntries(db);
       setLoadingDb(false);
@@ -462,7 +516,15 @@ export function FieldTechHistoryPanel({
         setTrackError(null);
       }
     }
-  }, [farmFieldId, activeSeason, realtimeVersion, tracksKey, unitsKey]);
+  }, [farmFieldId, historySeason, realtimeVersion, tracksKey, unitsKey]);
+
+  const filteredDbEntries = useMemo(
+    () =>
+      dbEntries.filter(
+        (entry) => entry.date >= windowFromYmd && entry.date <= windowToYmd
+      ),
+    [dbEntries, windowFromYmd, windowToYmd]
+  );
 
   const loadDb = useCallback(async () => {
     if (!farmFieldId) {
@@ -472,7 +534,7 @@ export function FieldTechHistoryPanel({
       return;
     }
 
-    const key = `${farmFieldId}|${activeSeason}`;
+    const key = `${farmFieldId}|${historySeason}`;
     const cached = dbCache.get(key);
     if (
       cached &&
@@ -488,7 +550,7 @@ export function FieldTechHistoryPanel({
     const hadData = Boolean(cached?.entries.length);
     if (!hadData) setLoadingDb(true);
     setError(null);
-    const res = await getFieldEquipmentHistory(farmFieldId, activeSeason);
+    const res = await getFieldEquipmentHistory(farmFieldId, historySeason);
     setLoadingDb(false);
     if (!res.ok) {
       if (!hadData) setDbEntries([]);
@@ -501,7 +563,7 @@ export function FieldTechHistoryPanel({
       realtimeVersion,
     });
     setDbEntries(res.data);
-  }, [farmFieldId, activeSeason, realtimeVersion]);
+  }, [farmFieldId, historySeason, realtimeVersion]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -518,7 +580,7 @@ export function FieldTechHistoryPanel({
 
     const key = trackCacheKey(
       farmFieldId,
-      activeSeason,
+      historySeason,
       windowFromMs,
       windowToMs
     );
@@ -537,7 +599,7 @@ export function FieldTechHistoryPanel({
       setTrackError(null);
     }
 
-    void fetchTrackVisits({
+    void fetchTrackVisitsForWindow({
       geometry,
       units: unitsRef.current,
       from: new Date(windowFromMs),
@@ -586,22 +648,26 @@ export function FieldTechHistoryPanel({
     farmFieldId,
     geometryKey,
     unitsKey,
-    activeSeason,
+    historySeason,
     windowFromMs,
     windowToMs,
   ]);
 
   const isCurrentSeason = seasonYear === currentSeasonYear();
+  const today = startOfDay(new Date());
+  const windowIncludesToday =
+    today.getTime() >= startOfDay(windowFrom).getTime() &&
+    today.getTime() <= endOfDay(windowTo).getTime();
   const liveEntries = useMemo(
     () =>
-      enabled && isCurrentSeason
+      enabled && isCurrentSeason && windowIncludesToday
         ? calculateTechInField({ geometry: fieldGeometry }, units)
         : [],
-    [enabled, isCurrentSeason, fieldGeometry, units]
+    [enabled, isCurrentSeason, windowIncludesToday, fieldGeometry, units]
   );
 
   const entries = useMemo(() => {
-    const merged = mergeTrackVisitsIntoHistory(dbEntries, trackVisits, {
+    const merged = mergeTrackVisitsIntoHistory(filteredDbEntries, trackVisits, {
       areaCapHa: fieldAreaHa,
     });
     if (!isCurrentSeason || liveEntries.length === 0) return merged;
@@ -615,7 +681,7 @@ export function FieldTechHistoryPanel({
     const withoutDupLive = merged.filter((e) => !e.id.startsWith("live:"));
     return [...liveCards, ...withoutDupLive];
   }, [
-    dbEntries,
+    filteredDbEntries,
     trackVisits,
     fieldAreaHa,
     isCurrentSeason,
@@ -713,7 +779,7 @@ export function FieldTechHistoryPanel({
         <div className="flex items-center gap-2 rounded-xl border border-[#E5DFD3] bg-white px-3 py-2.5 text-sm text-zinc-600">
           <Loader2 className="h-4 w-4 animate-spin text-[#276749]" />
           {loadingTracks && !loadingDb
-            ? "Аналіз GPS-треків за 7 днів…"
+            ? `Аналіз GPS-треків · ${periodLabel}…`
             : "Завантаження історії техніки…"}
         </div>
       ) : null}
@@ -737,11 +803,11 @@ export function FieldTechHistoryPanel({
             <Tractor className="h-6 w-6" strokeWidth={1.6} />
           </div>
           <p className="text-sm font-semibold text-zinc-800">
-            Поки немає записів за останні 7 днів
+            Немає записів за {periodLabel.toLowerCase()}
           </p>
           <p className="mx-auto mt-1.5 max-w-[280px] text-sm leading-relaxed text-zinc-500">
-            Візити з GPS-треків і закриті наряди зʼявляться тут. Якщо техніка
-            зараз на полі — вона вже показана вище.
+            Візити з GPS-треків і закриті наряди зʼявляться тут. Спробуйте інший
+            період або сезон у фільтрі зверху.
           </p>
         </div>
       ) : null}

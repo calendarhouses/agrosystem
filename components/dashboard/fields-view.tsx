@@ -23,6 +23,7 @@ import {
 } from "@/components/dashboard/fields-map";
 import { getCompanyFinancialOverview } from "@/app/finance/actions";
 import { fieldCentroid } from "@/lib/field-centroid";
+import { useIsMobile } from "@/lib/use-mobile";
 import {
   createFarmField,
   deleteFarmField,
@@ -84,6 +85,7 @@ type PassportMode = "create" | "edit";
 /** Головний розділ: жива карта полів з повним CRUD */
 export function FieldsView() {
   const searchParams = useSearchParams();
+  const isMobile = useIsMobile();
   const fieldsMapRef = useRef<FieldsMapHandle>(null);
   const mapHostRef = useRef<HTMLDivElement>(null);
   const activeSeason = useSeasonStore((s) => s.activeSeason);
@@ -118,6 +120,7 @@ export function FieldsView() {
   const lastPreviewedIdRef = useRef<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [mobileListExpanded, setMobileListExpanded] = useState(false);
+  const [mobileDrawerVisible, setMobileDrawerVisible] = useState(true);
   const [mapSearchOpen, setMapSearchOpen] = useState(false);
   const [mapToolActive, setMapToolActive] = useState(false);
   const [hubInitialTab, setHubInitialTab] = useState<FieldHubTab>("overview");
@@ -557,6 +560,13 @@ export function FieldsView() {
 
   const restoreMapOverview = useCallback(() => {
     setSelectedId(null);
+    setHoveredFieldId(null);
+    hoverIntentRef.current = null;
+    lastPreviewedIdRef.current = null;
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
     setSheetOpen(false);
     setPendingFeature(null);
     setSavedFlash(false);
@@ -574,6 +584,25 @@ export function FieldsView() {
     restoreMapOverview();
   }, [editingFieldId, restoreMapOverview]);
 
+  const handleMobileDetailClose = useCallback(() => {
+    setSheetOpen(false);
+    setMobileDrawerVisible(false);
+    setMobileListExpanded(false);
+    setHubConfirmDelete(false);
+    if (pendingFeature && !selectedItem) {
+      closePassportDraft();
+    } else {
+      restoreMapOverview();
+    }
+  }, [closePassportDraft, pendingFeature, restoreMapOverview, selectedItem]);
+
+  const handleBackToList = useCallback(() => {
+    setSheetOpen(false);
+    setMobileDrawerVisible(true);
+    setMobileListExpanded(true);
+    setHubConfirmDelete(false);
+  }, []);
+
   function syncPassportFromItem(item: MapFieldItem) {
     setPassportMode(item.farmField ? "edit" : "create");
     setFieldName(item.name);
@@ -589,9 +618,10 @@ export function FieldsView() {
       setSelectedId(item.id);
       syncPassportFromItem(item);
       setHubInitialTab(options?.tab ?? "overview");
+      setMobileDrawerVisible(true);
+      setMobileListExpanded(true);
       setSheetOpen(true);
       setPendingFeature(null);
-      setMobileListExpanded(false);
 
       if (options?.fly === false || !item.geometry) return;
       fieldsMapRef.current?.focusFieldForInspector(item.geometry, "detail");
@@ -683,10 +713,7 @@ export function FieldsView() {
       return;
     }
     if (sheetOpen) {
-      setSheetOpen(false);
-      if (!selectedId && pendingFeature) {
-        setPendingFeature(null);
-      }
+      handleMobileDetailClose();
       return;
     }
     if (selectedId) {
@@ -695,6 +722,7 @@ export function FieldsView() {
   }, [
     editingFieldId,
     flashStatus,
+    handleMobileDetailClose,
     pendingFeature,
     restoreMapOverview,
     selectedId,
@@ -742,6 +770,8 @@ export function FieldsView() {
     setSavedFlash(false);
     setSelectedId(null);
     setHubInitialTab("settings");
+    setMobileDrawerVisible(true);
+    setMobileListExpanded(true);
     setSheetOpen(true);
   }
 
@@ -999,6 +1029,8 @@ export function FieldsView() {
     }
     setHubInitialTab("settings");
     setHubConfirmDelete(true);
+    setMobileDrawerVisible(true);
+    setMobileListExpanded(true);
     setSheetOpen(true);
   }
 
@@ -1053,7 +1085,9 @@ export function FieldsView() {
           hoveredFieldId={hoveredFieldId}
           geometryEditMode={Boolean(editingFieldId)}
           drawSave={drawSaveActions}
-          overlayActive={sheetOpen || mobileListExpanded}
+          overlayActive={
+            sheetOpen || (mobileListExpanded && mobileDrawerVisible)
+          }
           onRequestDeleteSelection={requestDeleteFromToolbar}
           onEscape={handleEscape}
         />
@@ -1080,31 +1114,30 @@ export function FieldsView() {
         ) : null}
       </div>
 
-      {!sheetOpen ? (
-        <FieldsGlassPanel
-          fields={mapFields}
-          loading={wialonLoading}
-          selectedId={selectedId}
-          hoveredId={hoveredFieldId}
-          editingFieldId={editingFieldId}
-          budgetByFieldId={fieldBudgetPct}
-          totalHa={totalHa}
-          liveConnected={liveConnected}
-          livePulse={livePulse}
-          statusHint={statusHint}
-          saveHint={saveHint}
-          wialonLoadError={wialonLoadError}
-          mobileExpanded={mobileListExpanded}
-          onMobileExpandedChange={setMobileListExpanded}
-          onSelect={(field) => selectField(field, { fly: true })}
-          onHover={scheduleListHover}
-          onFitAll={() => fieldsMapRef.current?.fitAllFields()}
-        />
-      ) : (
-        <>
-          <FieldsDetailGlassFrame>
+      <FieldsGlassPanel
+        fields={mapFields}
+        loading={wialonLoading}
+        selectedId={selectedId}
+        hoveredId={hoveredFieldId}
+        editingFieldId={editingFieldId}
+        budgetByFieldId={fieldBudgetPct}
+        totalHa={totalHa}
+        liveConnected={liveConnected}
+        livePulse={livePulse}
+        statusHint={statusHint}
+        saveHint={saveHint}
+        wialonLoadError={wialonLoadError}
+        mobileExpanded={mobileListExpanded}
+        onMobileExpandedChange={setMobileListExpanded}
+        mobileDrawerVisible={mobileDrawerVisible}
+        onMobileDrawerVisibleChange={setMobileDrawerVisible}
+        mobileDetailOpen={sheetOpen}
+        onMobileDetailClose={handleMobileDetailClose}
+        mobileDetail={
+          sheetOpen && isMobile ? (
             <FieldDetailSheet
               variant="panel"
+              embeddedInMobileDrawer
               field={sheetField}
               fieldKey={sheetFieldKey}
               legacyFieldKeys={sheetLegacyFieldKeys}
@@ -1114,16 +1147,9 @@ export function FieldsView() {
               mapSource={selectedItem?.source ?? "saved"}
               open={sheetOpen}
               onOpenChange={(open) => {
-                setSheetOpen(open);
-                if (!open) {
-                  setHubConfirmDelete(false);
-                  if (pendingFeature && !selectedItem) {
-                    closePassportDraft();
-                  } else {
-                    restoreMapOverview();
-                  }
-                }
+                if (!open) handleMobileDetailClose();
               }}
+              onBackToList={handleBackToList}
               initialTab={hubInitialTab}
               initialConfirmDelete={hubConfirmDelete}
               units={wialonUnits}
@@ -1169,9 +1195,83 @@ export function FieldsView() {
                 setAreaHa(updated.areaHa);
               }}
             />
-          </FieldsDetailGlassFrame>
-        </>
-      )}
+          ) : null
+        }
+        onSelect={(field) => selectField(field, { fly: true })}
+        onHover={scheduleListHover}
+        onFitAll={() => fieldsMapRef.current?.fitAllFields()}
+      />
+
+      {sheetOpen && !isMobile ? (
+        <FieldsDetailGlassFrame>
+          <FieldDetailSheet
+            variant="panel"
+            field={sheetField}
+            fieldKey={sheetFieldKey}
+            legacyFieldKeys={sheetLegacyFieldKeys}
+            farmFieldId={selectedItem?.farmField?.id ?? null}
+            fieldGeometry={selectedItem?.geometry ?? draftGeometry}
+            fieldColor={selectedItem?.color ?? color}
+            mapSource={selectedItem?.source ?? "saved"}
+            open={sheetOpen}
+            onOpenChange={(open) => {
+              setSheetOpen(open);
+              if (!open) {
+                setHubConfirmDelete(false);
+                if (pendingFeature && !selectedItem) {
+                  closePassportDraft();
+                } else {
+                  restoreMapOverview();
+                }
+              }
+            }}
+            initialTab={hubInitialTab}
+            initialConfirmDelete={hubConfirmDelete}
+            units={wialonUnits}
+            weather={fieldWeather}
+            hourly={fieldHourly}
+            weatherLoading={fieldWeatherLoading}
+            weatherError={fieldWeatherError}
+            passportMode={passportMode}
+            passportBusy={busy}
+            passportSavedFlash={savedFlash}
+            passportSaveHint={saveHint}
+            passportName={fieldName}
+            passportCrop={crop}
+            passportAreaHa={areaHa}
+            passportColor={color}
+            onPassportNameChange={setFieldName}
+            onPassportCropChange={(value) => setCrop(normalizeCrop(value))}
+            onPassportAreaHaChange={setAreaHa}
+            onPassportColorChange={setColor}
+            onPassportSave={() => void handleConfirmPassport()}
+            onPassportDelete={() => void handleDeleteSelected()}
+            canDeleteField={
+              Boolean(selectedItem?.farmField?.id) ||
+              Boolean(pendingFeature && sheetOpen)
+            }
+            onEditGeometry={
+              selectedItem ? () => startGeometryEdit(selectedItem) : undefined
+            }
+            onPlanWork={() => {
+              flashStatus("Роботу заплановано · див. історію операцій");
+            }}
+            realtimeVersion={realtimeVersion}
+            wialonZoneId={sheetWialonZoneId}
+            wialonGeofences={wialonGeofences}
+            wialonLoading={wialonLoading}
+            occupiedWialonZones={occupiedWialonZones}
+            onIntegrationsFieldUpdated={(updated) => {
+              setSavedFields((prev) =>
+                prev.map((field) =>
+                  field.id === updated.id ? updated : field
+                )
+              );
+              setAreaHa(updated.areaHa);
+            }}
+          />
+        </FieldsDetailGlassFrame>
+      ) : null}
     </div>
   );
 }

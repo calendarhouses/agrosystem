@@ -77,7 +77,7 @@ export function TimePicker({
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="z-[130] w-full overflow-hidden rounded-2xl border border-[#E5DFD3] bg-[#F4F1EA] p-0 text-zinc-900 shadow-lg md:w-[11.5rem]"
+        className="w-full overflow-hidden rounded-2xl border border-[#E5DFD3] bg-[#F4F1EA] p-0 text-zinc-900 shadow-lg md:w-[11.5rem]"
       >
         <div className="border-b border-[#E5DFD3]/80 bg-white/60 px-3 py-2">
           <p className="text-[10px] font-semibold tracking-[0.12em] text-zinc-500 uppercase">

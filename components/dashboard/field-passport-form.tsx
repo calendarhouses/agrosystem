@@ -81,7 +81,7 @@ export function FieldPassportForm({
   const canDelete = canDeleteProp ?? source === "saved";
 
   return (
-    <div className={cn("space-y-5", className)}>
+    <div className={cn("space-y-5", className)} data-vaul-no-drag="">
       <div className="space-y-1.5">
         <Label className="text-[11px] tracking-wider text-zinc-500 uppercase">
           Назва
@@ -98,6 +98,10 @@ export function FieldPassportForm({
           Культура
         </Label>
         <Select
+          items={FIELD_CROP_OPTIONS.map((option) => ({
+            value: option,
+            label: option,
+          }))}
           value={crop}
           onValueChange={(value) => {
             if (typeof value === "string" && value) {
@@ -105,10 +109,10 @@ export function FieldPassportForm({
             }
           }}
         >
-          <SelectTrigger className="h-11 w-full rounded-xl border-[#E5DFD3] bg-white text-base md:text-sm">
+          <SelectTrigger className="h-11 w-full min-w-0 rounded-xl border-[#E5DFD3] bg-white text-base md:text-sm">
             <SelectValue placeholder="Оберіть культуру" />
           </SelectTrigger>
-          <SelectContent className="z-[120] border-[#E5DFD3] bg-white">
+          <SelectContent className="border-[#E5DFD3] bg-white">
             {FIELD_CROP_OPTIONS.map((option) => (
               <SelectItem key={option} value={option}>
                 {option}

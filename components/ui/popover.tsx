@@ -7,6 +7,8 @@ import { SwipeableSheet } from "@/components/ui/swipe-sheet"
 import { useIsMobile } from "@/lib/use-mobile"
 import { cn } from "@/lib/utils"
 
+const MOBILE_OVERLAY_Z = "z-[200]"
+
 function Popover({ ...props }: PopoverPrimitive.Root.Props) {
   return <PopoverPrimitive.Root data-slot="popover" {...props} />
 }
@@ -34,11 +36,13 @@ function PopoverContent({
   const popup = (
     <PopoverPrimitive.Popup
       data-slot="popover-content"
+      data-vaul-no-drag=""
       className={cn(
-        "z-50 flex w-72 origin-(--transform-origin) flex-col gap-2.5 rounded-lg bg-popover p-2.5 text-sm text-popover-foreground shadow-md ring-1 ring-foreground/10 outline-hidden duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+        "flex w-72 origin-(--transform-origin) flex-col gap-2.5 rounded-lg bg-popover p-2.5 text-sm text-popover-foreground shadow-md ring-1 ring-foreground/10 outline-hidden duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
         className,
         isMobile &&
-          "fixed inset-x-0 top-auto z-50 max-h-[var(--app-sheet-max)] w-full max-w-none origin-bottom gap-0 overflow-hidden rounded-t-3xl rounded-b-none p-0 pb-[max(0.75rem,var(--safe-bottom))] shadow-2xl ring-0 data-[side=bottom]:slide-in-from-bottom-4 data-open:zoom-in-100 bottom-[var(--app-bottom-inset)]"
+          "fixed inset-x-0 top-auto max-h-[var(--app-sheet-max)] w-full max-w-none origin-bottom gap-0 overflow-hidden rounded-t-3xl rounded-b-none p-0 pb-[max(0.75rem,var(--safe-bottom))] shadow-2xl ring-0 data-[side=bottom]:slide-in-from-bottom-4 data-open:zoom-in-100 bottom-[var(--app-bottom-inset)]",
+        MOBILE_OVERLAY_Z
       )}
       {...props}
     >
@@ -69,7 +73,12 @@ function PopoverContent({
   if (isMobile) {
     return (
       <PopoverPrimitive.Portal>
-        <PopoverPrimitive.Backdrop className="fixed inset-0 z-50 bg-black/40 supports-backdrop-filter:backdrop-blur-[2px]" />
+        <PopoverPrimitive.Backdrop
+          className={cn(
+            "fixed inset-0 bg-black/40 supports-backdrop-filter:backdrop-blur-[2px]",
+            MOBILE_OVERLAY_Z
+          )}
+        />
         {popup}
       </PopoverPrimitive.Portal>
     )
