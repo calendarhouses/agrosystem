@@ -615,6 +615,13 @@ export function FieldsView() {
 
   const selectField = useCallback(
     (item: MapFieldItem, options?: { fly?: boolean; tab?: FieldHubTab }) => {
+      setHoveredFieldId(null);
+      hoverIntentRef.current = null;
+      lastPreviewedIdRef.current = null;
+      if (hoverTimerRef.current) {
+        clearTimeout(hoverTimerRef.current);
+        hoverTimerRef.current = null;
+      }
       setSelectedId(item.id);
       syncPassportFromItem(item);
       setHubInitialTab(options?.tab ?? "overview");
@@ -1068,7 +1075,10 @@ export function FieldsView() {
           ref={fieldsMapRef}
           className="h-full w-full"
           chrome={sheetOpen ? "detail" : "list"}
-          onSearchOpenChange={setMapSearchOpen}
+          onSearchOpenChange={(open) => {
+            setMapSearchOpen(open);
+            if (open) setMobileListExpanded(false);
+          }}
           onMapChromeChange={(state) =>
             setMapToolActive(
               state.searchOpen || state.drawing || state.economics

@@ -31,7 +31,7 @@ export function shortWeatherPlaceLabel(label: string): string {
   return first || trimmed;
 }
 
-/** Дефолт: Іванівка біля Узина (Фастівський р.) — де поля господарства */
+/** Дефолт: Іванівка біля Ставища / Кривця — де поля господарства */
 export const DEFAULT_WEATHER_LOCATION: WeatherLocation = {
   id: FARM_BASE_LOCATION.id,
   label: FARM_BASE_LOCATION.label,
@@ -632,13 +632,12 @@ export function readStoredWeatherLocation(): WeatherLocation {
       // Старий placeholder / довга назва дефолту → короткий «Ivanivka»
       if (
         parsed.id === "default" ||
+        parsed.id === "ivanivka-bilotserkivskyi" ||
+        parsed.id === "ivanivka-fastiv" ||
         label === "Не обрано" ||
         label === "Ivanivka Білоцерківський район" ||
         label.trim() === ""
       ) {
-        return DEFAULT_WEATHER_LOCATION;
-      }
-      if (parsed.id === "ivanivka-bilotserkivskyi") {
         return DEFAULT_WEATHER_LOCATION;
       }
       return {

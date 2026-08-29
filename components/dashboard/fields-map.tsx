@@ -66,7 +66,7 @@ const FIELD_HIT_LAYERS = [
 ] as const;
 
 const MOBILE_LONG_PRESS_MS = 420;
-const MOBILE_TAP_MOVE_THRESHOLD_PX = 14;
+const MOBILE_TAP_MOVE_THRESHOLD_PX = 22;
 
 const ECONOMICS_LAYER = {
   id: "economics" as const,
@@ -328,12 +328,16 @@ function fieldFeatureAtPoint(
   map: NonNullable<ReturnType<MapRef["getMap"]>>,
   point: { x: number; y: number }
 ) {
-  const features = map.queryRenderedFeatures([point.x, point.y], {
-    layers: [...FIELD_HIT_LAYERS],
-  });
-  const feature = features[0];
-  if (!feature?.properties?.id) return null;
-  return feature;
+  try {
+    const layers = FIELD_HIT_LAYERS.filter((layerId) => map.getLayer(layerId));
+    if (layers.length === 0) return null;
+    const features = map.queryRenderedFeatures([point.x, point.y], { layers });
+    const feature = features.find((item) => item.properties?.id != null);
+    if (!feature?.properties?.id) return null;
+    return feature;
+  } catch {
+    return null;
+  }
 }
 
 function hoverInfoFromFeature(
@@ -438,11 +442,11 @@ type FieldsMapProps = {
   onEscape?: () => void;
 };
 
-/** Стартовий кадр — Іванівка біля Узина; zoom підбирає fitBounds */
+/** Стартовий кадр — Іванівка біля Ставища; zoom підбирає fitBounds */
 const IVANIVKA_BOOT_VIEW: MapBootView = {
   longitude: FARM_BASE_LOCATION.longitude,
   latitude: FARM_BASE_LOCATION.latitude,
-  zoom: 11.5,
+  zoom: 12.2,
 };
 
 function expandBounds(bounds: LngLatBoundsTuple): LngLatBoundsTuple {
@@ -459,9 +463,8 @@ function expandBounds(bounds: LngLatBoundsTuple): LngLatBoundsTuple {
 }
 
 /**
- * Мобільна камера: масштаб підбирається під усі поля, але центром кадру
- * лишається база (Іванівка). Зсув `offset` компенсує нижнє меню й шторку —
- * поля стають по центру видимої смуги, а не під навігацією.
+ * Мобільна камера: масштаб під поля, центр — база (Іванівка), якщо вона
+ * всередині bounds; інакше — геометричний центр полів (захист від «чужої» бази).
  */
 function focusFieldsAroundAnchor(
   map: NonNullable<ReturnType<MapRef["getMap"]>>,
@@ -491,8 +494,22 @@ function focusFieldsAroundAnchor(
   const top = typeof padding === "number" ? padding : (padding.top ?? 0);
   const bottom = typeof padding === "number" ? padding : (padding.bottom ?? 0);
 
+  const boundsCenterLng = (west + east) / 2;
+  const boundsCenterLat = (south + north) / 2;
+  const anchorLng = FARM_BASE_LOCATION.longitude;
+  const anchorLat = FARM_BASE_LOCATION.latitude;
+  const padLng = Math.max((east - west) * 0.15, 0.02);
+  const padLat = Math.max((north - south) * 0.15, 0.015);
+  const anchorInBounds =
+    anchorLng >= west - padLng &&
+    anchorLng <= east + padLng &&
+    anchorLat >= south - padLat &&
+    anchorLat <= north + padLat;
+
   map.easeTo({
-    center: [FARM_BASE_LOCATION.longitude, FARM_BASE_LOCATION.latitude],
+    center: anchorInBounds
+      ? [anchorLng, anchorLat]
+      : [boundsCenterLng, boundsCenterLat],
     zoom: fittedZoom,
     offset: [0, -(bottom - top) / 2],
     duration,
@@ -1291,7 +1308,6 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         const feature = event.features?.[0];
         const rawId = feature?.properties?.id ?? feature?.id;
         if (rawId != null && onFieldClick) {
-          if (isMobile) return;
           setSelectedTractor(null);
           setHover(null);
           setTouchPreviewFieldId(null);
@@ -1299,13 +1315,11 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
           return;
         }
 
-        if (isMobile) {
-          setHover(null);
-          setTouchPreviewFieldId(null);
-        }
+        setHover(null);
+        setTouchPreviewFieldId(null);
         if (selectedTractor) setSelectedTractor(null);
       },
-      [isDrawing, isMobile, onFieldClick, searchOpen, selectedTractor]
+      [isDrawing, onFieldClick, searchOpen, selectedTractor]
     );
 
     const handleMouseMove = useCallback(
@@ -1342,10 +1356,11 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
           lng: event.viewState.longitude,
           lat: event.viewState.latitude,
         };
-        if (isMobile) {
+        // Під час жесту карти скидаємо лише превʼю long-press,
+        // не чіпаємо longPressTriggered — інакше тап після підсвітки «губиться».
+        if (isMobile && !touchStartRef.current) {
           setHover(null);
           setTouchPreviewFieldId(null);
-          longPressTriggeredRef.current = false;
         }
       },
       [isMobile]
@@ -1382,12 +1397,20 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       const map = mapRef.current?.getMap();
       if (!map) return;
 
-      const canvas = map.getCanvas();
+      const container = map.getContainer();
+      let previewClearTimer: number | null = null;
 
       const clearLongPress = () => {
         if (longPressTimerRef.current) {
           window.clearTimeout(longPressTimerRef.current);
           longPressTimerRef.current = null;
+        }
+      };
+
+      const clearPreviewDismiss = () => {
+        if (previewClearTimer) {
+          window.clearTimeout(previewClearTimer);
+          previewClearTimer = null;
         }
       };
 
@@ -1397,11 +1420,24 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       };
 
       const touchPoint = (touch: Touch) => {
-        const rect = canvas.getBoundingClientRect();
+        const rect = container.getBoundingClientRect();
         return {
           x: touch.clientX - rect.left,
           y: touch.clientY - rect.top,
         };
+      };
+
+      const openFieldAt = (x: number, y: number) => {
+        const feature = fieldFeatureAtPoint(map, { x, y });
+        const rawId = feature?.properties?.id ?? feature?.id;
+        if (rawId == null || !onFieldClickRef.current) return false;
+        setHover(null);
+        setTouchPreviewFieldId(null);
+        setSelectedTractor(null);
+        clearPreviewDismiss();
+        suppressNextClickRef.current = true;
+        onFieldClickRef.current(String(rawId));
+        return true;
       };
 
       const onTouchStart = (event: TouchEvent) => {
@@ -1417,18 +1453,24 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         touchStartRef.current = { x, y, time: Date.now() };
         longPressTriggeredRef.current = false;
         clearLongPress();
+        clearPreviewDismiss();
 
         longPressTimerRef.current = window.setTimeout(() => {
           const feature = fieldFeatureAtPoint(map, { x, y });
           if (!feature) return;
           longPressTriggeredRef.current = true;
           suppressNextClickRef.current = true;
-          const fieldId = String(feature.properties?.id);
-          setTouchPreviewFieldId(fieldId);
+          setTouchPreviewFieldId(String(feature.properties?.id));
           setHover(hoverInfoFromFeature(feature as GeoJSON.Feature, x, y));
           if (typeof navigator !== "undefined" && "vibrate" in navigator) {
             navigator.vibrate(12);
           }
+          // Автоскидання підсвітки, якщо не відкрили деталі
+          clearPreviewDismiss();
+          previewClearTimer = window.setTimeout(() => {
+            setHover(null);
+            setTouchPreviewFieldId(null);
+          }, 3200);
         }, MOBILE_LONG_PRESS_MS);
       };
 
@@ -1439,8 +1481,9 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         if (
           Math.hypot(x - start.x, y - start.y) > MOBILE_TAP_MOVE_THRESHOLD_PX
         ) {
+          const wasPreview = longPressTriggeredRef.current;
           resetTouchTracking();
-          if (!longPressTriggeredRef.current) {
+          if (!wasPreview) {
             setHover(null);
             setTouchPreviewFieldId(null);
           }
@@ -1462,7 +1505,9 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
           return;
         }
 
-        const { x, y } = touchPoint(event.changedTouches[0]!);
+        const touch = event.changedTouches[0];
+        if (!touch) return;
+        const { x, y } = touchPoint(touch);
         const duration = Date.now() - start.time;
         const moved = Math.hypot(x - start.x, y - start.y);
         if (
@@ -1472,32 +1517,22 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
           return;
         }
 
-        const feature = fieldFeatureAtPoint(map, { x, y });
-        const rawId = feature?.properties?.id ?? feature?.id;
-        if (rawId != null && onFieldClickRef.current) {
-          setHover(null);
-          setTouchPreviewFieldId(null);
-          setSelectedTractor(null);
-          suppressNextClickRef.current = true;
-          onFieldClickRef.current(String(rawId));
-          return;
-        }
-
-        setHover(null);
-        setTouchPreviewFieldId(null);
+        // Тап по полю → деталі (клік Mapbox інколи губиться після long-press)
+        openFieldAt(x, y);
       };
 
-      canvas.addEventListener("touchstart", onTouchStart, { passive: true });
-      canvas.addEventListener("touchmove", onTouchMove, { passive: true });
-      canvas.addEventListener("touchend", onTouchEnd, { passive: true });
-      canvas.addEventListener("touchcancel", onTouchEnd, { passive: true });
+      container.addEventListener("touchstart", onTouchStart, { passive: true });
+      container.addEventListener("touchmove", onTouchMove, { passive: true });
+      container.addEventListener("touchend", onTouchEnd, { passive: true });
+      container.addEventListener("touchcancel", onTouchEnd, { passive: true });
 
       return () => {
         resetTouchTracking();
-        canvas.removeEventListener("touchstart", onTouchStart);
-        canvas.removeEventListener("touchmove", onTouchMove);
-        canvas.removeEventListener("touchend", onTouchEnd);
-        canvas.removeEventListener("touchcancel", onTouchEnd);
+        clearPreviewDismiss();
+        container.removeEventListener("touchstart", onTouchStart);
+        container.removeEventListener("touchmove", onTouchMove);
+        container.removeEventListener("touchend", onTouchEnd);
+        container.removeEventListener("touchcancel", onTouchEnd);
       };
     }, [isMobile, mapReady]);
 
@@ -1791,19 +1826,24 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
 
         {searchOpen ? (
           <div
-            className="absolute inset-x-3 z-50 md:left-auto md:right-3 md:w-[min(calc(100vw-2rem),340px)]"
+            className="absolute inset-x-3 z-[160] md:left-auto md:right-3 md:w-[min(calc(100vw-2rem),340px)]"
             style={{ top: "calc(var(--safe-top) + 0.5rem)" }}
+            data-vaul-no-drag=""
+            onPointerDown={(event) => event.stopPropagation()}
           >
-            <div className="rounded-2xl border border-border bg-background/92 p-3 shadow-lg backdrop-blur-xl">
+            <div className="rounded-2xl border border-border bg-background/95 p-3 shadow-lg backdrop-blur-xl">
               <div className="flex items-center gap-2">
                 <Input
                   autoFocus
                   enterKeyHint="search"
                   inputMode="search"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  spellCheck={false}
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
                   placeholder="Адреса або 50.45, 30.52"
-                  className="h-11 rounded-xl border-border bg-background/60 text-base md:h-10 md:text-sm"
+                  className="h-11 rounded-xl border-border bg-background text-base md:h-10 md:text-sm"
                 />
                 <button
                   type="button"

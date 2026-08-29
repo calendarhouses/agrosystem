@@ -51,7 +51,11 @@ function DrawerOverlay({
       data-slot="drawer-overlay"
       className={cn(
         "fixed inset-0 z-[150] bg-black/45",
-        "data-[state=closed]:pointer-events-none data-[state=open]:pointer-events-auto",
+        "data-[state=closed]:pointer-events-none",
+        // Peek/snap: оверлей часто opacity:0, але без цього краде всі тапи (пошук, мапа, шторка)
+        "pointer-events-none data-[vaul-snap-points=true]:pointer-events-none",
+        "data-[vaul-snap-points-overlay=true]:pointer-events-auto",
+        "data-[vaul-snap-points=false][data-state=open]:pointer-events-auto",
         className
       )}
       {...props}
@@ -62,11 +66,14 @@ function DrawerOverlay({
 function DrawerContent({
   className,
   children,
+  overlayClassName,
   ...props
-}: React.ComponentProps<typeof DrawerPrimitive.Content>) {
+}: React.ComponentProps<typeof DrawerPrimitive.Content> & {
+  overlayClassName?: string
+}) {
   return (
     <DrawerPortal>
-      <DrawerOverlay />
+      <DrawerOverlay className={overlayClassName} />
       <DrawerPrimitive.Content
         data-slot="drawer-content"
         className={cn(

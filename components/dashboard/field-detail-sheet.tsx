@@ -2566,7 +2566,7 @@ export function FieldDetailSheet({
   );
 
   if (variant === "panel") {
-    if (!open) return null;
+    if (!open || !field) return null;
     if (embeddedInMobileDrawer) {
       return (
         <div className="flex h-full min-h-0 flex-col overflow-hidden bg-transparent">

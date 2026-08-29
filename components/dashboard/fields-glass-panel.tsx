@@ -585,7 +585,12 @@ export function FieldsGlassPanel({
           shouldScaleBackground={false}
           noBodyStyles
         >
-          <DrawerContent className="bottom-[var(--app-bottom-inset)] max-h-[calc(96dvh-var(--app-bottom-inset))] border-[#E5DFD3]/90 bg-[#F4F1EA]">
+          <DrawerContent
+            className="bottom-[var(--app-bottom-inset)] max-h-[calc(96dvh-var(--app-bottom-inset))] border-[#E5DFD3]/90 bg-[#F4F1EA] pb-0"
+            overlayClassName={
+              showFullSnap ? undefined : "bg-transparent opacity-0"
+            }
+          >
             <DrawerTitle className="sr-only">
               {mobileDetailOpen ? "Деталі поля" : "Список полів"}
             </DrawerTitle>
