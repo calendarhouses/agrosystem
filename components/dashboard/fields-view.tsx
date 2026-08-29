@@ -12,7 +12,10 @@ import {
   normalizeFieldCrop,
   FIELD_CROP_OPTIONS,
 } from "@/components/dashboard/field-passport-form";
-import { FieldsGlassPanel } from "@/components/dashboard/fields-glass-panel";
+import {
+  FieldsGlassPanel,
+  FieldsDetailGlassFrame,
+} from "@/components/dashboard/fields-glass-panel";
 import { FieldsMapChrome } from "@/components/dashboard/fields-map-chrome";
 import {
   FieldsMap,
@@ -1227,78 +1230,79 @@ export function FieldsView() {
         onFitAll={() => fieldsMapRef.current?.fitAllFields()}
       />
 
-      {/* ПК: класична бічна панель справа. Мобільна шторка — лише в FieldsGlassPanel. */}
       {sheetOpen && !isMobile ? (
-        <FieldDetailSheet
-          variant="sheet"
-          field={sheetField}
-          fieldKey={sheetFieldKey}
-          legacyFieldKeys={sheetLegacyFieldKeys}
-          farmFieldId={selectedItem?.farmField?.id ?? null}
-          fieldGeometry={selectedItem?.geometry ?? draftGeometry}
-          fieldColor={selectedItem?.color ?? color}
-          mapSource={selectedItem?.source ?? "saved"}
-          open={sheetOpen}
-          onOpenChange={(open) => {
-            setSheetOpen(open);
-            if (!open) {
-              setHubConfirmDelete(false);
-              if (pendingFeature && !selectedItem) {
-                closePassportDraft();
-              } else {
-                restoreMapOverview();
+        <FieldsDetailGlassFrame>
+          <FieldDetailSheet
+            variant="panel"
+            field={sheetField}
+            fieldKey={sheetFieldKey}
+            legacyFieldKeys={sheetLegacyFieldKeys}
+            farmFieldId={selectedItem?.farmField?.id ?? null}
+            fieldGeometry={selectedItem?.geometry ?? draftGeometry}
+            fieldColor={selectedItem?.color ?? color}
+            mapSource={selectedItem?.source ?? "saved"}
+            open={sheetOpen}
+            onOpenChange={(open) => {
+              setSheetOpen(open);
+              if (!open) {
+                setHubConfirmDelete(false);
+                if (pendingFeature && !selectedItem) {
+                  closePassportDraft();
+                } else {
+                  restoreMapOverview();
+                }
               }
+            }}
+            initialTab={hubInitialTab}
+            initialConfirmDelete={hubConfirmDelete}
+            units={wialonUnits}
+            weather={fieldWeather}
+            hourly={fieldHourly}
+            weatherLoading={fieldWeatherLoading}
+            weatherError={fieldWeatherError}
+            passportMode={passportMode}
+            passportBusy={busy}
+            passportSavedFlash={savedFlash}
+            passportSaveHint={saveHint}
+            passportName={fieldName}
+            passportCrop={crop}
+            passportAreaHa={areaHa}
+            passportColor={color}
+            onPassportNameChange={setFieldName}
+            onPassportCropChange={(value) => setCrop(normalizeCrop(value))}
+            onPassportAreaHaChange={setAreaHa}
+            onPassportColorChange={setColor}
+            onPassportSave={() => void handleConfirmPassport()}
+            onPassportDelete={() => void handleDeleteSelected()}
+            canDeleteField={
+              Boolean(selectedItem?.farmField?.id) ||
+              Boolean(pendingFeature && sheetOpen)
             }
-          }}
-          initialTab={hubInitialTab}
-          initialConfirmDelete={hubConfirmDelete}
-          units={wialonUnits}
-          weather={fieldWeather}
-          hourly={fieldHourly}
-          weatherLoading={fieldWeatherLoading}
-          weatherError={fieldWeatherError}
-          passportMode={passportMode}
-          passportBusy={busy}
-          passportSavedFlash={savedFlash}
-          passportSaveHint={saveHint}
-          passportName={fieldName}
-          passportCrop={crop}
-          passportAreaHa={areaHa}
-          passportColor={color}
-          onPassportNameChange={setFieldName}
-          onPassportCropChange={(value) => setCrop(normalizeCrop(value))}
-          onPassportAreaHaChange={setAreaHa}
-          onPassportColorChange={setColor}
-          onPassportSave={() => void handleConfirmPassport()}
-          onPassportDelete={() => void handleDeleteSelected()}
-          canDeleteField={
-            Boolean(selectedItem?.farmField?.id) ||
-            Boolean(pendingFeature && sheetOpen)
-          }
-          onEditGeometry={
-            selectedItem ? () => startGeometryEdit(selectedItem) : undefined
-          }
-          onPlanWork={(op) => {
-            flashStatus(
-              op?.status === "completed"
-                ? "Виконану роботу збережено · див. історію"
-                : "Роботу заплановано · див. історію операцій"
-            );
-          }}
-          realtimeVersion={realtimeVersion}
-          wialonZoneId={sheetWialonZoneId}
-          wialonGeofences={wialonGeofences}
-          wialonLoading={wialonLoading}
-          occupiedWialonZones={occupiedWialonZones}
-          onIntegrationsFieldUpdated={(updated) => {
-            setSavedFields((prev) =>
-              prev.map((field) =>
-                field.id === updated.id ? updated : field
-              )
-            );
-            setAreaHa(updated.areaHa);
-          }}
-        />
+            onEditGeometry={
+              selectedItem ? () => startGeometryEdit(selectedItem) : undefined
+            }
+            onPlanWork={(op) => {
+              flashStatus(
+                op?.status === "completed"
+                  ? "Виконану роботу збережено · див. історію"
+                  : "Роботу заплановано · див. історію операцій"
+              );
+            }}
+            realtimeVersion={realtimeVersion}
+            wialonZoneId={sheetWialonZoneId}
+            wialonGeofences={wialonGeofences}
+            wialonLoading={wialonLoading}
+            occupiedWialonZones={occupiedWialonZones}
+            onIntegrationsFieldUpdated={(updated) => {
+              setSavedFields((prev) =>
+                prev.map((field) =>
+                  field.id === updated.id ? updated : field
+                )
+              );
+              setAreaHa(updated.areaHa);
+            }}
+          />
+        </FieldsDetailGlassFrame>
       ) : null}
     </div>
   );

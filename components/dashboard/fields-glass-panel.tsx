@@ -8,7 +8,7 @@ import {
   type ReactNode,
   type TouchEvent as ReactTouchEvent,
 } from "react";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity,
   Focus,
@@ -754,5 +754,34 @@ export function FieldsGlassPanel({
         </Drawer>
       </div>
     </>
+  );
+}
+
+export function FieldsDetailGlassFrame({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  return (
+    <aside
+      className={cn(
+        "pointer-events-auto absolute z-20 hidden flex-col overflow-hidden border border-white/30 bg-[#F4F1EA] shadow-2xl md:flex",
+        "inset-x-0 bottom-[var(--app-bottom-inset)] top-[max(10px,var(--safe-top))] rounded-t-3xl",
+        "md:inset-x-auto md:top-3 md:right-3 md:bottom-3 md:h-auto md:w-[min(100%,580px)] md:rounded-2xl md:bg-[#F4F1EA]/88 md:backdrop-blur-2xl"
+      )}
+    >
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key="field-detail"
+          className="flex h-full min-h-0 flex-col"
+          initial={{ x: 28, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          exit={{ x: 28, opacity: 0 }}
+          transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+        >
+          {children}
+        </motion.div>
+      </AnimatePresence>
+    </aside>
   );
 }
