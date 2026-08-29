@@ -2,7 +2,8 @@
 
 import * as React from "react"
 import { Drawer as DrawerPrimitive } from "vaul"
-import "vaul/style.css"
+/** Локальна копія: `vaul` не експортує `style.css` у package.json exports → Next build падає. */
+import "./vaul-drawer.css"
 
 import { cn } from "@/lib/utils"
 

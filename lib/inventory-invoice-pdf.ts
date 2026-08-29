@@ -119,8 +119,12 @@ export async function renderInvoicePdf(
   const pdf = await PDFDocument.create();
   pdf.registerFontkit(fontkit);
 
-  const bodyFont = await pdf.embedFont(readFileSync(regular));
-  const boldFont = await pdf.embedFont(readFileSync(bold));
+  const bodyFont = await pdf.embedFont(
+    readFileSync(/*turbopackIgnore: true*/ regular)
+  );
+  const boldFont = await pdf.embedFont(
+    readFileSync(/*turbopackIgnore: true*/ bold)
+  );
 
   const title =
     invoice.type === "sale"
