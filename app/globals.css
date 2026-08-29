@@ -70,9 +70,9 @@ body {
   );
   --fields-peek-height: 4.75rem;
   --mobile-nav-offset: var(--bottom-nav-height);
-  /* FAB: карта full-bleed під fixed nav → offset від viewport bottom */
+  /* FAB / peek: default — перекривається нижче для mobile nav */
   --map-float-bottom: calc(
-    var(--bottom-nav-height) + var(--fields-peek-height) + 1rem
+    var(--bottom-nav-content) + var(--fields-peek-height) + 1rem
   );
   --app-height: 100dvh;
   --vv-height: 100dvh;
@@ -173,7 +173,8 @@ body {
 }
 
 html[data-app-nav="1"] {
-  --app-bottom-inset: var(--bottom-nav-height);
+  /* Safe-area всередині nav — peek/FAB сідають на верх кнопок, не на +34px */
+  --app-bottom-inset: var(--bottom-nav-content);
 }
 
 @media (min-width: 768px) {
