@@ -51,7 +51,7 @@ export function EquipmentTrackPlaybackPanel({
   return (
     <div
       className={cn(
-        "pointer-events-auto flex items-center gap-3 rounded-full border border-white/40 bg-background/90 px-4 py-2.5 shadow-lg backdrop-blur-md sm:gap-4 sm:px-6 sm:py-3",
+        "pointer-events-auto flex max-w-full items-center gap-2 rounded-full border border-white/40 bg-background/90 px-3 py-2 shadow-lg backdrop-blur-md sm:gap-4 sm:px-6 sm:py-3",
         className
       )}
     >
@@ -86,7 +86,7 @@ export function EquipmentTrackPlaybackPanel({
           onProgressChange(Number(e.target.value));
         }}
         className={cn(
-          "h-1.5 w-[min(42vw,320px)] cursor-pointer appearance-none rounded-full bg-muted accent-emerald-600",
+          "h-1.5 w-[min(36vw,280px)] max-w-[min(42vw,320px)] flex-1 cursor-pointer appearance-none rounded-full bg-muted accent-emerald-600 sm:w-[min(42vw,320px)] sm:flex-none",
           scrubDisabled && "opacity-40"
         )}
       />

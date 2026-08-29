@@ -1,9 +1,10 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { ReactNode, TouchEvent as ReactTouchEvent } from "react";
+import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, ChevronDown, ChevronUp, Radar, Tractor } from "lucide-react";
+import { ArrowLeft, ChevronDown, Radar, Tractor } from "lucide-react";
 
 import {
   FleetDaySummaryBar,
@@ -16,10 +17,60 @@ import {
   type FleetAlertKind,
 } from "@/components/dashboard/fleet-alert-strip";
 import { Button } from "@/components/ui/button";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerHandle,
+  DrawerTitle,
+} from "@/components/ui/drawer";
 import type { FleetNonTrackedItem, FleetTrackedUnit } from "@/lib/equipment-fleet";
 import type { FleetActiveOperation } from "@/lib/equipment-active-ops";
 import { formatCountPlural } from "@/lib/plural";
+import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
+
+/** Висота мобільної шторки флоту (над нижнім меню) */
+export const EQUIPMENT_MOBILE_DRAWER_SIZE =
+  "h-[calc(88dvh-var(--app-bottom-inset))] max-h-[calc(88dvh-var(--app-bottom-inset))]";
+
+const PEEK_SWIPE_UP_PX = 36;
+
+function FleetPeekCue({ className }: { className?: string }) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "pointer-events-none absolute top-1/2 right-3 z-10 -translate-y-1/2",
+        "flex items-center justify-center text-emerald-800",
+        className
+      )}
+    >
+      <motion.span
+        className="flex items-center justify-center"
+        animate={{ y: [1, -3, 1] }}
+        transition={{ duration: 1.45, repeat: Infinity, ease: "easeInOut" }}
+      >
+        <svg width="15" height="18" viewBox="0 0 15 18" fill="none">
+          <path
+            d="M2.5 8.25 7.5 3.5l5 4.75"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            opacity="0.28"
+          />
+          <path
+            d="M2.5 13.25 7.5 8.5l5 4.75"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </motion.span>
+    </span>
+  );
+}
 
 type FieldCtx = { name: string; isBase: boolean } | null;
 
@@ -85,8 +136,9 @@ export function UnitCardGlass({
       onMouseLeave={() => onHover?.(null)}
       data-unit-id={unit.id}
       className={cn(
-        "group relative w-full rounded-2xl border p-3.5 text-left transition-all duration-300",
+        "group relative w-full rounded-2xl border p-3.5 text-left transition-all duration-300 touch-manipulation",
         "bg-white/55 backdrop-blur-md hover:bg-white/75 hover:shadow-lg",
+        "active:scale-[0.99] md:active:scale-100",
         selected &&
           "border-emerald-500/70 bg-white/80 ring-2 ring-emerald-500/25 shadow-lg",
         !selected &&
@@ -244,11 +296,41 @@ export function EquipmentFleetGlassPanel({
   onSummaryRefresh,
   detailContent,
 }: Props) {
+  const isMobile = useIsMobile();
+  const peekSwipeRef = useRef<{ y: number; t: number } | null>(null);
+  const drawerOpenedAtRef = useRef(0);
+
   const sortedUnits = sortedUnitIds
     .map((id) => units.find((u) => u.id === id))
     .filter(Boolean) as FleetTrackedUnit[];
 
   const showDetail = selectedUnitId != null;
+  /** Повний snap лише коли явно розгорнули — деталі можна згорнути в peek над картою */
+  const showFullSnap = isMobile && mobileExpanded;
+
+  useEffect(() => {
+    if (showFullSnap) drawerOpenedAtRef.current = Date.now();
+  }, [showFullSnap]);
+
+  function onPeekTouchStart(event: ReactTouchEvent) {
+    const touch = event.touches[0];
+    if (!touch) return;
+    peekSwipeRef.current = { y: touch.clientY, t: Date.now() };
+  }
+
+  function onPeekTouchEnd(event: ReactTouchEvent) {
+    const start = peekSwipeRef.current;
+    peekSwipeRef.current = null;
+    if (!start) return;
+    const touch = event.changedTouches[0];
+    if (!touch) return;
+    const dy = start.y - touch.clientY;
+    const dt = Date.now() - start.t;
+    if (dy > PEEK_SWIPE_UP_PX && dt < 800) {
+      event.preventDefault();
+      onMobileExpandedChange(true);
+    }
+  }
 
   const listView = (
     <div className="flex h-full min-h-0 flex-col">
@@ -446,16 +528,30 @@ export function EquipmentFleetGlassPanel({
   const detailView = (
     <div className="flex h-full min-h-0 flex-col">
       <div className="border-b border-white/30 px-3 py-2.5">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-8 gap-1.5 px-2 text-sm font-semibold text-foreground hover:bg-white/60"
-          onClick={onBackToList}
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Назад до списку
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-11 min-h-11 flex-1 justify-start gap-1.5 px-2 text-sm font-semibold text-foreground hover:bg-white/60 md:h-8 md:min-h-0 md:flex-none"
+            onClick={onBackToList}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Назад до списку
+          </Button>
+          {isMobile ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-11 w-11 shrink-0 text-zinc-500 hover:bg-white/60"
+              aria-label="Згорнути шторку"
+              onClick={() => onMobileExpandedChange(false)}
+            >
+              <ChevronDown className="h-5 w-5" />
+            </Button>
+          ) : null}
+        </div>
         {selectedUnitName ? (
           <p className="mt-1 truncate px-2 text-base font-bold tracking-tight text-zinc-900">
             {selectedUnitName}
@@ -469,7 +565,7 @@ export function EquipmentFleetGlassPanel({
   );
 
   const renderPanelBody = () => (
-    <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+    <div className="relative h-full min-h-0 overflow-hidden">
       <AnimatePresence mode="wait" initial={false}>
         {showDetail ? (
           <motion.div
@@ -502,51 +598,115 @@ export function EquipmentFleetGlassPanel({
 
   return (
     <>
+      {/* ПК — без змін вигляду; на мобільному тіло лише в Drawer */}
       <aside
         className={cn(
           "pointer-events-auto absolute top-3 bottom-3 left-3 z-20 hidden w-[min(100%,400px)] flex-col overflow-hidden rounded-2xl border border-white/30 shadow-2xl md:flex",
           "bg-background/80 backdrop-blur-2xl"
         )}
       >
-        {renderPanelBody()}
+        {!isMobile ? renderPanelBody() : null}
       </aside>
 
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 md:hidden">
-        <div
-          className={cn(
-            "pointer-events-auto mx-2 mb-2 overflow-hidden rounded-t-2xl border border-white/40 shadow-2xl transition-[max-height] duration-300",
-            "bg-background/85 backdrop-blur-2xl",
-            mobileExpanded || showDetail
-              ? "max-h-[min(78vh,680px)]"
-              : "max-h-14"
-          )}
-        >
-          {!showDetail ? (
+      {/* Мобільна шторка — лише <768px */}
+      {isMobile ? (
+        <>
+          {!showFullSnap ? (
             <button
               type="button"
-              onClick={() => onMobileExpandedChange(!mobileExpanded)}
-              className="flex w-full items-center justify-between border-b border-white/30 px-4 py-3"
+              aria-expanded={false}
+              aria-label={
+                showDetail
+                  ? `Відкрити картку ${selectedUnitName ?? "техніки"}`
+                  : "Розгорнути список флоту"
+              }
+              className="pointer-events-auto fixed inset-x-0 z-[140] flex flex-col border-t border-white/40 bg-[#F4F1EA]/95 shadow-[0_-8px_30px_-12px_rgba(24,24,27,0.35)] backdrop-blur-xl touch-manipulation"
+              style={{
+                bottom: "var(--app-bottom-inset)",
+                height: "var(--fields-peek-height, 4.75rem)",
+                borderTopLeftRadius: "1.25rem",
+                borderTopRightRadius: "1.25rem",
+                touchAction: "pan-y",
+              }}
+              onTouchStart={onPeekTouchStart}
+              onTouchEnd={onPeekTouchEnd}
+              onClick={() => onMobileExpandedChange(true)}
             >
-              <div className="flex items-center gap-2">
-                <Radar className="h-4 w-4 text-emerald-700" />
-                <span className="text-sm font-bold text-zinc-900">
-                  Флот ({units.length})
+              <div
+                className="mx-auto mt-2 h-1.5 w-12 shrink-0 rounded-full bg-zinc-400/90"
+                aria-hidden
+              />
+              <span className="relative flex min-h-0 flex-1 items-center gap-3 pr-14 pl-4 pb-2 text-left">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm shadow-emerald-700/25">
+                  <Radar className="h-4 w-4" />
                 </span>
-              </div>
-              {mobileExpanded ? (
-                <ChevronDown className="h-4 w-4 text-zinc-500" />
-              ) : (
-                <ChevronUp className="h-4 w-4 text-zinc-500" />
-              )}
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[14px] font-bold leading-tight tracking-tight text-zinc-900">
+                    {showDetail ? selectedUnitName || "Техніка" : "Флот"}
+                  </span>
+                  <span className="block truncate text-[11px] font-medium leading-tight text-zinc-500">
+                    {showDetail
+                      ? "Свайпніть вгору · деталі та журнал"
+                      : loading
+                        ? "Завантаження…"
+                        : `${formatCountPlural(units.length, ["одиниця", "одиниці", "одиниць"])} · GPS наживо`}
+                  </span>
+                </span>
+              </span>
+              <FleetPeekCue />
             </button>
           ) : null}
-          {(mobileExpanded || showDetail) && (
-            <div className="flex h-[min(72vh,640px)] flex-col">
-              {renderPanelBody()}
-            </div>
-          )}
-        </div>
-      </div>
+
+          <Drawer
+            open={showFullSnap}
+            onOpenChange={(open) => {
+              if (open) {
+                drawerOpenedAtRef.current = Date.now();
+                onMobileExpandedChange(true);
+                return;
+              }
+              if (Date.now() - drawerOpenedAtRef.current < 400) return;
+              onMobileExpandedChange(false);
+            }}
+            dismissible
+            modal={false}
+            shouldScaleBackground={false}
+            noBodyStyles
+          >
+            <DrawerContent
+              className={cn(
+                EQUIPMENT_MOBILE_DRAWER_SIZE,
+                "flex flex-col border-white/40 bg-[#F4F1EA]/95 pb-3 backdrop-blur-2xl"
+              )}
+            >
+              <DrawerTitle className="sr-only">
+                {showDetail
+                  ? selectedUnitName || "Картка техніки"
+                  : "Список флоту"}
+              </DrawerTitle>
+              <DrawerHandle />
+              {!showDetail ? (
+                <button
+                  type="button"
+                  onClick={() => onMobileExpandedChange(false)}
+                  className="flex w-full shrink-0 items-center justify-between border-b border-[#E5DFD3]/80 px-4 py-2.5 text-left"
+                >
+                  <span className="flex items-center gap-2">
+                    <Radar className="h-4 w-4 text-emerald-700" />
+                    <span className="text-sm font-bold text-zinc-900">
+                      Флот ({units.length})
+                    </span>
+                  </span>
+                  <ChevronDown className="h-4 w-4 text-zinc-500" />
+                </button>
+              ) : null}
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                {renderPanelBody()}
+              </div>
+            </DrawerContent>
+          </Drawer>
+        </>
+      ) : null}
     </>
   );
 }

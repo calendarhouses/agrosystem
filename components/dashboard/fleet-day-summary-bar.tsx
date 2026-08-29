@@ -194,6 +194,7 @@ export function FleetDaySummaryBar({
             </PopoverTrigger>
             <PopoverContent
               align="end"
+              sheetOnMobile={false}
               className="w-auto overflow-hidden rounded-xl border border-border bg-popover p-0 shadow-xl"
             >
               <div className="border-b border-border/60 px-3 py-2 text-xs font-medium text-muted-foreground">

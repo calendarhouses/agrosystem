@@ -31,6 +31,7 @@ import {
   Printer,
   Route,
   UserCircle,
+  MoreHorizontal,
 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -111,7 +112,14 @@ import {
   exportDayJournalXlsx,
   printDayJournalReport,
 } from "@/lib/equipment-export";
+import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const OFFLINE_ALERT_SEC = 30 * 60;
 const CRITICAL_FUEL_RATIO = 0.15;
@@ -1161,7 +1169,7 @@ function TrackDatePicker({
       <PopoverTrigger
         className={cn(
           "flex items-center gap-2 rounded-xl border border-[#E5DFD3] bg-white px-3 py-1.5 text-sm text-zinc-700 shadow-sm",
-          "outline-none transition-all hover:border-[#276749]/30 hover:shadow-md focus-visible:ring-2 focus-visible:ring-[#276749]/25"
+          "h-11 min-h-11 outline-none transition-all hover:border-[#276749]/30 hover:shadow-md focus-visible:ring-2 focus-visible:ring-[#276749]/25 md:h-auto md:min-h-0"
         )}
       >
         <CalendarIcon size={16} className="shrink-0 text-[#276749]" />
@@ -1169,6 +1177,7 @@ function TrackDatePicker({
       </PopoverTrigger>
       <PopoverContent
         align="end"
+        sheetOnMobile={false}
         className="w-[260px] overflow-hidden rounded-2xl border border-[#E5DFD3] bg-[#F4F1EA] p-0 text-zinc-900 shadow-[0_20px_50px_rgba(28,25,23,0.14)]"
       >
         <div className="flex items-center justify-between gap-2 border-b border-[#E5DFD3]/80 px-2.5 py-2">
@@ -1270,7 +1279,7 @@ export function EquipmentView() {
   const [selectedUnit, setSelectedUnit] = useState<FleetTrackedUnit | null>(
     null
   );
-  const [mobileFleetExpanded, setMobileFleetExpanded] = useState(true);
+  const [mobileFleetExpanded, setMobileFleetExpanded] = useState(false);
   const commandMapRef = useRef<EquipmentCommandMapHandle | null>(null);
   const seenAlertIdsRef = useRef<Set<string>>(new Set());
   const alertsBootstrappedRef = useRef(false);
@@ -1826,6 +1835,7 @@ export function EquipmentView() {
   );
 
   const isDesktopMapLayout = useMediaQuery("(min-width: 768px)");
+  const isMobile = useIsMobile();
   const mapFitPadding = useMemo(
     () => commandCenterFitPadding(isDesktopMapLayout),
     [isDesktopMapLayout]
@@ -2009,11 +2019,15 @@ export function EquipmentView() {
       <div
         className={cn(
           COMMAND_CENTER_MAP_AREA_CLASS,
-          "pointer-events-none z-30 flex flex-col items-center justify-end pb-6"
+          "pointer-events-none z-30 flex flex-col items-center justify-end px-3",
+          "pb-[calc(var(--app-bottom-inset)+var(--fields-peek-height,4.75rem)+0.75rem)] md:pb-6"
         )}
       >
         <EquipmentTrackPlaybackPanel
-          visible={selectedUnitId != null}
+          visible={
+            selectedUnitId != null &&
+            (!isMobile || !mobileFleetExpanded)
+          }
           isPlaying={playback.isPlaying}
           onTogglePlay={playback.togglePlay}
           progress={playback.progress}
@@ -2026,6 +2040,7 @@ export function EquipmentView() {
           currentUnix={playback.currentUnix}
           disabled={playback.disabled}
           loading={trackLoading}
+          className="max-w-full"
         />
       </div>
 
@@ -2099,7 +2114,7 @@ export function EquipmentView() {
         }}
         detailContent={
           liveSelectedUnit && selectedTelemetry ? (
-            <div className="flex flex-col gap-3 pb-4">
+            <div className="flex flex-col gap-2.5 pb-4 md:gap-3">
               <div className="flex flex-wrap items-center gap-2">
                 <UnitStatusBadge unit={liveSelectedUnit} />
                 <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
@@ -2177,7 +2192,78 @@ export function EquipmentView() {
                     unitId={liveSelectedUnit.id}
                     onChange={setTrackDate}
                   />
-                  <div className="flex items-center gap-0.5 rounded-xl border border-[#E5DFD3] bg-white/90 p-0.5 shadow-sm">
+                  {/* Мобільний: експорти в меню; ПК — як було */}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-[#E5DFD3] bg-white/90 text-zinc-600 shadow-sm md:hidden"
+                      aria-label="Експорт журналу"
+                    >
+                      <MoreHorizontal className="h-4 w-4" />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="min-w-44">
+                      <DropdownMenuItem
+                        className="gap-2"
+                        disabled={trackLoading || locationSessions.length === 0}
+                        onClick={() => {
+                          exportDayJournalCsv({
+                            unitName: liveSelectedUnit.nm,
+                            dateLabel: formatTrackDateLabel(trackDate),
+                            fileDate: calendarDateToYmd(trackDate),
+                            sessions: locationSessions,
+                            summary: dayAnalytics.summary,
+                            hoursOnField: sessionTimeHours.hoursOnField,
+                            hoursOnRoad: sessionTimeHours.hoursOnRoad,
+                            hoursAtBase: sessionTimeHours.hoursAtBase,
+                            fuelEvents: displayFuelEvents,
+                          });
+                        }}
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        CSV
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="gap-2"
+                        disabled={trackLoading}
+                        onClick={() => {
+                          exportDayJournalXlsx({
+                            unitName: liveSelectedUnit.nm,
+                            dateLabel: formatTrackDateLabel(trackDate),
+                            fileDate: calendarDateToYmd(trackDate),
+                            sessions: locationSessions,
+                            summary: dayAnalytics.summary,
+                            hoursOnField: sessionTimeHours.hoursOnField,
+                            hoursOnRoad: sessionTimeHours.hoursOnRoad,
+                            hoursAtBase: sessionTimeHours.hoursAtBase,
+                            fuelEvents: displayFuelEvents,
+                          });
+                        }}
+                      >
+                        <FileSpreadsheet className="h-3.5 w-3.5" />
+                        Excel
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="gap-2"
+                        disabled={trackLoading}
+                        onClick={() => {
+                          printDayJournalReport({
+                            unitName: liveSelectedUnit.nm,
+                            dateLabel: formatTrackDateLabel(trackDate),
+                            fileDate: calendarDateToYmd(trackDate),
+                            sessions: locationSessions,
+                            summary: dayAnalytics.summary,
+                            hoursOnField: sessionTimeHours.hoursOnField,
+                            hoursOnRoad: sessionTimeHours.hoursOnRoad,
+                            hoursAtBase: sessionTimeHours.hoursAtBase,
+                            fuelEvents: displayFuelEvents,
+                          });
+                        }}
+                      >
+                        <Printer className="h-3.5 w-3.5" />
+                        Друк
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <div className="hidden items-center gap-0.5 rounded-xl border border-[#E5DFD3] bg-white/90 p-0.5 shadow-sm md:flex">
                     <Button
                       type="button"
                       variant="ghost"
