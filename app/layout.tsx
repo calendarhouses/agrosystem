@@ -85,13 +85,14 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <AppShell>{children}</AppShell>
         </div>
         <Toaster
-          position="bottom-right"
+          position="top-center"
           theme="dark"
           closeButton
           offset={16}
           mobileOffset={{
-            bottom: "calc(var(--app-bottom-inset) + 12px)",
+            top: "calc(var(--safe-top) + 12px)",
             right: "12px",
+            left: "12px",
           }}
           toastOptions={{
             classNames: {

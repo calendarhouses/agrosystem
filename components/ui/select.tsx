@@ -86,14 +86,18 @@ function SelectContent({
   const insideDrawer = useInsideDrawer()
   const backdropRef = React.useRef<HTMLDivElement>(null)
   const useSheet = isMobile && sheetOnMobile && !insideDrawer
+  const alignWithTrigger = !useSheet && !insideDrawer && alignItemWithTrigger
 
   const popup = (
     <SelectPrimitive.Popup
       data-slot="select-content"
-      data-align-trigger={!useSheet && alignItemWithTrigger}
+      data-align-trigger={alignWithTrigger || undefined}
       data-vaul-no-drag=""
       className={cn(
-        "relative isolate max-h-(--available-height) w-(--anchor-width) min-w-36 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-100 data-[align-trigger=true]:animate-none data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+        "relative isolate w-(--anchor-width) min-w-36 origin-(--transform-origin) overflow-x-hidden rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-100 data-[align-trigger=true]:animate-none data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+        useSheet
+          ? "max-h-(--available-height) overflow-y-auto"
+          : "max-h-[min(var(--available-height,60dvh),24rem)] overflow-hidden",
         className,
         useSheet &&
           "fixed inset-x-0 bottom-[var(--app-bottom-inset)] top-auto max-h-[var(--app-sheet-max)] w-full min-w-0 origin-bottom overflow-hidden rounded-t-3xl rounded-b-none pb-[max(0.5rem,var(--safe-bottom))] shadow-2xl ring-0 data-open:zoom-in-100",
@@ -128,7 +132,11 @@ function SelectContent({
       ) : (
         <>
           <SelectScrollUpButton />
-          <SelectPrimitive.List className="max-h-[min(50dvh,20rem)] overflow-y-auto overscroll-contain">
+          <SelectPrimitive.List
+            className="max-h-[min(var(--available-height,55dvh),22rem)] overflow-y-auto overscroll-contain touch-pan-y p-1"
+            data-vaul-no-drag=""
+            data-allow-pan="true"
+          >
             {children}
           </SelectPrimitive.List>
           <SelectScrollDownButton />
@@ -159,7 +167,8 @@ function SelectContent({
         sideOffset={sideOffset}
         align={align}
         alignOffset={alignOffset}
-        alignItemWithTrigger={alignItemWithTrigger}
+        alignItemWithTrigger={alignWithTrigger}
+        collisionPadding={12}
         className="isolate z-[220]"
       >
         {popup}

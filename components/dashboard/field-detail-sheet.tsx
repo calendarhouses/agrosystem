@@ -65,6 +65,12 @@ import {
   Sheet,
   SheetContent,
 } from "@/components/ui/sheet";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerHandle,
+  DrawerTitle,
+} from "@/components/ui/drawer";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LiveFieldEconomicsPanel, useLiveFieldEconomics } from "@/components/dashboard/live-field-economics-panel";
 import { QuickIssueSheet } from "@/components/dashboard/quick-issue-sheet";
@@ -1169,7 +1175,7 @@ function PlanWorkPanel({
                     <SelectTrigger className={selectTriggerClass}>
                       <SelectValue placeholder="Оберіть техніку" />
                     </SelectTrigger>
-                    <SelectContent className="max-h-64 border-[#E5DFD3] bg-white">
+                    <SelectContent className="border-[#E5DFD3] bg-white">
                       {trackedUnitOptions.length > 0 ? (
                         <SelectGroup>
                           <SelectLabel>З GPS</SelectLabel>
@@ -1218,7 +1224,7 @@ function PlanWorkPanel({
                     <SelectTrigger className={selectTriggerClass}>
                       <SelectValue placeholder="Оберіть знаряддя" />
                     </SelectTrigger>
-                    <SelectContent className="max-h-64 border-[#E5DFD3] bg-white">
+                    <SelectContent className="border-[#E5DFD3] bg-white">
                       {implementOptions.map((item) => (
                         <SelectItem key={item.id} value={item.id}>
                           {item.name}
@@ -1801,6 +1807,85 @@ export function FieldDetailSheet({
     closeHub();
   }
 
+  function closePlanForm() {
+    setPlanOpen(false);
+    setPlanPastWork(false);
+    setPlanPrefill(null);
+    setEditingOp(null);
+  }
+
+  function closeQuickIssueForm() {
+    setQuickIssueOpen(false);
+  }
+
+  function submitPlanOperation(op: FieldOperation) {
+    void persistOperation(op)
+      .then((saved) => {
+        if (!editingOp) onPlanWork?.(op);
+        closePlanForm();
+        setActiveTab("history");
+        setHistorySeasonYear(saved.seasonYear);
+        setPeriod("Сезон");
+        toast.success(
+          planPastWork && !editingOp
+            ? `Виконану роботу збережено · сезон ${saved.seasonYear}`
+            : editingOp
+              ? "Наряд оновлено"
+              : "Наряд додано в історію"
+        );
+      })
+      .catch((err) => {
+        toast.error(
+          err instanceof Error ? err.message : "Не вдалося зберегти наряд"
+        );
+      });
+  }
+
+  const planPanel =
+    field && planOpen ? (
+      <PlanWorkPanel
+        field={{
+          ...field,
+          crop: passportCrop || field.crop,
+          areaHa: passportAreaHa > 0 ? passportAreaHa : field.areaHa,
+        }}
+        farmFieldId={farmFieldId}
+        seasonYear={operationSeasonYear}
+        units={units}
+        fieldGeometry={fieldGeometry}
+        initial={editingOp}
+        prefill={editingOp ? null : planPrefill}
+        submitAsCompleted={planPastWork && !editingOp}
+        onPassportPatched={(patch) => {
+          onPassportCropChange?.(patch.crop);
+          onPassportAreaHaChange?.(patch.areaHa);
+        }}
+        onBack={closePlanForm}
+        onSubmit={submitPlanOperation}
+      />
+    ) : null;
+
+  const quickIssuePanel = quickIssueOpen ? (
+    <QuickIssueSheet
+      variant="panel"
+      open
+      lockField={Boolean(farmFieldId)}
+      presetFieldId={farmFieldId}
+      onOpenChange={(next) => {
+        if (!next) closeQuickIssueForm();
+      }}
+      onBack={closeQuickIssueForm}
+      onSuccess={(payload) => {
+        setPeriod("Сезон");
+        prependQuickIssueEvent(payload);
+        void liveEconomics.reload();
+        void reloadFieldEvents();
+        closeQuickIssueForm();
+        setActiveTab("history");
+      }}
+    />
+  ) : null;
+
   const hubInner = (
       <>
         {field ? (
@@ -1836,77 +1921,10 @@ export function FieldDetailSheet({
                   });
                 }}
               />
-            ) : planOpen ? (
-              <PlanWorkPanel
-                field={{
-                  ...field,
-                  crop: passportCrop || field.crop,
-                  areaHa: passportAreaHa > 0 ? passportAreaHa : field.areaHa,
-                }}
-                farmFieldId={farmFieldId}
-                seasonYear={operationSeasonYear}
-                units={units}
-                fieldGeometry={fieldGeometry}
-                initial={editingOp}
-                prefill={editingOp ? null : planPrefill}
-                submitAsCompleted={planPastWork && !editingOp}
-                onPassportPatched={(patch) => {
-                  onPassportCropChange?.(patch.crop);
-                  onPassportAreaHaChange?.(patch.areaHa);
-                }}
-                onBack={() => {
-                  setPlanOpen(false);
-                  setPlanPastWork(false);
-                  setPlanPrefill(null);
-                  setEditingOp(null);
-                }}
-                onSubmit={(op) => {
-                  void persistOperation(op)
-                    .then((saved) => {
-                      if (!editingOp) onPlanWork?.(op);
-                      setEditingOp(null);
-                      setPlanOpen(false);
-                      setPlanPastWork(false);
-                      setPlanPrefill(null);
-                      setActiveTab("history");
-                      setHistorySeasonYear(saved.seasonYear);
-                      setPeriod("Сезон");
-                      toast.success(
-                        planPastWork && !editingOp
-                          ? `Виконану роботу збережено · сезон ${saved.seasonYear}`
-                          : editingOp
-                            ? "Наряд оновлено"
-                            : "Наряд додано в історію"
-                      );
-                    })
-                    .catch((err) => {
-                      toast.error(
-                        err instanceof Error
-                          ? err.message
-                          : "Не вдалося зберегти наряд"
-                      );
-                    });
-                }}
-              />
-            ) : quickIssueOpen ? (
-              <QuickIssueSheet
-                variant="panel"
-                open
-                lockField={Boolean(farmFieldId)}
-                presetFieldId={farmFieldId}
-                onOpenChange={(next) => {
-                  if (!next) setQuickIssueOpen(false);
-                }}
-                onBack={() => setQuickIssueOpen(false)}
-                onSuccess={(payload) => {
-                  setPeriod("Сезон");
-                  prependQuickIssueEvent(payload);
-                  void liveEconomics.reload();
-                  void reloadFieldEvents();
-                  setQuickIssueOpen(false);
-                  setActiveTab("history");
-                }}
-              />
+            ) : !embeddedInMobileDrawer && planOpen ? (
+              planPanel
+            ) : !embeddedInMobileDrawer && quickIssueOpen ? (
+              quickIssuePanel
             ) : (
               <>
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -2613,11 +2631,57 @@ export function FieldDetailSheet({
     if (!open || !field) return null;
     if (embeddedInMobileDrawer) {
       return (
-        <div className="flex h-full min-h-0 flex-col overflow-hidden bg-transparent">
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            {hubInner}
+        <>
+          <div className="flex h-full min-h-0 flex-col overflow-hidden bg-transparent">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              {hubInner}
+            </div>
           </div>
-        </div>
+
+          <Drawer
+            open={planOpen}
+            onOpenChange={(next) => {
+              if (!next) closePlanForm();
+            }}
+            dismissible
+            modal={false}
+            shouldScaleBackground={false}
+            noBodyStyles
+          >
+            <DrawerContent className="z-[160] flex h-[calc(92dvh-var(--app-bottom-inset))] max-h-[calc(92dvh-var(--app-bottom-inset))] flex-col border-[#E5DFD3]/90 bg-[#F4F1EA] pb-0">
+              <DrawerTitle className="sr-only">
+                {editingOp
+                  ? "Редагувати наряд"
+                  : planPastWork
+                    ? "Внести роботу"
+                    : "Новий наряд"}
+              </DrawerTitle>
+              <DrawerHandle />
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                {planPanel}
+              </div>
+            </DrawerContent>
+          </Drawer>
+
+          <Drawer
+            open={quickIssueOpen}
+            onOpenChange={(next) => {
+              if (!next) closeQuickIssueForm();
+            }}
+            dismissible
+            modal={false}
+            shouldScaleBackground={false}
+            noBodyStyles
+          >
+            <DrawerContent className="z-[160] flex h-[calc(92dvh-var(--app-bottom-inset))] max-h-[calc(92dvh-var(--app-bottom-inset))] flex-col border-[#E5DFD3]/90 bg-[#F4F1EA] pb-0">
+              <DrawerTitle className="sr-only">Списати ТМЦ</DrawerTitle>
+              <DrawerHandle />
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                {quickIssuePanel}
+              </div>
+            </DrawerContent>
+          </Drawer>
+        </>
       );
     }
     return (

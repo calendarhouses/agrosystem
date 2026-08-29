@@ -1125,14 +1125,12 @@ export function FieldsView() {
             : "md:left-[calc(0.75rem+min(400px,calc(100%-1.5rem)))] md:right-0"
         )}
       >
-        {!mapSearchOpen && !mobileListExpanded && !mapToolActive ? (
-          <div
-            className={cn(
-              "flex",
-              sheetOpen ? "justify-start" : "justify-end"
-            )}
-          >
-            <FieldsMapChrome align={sheetOpen ? "start" : "end"} />
+        {!mapSearchOpen &&
+        !mobileListExpanded &&
+        !mapToolActive &&
+        !sheetOpen ? (
+          <div className="flex justify-end">
+            <FieldsMapChrome align="end" />
           </div>
         ) : null}
       </div>

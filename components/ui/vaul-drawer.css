@@ -113,11 +113,10 @@
 }
 
 [data-vaul-drawer][data-vaul-drawer-direction='bottom']::after {
-  top: 100%;
-  bottom: initial;
-  left: 0;
-  right: 0;
-  height: 200%;
+  /* Не фарбувати під шторкою — інакше накриває сіре нижнє меню */
+  display: none !important;
+  content: none !important;
+  height: 0 !important;
 }
 
 [data-vaul-drawer][data-vaul-drawer-direction='left']::after {

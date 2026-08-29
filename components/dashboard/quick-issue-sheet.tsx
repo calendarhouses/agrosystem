@@ -37,10 +37,8 @@ import {
 import { FieldPassportQuickFix } from "@/components/dashboard/field-passport-quick-fix";
 import {
   FuelSheetHeader,
-  fuelFieldLabelClass,
   fuelHeroAmountClass,
   fuelPrimaryBtnClass,
-  fuelSelectItemClass,
   fuelSelectTriggerClass,
   fuelSheetBodyClass,
   fuelSheetContentClass,
@@ -60,13 +58,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { isFieldPassportComplete } from "@/lib/field-passport";
 import { suppressLocalInventoryMovesRealtimeToast } from "@/lib/realtime-toast-guard";
@@ -353,30 +344,42 @@ export function QuickIssueSheet({
     });
   }
 
-  const fieldLabel = (label: string) => (
-    <p className={fuelFieldLabelClass}>{label}</p>
-  );
-
   const issueHeader =
     variant === "panel" ? (
-      <div className="shrink-0 border-b border-zinc-200/70 bg-white px-4 py-3 text-left md:px-5 md:py-4">
+      <div className="relative shrink-0 overflow-hidden border-b border-[#E5DFD3]/80 bg-gradient-to-br from-[#E8F0EA] via-[#F4F1EA] to-[#EDE8DF] px-4 py-4 text-left md:px-5">
+        <div
+          className="pointer-events-none absolute -top-12 -right-10 h-36 w-36 rounded-full bg-[#276749]/10 blur-3xl"
+          aria-hidden
+        />
         <button
           type="button"
           onClick={() => {
             onBack?.();
             onOpenChange(false);
           }}
-          className="mb-2 inline-flex min-h-11 items-center gap-1 rounded-lg px-1 text-sm font-semibold text-zinc-500 transition-colors hover:text-zinc-900 md:min-h-0 md:text-xs"
+          className="relative mb-3 inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-zinc-600 transition-colors hover:bg-white/70 hover:text-zinc-900"
         >
-          <ChevronLeft className="h-3.5 w-3.5" />
+          <ChevronLeft className="h-4 w-4" />
           Назад до поля
         </button>
-        <h2 className="text-xl font-bold tracking-tight text-zinc-900">
-          Списати ТМЦ
-        </h2>
-        {selectedField ? (
-          <p className="mt-1 text-sm text-zinc-500">{selectedField.name}</p>
-        ) : null}
+        <div className="relative">
+          <p className="mb-1.5 inline-flex items-center gap-1.5 rounded-full border border-[#276749]/15 bg-white/80 px-2.5 py-1 text-[10px] font-semibold tracking-wider text-[#276749] uppercase">
+            <PackageMinus className="h-3 w-3" />
+            Склад → поле
+          </p>
+          <h2 className="text-xl font-extrabold tracking-tight text-zinc-900">
+            Списати ТМЦ
+          </h2>
+          {selectedField ? (
+            <p className="mt-1 text-sm text-zinc-600">
+              {selectedField.name}
+              {selectedField.crop ? ` · ${selectedField.crop}` : ""}
+              {selectedField.areaHa > 0
+                ? ` · ${formatAreaHa(selectedField.areaHa)} га`
+                : ""}
+            </p>
+          ) : null}
+        </div>
       </div>
     ) : (
       <FuelSheetHeader
@@ -386,9 +389,15 @@ export function QuickIssueSheet({
       />
     );
 
+  const formCardClass =
+    "overflow-hidden rounded-2xl border border-[#E5DFD3]/90 bg-white shadow-[0_8px_24px_-18px_rgba(24,24,27,0.35)]";
+  const formCardHeadClass =
+    "flex items-center gap-2.5 border-b border-[#E5DFD3]/70 bg-[#FAFAF8] px-4 py-3";
+  const formCardBodyClass = "space-y-3 p-4";
+
   const issueForm = (
     <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
-      <div className={cn(fuelSheetBodyClass, "space-y-5")}>
+      <div className={cn(fuelSheetBodyClass, "gap-4 space-y-0 bg-[#F4F1EA]/40")}>
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-20 text-sm text-zinc-500">
             <Loader2 className="h-5 w-5 animate-spin" />
@@ -401,150 +410,91 @@ export function QuickIssueSheet({
           </div>
         ) : (
           <>
-            <section className="space-y-2">
-              {fieldLabel("Категорія")}
-              <Select
-                items={CATEGORIES.map((c) => ({
-                  value: c.id,
-                  label: c.label,
-                }))}
-                value={category}
-                onValueChange={(v) => {
-                  if (typeof v !== "string" || !v) return;
-                  setCategory(v as Cat);
-                  setItemKey(null);
-                  setFormError(null);
-                }}
-              >
-                <SelectTrigger className={fuelSelectTriggerClass}>
-                  <SelectValue placeholder="Оберіть категорію…">
-                    {CATEGORIES.find((c) => c.id === category)?.label ?? null}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent
-                  align="start"
-                  className="rounded-2xl border border-zinc-200 bg-white p-1.5 text-zinc-900 shadow-xl"
-                >
-                  {CATEGORIES.map((cat) => {
-                    const count = categoryCounts[cat.id] ?? 0;
-                    return (
-                      <SelectItem
-                        key={cat.id}
-                        value={cat.id}
-                        disabled={count === 0}
-                        className={fuelSelectItemClass}
+            <section className={formCardClass}>
+              <div className={formCardHeadClass}>
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#276749]/12 text-[#276749]">
+                  <Wheat className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-zinc-900">Категорія</p>
+                  <p className="text-[11px] font-medium text-zinc-500">
+                    Що списуємо зі складу
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-4">
+                {CATEGORIES.map((cat) => {
+                  const count = categoryCounts[cat.id] ?? 0;
+                  const Icon = cat.icon;
+                  const active = category === cat.id;
+                  const disabled = count === 0;
+                  return (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => {
+                        setCategory(cat.id);
+                        setItemKey(null);
+                        setFormError(null);
+                      }}
+                      className={cn(
+                        "flex flex-col items-start gap-2 rounded-2xl border px-3 py-3 text-left transition-all",
+                        active
+                          ? "border-[#276749] bg-[#276749] text-white shadow-[0_10px_24px_-12px_rgba(39,103,73,0.55)]"
+                          : "border-[#E5DFD3] bg-[#FAFAF8] text-zinc-800 hover:border-[#276749]/35 hover:bg-white",
+                        disabled && "cursor-not-allowed opacity-40"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "flex h-8 w-8 items-center justify-center rounded-xl",
+                          active ? "bg-white/15" : "bg-white text-[#276749]"
+                        )}
                       >
-                        {cat.label}
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-            </section>
-
-            <section className="space-y-2">
-              {fieldLabel("Товар")}
-              <Popover open={itemOpen} onOpenChange={setItemOpen}>
-                <PopoverTrigger
-                  disabled={!category}
-                  className={comboboxTriggerClass}
-                >
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900">
-                    {selectedItem ? (
-                      selectedItem.name
-                    ) : (
-                      <span className="font-normal text-zinc-400">
-                        {category ? "Оберіть товар…" : "Спочатку категорію"}
+                        <Icon className="h-4 w-4" />
                       </span>
-                    )}
-                  </span>
-                  <ChevronDown className="h-4 w-4 shrink-0 text-zinc-400" />
-                </PopoverTrigger>
-                <PopoverContent
-                  align="start"
-                  sideOffset={6}
-                  className="w-[min(calc(100vw-2.5rem),22rem)] rounded-2xl border border-zinc-200 bg-white p-0 text-zinc-900 shadow-xl"
-                >
-                  <Command className="rounded-2xl bg-white">
-                    <CommandInput
-                      placeholder="Пошук товару…"
-                      className="h-11 text-sm"
-                    />
-                    <CommandList className="max-h-64 bg-white">
-                      <CommandEmpty>Нічого не знайдено</CommandEmpty>
-                      <CommandGroup>
-                        {categoryItems.map((item) => {
-                          const outOfStock = item.virtualBalance <= 0;
-                          return (
-                            <CommandItem
-                              key={item.basRefKey}
-                              value={`${item.name} ${item.unit}`}
-                              disabled={outOfStock}
-                              data-checked={
-                                itemKey === item.basRefKey || undefined
-                              }
-                              onSelect={() => {
-                                setItemKey(item.basRefKey);
-                                setItemOpen(false);
-                                setFormError(null);
-                              }}
-                              className="cursor-pointer gap-3 rounded-xl px-3 py-2.5 data-[selected=true]:bg-zinc-100 data-[selected=true]:text-zinc-900"
-                            >
-                              <span className="min-w-0 flex-1 truncate font-medium">
-                                {item.name}
-                              </span>
-                              <span
-                                className={cn(
-                                  "shrink-0 text-xs tabular-nums",
-                                  outOfStock
-                                    ? "font-semibold text-red-500"
-                                    : "text-zinc-400"
-                                )}
-                              >
-                                {formatQtyLabel(
-                                  item.virtualBalance,
-                                  item.unit
-                                )}
-                              </span>
-                              {itemKey === item.basRefKey ? (
-                                <Check className="h-4 w-4 shrink-0 text-emerald-600" />
-                              ) : null}
-                            </CommandItem>
-                          );
-                        })}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
-              {selectedItem ? (
-                <p className="text-sm tabular-nums text-zinc-500">
-                  Доступно на складі:{" "}
-                  {formatQtyLabel(
-                    selectedItem.virtualBalance,
-                    selectedItem.unit
-                  )}
-                </p>
-              ) : null}
-              {selectedItem && selectedItem.virtualBalance <= 0 ? (
-                <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                  Немає залишку. Спочатку зробіть{" "}
-                  <span className="font-semibold">Прихід</span> на склад.
-                </p>
-              ) : null}
+                      <span className="text-[13px] font-bold leading-tight">
+                        {cat.label}
+                      </span>
+                      <span
+                        className={cn(
+                          "text-[10px] font-medium tabular-nums",
+                          active ? "text-white/70" : "text-zinc-400"
+                        )}
+                      >
+                        {count} поз.
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </section>
 
-            {!lockField ? (
-              <section className="space-y-2">
-                {fieldLabel(fieldRequired ? "Поле" : "Поле (опційно)")}
-                <Popover open={fieldOpen} onOpenChange={setFieldOpen}>
-                  <PopoverTrigger className={comboboxTriggerClass}>
+            <section className={formCardClass}>
+              <div className={formCardHeadClass}>
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#C05621]/12 text-[#C05621]">
+                  <PackageMinus className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-zinc-900">Товар</p>
+                  <p className="text-[11px] font-medium text-zinc-500">
+                    Позиція зі складського залишку
+                  </p>
+                </div>
+              </div>
+              <div className={formCardBodyClass}>
+                <Popover open={itemOpen} onOpenChange={setItemOpen}>
+                  <PopoverTrigger
+                    disabled={!category}
+                    className={comboboxTriggerClass}
+                  >
                     <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900">
-                      {selectedField ? (
-                        selectedField.name
+                      {selectedItem ? (
+                        selectedItem.name
                       ) : (
                         <span className="font-normal text-zinc-400">
-                          Оберіть поле…
+                          {category ? "Оберіть товар…" : "Спочатку категорію"}
                         </span>
                       )}
                     </span>
@@ -557,126 +507,273 @@ export function QuickIssueSheet({
                   >
                     <Command className="rounded-2xl bg-white">
                       <CommandInput
-                        placeholder="Пошук поля…"
+                        placeholder="Пошук товару…"
                         className="h-11 text-sm"
                       />
                       <CommandList className="max-h-64 bg-white">
-                        <CommandEmpty>Полів не знайдено</CommandEmpty>
+                        <CommandEmpty>Нічого не знайдено</CommandEmpty>
                         <CommandGroup>
-                          {fields.map((field) => (
-                            <CommandItem
-                              key={field.id}
-                              value={`${field.name} ${field.crop}`}
-                              data-checked={fieldId === field.id || undefined}
-                              onSelect={() => {
-                                setFieldId(field.id);
-                                setFieldOpen(false);
-                                setFormError(null);
-                              }}
-                              className="cursor-pointer gap-3 rounded-xl px-3 py-2.5 data-[selected=true]:bg-zinc-100 data-[selected=true]:text-zinc-900"
-                            >
-                              <span className="min-w-0 flex-1">
-                                <span className="block truncate font-medium">
-                                  {field.name}
+                          {categoryItems.map((item) => {
+                            const outOfStock = item.virtualBalance <= 0;
+                            return (
+                              <CommandItem
+                                key={item.basRefKey}
+                                value={`${item.name} ${item.unit}`}
+                                disabled={outOfStock}
+                                data-checked={
+                                  itemKey === item.basRefKey || undefined
+                                }
+                                onSelect={() => {
+                                  setItemKey(item.basRefKey);
+                                  setItemOpen(false);
+                                  setFormError(null);
+                                }}
+                                className="cursor-pointer gap-3 rounded-xl px-3 py-2.5 data-[selected=true]:bg-zinc-100 data-[selected=true]:text-zinc-900"
+                              >
+                                <span className="min-w-0 flex-1 truncate font-medium">
+                                  {item.name}
                                 </span>
-                                <span className="mt-0.5 block text-[11px] text-zinc-400">
-                                  {formatAreaHa(field.areaHa)} га ·{" "}
-                                  {field.crop || "—"}
+                                <span
+                                  className={cn(
+                                    "shrink-0 text-xs tabular-nums",
+                                    outOfStock
+                                      ? "font-semibold text-red-500"
+                                      : "text-zinc-400"
+                                  )}
+                                >
+                                  {formatQtyLabel(
+                                    item.virtualBalance,
+                                    item.unit
+                                  )}
                                 </span>
-                              </span>
-                              {fieldId === field.id ? (
-                                <Check className="h-4 w-4 shrink-0 text-emerald-600" />
-                              ) : null}
-                            </CommandItem>
-                          ))}
+                                {itemKey === item.basRefKey ? (
+                                  <Check className="h-4 w-4 shrink-0 text-emerald-600" />
+                                ) : null}
+                              </CommandItem>
+                            );
+                          })}
                         </CommandGroup>
                       </CommandList>
                     </Command>
                   </PopoverContent>
                 </Popover>
-                {selectedField ? (
-                  <p className="text-sm text-zinc-500">
-                    Площа: {formatAreaHa(selectedField.areaHa)} га
+                {selectedItem ? (
+                  <div className="flex items-center justify-between rounded-xl border border-[#E5DFD3]/80 bg-[#FAFAF8] px-3 py-2.5">
+                    <span className="text-[11px] font-semibold tracking-wide text-zinc-500 uppercase">
+                      Доступно
+                    </span>
+                    <span className="text-sm font-bold tabular-nums text-zinc-900">
+                      {formatQtyLabel(
+                        selectedItem.virtualBalance,
+                        selectedItem.unit
+                      )}
+                    </span>
+                  </div>
+                ) : null}
+                {selectedItem && selectedItem.virtualBalance <= 0 ? (
+                  <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                    Немає залишку. Спочатку зробіть{" "}
+                    <span className="font-semibold">Прихід</span> на склад.
                   </p>
                 ) : null}
+              </div>
+            </section>
+
+            {!lockField ? (
+              <section className={formCardClass}>
+                <div className={formCardHeadClass}>
+                  <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-sky-500/12 text-sky-700">
+                    <Leaf className="h-4 w-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-zinc-900">
+                      {fieldRequired ? "Поле" : "Поле (опційно)"}
+                    </p>
+                    <p className="text-[11px] font-medium text-zinc-500">
+                      Куди віднести списання
+                    </p>
+                  </div>
+                </div>
+                <div className={formCardBodyClass}>
+                  <Popover open={fieldOpen} onOpenChange={setFieldOpen}>
+                    <PopoverTrigger className={comboboxTriggerClass}>
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900">
+                        {selectedField ? (
+                          selectedField.name
+                        ) : (
+                          <span className="font-normal text-zinc-400">
+                            Оберіть поле…
+                          </span>
+                        )}
+                      </span>
+                      <ChevronDown className="h-4 w-4 shrink-0 text-zinc-400" />
+                    </PopoverTrigger>
+                    <PopoverContent
+                      align="start"
+                      sideOffset={6}
+                      className="w-[min(calc(100vw-2.5rem),22rem)] rounded-2xl border border-zinc-200 bg-white p-0 text-zinc-900 shadow-xl"
+                    >
+                      <Command className="rounded-2xl bg-white">
+                        <CommandInput
+                          placeholder="Пошук поля…"
+                          className="h-11 text-sm"
+                        />
+                        <CommandList className="max-h-64 bg-white">
+                          <CommandEmpty>Полів не знайдено</CommandEmpty>
+                          <CommandGroup>
+                            {fields.map((field) => (
+                              <CommandItem
+                                key={field.id}
+                                value={`${field.name} ${field.crop}`}
+                                data-checked={fieldId === field.id || undefined}
+                                onSelect={() => {
+                                  setFieldId(field.id);
+                                  setFieldOpen(false);
+                                  setFormError(null);
+                                }}
+                                className="cursor-pointer gap-3 rounded-xl px-3 py-2.5 data-[selected=true]:bg-zinc-100 data-[selected=true]:text-zinc-900"
+                              >
+                                <span className="min-w-0 flex-1">
+                                  <span className="block truncate font-medium">
+                                    {field.name}
+                                  </span>
+                                  <span className="mt-0.5 block text-[11px] text-zinc-400">
+                                    {formatAreaHa(field.areaHa)} га ·{" "}
+                                    {field.crop || "—"}
+                                  </span>
+                                </span>
+                                {fieldId === field.id ? (
+                                  <Check className="h-4 w-4 shrink-0 text-emerald-600" />
+                                ) : null}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                  {selectedField ? (
+                    <p className="text-sm text-zinc-500">
+                      Площа: {formatAreaHa(selectedField.areaHa)} га
+                    </p>
+                  ) : null}
+                </div>
               </section>
             ) : selectedField ? (
-              <section className="space-y-1">
-                {fieldLabel("Поле")}
-                <p className="text-[15px] font-semibold text-zinc-900">
-                  {selectedField.name}
-                </p>
-                <p className="text-sm text-zinc-500">
-                  Площа: {formatAreaHa(selectedField.areaHa)} га
-                </p>
+              <section className={formCardClass}>
+                <div className={formCardHeadClass}>
+                  <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-sky-500/12 text-sky-700">
+                    <Leaf className="h-4 w-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-zinc-900">Поле</p>
+                    <p className="text-[11px] font-medium text-zinc-500">
+                      Закріплено з деталей
+                    </p>
+                  </div>
+                </div>
+                <div className={formCardBodyClass}>
+                  <p className="text-[15px] font-bold text-zinc-900">
+                    {selectedField.name}
+                  </p>
+                  <p className="text-sm text-zinc-500">
+                    Площа: {formatAreaHa(selectedField.areaHa)} га
+                    {selectedField.crop ? ` · ${selectedField.crop}` : ""}
+                  </p>
+                </div>
               </section>
             ) : null}
 
-            <section className="space-y-2">
-              {fieldLabel("Кількість")}
-              <div className={fuelHeroAmountClass}>
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  min={0}
-                  step="any"
-                  value={qty}
-                  onChange={(e) => {
-                    setQty(e.target.value);
-                    setFormError(null);
-                  }}
-                  placeholder="0"
-                  aria-label="Кількість"
-                  className={cn(
-                    "w-full border-none bg-transparent py-6 text-center text-7xl font-light tabular-nums",
-                    "placeholder:text-zinc-300 focus:ring-0 focus:outline-none",
-                    "[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none",
-                    qtyExceedsBalance ? "text-red-600" : "text-zinc-900"
-                  )}
-                />
+            <section className={formCardClass}>
+              <div className={formCardHeadClass}>
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-500/15 text-amber-700">
+                  <Sprout className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-zinc-900">Кількість</p>
+                  <p className="text-[11px] font-medium text-zinc-500">
+                    {selectedItem?.unit
+                      ? `Одиниця: ${selectedItem.unit}`
+                      : "Скільки списати"}
+                  </p>
+                </div>
               </div>
-              <p className="text-center text-sm font-medium text-zinc-400">
-                {selectedItem?.unit || "од."}
-              </p>
-              {selectedItem && selectedItem.virtualBalance > 0 ? (
-                <div className="flex justify-center">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const n = selectedItem.virtualBalance;
-                      setQty(
-                        Number.isInteger(n)
-                          ? String(n)
-                          : String(Math.round(n * 1000) / 1000)
-                      );
+              <div className={cn(formCardBodyClass, "pt-2")}>
+                <div className={fuelHeroAmountClass}>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    step="any"
+                    value={qty}
+                    onChange={(e) => {
+                      setQty(e.target.value);
                       setFormError(null);
                     }}
-                    className="rounded-full border border-zinc-200 bg-zinc-50 px-3.5 py-1.5 text-xs font-medium text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800"
-                  >
-                    MAX (Доступно:{" "}
-                    {formatQtyLabel(
-                      selectedItem.virtualBalance,
-                      selectedItem.unit
+                    placeholder="0"
+                    aria-label="Кількість"
+                    className={cn(
+                      "w-full border-none bg-transparent py-5 text-center text-6xl font-light tabular-nums",
+                      "placeholder:text-zinc-300 focus:ring-0 focus:outline-none",
+                      "[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none",
+                      qtyExceedsBalance ? "text-red-600" : "text-zinc-900"
                     )}
-                    )
-                  </button>
+                  />
                 </div>
-              ) : null}
-              {qtyExceedsBalance ? (
-                <p className="text-center text-sm font-medium text-red-600">
-                  Перевищення доступного залишку на складі
+                <p className="text-center text-sm font-semibold text-zinc-400">
+                  {selectedItem?.unit || "од."}
                 </p>
-              ) : null}
+                {selectedItem && selectedItem.virtualBalance > 0 ? (
+                  <div className="flex justify-center">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const n = selectedItem.virtualBalance;
+                        setQty(
+                          Number.isInteger(n)
+                            ? String(n)
+                            : String(Math.round(n * 1000) / 1000)
+                        );
+                        setFormError(null);
+                      }}
+                      className="rounded-full border border-[#E5DFD3] bg-[#FAFAF8] px-3.5 py-1.5 text-xs font-semibold text-zinc-600 transition hover:bg-white hover:text-zinc-900"
+                    >
+                      MAX ·{" "}
+                      {formatQtyLabel(
+                        selectedItem.virtualBalance,
+                        selectedItem.unit
+                      )}
+                    </button>
+                  </div>
+                ) : null}
+                {qtyExceedsBalance ? (
+                  <p className="text-center text-sm font-medium text-red-600">
+                    Перевищення доступного залишку на складі
+                  </p>
+                ) : null}
+              </div>
             </section>
 
-            <section className="space-y-2">
-              {fieldLabel("Накладна")}
-              <AttachmentDropzone
-                entityType="inventory_move"
-                pending={pendingFiles}
-                onPendingChange={setPendingFiles}
-                compact
-              />
+            <section className={formCardClass}>
+              <div className={formCardHeadClass}>
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-zinc-900/8 text-zinc-700">
+                  <AlertCircle className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-zinc-900">Накладна</p>
+                  <p className="text-[11px] font-medium text-zinc-500">
+                    Фото або файл (за бажанням)
+                  </p>
+                </div>
+              </div>
+              <div className={formCardBodyClass}>
+                <AttachmentDropzone
+                  entityType="inventory_move"
+                  pending={pendingFiles}
+                  onPendingChange={setPendingFiles}
+                  compact
+                />
+              </div>
             </section>
           </>
         )}
@@ -709,7 +806,10 @@ export function QuickIssueSheet({
         <Button
           type="submit"
           disabled={isSubmitDisabled}
-          className={fuelPrimaryBtnClass}
+          className={cn(
+            fuelPrimaryBtnClass,
+            "bg-gradient-to-br from-[#1a3d2c] via-[#276749] to-[#3a8f5e] shadow-[0_16px_36px_-12px_rgba(39,103,73,0.65)] hover:from-[#1a3d2c] hover:via-[#1f5239] hover:to-[#276749]"
+          )}
         >
           {pending ? (
             <>
@@ -730,7 +830,7 @@ export function QuickIssueSheet({
   if (variant === "panel") {
     if (!open) return null;
     return (
-      <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[linear-gradient(180deg,#ffffff_0%,#fafaf9_48%,#f5f5f4_100%)]">
+      <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[#F4F1EA]">
         {issueHeader}
         {issueForm}
       </div>
