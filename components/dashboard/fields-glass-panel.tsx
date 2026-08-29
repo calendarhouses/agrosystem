@@ -412,7 +412,8 @@ export function FieldsGlassPanel({
 
   const list = (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="border-b border-white/30 px-3 py-3">
+      {/* Верх шторки — без data-vaul-no-drag, щоб свайп вниз закривав */}
+      <div className="shrink-0 border-b border-white/30 px-3 py-3 pr-14">
         <div
           className={cn(
             "items-center gap-2",
@@ -474,7 +475,7 @@ export function FieldsGlassPanel({
             <Focus className="h-4 w-4" />
           </button>
         </div>
-        <div className="relative mt-0 md:mt-2.5">
+        <div className="relative mt-2.5 md:mt-2.5">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
           <input
             value={query}
@@ -663,16 +664,15 @@ export function FieldsGlassPanel({
             onMobileDrawerVisibleChange?.(true);
           }}
           dismissible
-          handleOnly
-          modal
+          modal={false}
           shouldScaleBackground={false}
           noBodyStyles
         >
-          <DrawerContent className="bottom-[var(--app-bottom-inset)] flex h-[calc(92dvh-var(--app-bottom-inset))] max-h-[calc(92dvh-var(--app-bottom-inset))] flex-col border-[#E5DFD3]/90 bg-[#F4F1EA] pb-0">
+          <DrawerContent className="flex h-[calc(92dvh-var(--app-bottom-inset))] max-h-[calc(92dvh-var(--app-bottom-inset))] flex-col border-[#E5DFD3]/90 bg-[#F4F1EA] pb-0">
             <DrawerTitle className="sr-only">
               {mobileDetailOpen ? "Деталі поля" : "Список полів"}
             </DrawerTitle>
-            <DrawerHandle className="bg-zinc-400/90" />
+            <DrawerHandle />
             <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
               <motion.div
                 className="flex h-full min-h-0 min-w-0"
@@ -682,12 +682,8 @@ export function FieldsGlassPanel({
                 transition={SLIDE_TRANSITION}
               >
                 <div className="flex h-full w-1/2 min-w-0 flex-col overflow-hidden">
-                  {/* Один скрол — всередині list; зовнішній overflow-y ламає iOS touch */}
-                  <div
-                    className="flex h-full min-h-0 flex-1 flex-col overflow-hidden"
-                    data-allow-pan="true"
-                    data-vaul-no-drag=""
-                  >
+                  {/* Header списку без no-drag — свайп вниз закриває; скрол — лише тіло */}
+                  <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
                     {list}
                   </div>
                 </div>

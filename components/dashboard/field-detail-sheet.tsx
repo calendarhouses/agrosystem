@@ -88,6 +88,7 @@ import {
 import { getDieselPriceUah } from "@/app/fuel/actions";
 import { getFieldEvents } from "@/app/admin/fields/actions";
 import { useSeasonStore } from "@/lib/season-store";
+import { currentAgroSeason } from "@/lib/season";
 import type { Field } from "@/lib/dashboard-data";
 import type { FieldEvent } from "@/lib/field-events";
 import {
@@ -1442,7 +1443,7 @@ export function FieldDetailSheet({
 }: FieldDetailSheetProps) {
   const isMobile = useIsMobile();
   const activeSeason = useSeasonStore((s) => s.activeSeason);
-  const operationSeasonYear = Number(activeSeason) || 2026;
+  const operationSeasonYear = Number(activeSeason) || Number(currentAgroSeason()) || 2026;
   const [historySeasonYear, setHistorySeasonYear] = useState(operationSeasonYear);
   const historySeason = String(historySeasonYear);
 
@@ -1469,6 +1470,21 @@ export function FieldDetailSheet({
   const [eventsLoading, setEventsLoading] = useState(false);
   const [eventsError, setEventsError] = useState<string | null>(null);
   const fieldEventsRequestRef = useRef(0);
+
+  function applyHistoryPeriod(next: HistoryPeriod) {
+    setPeriod(next);
+    if (next === "Сезон") return;
+    // Сьогодні / вчора / тиждень / місяць — дані з поточного агросезону
+    const year = Number(currentAgroSeason());
+    if (Number.isFinite(year)) setHistorySeasonYear(year);
+  }
+
+  // При відкритті хаба — підтягнути актуальний сезон з store
+  useEffect(() => {
+    if (!open) return;
+    setHistorySeasonYear(operationSeasonYear);
+    setPeriod("Сезон");
+  }, [open, fieldKey, farmFieldId]); // eslint-disable-line react-hooks/exhaustive-deps -- лише при відкритті поля
 
   const resolvedFieldKey =
     fieldKey?.trim() || (field ? `map:${field.id}` : null);
@@ -1687,7 +1703,9 @@ export function FieldDetailSheet({
     if (period === "Сезон") return fieldEvents;
     const { start, end } = getPeriodRange(period, historySeasonYear, customRange);
     return fieldEvents.filter((event) => {
-      const day = startOfDay(new Date(`${event.date}T12:00:00`));
+      const raw = String(event.date).slice(0, 10);
+      const day = startOfDay(new Date(`${raw}T12:00:00`));
+      if (Number.isNaN(day.getTime())) return false;
       return day >= start && day <= end;
     });
   }, [fieldEvents, period, historySeasonYear, customRange]);
@@ -1892,21 +1910,25 @@ export function FieldDetailSheet({
             ) : (
               <>
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-              <div
-                className={cn(
-                  "relative shrink-0 overflow-hidden border-b px-4 py-3 md:px-6 md:py-5",
-                  variant === "panel"
-                    ? "border-white/35 bg-gradient-to-br from-white/55 via-[#F4F1EA]/40 to-emerald-50/30"
-                    : "border-[#E5DFD3] bg-gradient-to-br from-[#E8F0EA] via-[#F4F1EA] to-[#EDE8DF]"
-                )}
-              >
+            <div
+              className={cn(
+                "relative shrink-0 overflow-hidden border-b px-4 py-3 md:px-6 md:py-5",
+                embeddedInMobileDrawer && "pr-4",
+                variant === "panel"
+                  ? "border-white/35 bg-gradient-to-br from-white/55 via-[#F4F1EA]/40 to-emerald-50/30"
+                  : "border-[#E5DFD3] bg-gradient-to-br from-[#E8F0EA] via-[#F4F1EA] to-[#EDE8DF]"
+              )}
+            >
                 <div
                   className="pointer-events-none absolute -top-14 -right-8 h-32 w-32 rounded-full bg-[#276749]/10 blur-3xl"
                   aria-hidden
                 />
                 <div
                   className={cn(
-                    "relative flex flex-wrap items-start justify-between gap-3",
+                    "relative flex gap-3",
+                    embeddedInMobileDrawer
+                      ? "flex-col items-stretch pr-1"
+                      : "flex-wrap items-start justify-between",
                     variant === "sheet" && "pr-8"
                   )}
                 >
@@ -1948,20 +1970,34 @@ export function FieldDetailSheet({
                               га
                             </span>
                           </span>
+                          {embeddedInMobileDrawer ? (
+                            activeOperations.length > 0 ? (
+                              <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">
+                                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
+                                {activeOperations.length} у роботі
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1.5 rounded-full border border-[#276749]/20 bg-white/70 px-2.5 py-1 text-xs font-semibold text-[#276749]">
+                                Готово до планування
+                              </span>
+                            )
+                          ) : null}
                         </div>
                       </div>
                     </div>
                   </div>
-                  {activeOperations.length > 0 ? (
-                    <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">
-                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
-                      {activeOperations.length} у роботі
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1.5 rounded-full border border-[#276749]/20 bg-white/70 px-2.5 py-1 text-xs font-semibold text-[#276749]">
-                      Готово до планування
-                    </span>
-                  )}
+                  {!embeddedInMobileDrawer ? (
+                    activeOperations.length > 0 ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">
+                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
+                        {activeOperations.length} у роботі
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-[#276749]/20 bg-white/70 px-2.5 py-1 text-xs font-semibold text-[#276749]">
+                        Готово до планування
+                      </span>
+                    )
+                  ) : null}
                 </div>
               </div>
 
@@ -2106,7 +2142,7 @@ export function FieldDetailSheet({
                             <button
                               key={option}
                               type="button"
-                              onClick={() => setPeriod(option)}
+                              onClick={() => applyHistoryPeriod(option)}
                               className={cn(
                                 "h-11 rounded-[10px] px-2.5 text-xs font-semibold transition-all sm:px-3 md:h-8",
                                 period === option
@@ -2123,7 +2159,7 @@ export function FieldDetailSheet({
                           open={rangeOpen}
                           onOpenChange={(next) => {
                             setRangeOpen(next);
-                            if (next) setPeriod("custom");
+                            if (next) applyHistoryPeriod("custom");
                           }}
                         >
                           <PopoverTrigger
@@ -2169,7 +2205,7 @@ export function FieldDetailSheet({
                               selected={customRange}
                               defaultMonth={customRange?.from ?? new Date()}
                               onSelect={(range, triggerDate) => {
-                                setPeriod("custom");
+                                applyHistoryPeriod("custom");
                                 // Повний діапазон уже був — новий клік починає вибір заново
                                 if (
                                   customRange?.from &&

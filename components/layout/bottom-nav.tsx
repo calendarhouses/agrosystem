@@ -18,11 +18,9 @@ import { ROLE_LABEL_UK, type AppActor } from "@/lib/app-actor-shared";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEM_CLASS =
-  "flex min-w-0 flex-1 flex-col items-center gap-[5px] rounded-[14px] pb-0.5 pt-1 transition-transform duration-200";
-const NAV_ICON_WRAP_CLASS =
-  "flex h-8 w-10 items-center justify-center rounded-xl transition-colors duration-200";
+  "flex min-w-0 flex-1 flex-col items-center gap-1.5 pb-1 pt-1.5 transition-colors duration-200";
 const NAV_TEXT_CLASS =
-  "max-w-full truncate text-[10px] font-bold leading-none tracking-[0.15px]";
+  "max-w-full truncate text-[11px] font-bold leading-none tracking-[0.15px]";
 
 function BottomNavBar({
   pathname,
@@ -54,18 +52,11 @@ function BottomNavBar({
             className={cn(
               NAV_ITEM_CLASS,
               active
-                ? "-translate-y-px text-[#E8A87C]"
+                ? "text-[#E8A87C]"
                 : "text-zinc-500 active:text-zinc-300"
             )}
           >
-            <span
-              className={cn(
-                NAV_ICON_WRAP_CLASS,
-                active ? "bg-[#C05621]/20" : "bg-transparent"
-              )}
-            >
-              <Icon className="h-[22px] w-[22px]" strokeWidth={1.8} />
-            </span>
+            <Icon className="h-6 w-6" strokeWidth={active ? 2.1 : 1.85} />
             <span className={NAV_TEXT_CLASS}>{item.label}</span>
           </Link>
         );
@@ -79,18 +70,14 @@ function BottomNavBar({
         className={cn(
           NAV_ITEM_CLASS,
           moreActive || moreOpen
-            ? "-translate-y-px text-[#E8A87C]"
+            ? "text-[#E8A87C]"
             : "text-zinc-500 active:text-zinc-300"
         )}
       >
-        <span
-          className={cn(
-            NAV_ICON_WRAP_CLASS,
-            moreActive || moreOpen ? "bg-[#C05621]/20" : "bg-transparent"
-          )}
-        >
-          <MORE_NAV_TRIGGER.icon className="h-[22px] w-[22px]" strokeWidth={1.8} />
-        </span>
+        <MORE_NAV_TRIGGER.icon
+          className="h-6 w-6"
+          strokeWidth={moreActive || moreOpen ? 2.1 : 1.85}
+        />
         <span className={NAV_TEXT_CLASS}>{MORE_NAV_TRIGGER.label}</span>
       </button>
       </div>

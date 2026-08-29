@@ -63,7 +63,7 @@ body {
   /* Колір усього нижнього chrome: меню, safe-area, кінець градієнта шторки */
   --nav-bg: #18181b;
   /* Висота рядка кнопок (без safe-area) */
-  --bottom-nav-content: 56px;
+  --bottom-nav-content: 60px;
   /* Для fixed-елементів (peek, sheets) — від viewport bottom */
   --bottom-nav-height: calc(
     var(--bottom-nav-content) + env(safe-area-inset-bottom, 0px)

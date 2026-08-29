@@ -4,6 +4,7 @@ import * as React from "react"
 import { Select as SelectPrimitive } from "@base-ui/react/select"
 
 import { SwipeableSheet } from "@/components/ui/swipe-sheet"
+import { useInsideDrawer } from "@/components/ui/drawer"
 import { useIsMobile } from "@/lib/use-mobile"
 import { cn } from "@/lib/utils"
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon, XIcon } from "lucide-react"
@@ -71,30 +72,36 @@ function SelectContent({
   align = "center",
   alignOffset = 0,
   alignItemWithTrigger = true,
+  /** false — позиційований список (всередині drawer, без другої шторки) */
+  sheetOnMobile = true,
   ...props
 }: SelectPrimitive.Popup.Props &
   Pick<
     SelectPrimitive.Positioner.Props,
     "align" | "alignOffset" | "side" | "sideOffset" | "alignItemWithTrigger"
-  >) {
+  > & {
+    sheetOnMobile?: boolean
+  }) {
   const isMobile = useIsMobile()
+  const insideDrawer = useInsideDrawer()
   const backdropRef = React.useRef<HTMLDivElement>(null)
+  const useSheet = isMobile && sheetOnMobile && !insideDrawer
 
   const popup = (
     <SelectPrimitive.Popup
       data-slot="select-content"
-      data-align-trigger={!isMobile && alignItemWithTrigger}
+      data-align-trigger={!useSheet && alignItemWithTrigger}
       data-vaul-no-drag=""
       className={cn(
         "relative isolate max-h-(--available-height) w-(--anchor-width) min-w-36 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-100 data-[align-trigger=true]:animate-none data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
         className,
-        isMobile &&
+        useSheet &&
           "fixed inset-x-0 bottom-[var(--app-bottom-inset)] top-auto max-h-[var(--app-sheet-max)] w-full min-w-0 origin-bottom overflow-hidden rounded-t-3xl rounded-b-none pb-[max(0.5rem,var(--safe-bottom))] shadow-2xl ring-0 data-open:zoom-in-100",
-        MOBILE_OVERLAY_Z
+        useSheet ? MOBILE_OVERLAY_Z : "z-[220]"
       )}
       {...props}
     >
-      {isMobile ? (
+      {useSheet ? (
         <>
           <SwipeableSheet
             className="max-h-[var(--app-sheet-max)]"
@@ -121,20 +128,22 @@ function SelectContent({
       ) : (
         <>
           <SelectScrollUpButton />
-          <SelectPrimitive.List>{children}</SelectPrimitive.List>
+          <SelectPrimitive.List className="max-h-[min(50dvh,20rem)] overflow-y-auto overscroll-contain">
+            {children}
+          </SelectPrimitive.List>
           <SelectScrollDownButton />
         </>
       )}
     </SelectPrimitive.Popup>
   )
 
-  if (isMobile) {
+  if (useSheet) {
     return (
       <SelectPrimitive.Portal>
         <SelectPrimitive.Backdrop
           ref={backdropRef}
           className={cn(
-            "fixed inset-0 bg-black/40 supports-backdrop-filter:backdrop-blur-[2px]",
+            "fixed top-0 right-0 bottom-[var(--app-bottom-inset)] left-0 bg-black/40 supports-backdrop-filter:backdrop-blur-[2px]",
             MOBILE_OVERLAY_Z
           )}
         />
@@ -151,7 +160,7 @@ function SelectContent({
         align={align}
         alignOffset={alignOffset}
         alignItemWithTrigger={alignItemWithTrigger}
-        className="isolate z-[200]"
+        className="isolate z-[220]"
       >
         {popup}
       </SelectPrimitive.Positioner>

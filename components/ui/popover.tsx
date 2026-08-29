@@ -5,6 +5,7 @@ import { XIcon } from "lucide-react"
 import { Popover as PopoverPrimitive } from "@base-ui/react/popover"
 
 import { SwipeableSheet } from "@/components/ui/swipe-sheet"
+import { useInsideDrawer } from "@/components/ui/drawer"
 import { useIsMobile } from "@/lib/use-mobile"
 import { cn } from "@/lib/utils"
 
@@ -36,8 +37,9 @@ function PopoverContent({
     sheetOnMobile?: boolean
   }) {
   const isMobile = useIsMobile()
+  const insideDrawer = useInsideDrawer()
   const closeRef = React.useRef<HTMLButtonElement>(null)
-  const useSheet = isMobile && sheetOnMobile
+  const useSheet = isMobile && sheetOnMobile && !insideDrawer
 
   const popup = (
     <PopoverPrimitive.Popup
@@ -86,7 +88,7 @@ function PopoverContent({
       <PopoverPrimitive.Portal>
         <PopoverPrimitive.Backdrop
           className={cn(
-            "fixed inset-0 bg-black/40 supports-backdrop-filter:backdrop-blur-[2px]",
+            "fixed top-0 right-0 bottom-[var(--app-bottom-inset)] left-0 bg-black/40 supports-backdrop-filter:backdrop-blur-[2px]",
             MOBILE_OVERLAY_Z
           )}
         />

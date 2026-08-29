@@ -397,16 +397,13 @@ export function FieldsMapChrome({ align = "end" }: FieldsMapChromeProps) {
               open={settingsOpen}
               onOpenChange={setSettingsOpen}
               dismissible
-              modal
+              modal={false}
               shouldScaleBackground={false}
               noBodyStyles
             >
-              <DrawerContent
-                overlayClassName="bottom-[var(--app-bottom-inset)]"
-                className="bottom-[var(--app-bottom-inset)] max-h-[calc(92dvh-var(--app-bottom-inset))] gap-0 border-[#E5DFD3]/90 bg-[#F4F1EA] pb-3"
-              >
+              <DrawerContent className="max-h-[calc(92dvh-var(--app-bottom-inset))] gap-0 border-[#E5DFD3]/90 bg-[#F4F1EA] pb-3">
                 <DrawerTitle className="sr-only">Локація погоди</DrawerTitle>
-                <DrawerHandle className="bg-zinc-400/90" />
+                <DrawerHandle />
                 <DrawerHeader className="gap-1 border-b border-[#E5DFD3]/80 pb-3 pt-0">
                   <DrawerTitle className="flex items-center gap-2 text-base font-bold text-zinc-900">
                     <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-700/10">
@@ -419,7 +416,7 @@ export function FieldsMapChrome({ align = "end" }: FieldsMapChromeProps) {
                   </p>
                 </DrawerHeader>
                 <div
-                  className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4"
+                  className="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y px-4 py-4"
                   data-allow-pan="true"
                   data-vaul-no-drag=""
                 >
