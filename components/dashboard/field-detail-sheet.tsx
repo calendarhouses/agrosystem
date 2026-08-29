@@ -1472,6 +1472,8 @@ export function FieldDetailSheet({
   const fieldEventsRequestRef = useRef(0);
 
   function applyHistoryPeriod(next: HistoryPeriod) {
+    setSeasonOpen(false);
+    setRangeOpen(false);
     setPeriod(next);
     if (next === "Сезон") return;
     // Сьогодні / вчора / тиждень / місяць — дані з поточного агросезону
@@ -2007,60 +2009,65 @@ export function FieldDetailSheet({
               <Tabs
                 value={activeTab}
                 onValueChange={(value) => setActiveTab(value as FieldHubTab)}
-                className="flex min-h-0 flex-1 flex-col gap-0"
+                className="shrink-0 space-y-0 border-b border-[#E5DFD3] bg-[#F7F4EE]"
               >
-                <div className="shrink-0 space-y-0 border-b border-[#E5DFD3] bg-[#F7F4EE]">
-                  <div className="px-3 pt-2 pb-2 sm:px-6 sm:pt-3">
-                    <TabsList
-                      variant="default"
-                      className={cn(
-                        "mb-0 grid h-12 w-full grid-cols-4 gap-1 rounded-2xl p-1",
-                        "border border-[#E0DBD0] bg-[#EDE8DF] shadow-[inset_0_1px_2px_rgba(39,33,24,0.06)]",
-                        "group-data-horizontal/tabs:h-12"
-                      )}
-                    >
-                      {TAB_ITEMS.map((tab) => {
-                        const Icon = tab.icon;
-                        return (
-                          <TabsTrigger
-                            key={tab.value}
-                            value={tab.value}
-                            className={cn(
-                              "group/hubtab h-10 min-w-0 gap-1 rounded-[14px] border-0 bg-transparent px-1.5 text-[11px] font-semibold tracking-tight shadow-none sm:gap-1.5 sm:px-2 sm:text-[12px]",
-                              "text-zinc-500 transition-all duration-200",
-                              "hover:bg-white/55 hover:text-zinc-800",
-                              "focus-visible:ring-2 focus-visible:ring-[#276749]/25",
-                              "after:hidden",
-                              "data-active:bg-white data-active:text-[#1f5239]",
-                              "data-active:shadow-[0_1px_2px_rgba(39,33,24,0.06),0_4px_12px_-4px_rgba(39,103,73,0.28)]",
-                              "data-active:hover:bg-white data-active:hover:text-[#1f5239]",
-                              "dark:data-active:bg-white dark:data-active:text-[#1f5239]"
-                            )}
-                          >
-                            <Icon className="h-3.5 w-3.5 shrink-0 opacity-65 transition-opacity group-data-active/hubtab:opacity-100 sm:h-4 sm:w-4" />
-                            <span className="max-w-full truncate">
-                              {tab.shortLabel}
-                            </span>
-                          </TabsTrigger>
-                        );
-                      })}
-                    </TabsList>
-                  </div>
+                <div className="px-3 pt-2 pb-2 sm:px-6 sm:pt-3">
+                  <TabsList
+                    variant="default"
+                    className={cn(
+                      "mb-0 grid h-12 w-full grid-cols-4 gap-1 rounded-2xl p-1",
+                      "border border-[#E0DBD0] bg-[#EDE8DF] shadow-[inset_0_1px_2px_rgba(39,33,24,0.06)]",
+                      "group-data-horizontal/tabs:h-12"
+                    )}
+                  >
+                    {TAB_ITEMS.map((tab) => {
+                      const Icon = tab.icon;
+                      return (
+                        <TabsTrigger
+                          key={tab.value}
+                          value={tab.value}
+                          className={cn(
+                            "group/hubtab h-10 min-w-0 gap-1 rounded-[14px] border-0 bg-transparent px-1.5 text-[11px] font-semibold tracking-tight shadow-none sm:gap-1.5 sm:px-2 sm:text-[12px]",
+                            "text-zinc-500 transition-all duration-200",
+                            "hover:bg-white/55 hover:text-zinc-800",
+                            "focus-visible:ring-2 focus-visible:ring-[#276749]/25",
+                            "after:hidden",
+                            "data-active:bg-white data-active:text-[#1f5239]",
+                            "data-active:shadow-[0_1px_2px_rgba(39,33,24,0.06),0_4px_12px_-4px_rgba(39,103,73,0.28)]",
+                            "data-active:hover:bg-white data-active:hover:text-[#1f5239]",
+                            "dark:data-active:bg-white dark:data-active:text-[#1f5239]"
+                          )}
+                        >
+                          <Icon className="h-3.5 w-3.5 shrink-0 opacity-65 transition-opacity group-data-active/hubtab:opacity-100 sm:h-4 sm:w-4" />
+                          <span className="max-w-full truncate">
+                            {tab.shortLabel}
+                          </span>
+                        </TabsTrigger>
+                      );
+                    })}
+                  </TabsList>
                 </div>
+              </Tabs>
 
                 <div
-                  className="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y"
+                  className={cn(
+                    "min-h-0 flex-1 overflow-y-auto overscroll-contain",
+                    embeddedInMobileDrawer && "touch-pan-y"
+                  )}
                   data-vaul-no-drag=""
                   data-allow-pan="true"
                 >
                   {(activeTab === "history" || activeTab === "tech") ? (
-                    <div className="border-b border-[#E5DFD3]/70 px-3 py-2.5 sm:px-6">
-                      <div className="flex flex-wrap items-center gap-2">
+                    <div className="sticky top-0 z-10 border-b border-[#E5DFD3]/70 bg-[#F4F1EA]/95 px-3 py-2.5 backdrop-blur-sm sm:px-6">
+                      <div className="relative z-10 flex flex-wrap items-center gap-2 pointer-events-auto">
                         <Popover
                           open={seasonOpen}
                           onOpenChange={(next) => {
                             setSeasonOpen(next);
-                            if (next) setPeriod("Сезон");
+                            if (next) {
+                              setRangeOpen(false);
+                              setPeriod("Сезон");
+                            }
                           }}
                         >
                           <PopoverTrigger
@@ -2097,7 +2104,7 @@ export function FieldDetailSheet({
                           <PopoverContent
                             align="start"
                             sideOffset={6}
-                            sheetOnMobile={!embeddedInMobileDrawer}
+                            sheetOnMobile={false}
                             className="w-[min(100vw-3rem,20rem)] rounded-2xl border border-zinc-200 bg-white p-2 shadow-xl"
                           >
                             <p className="px-2.5 pt-1.5 pb-2 text-[11px] leading-snug text-zinc-500">
@@ -2145,7 +2152,11 @@ export function FieldDetailSheet({
                             <button
                               key={option}
                               type="button"
-                              onClick={() => applyHistoryPeriod(option)}
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                applyHistoryPeriod(option);
+                              }}
                               className={cn(
                                 "h-11 rounded-[10px] px-2.5 text-xs font-semibold transition-all sm:px-3 md:h-8",
                                 period === option
@@ -2162,7 +2173,10 @@ export function FieldDetailSheet({
                           open={rangeOpen}
                           onOpenChange={(next) => {
                             setRangeOpen(next);
-                            if (next) applyHistoryPeriod("custom");
+                            if (next) {
+                              setSeasonOpen(false);
+                              applyHistoryPeriod("custom");
+                            }
                           }}
                         >
                           <PopoverTrigger
@@ -2192,7 +2206,7 @@ export function FieldDetailSheet({
                           <PopoverContent
                             align="end"
                             sideOffset={6}
-                            sheetOnMobile={!embeddedInMobileDrawer}
+                            sheetOnMobile={false}
                             className="w-auto rounded-2xl border border-zinc-200 bg-white p-3 shadow-xl"
                           >
                             <p className="mb-2 px-1 text-[11px] text-zinc-500">
@@ -2539,7 +2553,6 @@ export function FieldDetailSheet({
                     />
                   </HubTabPanel>
                 </div>
-              </Tabs>
             </div>
 
             {showStickyActionFooter ? (
