@@ -20,7 +20,6 @@ import { Button } from "@/components/ui/button";
 import {
   Drawer,
   DrawerContent,
-  DrawerHandle,
   DrawerTitle,
 } from "@/components/ui/drawer";
 import type { FleetNonTrackedItem, FleetTrackedUnit } from "@/lib/equipment-fleet";
@@ -486,48 +485,34 @@ export function EquipmentFleetGlassPanel({
 
   const detailView = (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="border-b border-white/30 px-3 py-2.5 pr-14">
-        <div className="flex items-center gap-1">
+      <div className="border-b border-white/30 px-3 py-2.5">
+        <div className="flex items-center gap-2">
           <Button
             type="button"
             variant="ghost"
             size="sm"
-            className="h-11 min-h-11 flex-1 justify-start gap-1.5 px-2 text-sm font-semibold text-foreground hover:bg-white/60 md:h-8 md:min-h-0"
+            className="h-11 min-h-11 min-w-0 flex-1 justify-start gap-1.5 px-2 text-sm font-semibold text-foreground hover:bg-white/60 md:h-8 md:min-h-0"
             onClick={onBackToList}
           >
-            <ArrowLeft className="h-4 w-4" />
-            Назад до списку
+            <ArrowLeft className="h-4 w-4 shrink-0" />
+            <span className="truncate">Назад до списку</span>
           </Button>
-          {isMobile ? (
+          {isMobile && onShowTracker ? (
             <Button
               type="button"
-              variant="ghost"
-              size="icon"
-              className="h-11 w-11 shrink-0 rounded-xl text-zinc-500 hover:bg-white/60 hover:text-zinc-800 md:hidden"
-              aria-label="Згорнути картку"
-              onClick={() => onMobileExpandedChange(false)}
+              size="sm"
+              className="h-9 shrink-0 gap-1.5 rounded-xl bg-emerald-600 px-3 text-xs font-bold text-white shadow-sm shadow-emerald-700/25 hover:bg-emerald-700"
+              onClick={onShowTracker}
             >
-              <ChevronDown className="h-5 w-5" />
+              <Route className="h-3.5 w-3.5" />
+              Трекер
             </Button>
           ) : null}
         </div>
         {selectedUnitName ? (
-          <div className="mt-1.5 flex items-center gap-2 px-2">
-            <p className="min-w-0 flex-1 truncate text-base font-bold tracking-tight text-zinc-900">
-              {selectedUnitName}
-            </p>
-            {isMobile && onShowTracker ? (
-              <Button
-                type="button"
-                size="sm"
-                className="h-9 shrink-0 gap-1.5 rounded-xl bg-emerald-600 px-3 text-xs font-bold text-white shadow-sm shadow-emerald-700/25 hover:bg-emerald-700"
-                onClick={onShowTracker}
-              >
-                <Route className="h-3.5 w-3.5" />
-                Трекер
-              </Button>
-            ) : null}
-          </div>
+          <p className="mt-1.5 truncate px-2 text-base font-bold tracking-tight text-zinc-900">
+            {selectedUnitName}
+          </p>
         ) : null}
       </div>
       <div
@@ -650,6 +635,7 @@ export function EquipmentFleetGlassPanel({
             noBodyStyles
           >
             <DrawerContent
+              showCloseButton={false}
               className={cn(
                 EQUIPMENT_MOBILE_DRAWER_SIZE,
                 "flex flex-col border-[#E5DFD3]/90 bg-[#F4F1EA] pb-3"
@@ -660,12 +646,12 @@ export function EquipmentFleetGlassPanel({
                   ? selectedUnitName || "Картка техніки"
                   : "Список флоту"}
               </DrawerTitle>
-              <DrawerHandle />
+              {/* Без handle/X — свайп по шторці; Трекер справа в detail */}
               {!showDetail ? (
                 <button
                   type="button"
                   onClick={() => onMobileExpandedChange(false)}
-                  className="flex w-full shrink-0 items-center justify-between border-b border-[#E5DFD3]/80 px-4 py-2.5 pr-14 text-left"
+                  className="flex w-full shrink-0 items-center justify-between border-b border-[#E5DFD3]/80 px-4 py-2.5 text-left"
                 >
                   <span className="flex items-center gap-2">
                     <Radar className="h-4 w-4 text-emerald-700" />

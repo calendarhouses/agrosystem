@@ -14,7 +14,7 @@ import {
   fuelSelectItemClass,
   fuelSelectTriggerClass,
   fuelSheetBodyClass,
-  fuelSheetContentClass,
+  FuelPanelShell,
 } from "@/components/dashboard/fuel-sheet-chrome";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -25,10 +25,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Sheet,
-  SheetContent,
-} from "@/components/ui/sheet";
 import type { FuelStorage } from "@/lib/fuel-storages";
 import { cn } from "@/lib/utils";
 
@@ -131,12 +127,7 @@ export function FuelStorageDialog({
   }
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} modal={false}>
-      <SheetContent
-        side="right"
-        showOverlay={false}
-        className={fuelSheetContentClass}
-      >
+    <FuelPanelShell open={open} onOpenChange={onOpenChange} title="Склад палива">
         <FuelSheetHeader
           icon={Warehouse}
           accent="fuel"
@@ -287,7 +278,6 @@ export function FuelStorageDialog({
             </Button>
           </FuelSheetFooter>
         </form>
-      </SheetContent>
-    </Sheet>
+    </FuelPanelShell>
   );
 }

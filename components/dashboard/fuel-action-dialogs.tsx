@@ -18,6 +18,7 @@ import {
   type PendingAttachment,
 } from "@/components/dashboard/attachment-dropzone";
 import {
+  FuelPanelShell,
   FuelSheetFooter,
   FuelSheetHeader,
   fuelFieldLabelClass,
@@ -25,7 +26,6 @@ import {
   fuelSelectItemClass,
   fuelSelectTriggerClass,
   fuelSheetBodyClass,
-  fuelSheetContentClass,
 } from "@/components/dashboard/fuel-sheet-chrome";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -38,10 +38,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Sheet,
-  SheetContent,
-} from "@/components/ui/sheet";
 import type { RefuelActiveOpHint } from "@/lib/fuel-refuel-context";
 import type { FuelStorage } from "@/lib/fuel-storages";
 import type {
@@ -89,7 +85,6 @@ type FuelActionDialogsProps = {
 
 const selectTriggerClass = fuelSelectTriggerClass;
 const selectItemClass = fuelSelectItemClass;
-const actionSheetClass = fuelSheetContentClass;
 
 async function saveTransaction(
   payload: {
@@ -673,12 +668,11 @@ export function FuelActionDialogs({
   return (
     <>
       {/* Закупівля */}
-      <Sheet open={isReceiveOpen} onOpenChange={closeReceive} modal={false}>
-        <SheetContent
-          side="right"
-          showOverlay={false}
-          className={actionSheetClass}
-        >
+      <FuelPanelShell
+        open={isReceiveOpen}
+        onOpenChange={closeReceive}
+        title="Закупівля"
+      >
           <FuelSheetHeader
             icon={Plus}
             accent="emerald"
@@ -861,16 +855,14 @@ export function FuelActionDialogs({
             </FuelSheetFooter>
           </form>
           )}
-        </SheetContent>
-      </Sheet>
+      </FuelPanelShell>
 
       {/* Переміщення */}
-      <Sheet open={isTransferOpen} onOpenChange={closeTransfer} modal={false}>
-        <SheetContent
-          side="right"
-          showOverlay={false}
-          className={actionSheetClass}
-        >
+      <FuelPanelShell
+        open={isTransferOpen}
+        onOpenChange={closeTransfer}
+        title="Переміщення"
+      >
           <FuelSheetHeader
             icon={ArrowRightLeft}
             accent="sky"
@@ -997,16 +989,14 @@ export function FuelActionDialogs({
               </Button>
             </FuelSheetFooter>
           </form>
-        </SheetContent>
-      </Sheet>
+      </FuelPanelShell>
 
       {/* Заправка техніки */}
-      <Sheet open={isRefuelOpen} onOpenChange={closeRefuel} modal={false}>
-        <SheetContent
-          side="right"
-          showOverlay={false}
-          className={actionSheetClass}
-        >
+      <FuelPanelShell
+        open={isRefuelOpen}
+        onOpenChange={closeRefuel}
+        title="Заправка техніки"
+      >
           <FuelSheetHeader
             icon={Tractor}
             accent="emerald"
@@ -1255,8 +1245,7 @@ export function FuelActionDialogs({
               </Button>
             </FuelSheetFooter>
           </form>
-        </SheetContent>
-      </Sheet>
+      </FuelPanelShell>
     </>
   );
 }

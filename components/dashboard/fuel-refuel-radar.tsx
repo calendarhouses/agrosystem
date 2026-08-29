@@ -23,7 +23,7 @@ import {
   fuelPrimaryBtnClass,
   fuelSelectTriggerClass,
   fuelSheetBodyClass,
-  fuelSheetContentClass,
+  FuelPanelShell,
 } from "@/components/dashboard/fuel-sheet-chrome";
 import { Button } from "@/components/ui/button";
 import {
@@ -33,10 +33,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Sheet,
-  SheetContent,
-} from "@/components/ui/sheet";
 import {
   UNRECORDED_LOOKBACK_HOURS,
   type UnrecordedRefueling,
@@ -276,12 +272,7 @@ export function FuelRefuelRadar({
   const isCommandBar = variant === "commandBar";
 
   const sheet = (
-    <Sheet open={drawerOpen} onOpenChange={setDrawerOpen} modal={false}>
-      <SheetContent
-        side="right"
-        showOverlay={false}
-        className={fuelSheetContentClass}
-      >
+    <FuelPanelShell open={drawerOpen} onOpenChange={setDrawerOpen} title="Радар заправок">
         <FuelSheetHeader
           icon={Radar}
           accent="amber"
@@ -535,13 +526,12 @@ export function FuelRefuelRadar({
             </ul>
           )}
         </div>
-      </SheetContent>
-    </Sheet>
+    </FuelPanelShell>
   );
 
   if (isCommandBar) {
     return (
-      <div className={cn("flex w-full flex-1 flex-col", className)}>
+      <div className={cn("flex w-full min-w-0 flex-col", className)}>
         <Button
           type="button"
           disabled={loading && !hasAlerts}
@@ -550,21 +540,21 @@ export function FuelRefuelRadar({
             else void scan();
           }}
           className={cn(
-            "h-auto min-h-14 w-full flex-1 flex-col items-start justify-center gap-0.5 rounded-2xl px-4 py-3",
-            "text-left shadow-sm",
+            "h-auto min-h-[3.25rem] w-full items-center justify-start gap-2.5 rounded-2xl px-3 py-3",
+            "text-left shadow-sm md:min-h-14 md:flex-col md:items-start md:justify-center md:gap-0.5 md:px-4",
             hasAlerts
               ? "border border-rose-200/80 bg-gradient-to-br from-rose-50 to-white text-rose-950 hover:from-rose-100/90"
               : "border border-zinc-200/80 bg-gradient-to-br from-zinc-50 to-white text-zinc-800 hover:from-zinc-100/80"
           )}
         >
-          <span className="inline-flex items-center gap-2 text-sm font-bold">
+          <span className="inline-flex items-center gap-2 text-[13px] font-bold md:text-sm">
             <span
               className={cn(
-                "relative inline-flex h-7 w-7 items-center justify-center rounded-xl text-white shadow-sm",
+                "relative inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white shadow-sm md:h-7 md:w-7",
                 hasAlerts ? "bg-rose-600" : "bg-zinc-700"
               )}
             >
-              <Radar className="h-3.5 w-3.5" strokeWidth={2} />
+              <Radar className="h-4 w-4 md:h-3.5 md:w-3.5" strokeWidth={2} />
               {hasAlerts ? (
                 <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" />
@@ -572,25 +562,27 @@ export function FuelRefuelRadar({
                 </span>
               ) : null}
             </span>
-            {loading && !hasAlerts
-              ? "Сканування…"
-              : hasAlerts
-                ? `Радар: ${count}`
-                : "Радар: Чисто"}
-          </span>
-          <span
-            className={cn(
-              "pl-9 text-[11px] font-medium",
-              hasAlerts ? "text-rose-800/70" : "text-zinc-500"
-            )}
-          >
-            {hasAlerts ? "Необліковані заправки" : "Останні 7 днів"}
+            <span className="min-w-0">
+              <span className="block truncate">
+                {loading && !hasAlerts
+                  ? "Сканування…"
+                  : hasAlerts
+                    ? `Радар: ${count}`
+                    : "Радар"}
+              </span>
+              <span
+                className={cn(
+                  "mt-0.5 block truncate text-[10px] font-medium md:pl-0 md:text-[11px]",
+                  hasAlerts ? "text-rose-800/70" : "text-zinc-500"
+                )}
+              >
+                {hasAlerts ? "Необліковані" : "Чисто · 7 днів"}
+              </span>
+            </span>
           </span>
         </Button>
         {error ? (
-          <p className="mt-1 max-w-[12rem] text-right text-[10px] text-rose-600">
-            {error}
-          </p>
+          <p className="mt-1 text-[10px] text-rose-600">{error}</p>
         ) : null}
         {sheet}
       </div>

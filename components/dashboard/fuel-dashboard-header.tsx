@@ -32,6 +32,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import type { FuelStorage } from "@/lib/fuel-storages";
+import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
 
 function formatLiters(value: number): string {
@@ -334,24 +335,9 @@ export function FuelDashboardHeader({
       ? `дані за ${fieldFuelCoverage.daysCovered} з ${fieldFuelCoverage.daysExpected} дн.`
       : null;
 
-  return (
-    <header className="relative mb-3 flex flex-col gap-4 px-4 py-5 sm:mb-4 sm:px-8">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-extrabold tracking-tight text-zinc-900 sm:text-3xl">
-            Облік Палива
-          </h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            Управління дизельними активами
-          </p>
-        </div>
-        <PeriodSelect
-          period={fieldFuelPeriod}
-          onChange={onFieldFuelPeriodChange}
-        />
-      </div>
+  const isMobile = useIsMobile();
 
-      {/* KPI strip */}
+  const kpiStrip = (
       <div
         className={cn(
           "relative overflow-hidden rounded-2xl border border-[#E5DFD3]/90",
@@ -365,8 +351,7 @@ export function FuelDashboardHeader({
         />
 
         <div className="grid grid-cols-1 divide-y divide-[#E5DFD3]/80 md:grid-cols-3 md:divide-x md:divide-y-0">
-          {/* Stock */}
-          <div className="flex min-h-[7.25rem] flex-col justify-between gap-3 p-5 sm:p-6">
+          <div className="flex min-h-[6.5rem] flex-col justify-between gap-2.5 p-4 sm:min-h-[7.25rem] sm:gap-3 sm:p-6">
             <div className="flex items-center justify-between gap-2">
               <p className="inline-flex items-center gap-2 text-[11px] font-semibold tracking-[0.08em] text-zinc-500 uppercase">
                 <Warehouse className="h-3.5 w-3.5 text-emerald-600" strokeWidth={2} />
@@ -393,7 +378,7 @@ export function FuelDashboardHeader({
                   </span>
                   <span className="text-sm font-semibold text-zinc-400">л</span>
                 </p>
-                <p className="mt-2 text-[13px] font-medium tabular-nums text-zinc-500">
+                <p className="mt-1.5 text-[13px] font-medium tabular-nums text-zinc-500 sm:mt-2">
                   ≈ {formatMoney(totalValue)}{" "}
                   <span className="text-zinc-400">₴</span>
                 </p>
@@ -401,8 +386,7 @@ export function FuelDashboardHeader({
             )}
           </div>
 
-          {/* Burned */}
-          <div className="flex min-h-[7.25rem] flex-col justify-between gap-3 p-5 sm:p-6">
+          <div className="flex min-h-[6.5rem] flex-col justify-between gap-2.5 p-4 sm:min-h-[7.25rem] sm:gap-3 sm:p-6">
             <p className="inline-flex items-center gap-2 text-[11px] font-semibold tracking-[0.08em] text-zinc-500 uppercase">
               <Tractor className="h-3.5 w-3.5 text-amber-600" strokeWidth={2} />
               Спалено технікою
@@ -419,7 +403,7 @@ export function FuelDashboardHeader({
                 breakdownRows={burnedRows}
                 accentClass="text-amber-950"
               />
-              <p className="mt-2 text-[12px] font-medium text-zinc-400">
+              <p className="mt-1.5 text-[12px] font-medium text-zinc-400 sm:mt-2">
                 {periodLabel}
                 {fieldFuelLiters != null && burnedTotal != null ? (
                   <span className="ml-1.5 text-zinc-500">
@@ -433,8 +417,7 @@ export function FuelDashboardHeader({
             </div>
           </div>
 
-          {/* Refueled */}
-          <div className="flex min-h-[7.25rem] flex-col justify-between gap-3 p-5 sm:p-6">
+          <div className="flex min-h-[6.5rem] flex-col justify-between gap-2.5 p-4 sm:min-h-[7.25rem] sm:gap-3 sm:p-6">
             <p className="inline-flex items-center gap-2 text-[11px] font-semibold tracking-[0.08em] text-zinc-500 uppercase">
               <Fuel className="h-3.5 w-3.5 text-sky-600" strokeWidth={2} />
               Заправлено
@@ -451,15 +434,132 @@ export function FuelDashboardHeader({
                 breakdownRows={refuelRows}
                 accentClass="text-sky-950"
               />
-              <p className="mt-2 text-[12px] font-medium text-zinc-400">
+              <p className="mt-1.5 text-[12px] font-medium text-zinc-400 sm:mt-2">
                 {periodLabel}
               </p>
             </div>
           </div>
         </div>
       </div>
+  );
 
-      {/* Command Bar */}
+  if (isMobile) {
+    return (
+      <header className="relative mb-3 flex flex-col gap-3 px-4 pt-3">
+        <div
+          className={cn(
+            "inline-flex w-full rounded-2xl border border-[#E5DFD3]/90 bg-white/80 p-1 shadow-sm",
+            "backdrop-blur-sm"
+          )}
+          role="tablist"
+          aria-label="Період KPI"
+        >
+          {FIELD_FUEL_PERIODS.map((option) => {
+            const active = fieldFuelPeriod === option.id;
+            return (
+              <button
+                key={option.id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => onFieldFuelPeriodChange(option.id)}
+                className={cn(
+                  "min-h-9 flex-1 rounded-xl px-2 text-[12px] font-bold transition-all",
+                  active
+                    ? "bg-[#276749] text-white shadow-sm shadow-emerald-900/20"
+                    : "text-zinc-500 hover:text-zinc-800"
+                )}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {kpiStrip}
+
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={onPurchase}
+            className="flex items-center gap-2.5 rounded-2xl border border-emerald-200/80 bg-gradient-to-br from-emerald-50 to-white px-3 py-3 text-left shadow-sm active:scale-[0.98]"
+          >
+            <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm">
+              <Plus className="h-4 w-4" strokeWidth={2.4} />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-[13px] font-bold text-emerald-950">
+                Закупівля
+              </span>
+              <span className="block truncate text-[10px] font-medium text-emerald-800/70">
+                Прихід на базу
+              </span>
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={onTransfer}
+            className="flex items-center gap-2.5 rounded-2xl border border-sky-200/80 bg-gradient-to-br from-sky-50 to-white px-3 py-3 text-left shadow-sm active:scale-[0.98]"
+          >
+            <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white shadow-sm">
+              <ArrowRightLeft className="h-4 w-4" strokeWidth={2} />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-[13px] font-bold text-sky-950">
+                Переміщення
+              </span>
+              <span className="block truncate text-[10px] font-medium text-sky-800/70">
+                На бензовоз
+              </span>
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={onRefuel}
+            className="flex items-center gap-2.5 rounded-2xl border border-amber-200/80 bg-gradient-to-br from-amber-50 to-white px-3 py-3 text-left shadow-sm active:scale-[0.98]"
+          >
+            <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-white shadow-sm">
+              <Fuel className="h-4 w-4" strokeWidth={2} />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-[13px] font-bold text-amber-950">
+                Заправка
+              </span>
+              <span className="block truncate text-[10px] font-medium text-amber-900/70">
+                На техніку
+              </span>
+            </span>
+          </button>
+          <FuelRefuelRadar
+            variant="commandBar"
+            className="min-w-0"
+            storages={storages}
+            onApproved={onRadarApproved}
+          />
+        </div>
+      </header>
+    );
+  }
+
+  return (
+    <header className="relative mb-3 flex flex-col gap-4 px-4 py-5 sm:mb-4 sm:px-8">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-extrabold tracking-tight text-zinc-900 sm:text-3xl">
+            Облік Палива
+          </h1>
+          <p className="mt-1 text-sm text-zinc-500">
+            Управління дизельними активами
+          </p>
+        </div>
+        <PeriodSelect
+          period={fieldFuelPeriod}
+          onChange={onFieldFuelPeriodChange}
+        />
+      </div>
+
+      {kpiStrip}
+
       <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           <Button

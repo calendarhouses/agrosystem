@@ -1,14 +1,17 @@
-"use client";
-
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 import {
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
+  Drawer,
+  DrawerContent,
+  DrawerHandle,
+  DrawerTitle,
+} from "@/components/ui/drawer";
+import {
+  Sheet,
+  SheetContent,
 } from "@/components/ui/sheet";
+import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
 
 /** Акценти панелей палива */
@@ -38,7 +41,10 @@ const accentGlow: Record<FuelSheetAccent, string> = {
   fuel: "from-amber-400/[0.1]",
 };
 
-/** Оболонка SheetContent — єдиний «пуш» стиль для /fuel */
+export const FUEL_MOBILE_DRAWER_SIZE =
+  "h-[calc(88dvh-var(--app-bottom-inset))] max-h-[calc(88dvh-var(--app-bottom-inset))]";
+
+/** Оболонка SheetContent — єдиний «пуш» стиль для /fuel (ПК) */
 export const fuelSheetContentClass = cn(
   "w-full gap-0 overflow-hidden border-l border-[#E5DFD3]/80",
   "bg-[linear-gradient(180deg,#ffffff_0%,#F4F1EA_55%,#EDE8DF_100%)]",
@@ -98,17 +104,69 @@ export const fuelPrimaryBtnClass = cn(
   "disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
 );
 
+/**
+ * Моб: Vaul Drawer як у Полях/Техніці + темне затемнення.
+ * ПК: права Sheet без змін.
+ */
+export function FuelPanelShell({
+  open,
+  onOpenChange,
+  title,
+  children,
+  className,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  title: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  const isMobile = useIsMobile();
+
+  if (isMobile) {
+    return (
+      <Drawer open={open} onOpenChange={onOpenChange}>
+        <DrawerContent
+          className={cn(
+            FUEL_MOBILE_DRAWER_SIZE,
+            "flex flex-col overflow-hidden border-[#E5DFD3]/90 bg-[#F4F1EA]",
+            className
+          )}
+          overlayClassName="pointer-events-auto! bg-black/55"
+        >
+          <DrawerHandle />
+          <DrawerTitle className="sr-only">{title}</DrawerTitle>
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            {children}
+          </div>
+        </DrawerContent>
+      </Drawer>
+    );
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange} modal={false}>
+      <SheetContent
+        side="right"
+        showOverlay={false}
+        className={cn(fuelSheetContentClass, className)}
+      >
+        {children}
+      </SheetContent>
+    </Sheet>
+  );
+}
+
 type FuelSheetHeaderProps = {
   icon: LucideIcon;
   title: ReactNode;
   description?: ReactNode;
   accent?: FuelSheetAccent;
-  /** Додатковий рядок під описом (бейджі, метрики) */
   meta?: ReactNode;
   className?: string;
 };
 
-/** Єдиний заголовок правих панелей /fuel */
+/** Єдиний заголовок панелей /fuel (Sheet і Drawer) */
 export function FuelSheetHeader({
   icon: Icon,
   title,
@@ -118,9 +176,9 @@ export function FuelSheetHeader({
   className,
 }: FuelSheetHeaderProps) {
   return (
-    <SheetHeader
+    <div
       className={cn(
-        "relative shrink-0 overflow-hidden border-b border-zinc-200/70 px-5 py-5 pr-14 sm:px-6",
+        "relative shrink-0 overflow-hidden border-b border-[#E5DFD3]/80 px-5 py-5 pr-14 sm:px-6",
         className
       )}
     >
@@ -146,18 +204,18 @@ export function FuelSheetHeader({
           <Icon className="h-[18px] w-[18px]" strokeWidth={1.9} />
         </div>
         <div className="min-w-0 flex-1 pt-0.5">
-          <SheetTitle className="text-[1.05rem] font-bold tracking-tight text-zinc-900 sm:text-lg">
+          <h2 className="text-[1.05rem] font-bold tracking-tight text-zinc-900 sm:text-lg">
             {title}
-          </SheetTitle>
+          </h2>
           {description ? (
-            <SheetDescription className="mt-1 text-[13px] leading-snug text-zinc-500">
+            <p className="mt-1 text-[13px] leading-snug text-zinc-500">
               {description}
-            </SheetDescription>
+            </p>
           ) : null}
           {meta ? <div className="mt-2.5">{meta}</div> : null}
         </div>
       </div>
-    </SheetHeader>
+    </div>
   );
 }
 
@@ -169,13 +227,18 @@ export function FuelSheetFooter({
   className?: string;
 }) {
   return (
-    <SheetFooter className={cn(fuelSheetStickyFooterClass, className)}>
+    <div
+      className={cn(
+        fuelSheetStickyFooterClass,
+        "mt-auto flex flex-col gap-2",
+        className
+      )}
+    >
       {children}
-    </SheetFooter>
+    </div>
   );
 }
 
-/** Картка-підказка всередині панелі */
 export function FuelSheetHint({
   children,
   tone = "neutral",

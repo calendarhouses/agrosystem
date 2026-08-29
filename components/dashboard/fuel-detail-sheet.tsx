@@ -25,14 +25,10 @@ import {
 } from "recharts";
 
 import {
+  FuelPanelShell,
   FuelSheetHeader,
   fuelSheetBodyClass,
-  fuelSheetContentClass,
 } from "@/components/dashboard/fuel-sheet-chrome";
-import {
-  Sheet,
-  SheetContent,
-} from "@/components/ui/sheet";
 import {
   storageFillPercent,
   storageValueUah,
@@ -358,12 +354,7 @@ export function FuelDetailSheet({
   const storageTx = useMemo(() => history.slice(0, 12), [history]);
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} modal={false}>
-      <SheetContent
-        side="right"
-        showOverlay={false}
-        className={fuelSheetContentClass}
-      >
+    <FuelPanelShell open={open} onOpenChange={onOpenChange} title="Деталі складу">
         {storage ? (
           <>
             <FuelSheetHeader
@@ -543,7 +534,6 @@ export function FuelDetailSheet({
             Оберіть резервуар
           </div>
         )}
-      </SheetContent>
-    </Sheet>
+    </FuelPanelShell>
   );
 }
