@@ -6,7 +6,7 @@ import { Select as SelectPrimitive } from "@base-ui/react/select"
 import { SwipeableSheet } from "@/components/ui/swipe-sheet"
 import { useIsMobile } from "@/lib/use-mobile"
 import { cn } from "@/lib/utils"
-import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
+import { ChevronDownIcon, CheckIcon, ChevronUpIcon, XIcon } from "lucide-react"
 
 const Select = SelectPrimitive.Root
 
@@ -95,14 +95,29 @@ function SelectContent({
       {...props}
     >
       {isMobile ? (
-        <SwipeableSheet
-          className="max-h-[var(--app-sheet-max)]"
-          onSwipeDown={() => backdropRef.current?.click()}
-        >
-          <SelectPrimitive.List className="max-h-[min(60dvh,calc(var(--app-sheet-max)-3rem))] overflow-y-auto overscroll-none p-1.5">
-            {children}
-          </SelectPrimitive.List>
-        </SwipeableSheet>
+        <>
+          <SwipeableSheet
+            className="max-h-[var(--app-sheet-max)]"
+            onSwipeDown={() => backdropRef.current?.click()}
+          >
+            <SelectPrimitive.List className="max-h-[min(60dvh,calc(var(--app-sheet-max)-3rem))] overflow-y-auto overscroll-none p-1.5 pt-2 pr-12">
+              {children}
+            </SelectPrimitive.List>
+          </SwipeableSheet>
+          <button
+            type="button"
+            aria-label="Закрити"
+            onClick={() => backdropRef.current?.click()}
+            className={cn(
+              "absolute top-2.5 right-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full",
+              "bg-white/80 text-zinc-500 shadow-sm ring-1 ring-zinc-200/80",
+              "transition-colors hover:bg-white hover:text-zinc-800",
+              "touch-manipulation"
+            )}
+          >
+            <XIcon className="h-4 w-4" />
+          </button>
+        </>
       ) : (
         <>
           <SelectScrollUpButton />

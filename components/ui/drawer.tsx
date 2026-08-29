@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { XIcon } from "lucide-react"
 import { Drawer as DrawerPrimitive } from "vaul"
 /** Локальна копія: `vaul` не експортує `style.css` у package.json exports → Next build падає. */
 import "./vaul-drawer.css"
@@ -50,7 +51,7 @@ function DrawerOverlay({
     <DrawerPrimitive.Overlay
       data-slot="drawer-overlay"
       className={cn(
-        "fixed inset-0 z-[150] bg-black/45",
+        "fixed top-0 right-0 bottom-0 left-0 z-[150] bg-black/45",
         "data-[state=closed]:pointer-events-none",
         // Peek/snap: оверлей часто opacity:0, але без цього краде всі тапи (пошук, мапа, шторка)
         "pointer-events-none data-[vaul-snap-points=true]:pointer-events-none",
@@ -67,9 +68,11 @@ function DrawerContent({
   className,
   children,
   overlayClassName,
+  showCloseButton = true,
   ...props
 }: React.ComponentProps<typeof DrawerPrimitive.Content> & {
   overlayClassName?: string
+  showCloseButton?: boolean
 }) {
   return (
     <DrawerPortal>
@@ -85,6 +88,20 @@ function DrawerContent({
         {...props}
       >
         {children}
+        {showCloseButton ? (
+          <DrawerPrimitive.Close
+            data-slot="drawer-close"
+            className={cn(
+              "absolute top-2.5 right-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full",
+              "bg-white/80 text-zinc-500 shadow-sm ring-1 ring-zinc-200/80",
+              "transition-colors hover:bg-white hover:text-zinc-800",
+              "touch-manipulation"
+            )}
+            aria-label="Закрити"
+          >
+            <XIcon className="h-4 w-4" />
+          </DrawerPrimitive.Close>
+        ) : null}
       </DrawerPrimitive.Content>
     </DrawerPortal>
   )
@@ -110,7 +127,7 @@ function DrawerHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="drawer-header"
-      className={cn("flex flex-col gap-0.5 px-4 text-left", className)}
+      className={cn("flex flex-col gap-0.5 px-4 pr-14 text-left", className)}
       {...props}
     />
   )

@@ -401,7 +401,10 @@ export function FieldsMapChrome({ align = "end" }: FieldsMapChromeProps) {
               shouldScaleBackground={false}
               noBodyStyles
             >
-              <DrawerContent className="bottom-[var(--app-bottom-inset)] max-h-[calc(92dvh-var(--app-bottom-inset))] gap-0 border-[#E5DFD3]/90 bg-[#F4F1EA] pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]">
+              <DrawerContent
+                overlayClassName="bottom-[var(--app-bottom-inset)]"
+                className="bottom-[var(--app-bottom-inset)] max-h-[calc(92dvh-var(--app-bottom-inset))] gap-0 border-[#E5DFD3]/90 bg-[#F4F1EA] pb-3"
+              >
                 <DrawerTitle className="sr-only">Локація погоди</DrawerTitle>
                 <DrawerHandle className="bg-zinc-400/90" />
                 <DrawerHeader className="gap-1 border-b border-[#E5DFD3]/80 pb-3 pt-0">
@@ -418,6 +421,7 @@ export function FieldsMapChrome({ align = "end" }: FieldsMapChromeProps) {
                 <div
                   className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4"
                   data-allow-pan="true"
+                  data-vaul-no-drag=""
                 >
                   {settingsForm}
                 </div>

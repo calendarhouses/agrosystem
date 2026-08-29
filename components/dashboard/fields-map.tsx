@@ -1571,9 +1571,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
             navigator.vibrate(12);
           }
           clearPreviewDismiss();
-          previewClearTimer = window.setTimeout(() => {
-            clearFieldPreview();
-          }, 3200);
+          // Тултип лише поки палець затиснутий — на touchend знімаємо
           window.setTimeout(() => {
             suppressNextClickRef.current = false;
           }, 450);
@@ -1601,8 +1599,14 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         clearLongPress();
         touchStartRef.current = null;
 
-        // Підняли палець після long-press — тултип лишається до тапу зовні
+        // Підняли палець після long-press — зняти тултип, знову всі поля.
+        // Деталі відкриваються лише наступним окремим тапом.
         if (wasLongPress) {
+          clearFieldPreview();
+          suppressNextClickRef.current = true;
+          window.setTimeout(() => {
+            suppressNextClickRef.current = false;
+          }, 450);
           return;
         }
 
@@ -1638,6 +1642,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
 
         if (previewId) {
           // Тап по тому ж підсвіченому полі → відкрити деталі
+          // (превʼю вже зняте на touchend long-press; цей шлях — якщо лишилось)
           if (rawId === previewId) {
             openFieldAt(x, y);
             return;

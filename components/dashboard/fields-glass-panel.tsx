@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type TouchEvent as ReactTouchEvent,
+} from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity,
@@ -24,6 +31,7 @@ import { cn } from "@/lib/utils";
 /** Peek-висота шторки (sync з --fields-peek-height у globals.css) */
 export const FIELDS_DRAWER_PEEK = "4.75rem";
 export const FIELDS_DRAWER_FULL = 0.88;
+const PEEK_SWIPE_UP_PX = 36;
 
 const SLIDE_TRANSITION = {
   type: "tween" as const,
@@ -232,10 +240,36 @@ export function FieldsGlassPanel({
   const [query, setQuery] = useState("");
   const showFullSnap = mobileDetailOpen || mobileExpanded;
   const drawerOpenedAtRef = useRef(0);
+  const peekSwipeRef = useRef<{ y: number; t: number } | null>(null);
 
   useEffect(() => {
     if (showFullSnap) drawerOpenedAtRef.current = Date.now();
   }, [showFullSnap]);
+
+  function onPeekTouchStart(event: ReactTouchEvent) {
+    const touch = event.touches[0];
+    if (!touch) return;
+    peekSwipeRef.current = { y: touch.clientY, t: Date.now() };
+  }
+
+  function onPeekTouchEnd(event: ReactTouchEvent) {
+    const start = peekSwipeRef.current;
+    peekSwipeRef.current = null;
+    if (!start) return;
+    const touch = event.changedTouches[0];
+    if (!touch) return;
+    const dy = start.y - touch.clientY;
+    const dt = Date.now() - start.t;
+    if (dy > PEEK_SWIPE_UP_PX && dt < 800) {
+      event.preventDefault();
+      onMobileExpandedChange(true);
+    }
+  }
+
+  function onPeekClick() {
+    // Якщо вже розгорнули свайпом — клік після touchend ігноруємо як дубль
+    onMobileExpandedChange(true);
+  }
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -454,7 +488,9 @@ export function FieldsGlassPanel({
       </div>
 
       <div
-        className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-none px-2 py-2"
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y px-2 py-2"
+        data-allow-pan="true"
+        data-vaul-no-drag=""
         onMouseLeave={() => onHover(null)}
       >
         {loading ? (
@@ -545,26 +581,27 @@ export function FieldsGlassPanel({
       <div className="md:hidden">
         {!mobileDetailOpen && !mobileExpanded ? (
           mobileDrawerVisible ? (
-            <div
-              className="pointer-events-auto fixed inset-x-0 z-[140] border-t border-[#E5DFD3]/90 bg-[#F4F1EA] shadow-[0_-8px_30px_-12px_rgba(24,24,27,0.35)]"
+            <button
+              type="button"
+              aria-expanded={false}
+              aria-label="Розгорнути список полів"
+              className="pointer-events-auto fixed inset-x-0 z-[140] flex flex-col border-t border-[#E5DFD3]/90 bg-[#F4F1EA] shadow-[0_-8px_30px_-12px_rgba(24,24,27,0.35)] touch-manipulation"
               style={{
                 bottom: "var(--app-bottom-inset)",
                 height: "var(--fields-peek-height)",
                 borderTopLeftRadius: "1.25rem",
                 borderTopRightRadius: "1.25rem",
+                touchAction: "pan-y",
               }}
+              onTouchStart={onPeekTouchStart}
+              onTouchEnd={onPeekTouchEnd}
+              onClick={onPeekClick}
             >
               <div
-                className="mx-auto mt-2 h-1.5 w-12 rounded-full bg-zinc-400/90"
+                className="mx-auto mt-2 h-1.5 w-12 shrink-0 rounded-full bg-zinc-400/90"
                 aria-hidden
               />
-              <button
-                type="button"
-                aria-expanded={false}
-                aria-label="Розгорнути список полів"
-                onClick={() => onMobileExpandedChange(true)}
-                className="flex h-[calc(var(--fields-peek-height)-0.75rem)] w-full items-center gap-3 px-4 pb-2 text-left touch-manipulation"
-              >
+              <span className="flex min-h-0 flex-1 items-center gap-3 px-4 pb-2 text-left">
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#276749] text-white shadow-sm shadow-[#276749]/25">
                   <MapIcon className="h-4 w-4" />
                 </span>
@@ -579,8 +616,8 @@ export function FieldsGlassPanel({
                   </span>
                 </span>
                 <ChevronUp className="h-4 w-4 shrink-0 text-zinc-400" />
-              </button>
-            </div>
+              </span>
+            </button>
           ) : (
             <button
               type="button"
@@ -626,32 +663,35 @@ export function FieldsGlassPanel({
             onMobileDrawerVisibleChange?.(true);
           }}
           dismissible
+          handleOnly
           modal
           shouldScaleBackground={false}
           noBodyStyles
         >
-          <DrawerContent className="bottom-[var(--app-bottom-inset)] max-h-[calc(92dvh-var(--app-bottom-inset))] border-[#E5DFD3]/90 bg-[#F4F1EA] pb-0">
+          <DrawerContent className="bottom-[var(--app-bottom-inset)] flex h-[calc(92dvh-var(--app-bottom-inset))] max-h-[calc(92dvh-var(--app-bottom-inset))] flex-col border-[#E5DFD3]/90 bg-[#F4F1EA] pb-0">
             <DrawerTitle className="sr-only">
               {mobileDetailOpen ? "Деталі поля" : "Список полів"}
             </DrawerTitle>
             <DrawerHandle className="bg-zinc-400/90" />
-            <div className="relative min-h-0 flex-1 overflow-hidden">
+            <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
               <motion.div
-                className="flex h-full min-h-0"
+                className="flex h-full min-h-0 min-w-0"
                 style={{ width: "200%" }}
                 initial={false}
                 animate={{ x: mobileDetailOpen ? "-50%" : "0%" }}
                 transition={SLIDE_TRANSITION}
               >
-                <div className="flex w-1/2 min-w-0 flex-col overflow-hidden">
+                <div className="flex h-full w-1/2 min-w-0 flex-col overflow-hidden">
+                  {/* Один скрол — всередині list; зовнішній overflow-y ламає iOS touch */}
                   <div
-                    className="flex-1 overflow-y-auto overscroll-contain"
+                    className="flex h-full min-h-0 flex-1 flex-col overflow-hidden"
                     data-allow-pan="true"
+                    data-vaul-no-drag=""
                   >
                     {list}
                   </div>
                 </div>
-                <div className="flex w-1/2 min-w-0 flex-col overflow-hidden">
+                <div className="flex h-full w-1/2 min-w-0 flex-col overflow-hidden">
                   {mobileDetail}
                 </div>
               </motion.div>

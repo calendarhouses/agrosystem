@@ -1,9 +1,16 @@
 [data-vaul-drawer] {
-  touch-action: none;
+  /* pan-y замість none: intersection з дітьми блокував overflow scroll.
+     !important — vaul інжектить touch-action:none через __insertCSS */
+  touch-action: pan-y !important;
   will-change: transform;
   transition: transform 0.5s cubic-bezier(0.32, 0.72, 0, 1);
   animation-duration: 0.5s;
   animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+[data-vaul-drawer] [data-vaul-no-drag],
+[data-vaul-drawer] [data-allow-pan="true"] {
+  touch-action: pan-y !important;
 }
 
 [data-vaul-drawer][data-vaul-snap-points='false'][data-vaul-drawer-direction='bottom'][data-state='open'] {
@@ -149,7 +156,7 @@
   height: 5px;
   width: 32px;
   border-radius: 1rem;
-  touch-action: pan-y;
+  touch-action: none !important;
 }
 
 [data-vaul-handle]:hover,

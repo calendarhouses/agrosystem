@@ -1,6 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
+import { X } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
@@ -14,6 +15,7 @@ type MobileBottomDrawerProps = {
   className?: string;
   /** Залишити нижнє меню видимим під шторкою */
   preserveNav?: boolean;
+  showCloseButton?: boolean;
 };
 
 /** Нативна мобільна шторка знизу (поверх контенту, над bottom nav). */
@@ -23,6 +25,7 @@ export function MobileBottomDrawer({
   children,
   className,
   preserveNav = true,
+  showCloseButton = true,
 }: MobileBottomDrawerProps) {
   const [mounted, setMounted] = useState(false);
 
@@ -69,6 +72,16 @@ export function MobileBottomDrawer({
             exit={{ y: "100%" }}
             transition={{ type: "spring", stiffness: 440, damping: 40 }}
           >
+            {showCloseButton ? (
+              <button
+                type="button"
+                aria-label="Закрити"
+                onClick={() => onOpenChange(false)}
+                className="absolute top-2.5 right-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full bg-zinc-800 text-zinc-300 ring-1 ring-zinc-700 transition-colors hover:bg-zinc-700 hover:text-white touch-manipulation"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            ) : null}
             <SwipeableSheet
               className="min-h-0 flex-1"
               handleClassName="pt-2.5 pb-1"
