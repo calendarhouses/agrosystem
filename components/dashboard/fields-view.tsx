@@ -1230,6 +1230,7 @@ export function FieldsView() {
         onFitAll={() => fieldsMapRef.current?.fitAllFields()}
       />
 
+      {/* ПК-тільки: glass справа. Мобільні деталі — лише через FieldsGlassPanel + embeddedInMobileDrawer. */}
       {sheetOpen && !isMobile ? (
         <FieldsDetailGlassFrame>
           <FieldDetailSheet
