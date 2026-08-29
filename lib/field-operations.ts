@@ -36,6 +36,8 @@ export type FieldOperation = {
   trackerWorkHours?: number | null;
   trackerFuelL?: number | null;
   exportStatus?: FieldOperationExportStatus;
+  /** Локально збережено, на сервер ще не потрапило (мережа / API) */
+  pendingSync?: boolean;
 };
 
 export type FieldOperationInput = FieldOperation & {
@@ -319,12 +321,35 @@ export async function listFieldOperations(
     });
     if (res.ok) {
       const data = (await res.json()) as { operations?: FieldOperation[] };
-      const ops = data.operations ?? [];
+      const serverOps = (data.operations ?? []).map((op) => ({
+        ...op,
+        pendingSync: false,
+      }));
+      const serverIds = new Set(serverOps.map((op) => op.id));
       const all = readLocalAll();
-      all[fieldKey] = ops;
-      for (const key of legacyKeys) delete all[key];
+      // Не губити наряди, які ще тільки в localStorage після невдалого POST
+      const pendingLocal: FieldOperation[] = [];
+      for (const key of keys) {
+        for (const op of all[key] ?? []) {
+          if (op.pendingSync && !serverIds.has(op.id)) {
+            pendingLocal.push({ ...op, pendingSync: true });
+            serverIds.add(op.id);
+          }
+        }
+      }
+      const merged = [...serverOps, ...pendingLocal].sort((a, b) =>
+        b.occurredAt.localeCompare(a.occurredAt)
+      );
+      all[fieldKey] = merged;
+      for (const key of legacyKeys) {
+        if (key !== fieldKey) delete all[key];
+      }
       writeLocalAll(all);
-      return ops;
+      // Тихе досинхронізування offline-нарядів (без блокування UI)
+      for (const op of pendingLocal) {
+        schedulePendingSync(fieldKey, op);
+      }
+      return merged;
     }
   } catch {
     /* fallback local */
@@ -369,10 +394,12 @@ export async function upsertFieldOperation(
     exportStatus: input.exportStatus ?? "none",
   };
 
-  upsertLocal(input.fieldKey, {
+  const localDraft: FieldOperation = {
     ...input,
     date: input.date || formatOpDateLabel(input.occurredAt),
-  });
+    pendingSync: true,
+  };
+  upsertLocal(input.fieldKey, localDraft);
 
   try {
     const res = await fetch("/api/field-operations", {
@@ -385,8 +412,9 @@ export async function upsertFieldOperation(
       error?: string;
     };
     if (res.ok && data.operation) {
-      upsertLocal(input.fieldKey, data.operation);
-      return data.operation;
+      const saved = { ...data.operation, pendingSync: false };
+      upsertLocal(input.fieldKey, saved);
+      return saved;
     }
     throw new Error(
       data.error ||
@@ -395,9 +423,25 @@ export async function upsertFieldOperation(
           : `Не вдалося зберегти наряд (HTTP ${res.status})`)
     );
   } catch (error) {
+    // localDraft уже з pendingSync — лишається до наступної синхронізації
     if (error instanceof Error) throw error;
     throw new Error("Не вдалося зберегти наряд");
   }
+}
+
+const pendingSyncInFlight = new Set<string>();
+
+function schedulePendingSync(fieldKey: string, op: FieldOperation) {
+  const token = `${fieldKey}:${op.id}`;
+  if (pendingSyncInFlight.has(token)) return;
+  pendingSyncInFlight.add(token);
+  void upsertFieldOperation({ ...op, fieldKey })
+    .catch(() => {
+      /* лишається pendingSync у localStorage */
+    })
+    .finally(() => {
+      pendingSyncInFlight.delete(token);
+    });
 }
 
 export async function deleteFieldOperation(

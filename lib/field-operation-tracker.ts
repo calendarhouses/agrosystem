@@ -69,7 +69,8 @@ export async function syncPlannedOpsFromTrackerPresence(args: {
       const data = (await res.json()) as { updated?: FieldOperation[] };
       if (data.updated?.length) return data.updated;
     }
-  } catch {
+  } catch (err) {
+    console.error("[sync-planned-ops-tracker]", err);
     /* local already updated */
   }
 

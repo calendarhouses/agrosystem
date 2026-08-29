@@ -20,14 +20,29 @@ export const FIELD_CROP_OPTIONS = [
   "Ріпак",
   "Соняшник",
   "Пшениця",
+  "Соя",
+  "Ячмінь",
+  "Цукровий буряк",
+  "Гречка",
 ] as const;
 
+/**
+ * Нормалізує культуру до каталогу. Порожнє лишається порожнім —
+ * не підставляємо «Кукурудзу» мовчки. Невідому назву зберігаємо як є.
+ */
 export function normalizeFieldCrop(value: string | null | undefined): string {
   const trimmed = value?.trim() ?? "";
+  if (!trimmed) return "";
   const match = FIELD_CROP_OPTIONS.find(
     (option) => option.toLowerCase() === trimmed.toLowerCase()
   );
-  return match ?? FIELD_CROP_OPTIONS[0];
+  return match ?? trimmed;
+}
+
+export function isCatalogFieldCrop(value: string): boolean {
+  return FIELD_CROP_OPTIONS.some(
+    (option) => option.toLowerCase() === value.trim().toLowerCase()
+  );
 }
 
 type FieldPassportFormProps = {
@@ -98,11 +113,16 @@ export function FieldPassportForm({
           Культура
         </Label>
         <Select
-          items={FIELD_CROP_OPTIONS.map((option) => ({
-            value: option,
-            label: option,
-          }))}
-          value={crop}
+          items={[
+            ...(crop && !isCatalogFieldCrop(crop)
+              ? [{ value: crop, label: crop }]
+              : []),
+            ...FIELD_CROP_OPTIONS.map((option) => ({
+              value: option,
+              label: option,
+            })),
+          ]}
+          value={crop || null}
           onValueChange={(value) => {
             if (typeof value === "string" && value) {
               onCropChange(normalizeFieldCrop(value));
@@ -113,6 +133,9 @@ export function FieldPassportForm({
             <SelectValue placeholder="Оберіть культуру" />
           </SelectTrigger>
           <SelectContent className="border-[#E5DFD3] bg-white">
+            {crop && !isCatalogFieldCrop(crop) ? (
+              <SelectItem value={crop}>{crop}</SelectItem>
+            ) : null}
             {FIELD_CROP_OPTIONS.map((option) => (
               <SelectItem key={option} value={option}>
                 {option}

@@ -8,7 +8,7 @@ import {
   type ReactNode,
   type TouchEvent as ReactTouchEvent,
 } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   Activity,
   ChevronUp,
@@ -34,6 +34,34 @@ export const FIELDS_MOBILE_DRAWER_SIZE =
 export const FIELDS_DRAWER_PEEK = "4.75rem";
 export const FIELDS_DRAWER_FULL = 0.88;
 const PEEK_SWIPE_UP_PX = 36;
+
+/** Права підказка «свайпни вгору» у peek-стані */
+function PeekExpandCue({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn(
+        "relative ml-auto flex h-9 w-9 shrink-0 items-center justify-center",
+        "rounded-full border border-[#D8D2C6]/90 bg-white/70 shadow-[0_4px_14px_-6px_rgba(39,103,73,0.35)]",
+        "ring-1 ring-[#276749]/10 backdrop-blur-sm",
+        className
+      )}
+      aria-hidden
+    >
+      <motion.span
+        className="flex flex-col items-center text-[#276749]"
+        animate={{ y: [2, -2, 2] }}
+        transition={{
+          duration: 1.6,
+          repeat: Infinity,
+          ease: "easeInOut",
+        }}
+      >
+        <ChevronUp className="h-3.5 w-3.5 stroke-[2.5]" />
+        <span className="-mt-1.5 h-0.5 w-2.5 rounded-full bg-[#276749]/35" />
+      </motion.span>
+    </span>
+  );
+}
 
 const SLIDE_TRANSITION = {
   type: "tween" as const,
@@ -618,7 +646,7 @@ export function FieldsGlassPanel({
                       : `${formatCountPlural(fields.length, ["ділянка", "ділянки", "ділянок"])} · ${totalHa.toLocaleString("uk-UA")} га`}
                   </span>
                 </span>
-                <ChevronUp className="h-4 w-4 shrink-0 text-zinc-400" />
+                <PeekExpandCue />
               </span>
             </button>
           ) : (
@@ -641,7 +669,7 @@ export function FieldsGlassPanel({
                     : `${formatCountPlural(fields.length, ["ділянка", "ділянки", "ділянок"])} · ${totalHa.toLocaleString("uk-UA")} га`}
                 </span>
               </span>
-              <ChevronUp className="h-4 w-4 shrink-0 text-zinc-400" />
+              <PeekExpandCue />
             </button>
           )
         ) : null}
@@ -703,34 +731,5 @@ export function FieldsGlassPanel({
         </Drawer>
       </div>
     </>
-  );
-}
-
-export function FieldsDetailGlassFrame({
-  children,
-}: {
-  children: ReactNode;
-}) {
-  return (
-    <aside
-      className={cn(
-        "pointer-events-auto absolute z-20 hidden flex-col overflow-hidden border border-white/30 bg-[#F4F1EA] shadow-2xl md:flex",
-        "inset-x-0 bottom-[var(--app-bottom-inset)] top-[max(10px,var(--safe-top))] rounded-t-3xl",
-        "md:inset-x-auto md:top-3 md:right-3 md:bottom-3 md:h-auto md:w-[min(100%,580px)] md:rounded-2xl md:bg-[#F4F1EA]/88 md:backdrop-blur-2xl"
-      )}
-    >
-      <AnimatePresence mode="wait" initial={false}>
-        <motion.div
-          key="field-detail"
-          className="flex h-full min-h-0 flex-col"
-          initial={{ x: 28, opacity: 0 }}
-          animate={{ x: 0, opacity: 1 }}
-          exit={{ x: 28, opacity: 0 }}
-          transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-        >
-          {children}
-        </motion.div>
-      </AnimatePresence>
-    </aside>
   );
 }

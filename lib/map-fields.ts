@@ -93,9 +93,10 @@ export function areaHaFromFeature(feature: Feature): number {
 }
 
 export function geofenceToMapItem(
-  feature: Feature<Polygon, WialonGeofenceProperties>
+  feature: Feature<Polygon | MultiPolygon, WialonGeofenceProperties>
 ): MapFieldItem | null {
-  if (feature.geometry?.type !== "Polygon") return null;
+  const geomType = feature.geometry?.type;
+  if (geomType !== "Polygon" && geomType !== "MultiPolygon") return null;
   const props = feature.properties;
   const id = props?.id ?? String(feature.id ?? "");
   if (!id) return null;
@@ -169,7 +170,7 @@ export function buildMapFieldList(
   const fromWialon = (geofences?.features ?? [])
     .map((feature) => {
       const base = geofenceToMapItem(
-        feature as Feature<Polygon, WialonGeofenceProperties>
+        feature as Feature<Polygon | MultiPolygon, WialonGeofenceProperties>
       );
       if (!base) return null;
       const passport = passportByWialonId.get(base.id);

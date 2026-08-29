@@ -1531,9 +1531,18 @@ export function FieldDetailSheet({
     [period, historySeasonYear, customRange]
   );
 
-  /** Sticky footer — overview та історія (не settings/tech) */
+  /** Sticky footer — лише з паспортом; без нього списання/наряд уводять в тупик */
+  const passportReadyForOps =
+    Boolean(farmFieldId) &&
+    Boolean(field) &&
+    isFieldPassportComplete({
+      areaHa: passportAreaHa || field?.areaHa,
+      crop: passportCrop || field?.crop,
+    });
   const showStickyActionFooter =
-    activeTab !== "settings" && activeTab !== "tech";
+    passportReadyForOps &&
+    activeTab !== "settings" &&
+    activeTab !== "tech";
 
   async function reloadFieldEvents() {
     if (!farmFieldId) {
@@ -1832,6 +1841,11 @@ export function FieldDetailSheet({
         );
       })
       .catch((err) => {
+        if (resolvedFieldKey) {
+          void listFieldOperations(resolvedFieldKey, legacyKey).then(
+            setOperations
+          );
+        }
         toast.error(
           err instanceof Error ? err.message : "Не вдалося зберегти наряд"
         );
@@ -2351,7 +2365,7 @@ export function FieldDetailSheet({
                         </p>
                         <p className="mt-1 text-xs text-zinc-500">
                           Збережіть паспорт у вкладці «Налаштування», щоб бачити
-                          ТМЦ і наряди.
+                          ТМЦ, економіку та повну історію поля.
                         </p>
                         <button
                           type="button"
