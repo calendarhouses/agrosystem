@@ -57,7 +57,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden overscroll-none bg-transparent text-zinc-900 md:bg-zinc-100">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden overscroll-none bg-transparent text-zinc-900 md:bg-zinc-100">
       <Sidebar collapsed={collapsed} onToggleCollapsed={toggleCollapsed} />
 
       <div

@@ -62,13 +62,15 @@ body {
 
   /* Колір усього нижнього chrome: меню, safe-area, кінець градієнта шторки */
   --nav-bg: #18181b;
-  /* Висота рядка кнопок (без safe-area) — для позиціонування шторок і float UI */
+  /* Висота рядка кнопок (без safe-area) */
   --bottom-nav-content: 56px;
+  /* Для fixed-елементів (peek, sheets) — від viewport bottom */
   --bottom-nav-height: calc(
     var(--bottom-nav-content) + env(safe-area-inset-bottom, 0px)
   );
   --fields-peek-height: 4.75rem;
   --mobile-nav-offset: var(--bottom-nav-height);
+  /* FAB: карта full-bleed під fixed nav → offset від viewport bottom */
   --map-float-bottom: calc(
     var(--bottom-nav-height) + var(--fields-peek-height) + 1rem
   );
@@ -177,6 +179,20 @@ html[data-app-nav="1"] {
 @media (min-width: 768px) {
   html[data-app-nav="1"] {
     --app-bottom-inset: 0px;
+  }
+}
+
+/* iOS PWA: fixed bottom не доходить до фізичного краю — тягнемо nav вниз */
+@supports (-webkit-touch-callout: none) {
+  @media (max-width: 767px) {
+    [data-bottom-nav] {
+      box-sizing: border-box;
+      min-height: calc(
+        var(--bottom-nav-content) + env(safe-area-inset-bottom, 0px)
+      );
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+      margin-bottom: calc(-1 * env(safe-area-inset-bottom, 0px));
+    }
   }
 }
 

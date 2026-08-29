@@ -37,10 +37,11 @@ function BottomNavBar({
 }) {
   return (
     <nav
-      className="relative z-[100] shrink-0 bg-[var(--nav-bg)] md:hidden"
+      data-bottom-nav
+      className="fixed inset-x-0 bottom-0 z-[100] bg-[var(--nav-bg)] pb-[env(safe-area-inset-bottom,0px)] md:hidden"
       aria-label="Головна навігація"
     >
-      <div className="flex items-end justify-around px-1 pt-1.5 pb-[env(safe-area-inset-bottom,0px)]">
+      <div className="flex items-end justify-around px-1 pt-1.5">
       {BOTTOM_NAV_ITEMS.map((item) => {
         const Icon = item.icon;
         const active = isNavItemActive(pathname, item.href);
