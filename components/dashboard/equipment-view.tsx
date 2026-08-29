@@ -85,6 +85,7 @@ import type { FleetActiveOperation } from "@/lib/equipment-active-ops";
 import { attachActiveOpsToFleet } from "@/lib/equipment-active-ops";
 import {
   buildSmartAlerts,
+  isUnitCurrentlyIdle,
   type SmartAlert,
 } from "@/lib/equipment-smart-alerts";
 import type {
@@ -1320,9 +1321,17 @@ export function EquipmentView() {
   const dayBundleCacheRef = useRef(
     new Map<
       string,
-      { track: WialonTrackLineFeature; analytics: DayAnalyticsPayload }
+      {
+        track: WialonTrackLineFeature;
+        analytics: DayAnalyticsPayload;
+        fetchedAt: number;
+      }
     >()
   );
+  const [trackBundleTick, setTrackBundleTick] = useState(0);
+  /** Live idle-since (unix sec) по флоту — для long_idle у дзвіночку */
+  const idleSinceByUnitIdRef = useRef(new Map<number, number>());
+  const [idleClock, setIdleClock] = useState(0);
   const [trackGeoJSON, setTrackGeoJSON] =
     useState<WialonTrackLineFeature | null>(null);
   const [dayAnalytics, setDayAnalytics] =
@@ -1342,6 +1351,43 @@ export function EquipmentView() {
     if (liveWialonUnits.length === 0) return;
     setUnits((prev) => patchFleetGps(prev, liveWialonUnits));
   }, [liveWialonUnits]);
+
+  /** Флот-wide: фіксуємо початок поточного idle з live GPS */
+  useEffect(() => {
+    const nowSec = Math.floor(Date.now() / 1000);
+    const map = idleSinceByUnitIdRef.current;
+    const activeIds = new Set(units.map((u) => u.id));
+    let changed = false;
+
+    for (const id of [...map.keys()]) {
+      if (!activeIds.has(id)) {
+        map.delete(id);
+        changed = true;
+      }
+    }
+
+    for (const unit of units) {
+      if (isUnitCurrentlyIdle(unit)) {
+        if (!map.has(unit.id)) {
+          map.set(unit.id, nowSec);
+          changed = true;
+        }
+      } else if (map.has(unit.id)) {
+        map.delete(unit.id);
+        changed = true;
+      }
+    }
+
+    if (changed) setIdleClock((n) => n + 1);
+  }, [units]);
+
+  /** Перерахунок алертів раз на хвилину — поріг 1 год без зміни GPS */
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setIdleClock((n) => n + 1);
+    }, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   /** Стабільний ключ — GPS-поллінг не перезапускає KPI sync */
   const fleetUnitIdsKey = units.map((u) => u.id).join(",");
@@ -1496,18 +1542,39 @@ export function EquipmentView() {
 
     const daySource = trackDate;
     const dayKey = calendarDateToYmd(daySource);
+    const isToday = dayKey === todayKyivYmd();
     const cacheKey = `${selectedUnitId}:${dayKey}`;
+    const TODAY_BUNDLE_TTL_MS = 2.5 * 60 * 1000;
     const cached = dayBundleCacheRef.current.get(cacheKey);
-    if (cached) {
+    const cacheFresh =
+      cached != null &&
+      (!isToday || Date.now() - cached.fetchedAt < TODAY_BUNDLE_TTL_MS);
+
+    if (cacheFresh && cached) {
       setTrackGeoJSON(cached.track);
       setDayAnalytics(cached.analytics);
       setTrackError(null);
       setTrackLoading(false);
-      return;
+
+      let ttlTimer: ReturnType<typeof setTimeout> | undefined;
+      if (isToday) {
+        const remaining = Math.max(
+          1_000,
+          TODAY_BUNDLE_TTL_MS - (Date.now() - cached.fetchedAt)
+        );
+        ttlTimer = setTimeout(() => {
+          dayBundleCacheRef.current.delete(cacheKey);
+          setTrackBundleTick((n) => n + 1);
+        }, remaining);
+      }
+      return () => {
+        if (ttlTimer) clearTimeout(ttlTimer);
+      };
     }
 
     const controller = new AbortController();
     const { fromUnix: from, toUnix: to } = kyivDayBoundsUnix(dayKey);
+    let ttlTimer: ReturnType<typeof setTimeout> | undefined;
 
     setTrackLoading(true);
     setTrackError(null);
@@ -1536,9 +1603,16 @@ export function EquipmentView() {
         dayBundleCacheRef.current.set(cacheKey, {
           track: data.track,
           analytics,
+          fetchedAt: Date.now(),
         });
         setTrackGeoJSON(data.track);
         setDayAnalytics(analytics);
+        if (isToday) {
+          ttlTimer = setTimeout(() => {
+            dayBundleCacheRef.current.delete(cacheKey);
+            setTrackBundleTick((n) => n + 1);
+          }, TODAY_BUNDLE_TTL_MS);
+        }
       })
       .catch((err: unknown) => {
         if (controller.signal.aborted) return;
@@ -1552,8 +1626,11 @@ export function EquipmentView() {
         if (!controller.signal.aborted) setTrackLoading(false);
       });
 
-    return () => controller.abort();
-  }, [selectedUnitId, trackDate]);
+    return () => {
+      controller.abort();
+      if (ttlTimer) clearTimeout(ttlTimer);
+    };
+  }, [selectedUnitId, trackDate, trackBundleTick]);
 
   /** Підсумок флоту: БД + sync з Wialon якщо порожньо / застаріло / refresh */
   useEffect(() => {
@@ -1855,15 +1932,21 @@ export function EquipmentView() {
     return map;
   }, [alertUnitStats]);
 
+  const idleSinceByUnitId = useMemo(
+    () => new Map(idleSinceByUnitIdRef.current),
+    [idleClock]
+  );
+
   const smartAlerts = useMemo(
     () =>
       buildSmartAlerts({
         units,
         analyticsByUnitId,
+        idleSinceByUnitId,
         drainEventsByUnitId,
         alertDayKey: todayKyivYmd(),
       }),
-    [units, analyticsByUnitId, drainEventsByUnitId]
+    [units, analyticsByUnitId, idleSinceByUnitId, drainEventsByUnitId]
   );
 
   const isDesktopMapLayout = useMediaQuery("(min-width: 768px)");
@@ -2441,6 +2524,7 @@ export function EquipmentView() {
                 hoursAtBase={sessionTimeHours.hoursAtBase}
                 fuelEvents={displayFuelEvents}
                 loading={trackLoading}
+                dateLabel={formatTrackDateLabel(trackDate)}
                 liveFuelLiters={
                   parseUnitSensors(liveSelectedUnit).fuelLiters
                 }

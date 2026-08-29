@@ -41,6 +41,14 @@ function isIdleSample(s: { speed: number; ignition: boolean | null }): boolean {
   );
 }
 
+/** Live-стан: зараз холостий хід (швидкість + запалювання з телеметрії). */
+export function isUnitCurrentlyIdle(unit: WialonUnit): boolean {
+  const speed = Number(unit.pos?.s ?? 0);
+  if (!Number.isFinite(speed) || speed > IDLE_MAX_SPEED) return false;
+  const ignition = parseTelemetryIgnition(unit);
+  return ignition === true || ignition == null;
+}
+
 /** Поточний простій (хвіст треку), не сума за день. */
 export function currentIdleStreakSec(
   samples: DayAnalyticsPayload["samples"],
@@ -57,6 +65,11 @@ export function currentIdleStreakSec(
 export type BuildSmartAlertsInput = {
   units: FleetTrackedUnit[];
   analyticsByUnitId?: Map<number, DayAnalyticsPayload>;
+  /**
+   * Початок поточного idle з live GPS (unix sec) — флот-wide без треку.
+   * Оновлюється на клієнті під час поллінгу позицій.
+   */
+  idleSinceByUnitId?: Map<number, number>;
   /** Події зливу з БД (wialon_equipment_day_stats) для fleet-wide моніторингу */
   drainEventsByUnitId?: Map<number, number>;
   /** YYYY-MM-DD — для стабільного id toast (без повторів при зміні count) */
@@ -71,6 +84,7 @@ export function buildSmartAlerts(input: BuildSmartAlertsInput): SmartAlert[] {
   const nowSec = Math.floor(Date.now() / 1000);
   const out: SmartAlert[] = [];
   const analyticsMap = input.analyticsByUnitId ?? new Map();
+  const idleSinceMap = input.idleSinceByUnitId ?? new Map();
   const drainFromDb = input.drainEventsByUnitId ?? new Map();
   const dayKey = input.alertDayKey ?? "today";
 
@@ -80,16 +94,17 @@ export function buildSmartAlerts(input: BuildSmartAlertsInput): SmartAlert[] {
     const lat = pos?.y ?? null;
 
     const analytics = analyticsMap.get(unit.id);
-    const speed = Number(pos?.s ?? 0);
-    const ignition = parseTelemetryIgnition(unit);
-    const currentlyIdle =
-      Number.isFinite(speed) &&
-      speed <= IDLE_MAX_SPEED &&
-      (ignition === true || ignition == null);
+    const currentlyIdle = isUnitCurrentlyIdle(unit);
 
-    const idleSec = currentlyIdle
+    const fromTrack = currentlyIdle
       ? currentIdleStreakSec(analytics?.samples ?? [], nowSec)
       : 0;
+    const sinceLive = idleSinceMap.get(unit.id);
+    const fromLive =
+      currentlyIdle && sinceLive != null
+        ? Math.max(0, nowSec - sinceLive)
+        : 0;
+    const idleSec = Math.max(fromTrack, fromLive);
 
     if (currentlyIdle && idleSec >= LONG_IDLE_SEC) {
       const hours = Math.round((idleSec / 3600) * 10) / 10;

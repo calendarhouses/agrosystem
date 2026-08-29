@@ -487,16 +487,30 @@ export function EquipmentFleetGlassPanel({
   const detailView = (
     <div className="flex h-full min-h-0 flex-col">
       <div className="border-b border-white/30 px-3 py-2.5 pr-14">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-11 min-h-11 justify-start gap-1.5 px-2 text-sm font-semibold text-foreground hover:bg-white/60 md:h-8 md:min-h-0"
-          onClick={onBackToList}
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Назад до списку
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-11 min-h-11 flex-1 justify-start gap-1.5 px-2 text-sm font-semibold text-foreground hover:bg-white/60 md:h-8 md:min-h-0"
+            onClick={onBackToList}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Назад до списку
+          </Button>
+          {isMobile ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-11 w-11 shrink-0 rounded-xl text-zinc-500 hover:bg-white/60 hover:text-zinc-800 md:hidden"
+              aria-label="Згорнути картку"
+              onClick={() => onMobileExpandedChange(false)}
+            >
+              <ChevronDown className="h-5 w-5" />
+            </Button>
+          ) : null}
+        </div>
         {selectedUnitName ? (
           <div className="mt-1.5 flex items-center gap-2 px-2">
             <p className="min-w-0 flex-1 truncate text-base font-bold tracking-tight text-zinc-900">
@@ -608,7 +622,7 @@ export function EquipmentFleetGlassPanel({
                   </span>
                   <span className="block truncate text-[11px] font-medium leading-tight text-zinc-500">
                     {showDetail
-                      ? "Свайпніть вгору · деталі та журнал"
+                      ? "Свайп вгору · деталі · ↓ згорнути"
                       : loading
                         ? "Завантаження…"
                         : `${formatCountPlural(units.length, ["одиниця", "одиниці", "одиниць"])} · GPS наживо`}

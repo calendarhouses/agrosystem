@@ -39,6 +39,8 @@ type DayShiftSummaryProps = {
   hoursAtBase: number;
   fuelEvents: FuelDrainEvent[];
   loading?: boolean;
+  /** Підпис дати («сьогодні» / «28 серп.») */
+  dateLabel?: string;
   /** Поточний рівень з live-телеметрії (якщо день ще без семплів) */
   liveFuelLiters?: number | null;
   onFuelEventClick?: (event: FuelDrainEvent) => void;
@@ -51,6 +53,7 @@ export function DayShiftSummary({
   hoursAtBase,
   fuelEvents,
   loading,
+  dateLabel,
   liveFuelLiters,
   onFuelEventClick,
 }: DayShiftSummaryProps) {
@@ -156,7 +159,9 @@ export function DayShiftSummary({
           Зміна за день
         </p>
         <p className="mt-0.5 text-sm font-bold text-zinc-900">
-          Що зробила техніка сьогодні
+          {dateLabel
+            ? `Що зробила техніка · ${dateLabel}`
+            : "Що зробила техніка сьогодні"}
         </p>
       </div>
 
