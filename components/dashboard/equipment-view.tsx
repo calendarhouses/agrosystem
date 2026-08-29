@@ -1186,14 +1186,14 @@ function TrackDatePicker({
         align="end"
         sheetOnMobile={false}
         sideOffset={8}
-        className="z-[220] w-[260px] overflow-hidden rounded-2xl border border-[#E5DFD3] bg-[#F4F1EA] p-0 text-zinc-900 shadow-[0_20px_50px_rgba(28,25,23,0.14)]"
+        className="z-[220] w-[min(100vw-1.5rem,22.5rem)] overflow-hidden rounded-2xl border border-[#E5DFD3] bg-[#F4F1EA] p-0 text-zinc-900 shadow-[0_20px_50px_rgba(28,25,23,0.14)]"
         data-vaul-no-drag=""
       >
-        <div className="flex items-center justify-between gap-2 border-b border-[#E5DFD3]/80 px-2.5 py-2">
+        <div className="flex items-center justify-between gap-2 border-b border-[#E5DFD3]/80 px-3 py-2.5">
           <button
             type="button"
             onClick={() => shiftMonth(-1)}
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-[#E5DFD3]/60 hover:text-zinc-800"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-[#E5DFD3]/60 hover:text-zinc-800"
             aria-label="Попередній місяць"
           >
             <ChevronLeft className="h-4 w-4" />
@@ -1204,14 +1204,14 @@ function TrackDatePicker({
           <button
             type="button"
             onClick={() => shiftMonth(1)}
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-[#E5DFD3]/60 hover:text-zinc-800"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-[#E5DFD3]/60 hover:text-zinc-800"
             aria-label="Наступний місяць"
           >
             <ChevronRight className="h-4 w-4" />
           </button>
         </div>
 
-        <div className="px-1.5 py-1.5">
+        <div className="px-2.5 py-2">
           {showCalendarGrid ? (
             <Calendar
               mode="single"
@@ -1235,19 +1235,19 @@ function TrackDatePicker({
               components={{
                 DayButton: TrackCalendarDayButton,
               }}
-              className="w-full rounded-xl bg-transparent p-0 [--cell-size:1.75rem]"
+              className="w-full rounded-xl bg-transparent p-0 [--cell-size:2.5rem]"
               classNames={{
                 today: "bg-transparent",
                 month: "flex w-full flex-col gap-1",
                 month_caption: "hidden",
                 nav: "hidden",
                 weekdays: "flex",
-                weekday: "flex-1 text-[0.65rem] font-medium text-zinc-400",
+                weekday: "flex-1 text-[0.7rem] font-medium text-zinc-400",
                 week: "mt-0.5 flex w-full",
               }}
             />
           ) : (
-            <div className="flex h-[176px] flex-col items-center justify-center gap-2">
+            <div className="flex h-[220px] flex-col items-center justify-center gap-2">
               <Loader2 className="h-5 w-5 animate-spin text-[#276749]" />
               <p className="text-xs font-medium text-zinc-500">
                 Завантаження днів…
@@ -2302,6 +2302,11 @@ export function EquipmentView() {
                     : null
                 }
                 tankVolume={liveSelectedUnit.fuelTankVolume}
+                capacityLabel={
+                  isFuelDeliveryUnit(liveSelectedUnit.nm)
+                    ? "Цистерна"
+                    : "Бак"
+                }
                 hasFuelSensor={
                   unitHasFuelSensor(liveSelectedUnit) ||
                   dayAnalytics.summary.hasFuelSensor

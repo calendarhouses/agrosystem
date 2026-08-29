@@ -695,8 +695,12 @@ export async function ensureFieldFuelPeriodCoverage(
   }
 
   const backfill = await backfillWialonFieldFuelRange(fromDate, toDate, {
-    maxDays: options?.maxDays ?? (period === "week" ? 7 : 10),
-    budgetMs: options?.budgetMs ?? 45_000,
+    maxDays:
+      options?.maxDays ??
+      (period === "season" ? 18 : period === "week" ? 7 : 12),
+    budgetMs:
+      options?.budgetMs ??
+      (period === "season" ? 55_000 : period === "month" ? 50_000 : 45_000),
     now,
   });
   return { period, ...backfill };
@@ -908,7 +912,12 @@ export function todayKyivDateString(now = new Date()): string {
   return todayKyivYmd(now);
 }
 
-export type FieldFuelPeriod = "today" | "yesterday" | "week" | "month";
+export type FieldFuelPeriod =
+  | "today"
+  | "yesterday"
+  | "week"
+  | "month"
+  | "season";
 
 /**
  * Чи рахувати геозону в KPI «Спалено на полях».
@@ -944,6 +953,15 @@ export function resolveFieldFuelPeriodBounds(
   }
   if (period === "month") {
     return { fromDate: shiftKyivYmd(today, -29), toDate: today };
+  }
+  if (period === "season") {
+    const seasonYear = Number(currentAgroSeason(now));
+    const fromDate = `${seasonYear}-03-01`;
+    // Кінець лютого наступного року
+    const febEndUtc = new Date(Date.UTC(seasonYear + 1, 2, 0));
+    const endCap = `${febEndUtc.getUTCFullYear()}-${String(febEndUtc.getUTCMonth() + 1).padStart(2, "0")}-${String(febEndUtc.getUTCDate()).padStart(2, "0")}`;
+    const toDate = today < endCap ? today : endCap;
+    return { fromDate, toDate };
   }
   return { fromDate: today, toDate: today };
 }

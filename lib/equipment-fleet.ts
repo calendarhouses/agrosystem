@@ -7,14 +7,23 @@
 import type { FeatureCollection, Polygon } from "geojson";
 
 import type { FleetActiveOperation } from "@/lib/equipment-active-ops";
-import { resolveFuelTankVolumeLiters } from "@/lib/equipment-fuel-tanks";
+import {
+  isFuelDeliveryUnit,
+  resolveFuelTankVolumeLiters,
+} from "@/lib/equipment-fuel-tanks";
 import type { WialonGeofenceProperties, WialonUnit } from "@/lib/wialon";
 
-/** БД-обʼєм бака, інакше номінал за назвою моделі. */
+/**
+ * БД-обʼєм бака, інакше номінал за назвою.
+ * Бензовоз: завжди цистерна (~7000 L), навіть якщо в БД лишився бак тягача 200.
+ */
 function resolveUnitTankVolume(
   dbVolume: unknown,
   ...names: Array<string | null | undefined>
 ): number | null {
+  if (isFuelDeliveryUnit(...names)) {
+    return resolveFuelTankVolumeLiters(...names) ?? numOrNull(dbVolume);
+  }
   return numOrNull(dbVolume) ?? resolveFuelTankVolumeLiters(...names);
 }
 

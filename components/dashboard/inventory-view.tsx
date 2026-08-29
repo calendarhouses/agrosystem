@@ -491,7 +491,7 @@ export function InventoryView({ dashboard, error }: Props) {
     localPeriodByRef,
   ]);
 
-  const showingItems = category != null || flowFilter != null;
+  const showingItems = category != null;
 
   function applyPeriod(next: HistoryPeriod) {
     setSeasonOpen(false);
@@ -501,11 +501,44 @@ export function InventoryView({ dashboard, error }: Props) {
 
   function toggleFlowFilter(next: FlowFilter) {
     setFlowFilter((prev) => (prev === next ? null : next));
+    setCategory(null);
     setOpenItemId(null);
     setQuery("");
   }
 
   const categorySummaries = view?.categories ?? [];
+
+  /** Id позицій, що потрапляють у поточний KPI-фільтр (з урахуванням hidden). */
+  const flowItemIdsForFilter = useMemo(() => {
+    if (!flowFilter) return null;
+    const matched = flowMatchedIds[flowFilter];
+    const ids = new Set<string>();
+    for (const item of periodScopedItems) {
+      const id = item.id.toLowerCase();
+      if (!matched.has(id)) continue;
+      const meta =
+        cacheMetaByRef[item.id] ?? cacheMetaByRef[item.id.toLowerCase()];
+      if (meta?.isHidden && !showHidden) continue;
+      if (onlyActive) {
+        const localPeriod = localPeriodByRef[id];
+        const hasPeriod =
+          item.moveCount > 0 ||
+          (localPeriod?.inbound ?? 0) > 0 ||
+          (localPeriod?.outbound ?? 0) > 0;
+        if (!hasPeriod) continue;
+      }
+      ids.add(id);
+    }
+    return ids;
+  }, [
+    flowFilter,
+    flowMatchedIds,
+    periodScopedItems,
+    cacheMetaByRef,
+    showHidden,
+    onlyActive,
+    localPeriodByRef,
+  ]);
 
   /** Локальні ₴ за період → KPI Закупки / Продажі (+ оборот категорій). */
   const localPeriodFinance = useMemo(() => {
@@ -570,7 +603,7 @@ export function InventoryView({ dashboard, error }: Props) {
     cacheMetaByRef,
   ]);
 
-  /** Категорійні лічильники з урахуванням локальних рухів за період */
+  /** Категорійні лічильники з урахуванням локальних рухів за період (+ KPI-фільтр). */
   const categoryCounts = useMemo(() => {
     const counts: Record<
       string,
@@ -582,11 +615,13 @@ export function InventoryView({ dashboard, error }: Props) {
     for (const item of periodScopedItems) {
       const bucket = counts[item.category];
       if (!bucket) continue;
+      const id = item.id.toLowerCase();
+      if (flowItemIdsForFilter && !flowItemIdsForFilter.has(id)) continue;
       const meta =
         cacheMetaByRef[item.id] ?? cacheMetaByRef[item.id.toLowerCase()];
       if (meta?.isHidden && !showHidden) continue;
       bucket.total += 1;
-      const localPeriod = localPeriodByRef[item.id.toLowerCase()];
+      const localPeriod = localPeriodByRef[id];
       const hasPeriod =
         item.moveCount > 0 ||
         (localPeriod?.inbound ?? 0) > 0 ||
@@ -596,8 +631,10 @@ export function InventoryView({ dashboard, error }: Props) {
         bucket.cost += item.cost;
       }
     }
-    for (const cat of CATEGORY_ORDER) {
-      counts[cat].cost += localPeriodFinance.costByCategory[cat] ?? 0;
+    if (!flowFilter) {
+      for (const cat of CATEGORY_ORDER) {
+        counts[cat].cost += localPeriodFinance.costByCategory[cat] ?? 0;
+      }
     }
     return counts;
   }, [
@@ -606,7 +643,18 @@ export function InventoryView({ dashboard, error }: Props) {
     localPeriodByRef,
     showHidden,
     localPeriodFinance,
+    flowItemIdsForFilter,
+    flowFilter,
   ]);
+
+  const visibleCategories = useMemo(() => {
+    if (!flowFilter) return CATEGORY_ORDER;
+    return CATEGORY_ORDER.filter((cat) => {
+      const c = categoryCounts[cat];
+      if (!c) return false;
+      return onlyActive ? c.active > 0 : c.total > 0;
+    });
+  }, [flowFilter, categoryCounts, onlyActive]);
 
   return (
     <main
@@ -648,51 +696,49 @@ export function InventoryView({ dashboard, error }: Props) {
             </div>
           ) : null}
 
-          <div className="flex w-full shrink-0 flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+          <div className="flex w-full shrink-0 items-center gap-1.5 sm:w-auto sm:justify-end">
             <button
               type="button"
               onClick={() => setInboundOpen(true)}
-              className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-sky-200/90 bg-sky-50 px-3.5 text-sm font-bold text-sky-950 shadow-sm transition hover:bg-sky-100 sm:flex-none sm:px-4"
+              className="inline-flex h-11 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl border border-sky-200/90 bg-sky-50 px-2.5 text-sm font-bold text-sky-950 shadow-sm transition hover:bg-sky-100 sm:flex-none sm:px-4"
             >
-              <PackagePlus className="h-4 w-4" />
-              Прихід
+              <PackagePlus className="h-4 w-4 shrink-0" />
+              <span className="truncate">Прихід</span>
             </button>
             <button
               type="button"
               onClick={() => setQuickIssueOpen(true)}
-              className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-zinc-900 px-3.5 text-sm font-bold text-white shadow-sm shadow-zinc-900/25 transition hover:bg-zinc-800 sm:flex-none sm:px-4"
+              className="inline-flex h-11 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl bg-zinc-900 px-2.5 text-sm font-bold text-white shadow-sm shadow-zinc-900/25 transition hover:bg-zinc-800 sm:flex-none sm:px-4"
             >
-              <PackageMinus className="h-4 w-4" />
-              Списати
+              <PackageMinus className="h-4 w-4 shrink-0" />
+              <span className="truncate">Списати</span>
             </button>
             <button
               type="button"
               onClick={() => setSaleOpen(true)}
-              className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-amber-200/90 bg-amber-50 px-3.5 text-sm font-bold text-amber-950 shadow-sm transition hover:bg-amber-100 sm:flex-none sm:px-4"
+              className="inline-flex h-11 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl border border-amber-200/90 bg-amber-50 px-2.5 text-sm font-bold text-amber-950 shadow-sm transition hover:bg-amber-100 sm:flex-none sm:px-4"
             >
-              <ShoppingCart className="h-4 w-4" />
-              Продаж
+              <ShoppingCart className="h-4 w-4 shrink-0" />
+              <span className="truncate">Продаж</span>
             </button>
-            <div className="flex w-full items-center gap-1.5 sm:ml-1 sm:w-auto">
-              <button
-                type="button"
-                onClick={() => setHistoryOpen(true)}
-                className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border border-[#E5DFD3]/90 bg-white/90 px-3 text-sm font-semibold text-zinc-600 shadow-sm transition hover:bg-[#F4F1EA] hover:text-zinc-900 sm:flex-none sm:px-3.5"
-                title="Історія"
-              >
-                <History className="h-4 w-4" />
-                Історія
-              </button>
-              <button
-                type="button"
-                onClick={() => setExportOpen(true)}
-                className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border border-[#E5DFD3]/90 bg-white/90 px-3 text-sm font-semibold text-zinc-600 shadow-sm transition hover:bg-[#F4F1EA] hover:text-zinc-900 sm:flex-none sm:px-3.5"
-                title="Експорт"
-              >
-                <Download className="h-4 w-4" />
-                Експорт
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setHistoryOpen(true)}
+              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#E5DFD3]/90 bg-white/90 text-zinc-600 shadow-sm transition hover:bg-[#F4F1EA] hover:text-zinc-900"
+              title="Історія"
+              aria-label="Історія"
+            >
+              <History className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setExportOpen(true)}
+              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#E5DFD3]/90 bg-white/90 text-zinc-600 shadow-sm transition hover:bg-[#F4F1EA] hover:text-zinc-900"
+              title="Експорт"
+              aria-label="Експорт"
+            >
+              <Download className="h-4 w-4" />
+            </button>
           </div>
         </div>
 
@@ -763,8 +809,8 @@ export function InventoryView({ dashboard, error }: Props) {
 
         {view ? (
           <>
-            <div className="mb-5 space-y-3">
-              <div className="flex flex-wrap items-center gap-2">
+            <div className="mb-5 space-y-2.5">
+              <div className="flex items-center gap-2">
                 <Popover
                   open={seasonOpen}
                   onOpenChange={(next) => {
@@ -777,7 +823,7 @@ export function InventoryView({ dashboard, error }: Props) {
                 >
                   <PopoverTrigger
                     className={cn(
-                      "inline-flex h-11 shrink-0 items-center gap-2 rounded-xl border px-2.5 text-left text-sm font-semibold transition-all md:h-9 md:text-xs",
+                      "inline-flex h-11 min-w-0 flex-1 items-center gap-2 rounded-xl border px-2.5 text-left text-sm font-semibold transition-all md:h-9 md:flex-none md:text-xs",
                       period === "Сезон"
                         ? "border-[#276749] bg-[#276749] text-white shadow-[0_6px_16px_-6px_rgba(39,103,73,0.55)]"
                         : "border-[#E0DBD0] bg-white text-zinc-700 hover:border-[#276749]/35"
@@ -786,7 +832,7 @@ export function InventoryView({ dashboard, error }: Props) {
                   >
                     <span
                       className={cn(
-                        "inline-flex h-6 w-6 items-center justify-center rounded-lg",
+                        "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg",
                         period === "Сезон"
                           ? "bg-white/15 text-white"
                           : "bg-[#276749]/12 text-[#276749]"
@@ -794,10 +840,12 @@ export function InventoryView({ dashboard, error }: Props) {
                     >
                       <Sprout className="h-3.5 w-3.5" />
                     </span>
-                    <span className="tabular-nums">Сезон {seasonYear}</span>
+                    <span className="truncate tabular-nums">
+                      Сезон {seasonYear}
+                    </span>
                     <ChevronDown
                       className={cn(
-                        "h-3.5 w-3.5",
+                        "ml-auto h-3.5 w-3.5 shrink-0",
                         period === "Сезон" ? "text-white/80" : "text-zinc-400"
                       )}
                     />
@@ -806,7 +854,7 @@ export function InventoryView({ dashboard, error }: Props) {
                     align="start"
                     sideOffset={6}
                     sheetOnMobile={false}
-                    className="w-[min(100vw-3rem,20rem)] rounded-2xl border border-zinc-200 bg-white p-2 shadow-xl"
+                    className="w-[min(100vw-2rem,22rem)] rounded-2xl border border-zinc-200 bg-white p-2 shadow-xl"
                   >
                     <p className="px-2.5 pt-1.5 pb-2 text-[11px] leading-snug text-zinc-500">
                       Фільтр обороту ТМЦ за агросезоном (березень–лютий).
@@ -847,24 +895,6 @@ export function InventoryView({ dashboard, error }: Props) {
                   </PopoverContent>
                 </Popover>
 
-                <div className="inline-flex w-fit max-w-full flex-wrap items-center gap-0.5 rounded-xl bg-[#EDE8DF] p-0.5">
-                  {PERIOD_OPTIONS.map((option) => (
-                    <button
-                      key={option}
-                      type="button"
-                      onClick={() => applyPeriod(option)}
-                      className={cn(
-                        "h-11 rounded-[10px] px-2.5 text-xs font-semibold transition-all sm:px-3 md:h-8",
-                        period === option
-                          ? "bg-[#276749] text-white shadow-[0_4px_12px_-4px_rgba(39,103,73,0.55)]"
-                          : "text-zinc-500 hover:bg-white/70 hover:text-zinc-800"
-                      )}
-                    >
-                      {option}
-                    </button>
-                  ))}
-                </div>
-
                 <Popover
                   open={rangeOpen}
                   onOpenChange={(next) => {
@@ -877,7 +907,7 @@ export function InventoryView({ dashboard, error }: Props) {
                 >
                   <PopoverTrigger
                     className={cn(
-                      "inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl border px-2.5 text-sm font-semibold transition-all md:h-9 md:text-xs",
+                      "inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl border px-3 text-sm font-semibold transition-all md:h-9 md:text-xs",
                       period === "custom"
                         ? "border-[#276749] bg-[#276749] text-white shadow-[0_6px_16px_-6px_rgba(39,103,73,0.55)]"
                         : "border-[#E0DBD0] bg-white text-zinc-700 hover:border-[#276749]/35"
@@ -898,10 +928,10 @@ export function InventoryView({ dashboard, error }: Props) {
                       : "Діапазон"}
                   </PopoverTrigger>
                   <PopoverContent
-                    align="start"
+                    align="end"
                     sideOffset={6}
                     sheetOnMobile={false}
-                    className="w-auto rounded-2xl border border-zinc-200 bg-white p-3 shadow-xl"
+                    className="w-[min(100vw-1.5rem,22.5rem)] rounded-2xl border border-zinc-200 bg-white p-3 shadow-xl"
                   >
                     <p className="mb-2 px-1 text-[11px] text-zinc-500">
                       {customRange?.from && customRange?.to
@@ -931,7 +961,7 @@ export function InventoryView({ dashboard, error }: Props) {
                         setCustomRange(range);
                       }}
                       locale={uk}
-                      className="rounded-xl"
+                      className="w-full rounded-xl [--cell-size:2.5rem]"
                     />
                     <div className="mt-3 flex items-center gap-2 border-t border-zinc-100 pt-3">
                       <button
@@ -966,6 +996,24 @@ export function InventoryView({ dashboard, error }: Props) {
                     </div>
                   </PopoverContent>
                 </Popover>
+              </div>
+
+              <div className="flex w-full items-center gap-0.5 rounded-xl bg-[#EDE8DF] p-0.5">
+                {PERIOD_OPTIONS.map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => applyPeriod(option)}
+                    className={cn(
+                      "h-11 min-w-0 flex-1 rounded-[10px] px-1 text-[11px] font-semibold transition-all sm:px-2 sm:text-xs md:h-8",
+                      period === option
+                        ? "bg-[#276749] text-white shadow-[0_4px_12px_-4px_rgba(39,103,73,0.55)]"
+                        : "text-zinc-500 hover:bg-white/70 hover:text-zinc-800"
+                    )}
+                  >
+                    {option}
+                  </button>
+                ))}
               </div>
 
               <div className="grid grid-cols-3 gap-2 sm:gap-3">
@@ -1045,104 +1093,131 @@ export function InventoryView({ dashboard, error }: Props) {
             </div>
 
             {!showingItems ? (
-              <section className="grid grid-cols-2 gap-2 sm:grid-cols-2 sm:gap-3 xl:grid-cols-3">
-                {CATEGORY_ORDER.map((cat) => {
-                  const card =
-                    categorySummaries.find((c) => c.category === cat) ??
-                    view.categories.find((c) => c.category === cat);
-                  const counts = categoryCounts[cat] ?? {
-                    active: 0,
-                    total: 0,
-                    cost: 0,
-                  };
-                  const meta = INVENTORY_CATEGORY_META[cat];
-                  const style = CATEGORY_CARD_STYLE[cat];
-                  const Icon = CATEGORY_ICONS[cat];
-                  const count = onlyActive ? counts.active : counts.total;
-                  const periodCost = counts.cost || (card?.totalCost ?? 0);
-                  return (
+              <div className="space-y-3">
+                {flowFilter ? (
+                  <div className="flex flex-wrap items-center gap-2">
                     <button
-                      key={cat}
                       type="button"
                       onClick={() => {
-                        setCategory(cat);
+                        setFlowFilter(null);
                         setOpenItemId(null);
                         setQuery("");
                       }}
-                      className={cn(
-                        "group relative overflow-hidden rounded-2xl border text-left shadow-[0_8px_30px_rgb(39,33,24,0.05)] transition-all",
-                        "p-3 sm:min-h-[168px] sm:rounded-3xl sm:p-6",
-                        "hover:-translate-y-0.5 hover:shadow-[0_12px_32px_rgb(39,33,24,0.08)]",
-                        style.card
-                      )}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-full border border-zinc-200/90 bg-white px-3 text-xs font-semibold text-zinc-600 shadow-sm transition hover:text-zinc-900"
                     >
-                      <div className="flex items-start justify-between gap-2 sm:gap-3">
-                        <div
-                          className={cn(
-                            "flex items-center justify-center rounded-xl shadow-md sm:rounded-2xl",
-                            "h-9 w-9 sm:h-12 sm:w-12",
-                            style.icon
-                          )}
-                        >
-                          <Icon
-                            className="h-4 w-4 sm:h-5 sm:w-5"
-                            strokeWidth={1.9}
-                          />
-                        </div>
-                        <span
-                          className={cn(
-                            "rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums sm:px-2.5 sm:py-1 sm:text-[11px]",
-                            style.chip
-                          )}
-                        >
-                          {count}
-                          <span className="hidden sm:inline"> поз.</span>
-                        </span>
-                      </div>
-                      <p className="mt-2.5 text-[13px] font-extrabold tracking-tight text-zinc-900 sm:mt-5 sm:text-xl">
-                        {meta.label}
-                      </p>
-                      <p className="mt-0.5 hidden text-sm text-zinc-500 sm:mt-1 sm:block">
-                        {meta.description}
-                      </p>
-                      <div className="mt-2 flex items-end justify-between gap-2 sm:mt-4">
-                        <div className="min-w-0">
-                          <p className="hidden text-[10px] font-semibold tracking-wider text-zinc-400 uppercase sm:block">
-                            Оборот за період
-                          </p>
-                          <p className="truncate text-sm font-bold tabular-nums text-zinc-900 sm:mt-0.5 sm:text-base">
-                            {formatCompactUah(periodCost)}
-                          </p>
-                        </div>
-                        <span className="hidden items-center gap-1 text-xs font-semibold text-zinc-400 transition group-hover:text-zinc-700 sm:inline-flex">
-                          Відкрити
-                          <ChevronDown className="h-3.5 w-3.5 -rotate-90" />
-                        </span>
-                      </div>
+                      <ChevronLeft className="h-3.5 w-3.5" />
+                      До огляду
                     </button>
-                  );
-                })}
-              </section>
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-[#276749]/25 bg-[#276749]/10 px-3 py-1.5 text-xs font-semibold text-[#1f5339]">
+                      {FLOW_FILTER_LABEL[flowFilter]}
+                    </span>
+                    <span className="text-xs text-zinc-400">
+                      {visibleCategories.length} категор.
+                      {flowItemIdsForFilter
+                        ? ` · ${flowItemIdsForFilter.size} поз.`
+                        : ""}
+                    </span>
+                  </div>
+                ) : null}
+                {visibleCategories.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-zinc-200 bg-white/60 px-6 py-12 text-center text-sm text-zinc-500">
+                    Немає категорій з такими рухами за період.
+                  </div>
+                ) : (
+                  <section className="grid grid-cols-2 gap-2 sm:grid-cols-2 sm:gap-3 xl:grid-cols-3">
+                    {visibleCategories.map((cat) => {
+                      const card =
+                        categorySummaries.find((c) => c.category === cat) ??
+                        view.categories.find((c) => c.category === cat);
+                      const counts = categoryCounts[cat] ?? {
+                        active: 0,
+                        total: 0,
+                        cost: 0,
+                      };
+                      const meta = INVENTORY_CATEGORY_META[cat];
+                      const style = CATEGORY_CARD_STYLE[cat];
+                      const Icon = CATEGORY_ICONS[cat];
+                      const count = onlyActive ? counts.active : counts.total;
+                      const periodCost = counts.cost || (card?.totalCost ?? 0);
+                      return (
+                        <button
+                          key={cat}
+                          type="button"
+                          onClick={() => {
+                            setCategory(cat);
+                            setOpenItemId(null);
+                            setQuery("");
+                          }}
+                          className={cn(
+                            "group relative overflow-hidden rounded-2xl border text-left shadow-[0_8px_30px_rgb(39,33,24,0.05)] transition-all",
+                            "p-3 sm:min-h-[168px] sm:rounded-3xl sm:p-6",
+                            "hover:-translate-y-0.5 hover:shadow-[0_12px_32px_rgb(39,33,24,0.08)]",
+                            style.card
+                          )}
+                        >
+                          <div className="flex items-start justify-between gap-2 sm:gap-3">
+                            <div
+                              className={cn(
+                                "flex items-center justify-center rounded-xl shadow-md sm:rounded-2xl",
+                                "h-9 w-9 sm:h-12 sm:w-12",
+                                style.icon
+                              )}
+                            >
+                              <Icon
+                                className="h-4 w-4 sm:h-5 sm:w-5"
+                                strokeWidth={1.9}
+                              />
+                            </div>
+                            <span
+                              className={cn(
+                                "rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums sm:px-2.5 sm:py-1 sm:text-[11px]",
+                                style.chip
+                              )}
+                            >
+                              {count}
+                              <span className="hidden sm:inline"> поз.</span>
+                            </span>
+                          </div>
+                          <p className="mt-2.5 text-[13px] font-extrabold tracking-tight text-zinc-900 sm:mt-5 sm:text-xl">
+                            {meta.label}
+                          </p>
+                          <p className="mt-0.5 hidden text-sm text-zinc-500 sm:mt-1 sm:block">
+                            {meta.description}
+                          </p>
+                          <div className="mt-2 flex items-end justify-between gap-2 sm:mt-4">
+                            <div className="min-w-0">
+                              <p className="hidden text-[10px] font-semibold tracking-wider text-zinc-400 uppercase sm:block">
+                                Оборот за період
+                              </p>
+                              <p className="truncate text-sm font-bold tabular-nums text-zinc-900 sm:mt-0.5 sm:text-base">
+                                {formatCompactUah(periodCost)}
+                              </p>
+                            </div>
+                            <span className="hidden items-center gap-1 text-xs font-semibold text-zinc-400 transition group-hover:text-zinc-700 sm:inline-flex">
+                              Відкрити
+                              <ChevronDown className="h-3.5 w-3.5 -rotate-90" />
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </section>
+                )}
+              </div>
             ) : (
               <div className="space-y-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
                     onClick={() => {
-                      if (category) {
-                        setCategory(null);
-                        setOpenItemId(null);
-                        setQuery("");
-                        return;
-                      }
-                      setFlowFilter(null);
+                      setCategory(null);
                       setOpenItemId(null);
                       setQuery("");
                     }}
                     className="inline-flex h-9 items-center gap-1.5 rounded-full border border-zinc-200/90 bg-white px-3 text-xs font-semibold text-zinc-600 shadow-sm transition hover:text-zinc-900"
                   >
                     <ChevronLeft className="h-3.5 w-3.5" />
-                    {category ? "Усі категорії" : "До огляду"}
+                    {flowFilter ? "До категорій" : "Усі категорії"}
                   </button>
                   {category ? (
                     <div
@@ -1161,7 +1236,12 @@ export function InventoryView({ dashboard, error }: Props) {
                   {flowFilter ? (
                     <button
                       type="button"
-                      onClick={() => setFlowFilter(null)}
+                      onClick={() => {
+                        setFlowFilter(null);
+                        setCategory(null);
+                        setOpenItemId(null);
+                        setQuery("");
+                      }}
                       className="inline-flex items-center gap-1.5 rounded-full border border-[#276749]/25 bg-[#276749]/10 px-3 py-1.5 text-xs font-semibold text-[#1f5339]"
                     >
                       {FLOW_FILTER_LABEL[flowFilter]}
@@ -1172,10 +1252,6 @@ export function InventoryView({ dashboard, error }: Props) {
                     <span className="text-xs text-zinc-400">
                       {categoryCounts[category]?.active ?? 0} за період ·{" "}
                       {categoryCounts[category]?.total ?? 0} у списку
-                    </span>
-                  ) : flowFilter ? (
-                    <span className="text-xs text-zinc-400">
-                      {items.length} поз. · {FLOW_FILTER_LABEL[flowFilter]}
                     </span>
                   ) : null}
                 </div>
@@ -1388,7 +1464,7 @@ function NomenclatureGrid({
   return (
     <>
       <TooltipProvider delay={120}>
-      <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+      <section className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3 xl:grid-cols-3">
         {items.map((item) => {
           const id = item.id.toLowerCase();
           return (
@@ -1492,21 +1568,21 @@ function HarvestMetricTile({
 }) {
   const parts = splitQtyParts(qty, unit);
   return (
-    <div className="min-w-0 rounded-xl border border-zinc-200/80 bg-zinc-50/80 px-3 py-2.5">
-      <p className="text-[10px] font-medium tracking-wider text-zinc-400 uppercase">
+    <div className="min-w-0 rounded-lg border border-zinc-200/80 bg-zinc-50/80 px-2 py-1.5">
+      <p className="text-[9px] font-medium tracking-wider text-zinc-400 uppercase">
         {label}
       </p>
       <p
-        className="mt-1 truncate text-xl font-bold tracking-tight tabular-nums text-zinc-900"
+        className="mt-0.5 truncate text-sm font-bold tracking-tight tabular-nums text-zinc-900"
         title={`${parts.value}${parts.unit ? ` ${parts.unit}` : ""}`}
       >
         {parts.value}
+        {parts.unit ? (
+          <span className="ml-1 text-[10px] font-medium text-zinc-400">
+            {parts.unit}
+          </span>
+        ) : null}
       </p>
-      {parts.unit ? (
-        <p className="mt-0.5 text-[11px] font-medium text-zinc-400">
-          {parts.unit}
-        </p>
-      ) : null}
     </div>
   );
 }
@@ -1632,18 +1708,18 @@ function InventoryItemCard({
   return (
     <div
       className={cn(
-        "group relative overflow-hidden rounded-3xl border border-[#E5DFD3]/90 bg-[#F4F1EA]/95 p-5 shadow-[0_8px_30px_rgb(39,33,24,0.05)]",
+        "group relative overflow-hidden rounded-2xl border border-[#E5DFD3]/90 bg-[#F4F1EA]/95 p-3 shadow-[0_8px_30px_rgb(39,33,24,0.05)]",
         "transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_12px_32px_rgb(39,33,24,0.08)]",
         selected && "border-emerald-300/80 ring-1 ring-emerald-500/20",
         isHidden && "opacity-50"
       )}
     >
       <div
-        className="absolute inset-x-0 top-0 h-1"
+        className="absolute inset-x-0 top-0 h-0.5"
         style={{ backgroundColor: meta.accent }}
       />
 
-      <div className="absolute top-3 right-3 z-10 flex items-center gap-0.5">
+      <div className="absolute top-2 right-2 z-10 flex items-center gap-0.5">
         {!editing ? (
           <Tooltip>
             <TooltipTrigger
@@ -1653,7 +1729,7 @@ function InventoryItemCard({
                 onIssueToField();
               }}
               className={cn(
-                "inline-flex h-8 w-8 items-center justify-center rounded-full",
+                "inline-flex h-7 w-7 items-center justify-center rounded-full",
                 isHarvest
                   ? "bg-amber-50 text-amber-800 hover:bg-amber-100"
                   : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
@@ -1662,7 +1738,7 @@ function InventoryItemCard({
               )}
               aria-label={isHarvest ? "Продаж" : "Списати"}
             >
-              <Plus className="h-4 w-4" strokeWidth={2} />
+              <Plus className="h-3.5 w-3.5" strokeWidth={2} />
             </TooltipTrigger>
             <TooltipContent side="top">
               {isHarvest ? "Продаж" : item.category === "parts" ? "Списати зі складу" : "Списати на поле"}
@@ -1672,13 +1748,13 @@ function InventoryItemCard({
         <DropdownMenu>
           <DropdownMenuTrigger
             className={cn(
-              "inline-flex h-8 w-8 items-center justify-center rounded-full text-zinc-400",
+              "inline-flex h-7 w-7 items-center justify-center rounded-full text-zinc-400",
               "outline-none transition hover:bg-zinc-100 hover:text-zinc-700",
               "focus-visible:ring-2 focus-visible:ring-zinc-900/10"
             )}
             onClick={(e) => e.stopPropagation()}
           >
-            <MoreHorizontal className="h-4 w-4" />
+            <MoreHorizontal className="h-3.5 w-3.5" />
             <span className="sr-only">Дії</span>
           </DropdownMenuTrigger>
           <DropdownMenuContent
@@ -1736,13 +1812,13 @@ function InventoryItemCard({
         <div className="space-y-3 pr-2">
           <div className="flex items-center gap-2">
             <div
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl"
               style={{
                 backgroundColor: `${meta.accent}18`,
                 color: meta.accent,
               }}
             >
-              <Icon className="h-4 w-4" strokeWidth={1.8} />
+              <Icon className="h-3.5 w-3.5" strokeWidth={1.8} />
             </div>
             <p className="text-sm font-semibold text-zinc-900">Редагування</p>
           </div>
@@ -1809,28 +1885,28 @@ function InventoryItemCard({
         <button
           type="button"
           onClick={onOpen}
-          className="w-full pr-14 text-left outline-none"
+          className="w-full pr-12 text-left outline-none"
         >
-          <div className="flex items-start gap-3">
+          <div className="flex items-start gap-2.5">
             <div
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl"
               style={{
                 backgroundColor: `${meta.accent}18`,
                 color: meta.accent,
               }}
             >
-              <Icon className="h-4 w-4" strokeWidth={1.8} />
+              <Icon className="h-3.5 w-3.5" strokeWidth={1.8} />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="line-clamp-2 text-base font-bold leading-snug text-zinc-900">
+              <p className="line-clamp-2 text-[13px] font-extrabold leading-snug tracking-tight text-zinc-900">
                 {displayName}
                 {isLocalSku ? (
-                  <span className="ml-1.5 align-middle text-[10px] font-bold tracking-wide text-sky-700 uppercase">
+                  <span className="ml-1.5 align-middle text-[9px] font-bold tracking-wide text-sky-700 uppercase">
                     нова
                   </span>
                 ) : null}
               </p>
-              <p className="mt-0.5 truncate text-[11px] text-zinc-400">
+              <p className="mt-0.5 truncate text-[10px] text-zinc-400">
                 {item.code ? (
                   <span className="font-mono">{item.code}</span>
                 ) : null}
@@ -1842,7 +1918,7 @@ function InventoryItemCard({
           </div>
 
           {isHarvest ? (
-            <div className="mt-4 grid grid-cols-2 gap-2">
+            <div className="mt-2.5 grid grid-cols-2 gap-1.5">
               <HarvestMetricTile
                 label="Випуск"
                 qty={qtyInPeriod}
@@ -1855,31 +1931,37 @@ function InventoryItemCard({
               />
             </div>
           ) : useVirtual ? (
-            <>
-              <p
-                className={cn(
-                  "mt-5 text-3xl font-bold tracking-tight tabular-nums",
-                  virtualBalance < 0 ? "text-rose-600" : "text-zinc-900"
-                )}
-              >
-                {formatQtyInclZero(virtualBalance, item.unit)}
-              </p>
-              <p className="mt-1 text-[10px] font-medium tracking-wide text-zinc-400 uppercase">
-                За період
-              </p>
-              <p
-                className={cn(
-                  "mt-2 text-sm font-semibold tabular-nums",
-                  warehouseBalance < 0 ? "text-rose-600" : "text-zinc-700"
-                )}
-              >
-                {formatQtyInclZero(warehouseBalance, item.unit)}
-                <span className="ml-1.5 text-[10px] font-medium tracking-wide text-zinc-400 uppercase">
-                  На складі
-                </span>
-              </p>
-              <div className="mt-3 flex items-center gap-2">
-                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-100">
+            <div className="mt-2.5 space-y-1.5">
+              <div className="flex items-end justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-[9px] font-medium tracking-wide text-zinc-400 uppercase">
+                    За період
+                  </p>
+                  <p
+                    className={cn(
+                      "truncate text-base font-bold tracking-tight tabular-nums",
+                      virtualBalance < 0 ? "text-rose-600" : "text-zinc-900"
+                    )}
+                  >
+                    {formatQtyInclZero(virtualBalance, item.unit)}
+                  </p>
+                </div>
+                <div className="min-w-0 text-right">
+                  <p className="text-[9px] font-medium tracking-wide text-zinc-400 uppercase">
+                    На складі
+                  </p>
+                  <p
+                    className={cn(
+                      "truncate text-xs font-semibold tabular-nums",
+                      warehouseBalance < 0 ? "text-rose-600" : "text-zinc-700"
+                    )}
+                  >
+                    {formatQtyInclZero(warehouseBalance, item.unit)}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="h-1 flex-1 overflow-hidden rounded-full bg-zinc-100">
                   <div
                     className={cn(
                       "h-full rounded-full transition-all",
@@ -1897,9 +1979,9 @@ function InventoryItemCard({
                   {stockBase > 0 ? `${Math.round(remainingPct)}%` : "—"}
                 </span>
               </div>
-            </>
+            </div>
           ) : (
-            <p className="mt-5 text-3xl font-bold tracking-tight tabular-nums text-zinc-900">
+            <p className="mt-2.5 text-base font-bold tracking-tight tabular-nums text-zinc-900">
               {formatQtyInclZero(qtyInPeriod || qtyOutPeriod, item.unit)}
             </p>
           )}

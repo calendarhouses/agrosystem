@@ -35,7 +35,8 @@ function normalizePeriod(period: FieldFuelPeriod): FieldFuelPeriod {
   if (
     period === "yesterday" ||
     period === "week" ||
-    period === "month"
+    period === "month" ||
+    period === "season"
   ) {
     return period;
   }
@@ -60,6 +61,8 @@ export async function getFieldFuelConsumed(
     daysExpected: number;
     /** true = ще тягнемо історію з Wialon */
     coverageIncomplete: boolean;
+    /** 0–100 за покриттям днів */
+    progressPct: number;
     breakdown: FieldFuelBreakdownRow[];
   }>
 > {
@@ -69,8 +72,20 @@ export async function getFieldFuelConsumed(
 
     try {
       const coverage = await ensureFieldFuelPeriodCoverage(safe, {
-        maxDays: safe === "month" ? 12 : safe === "week" ? 7 : 1,
-        budgetMs: safe === "today" || safe === "yesterday" ? 20_000 : 50_000,
+        maxDays:
+          safe === "season"
+            ? 18
+            : safe === "month"
+              ? 12
+              : safe === "week"
+                ? 7
+                : 1,
+        budgetMs:
+          safe === "today" || safe === "yesterday"
+            ? 20_000
+            : safe === "season"
+              ? 55_000
+              : 50_000,
       });
       liveSynced = coverage.daysSyncedNow > 0 || !coverage.truncated;
     } catch (syncErr) {
@@ -96,6 +111,10 @@ export async function getFieldFuelConsumed(
           86_400_000
       ) + 1;
     const daysCovered = Math.max(0, daysExpected - stillMissing.length);
+    const progressPct =
+      daysExpected <= 0
+        ? 100
+        : Math.min(100, Math.round((daysCovered / daysExpected) * 100));
 
     return {
       ok: true,
@@ -113,6 +132,7 @@ export async function getFieldFuelConsumed(
         daysCovered,
         daysExpected,
         coverageIncomplete: stillMissing.length > 0,
+        progressPct,
         breakdown: breakdown.rows,
       },
     };

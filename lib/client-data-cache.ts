@@ -8,15 +8,23 @@ export const APP_DATA_TTL_MS = 2.5 * 60 * 1000; // ~2.5 хв
 type CacheRecord = {
   data: unknown;
   fetchedAt: number;
+  /** Абсолютний expiry (напр. кінець дня Києва для сезону) */
+  expiresAt?: number;
 };
 
 const store = new Map<string, CacheRecord>();
 const inflight = new Map<string, Promise<unknown>>();
 
+function isCacheFresh(hit: CacheRecord, ttlMs: number): boolean {
+  const now = Date.now();
+  if (hit.expiresAt != null) return now < hit.expiresAt;
+  return now - hit.fetchedAt < ttlMs;
+}
+
 export function peekAppCache<T>(key: string, ttlMs = APP_DATA_TTL_MS): T | null {
   const hit = store.get(key);
   if (!hit) return null;
-  if (Date.now() - hit.fetchedAt >= ttlMs) return null;
+  if (!isCacheFresh(hit, ttlMs)) return null;
   return hit.data as T;
 }
 
@@ -25,8 +33,16 @@ export function peekAppCacheStale<T>(key: string): T | null {
   return hit ? (hit.data as T) : null;
 }
 
-export function writeAppCache(key: string, data: unknown): void {
-  store.set(key, { data, fetchedAt: Date.now() });
+export function writeAppCache(
+  key: string,
+  data: unknown,
+  options?: { expiresAt?: number }
+): void {
+  store.set(key, {
+    data,
+    fetchedAt: Date.now(),
+    expiresAt: options?.expiresAt,
+  });
 }
 
 export function invalidateAppCache(prefix?: string): void {
@@ -46,6 +62,8 @@ export function invalidateAppCache(prefix?: string): void {
 type CachedFetchOptions = {
   signal?: AbortSignal;
   ttlMs?: number;
+  /** Абсолютний expiry замість relative ttl (сезон до кінця дня) */
+  expiresAt?: number;
   force?: boolean;
 };
 
@@ -85,7 +103,7 @@ export async function cachedFetchJson<T>(
       const err = data as { error?: string };
       throw new Error(err?.error || `HTTP ${response.status}`);
     }
-    writeAppCache(key, data);
+    writeAppCache(key, data, { expiresAt: options?.expiresAt });
     return data;
   })();
 
@@ -104,7 +122,7 @@ export async function cachedFetchJson<T>(
 export async function cachedCall<T>(
   key: string,
   fn: () => Promise<T>,
-  options?: { ttlMs?: number; force?: boolean }
+  options?: { ttlMs?: number; expiresAt?: number; force?: boolean }
 ): Promise<{ data: T; fromCache: boolean }> {
   const ttlMs = options?.ttlMs ?? APP_DATA_TTL_MS;
   const force = options?.force === true;
@@ -121,7 +139,7 @@ export async function cachedCall<T>(
 
   const request = (async () => {
     const data = await fn();
-    writeAppCache(key, data);
+    writeAppCache(key, data, { expiresAt: options?.expiresAt });
     return data;
   })();
 

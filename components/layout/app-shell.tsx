@@ -29,6 +29,30 @@ export function AppShell({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  /** PWA: target=_blank на mapbox.com часто замінює весь застосунок сайтом Mapbox */
+  useEffect(() => {
+    function blockMapboxNavigation(event: MouseEvent) {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const anchor = target.closest("a[href]");
+      if (!(anchor instanceof HTMLAnchorElement)) return;
+      const href = anchor.href;
+      if (!href) return;
+      try {
+        const host = new URL(href).hostname;
+        if (host === "mapbox.com" || host.endsWith(".mapbox.com")) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      } catch {
+        /* ignore invalid href */
+      }
+    }
+    document.addEventListener("click", blockMapboxNavigation, true);
+    return () =>
+      document.removeEventListener("click", blockMapboxNavigation, true);
+  }, []);
+
   const toggleCollapsed = useCallback(() => {
     setCollapsed((prev) => {
       const next = !prev;

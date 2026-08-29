@@ -108,7 +108,8 @@ export const fuelPrimaryBtnClass = cn(
 );
 
 /**
- * Моб: Vaul Drawer як у Полях/Техніці + темне затемнення.
+ * Моб: Vaul Drawer як у Полях/Техніці — свайп + handle, non-modal
+ * (інакше body pointer-events:none ламає Select/Popover у порталі).
  * ПК: права Sheet без змін.
  */
 export function FuelPanelShell({
@@ -128,22 +129,26 @@ export function FuelPanelShell({
 
   if (isMobile) {
     return (
-      <Drawer open={open} onOpenChange={onOpenChange} handleOnly>
+      <Drawer
+        open={open}
+        onOpenChange={onOpenChange}
+        dismissible
+        modal={false}
+        shouldScaleBackground={false}
+        noBodyStyles
+      >
         <DrawerContent
           className={cn(
             FUEL_MOBILE_DRAWER_SIZE,
             "flex flex-col overflow-hidden border-[#E5DFD3]/90 bg-[#F4F1EA] pb-0",
             className
           )}
-          overlayClassName="pointer-events-auto! bg-black/55"
-          showCloseButton={false}
+          overlayClassName="pointer-events-none bg-black/45"
+          showCloseButton
         >
           <DrawerHandle />
           <DrawerTitle className="sr-only">{title}</DrawerTitle>
-          <div
-            className="flex min-h-0 flex-1 flex-col overflow-hidden"
-            data-vaul-no-drag=""
-          >
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             {children}
           </div>
         </DrawerContent>

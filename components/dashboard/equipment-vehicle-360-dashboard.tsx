@@ -123,6 +123,7 @@ export function FuelSparkline({
   liveLiters,
   tankVolume,
   hasFuelSensor: hasFuelSensorProp,
+  capacityLabel = "Бак",
 }: {
   analytics: DayAnalyticsPayload;
   fuelEvents: FuelDrainEvent[];
@@ -133,6 +134,8 @@ export function FuelSparkline({
   tankVolume?: number | null;
   /** false = немає ДУТ — не показувати 0 л / «критично» */
   hasFuelSensor?: boolean;
+  /** Підпис номіналу: «Бак» або «Цистерна» для бензовоза */
+  capacityLabel?: string;
 }) {
   void _fuelEvents;
 
@@ -241,7 +244,9 @@ export function FuelSparkline({
 
           {tank != null ? (
             <div className="shrink-0 text-right">
-              <p className="text-[10px] font-medium text-zinc-400">Бак</p>
+              <p className="text-[10px] font-medium text-zinc-400">
+                {capacityLabel}
+              </p>
               <p className="text-sm font-semibold tabular-nums text-zinc-600">
                 {Math.round(tank).toLocaleString("uk-UA")} л
               </p>

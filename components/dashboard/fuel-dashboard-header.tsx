@@ -53,12 +53,14 @@ const FIELD_FUEL_PERIODS: Array<{ id: FieldFuelPeriod; label: string }> = [
   { id: "yesterday", label: "Вчора" },
   { id: "week", label: "7 днів" },
   { id: "month", label: "Місяць" },
+  { id: "season", label: "Сезон" },
 ];
 
 function fieldFuelPeriodCaption(period: FieldFuelPeriod): string {
   if (period === "yesterday") return "вчора";
   if (period === "week") return "за 7 днів";
   if (period === "month") return "за місяць";
+  if (period === "season") return "за сезон";
   return "сьогодні";
 }
 
@@ -73,6 +75,10 @@ type FuelDashboardHeaderProps = {
   storages: FuelStorage[];
   totalLiters: number;
   totalValue: number;
+  /** Залишок складів за обраний період (null → live totalLiters) */
+  periodStorageLiters?: number | null;
+  periodStorageValue?: number | null;
+  periodStorageLive?: boolean;
   live: boolean;
   fieldFuelLiters: number | null;
   /** Спалено всією технікою: поля + дорога + база */
@@ -85,6 +91,7 @@ type FuelDashboardHeaderProps = {
     daysCovered: number;
     daysExpected: number;
     incomplete: boolean;
+    progressPct?: number;
   } | null;
   refuelLiters: number | null;
   refuelHasData: boolean;
@@ -262,10 +269,17 @@ function KpiValue({
         >
           {value}
         </button>
-        <Drawer open={mobileOpen} onOpenChange={setMobileOpen} handleOnly>
+        <Drawer
+          open={mobileOpen}
+          onOpenChange={setMobileOpen}
+          dismissible
+          modal={false}
+          shouldScaleBackground={false}
+          noBodyStyles
+        >
           <DrawerContent
             className="flex max-h-[min(70dvh,calc(100dvh-var(--app-bottom-inset)-1rem))] flex-col border-[#E5DFD3]/90 bg-[#F4F1EA] pb-0"
-            overlayClassName="pointer-events-auto! bg-black/50"
+            overlayClassName="pointer-events-none bg-black/45"
             showCloseButton={false}
           >
             <DrawerHandle />
@@ -331,6 +345,9 @@ export function FuelDashboardHeader({
   storages,
   totalLiters,
   totalValue,
+  periodStorageLiters = null,
+  periodStorageValue = null,
+  periodStorageLive = true,
   live,
   fieldFuelLiters,
   fieldFuelTotalLiters,
@@ -352,6 +369,13 @@ export function FuelDashboardHeader({
   const periodLabel =
     FIELD_FUEL_PERIODS.find((p) => p.id === fieldFuelPeriod)?.label ??
     "Сьогодні";
+
+  const displayStorageLiters =
+    periodStorageLiters != null ? periodStorageLiters : totalLiters;
+  const displayStorageValue =
+    periodStorageValue != null ? periodStorageValue : totalValue;
+  const storageIsLive =
+    periodStorageLive && (fieldFuelPeriod === "today" || live);
 
   // Показуємо всю витрату флоту: інакше «Спалено» непорівнянне із «Заправлено»,
   // бо заправляють і те паливо, що йде на переїзди та роботу на базі.
@@ -388,6 +412,23 @@ export function FuelDashboardHeader({
     liters: row.liters,
   }));
 
+  const progressPct =
+    fieldFuelCoverage?.progressPct ??
+    (fieldFuelCoverage && fieldFuelCoverage.daysExpected > 0
+      ? Math.min(
+          100,
+          Math.round(
+            (fieldFuelCoverage.daysCovered / fieldFuelCoverage.daysExpected) *
+              100
+          )
+        )
+      : null);
+
+  const showProgress =
+    fieldFuelLoading ||
+    refuelLoading ||
+    Boolean(fieldFuelCoverage?.incomplete);
+
   const coverageHint =
     fieldFuelCoverage &&
     fieldFuelCoverage.daysExpected > 1 &&
@@ -396,6 +437,39 @@ export function FuelDashboardHeader({
       : null;
 
   const isMobile = useIsMobile();
+
+  const progressBar =
+    showProgress ? (
+      <div className="space-y-1.5 px-1">
+        <div className="flex items-center justify-between gap-2 text-[11px] font-semibold text-zinc-500">
+          <span>
+            {fieldFuelLoading || refuelLoading
+              ? "Завантаження KPI…"
+              : "Підтягуємо історію з GPS…"}
+          </span>
+          <span className="tabular-nums text-zinc-700">
+            {progressPct != null ? `${progressPct}%` : "…"}
+          </span>
+        </div>
+        <div className="h-1.5 overflow-hidden rounded-full bg-[#E5DFD3]/90">
+          <div
+            className={cn(
+              "h-full rounded-full bg-[#276749] transition-[width] duration-500",
+              progressPct == null && "animate-pulse"
+            )}
+            style={{
+              width:
+                progressPct != null
+                  ? `${Math.max(4, progressPct)}%`
+                  : "28%",
+            }}
+          />
+        </div>
+        {coverageHint ? (
+          <p className="text-[10px] font-medium text-amber-700">{coverageHint}</p>
+        ) : null}
+      </div>
+    ) : null;
 
   const kpiStrip = (
       <div
@@ -417,12 +491,16 @@ export function FuelDashboardHeader({
                 <Warehouse className="h-3.5 w-3.5 text-emerald-600" strokeWidth={2} />
                 Усього на складах
               </p>
-              {live ? (
+              {storageIsLive ? (
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold tracking-wide text-emerald-700 ring-1 ring-emerald-600/15">
                   <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
                   LIVE
                 </span>
-              ) : null}
+              ) : (
+                <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-bold tracking-wide text-zinc-500 ring-1 ring-zinc-200/80">
+                  {periodLabel}
+                </span>
+              )}
             </div>
 
             {storages.length === 0 ? (
@@ -430,17 +508,26 @@ export function FuelDashboardHeader({
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 Немає складів
               </p>
+            ) : fieldFuelLoading && periodStorageLiters == null && fieldFuelPeriod !== "today" ? (
+              <div className="flex h-10 items-center">
+                <Loader2 className="h-5 w-5 animate-spin text-zinc-400" />
+              </div>
             ) : (
               <div>
                 <p className="flex items-baseline gap-1.5">
                   <span className="text-[1.75rem] font-bold tracking-tight tabular-nums leading-none text-zinc-950 sm:text-[2rem]">
-                    {formatLiters(totalLiters)}
+                    {formatLiters(displayStorageLiters)}
                   </span>
                   <span className="text-sm font-semibold text-zinc-400">л</span>
                 </p>
                 <p className="mt-1.5 text-[13px] font-medium tabular-nums text-zinc-500 sm:mt-2">
-                  ≈ {formatMoney(totalValue)}{" "}
+                  ≈ {formatMoney(displayStorageValue)}{" "}
                   <span className="text-zinc-400">₴</span>
+                  {!storageIsLive ? (
+                    <span className="ml-1.5 text-[11px] text-zinc-400">
+                      · на кінець періоду
+                    </span>
+                  ) : null}
                 </p>
               </div>
             )}
@@ -470,9 +557,6 @@ export function FuelDashboardHeader({
                     · на полях {formatLiters(fieldFuelLiters)} л
                   </span>
                 ) : null}
-                {coverageHint ? (
-                  <span className="ml-1.5 text-amber-700">· {coverageHint}</span>
-                ) : null}
               </p>
             </div>
           </div>
@@ -500,6 +584,12 @@ export function FuelDashboardHeader({
             </div>
           </div>
         </div>
+
+        {progressBar ? (
+          <div className="border-t border-[#E5DFD3]/80 px-4 py-3 sm:px-6">
+            {progressBar}
+          </div>
+        ) : null}
       </div>
   );
 
@@ -524,7 +614,7 @@ export function FuelDashboardHeader({
                 aria-selected={active}
                 onClick={() => onFieldFuelPeriodChange(option.id)}
                 className={cn(
-                  "min-h-9 flex-1 rounded-xl px-2 text-[12px] font-bold transition-all",
+                  "min-h-9 flex-1 rounded-xl px-1 text-[11px] font-bold transition-all sm:px-2 sm:text-[12px]",
                   active
                     ? "bg-[#276749] text-white shadow-sm shadow-emerald-900/20"
                     : "text-zinc-500 hover:text-zinc-800"

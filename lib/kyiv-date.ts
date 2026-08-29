@@ -123,3 +123,14 @@ export function kyivDayBoundsUnix(dateYmd: string): {
     toUnix: Math.floor(nextMs / 1000) - 1,
   };
 }
+
+/** Мілісекунди до кінця сьогоднішнього дня в Києві (мін. 1 хв). */
+export function msUntilEndOfKyivDay(now = new Date()): number {
+  const tomorrow = shiftKyivYmd(todayKyivYmd(now), 1);
+  const { fromUnix } = kyivDayBoundsUnix(tomorrow);
+  return Math.max(60_000, fromUnix * 1000 - now.getTime());
+}
+
+export function endOfKyivDayMs(now = new Date()): number {
+  return now.getTime() + msUntilEndOfKyivDay(now);
+}

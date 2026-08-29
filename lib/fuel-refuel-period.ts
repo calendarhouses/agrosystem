@@ -148,7 +148,24 @@ export async function sumOutboundRefueledForPeriod(
 
   let wialonEvents: Awaited<ReturnType<typeof getWialonRefuelings>> = [];
   try {
-    wialonEvents = await getWialonRefuelings(fromUnix, toUnix);
+    const spanSec = toUnix - fromUnix;
+    const CHUNK = 30 * 86_400;
+    if (spanSec > CHUNK) {
+      for (let t = fromUnix; t <= toUnix; t += CHUNK + 1) {
+        const end = Math.min(t + CHUNK, toUnix);
+        try {
+          const chunk = await getWialonRefuelings(t, end);
+          wialonEvents.push(...chunk);
+        } catch (chunkErr) {
+          console.error(
+            "[fuel-refuel-period] Wialon chunk",
+            chunkErr instanceof Error ? chunkErr.message : chunkErr
+          );
+        }
+      }
+    } else {
+      wialonEvents = await getWialonRefuelings(fromUnix, toUnix);
+    }
   } catch (err) {
     console.error(
       "[fuel-refuel-period] Wialon fillings",

@@ -4,7 +4,7 @@ import type { ReactNode, TouchEvent as ReactTouchEvent } from "react";
 import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, ChevronDown, Radar, Route, Tractor } from "lucide-react";
+import { ArrowLeft, Radar, Route, Tractor, X } from "lucide-react";
 
 import {
   FleetDaySummaryBar,
@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import {
   Drawer,
   DrawerContent,
+  DrawerHandle,
   DrawerTitle,
 } from "@/components/ui/drawer";
 import type { FleetNonTrackedItem, FleetTrackedUnit } from "@/lib/equipment-fleet";
@@ -485,7 +486,7 @@ export function EquipmentFleetGlassPanel({
 
   const detailView = (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="border-b border-white/30 px-3 py-2.5">
+      <div className="border-b border-white/30 px-3 py-2.5 pr-14">
         <div className="flex items-center gap-2">
           <Button
             type="button"
@@ -641,28 +642,26 @@ export function EquipmentFleetGlassPanel({
                 "flex flex-col border-[#E5DFD3]/90 bg-[#F4F1EA] pb-3"
               )}
             >
+              <DrawerHandle />
               <DrawerTitle className="sr-only">
                 {showDetail
                   ? selectedUnitName || "Картка техніки"
-                  : "Список флоту"}
+                  : "Диспетчерська"}
               </DrawerTitle>
-              {/* Без handle/X — свайп по шторці; Трекер справа в detail */}
-              {!showDetail ? (
+              <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
                 <button
                   type="button"
+                  aria-label="Закрити"
                   onClick={() => onMobileExpandedChange(false)}
-                  className="flex w-full shrink-0 items-center justify-between border-b border-[#E5DFD3]/80 px-4 py-2.5 text-left"
+                  className={cn(
+                    "absolute top-0.5 right-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full",
+                    "bg-white/80 text-zinc-500 shadow-sm ring-1 ring-zinc-200/80",
+                    "transition-colors hover:bg-white hover:text-zinc-800",
+                    "touch-manipulation"
+                  )}
                 >
-                  <span className="flex items-center gap-2">
-                    <Radar className="h-4 w-4 text-emerald-700" />
-                    <span className="text-sm font-bold text-zinc-900">
-                      Флот ({units.length})
-                    </span>
-                  </span>
-                  <ChevronDown className="h-4 w-4 text-zinc-500" />
+                  <X className="h-4 w-4" />
                 </button>
-              ) : null}
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 {renderPanelBody()}
               </div>
             </DrawerContent>

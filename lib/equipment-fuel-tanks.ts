@@ -100,12 +100,12 @@ const TANK_SPECS: Array<{ re: RegExp; spec: FuelTankSpec }> = [
     re: /навантажувач|telehandler|jcb|manitou/i,
     spec: { liters: 140, note: "Телескопічний навантажувач ~140 L" },
   },
-  // Fuel truck — vehicle tank, not cistern
+  // Fuel truck — цистерна (~7000 L), не бак тягача
   {
     re: /бензовоз/i,
     spec: {
-      liters: 200,
-      note: "Бензовоз — бак тягача ~200 L (цистерна окремо)",
+      liters: 7000,
+      note: "Бензовоз — цистерна ~7000 L (не бак тягача)",
     },
   },
 ];

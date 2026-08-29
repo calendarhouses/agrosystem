@@ -39,7 +39,9 @@ import { FuelStorageDialog } from "@/components/dashboard/fuel-storage-dialog";
 import {
   cachedFetchJson,
   peekAppCache,
+  writeAppCache,
 } from "@/lib/client-data-cache";
+import { endOfKyivDayMs } from "@/lib/kyiv-date";
 import { mergeEquipmentOpsOptions } from "@/lib/equipment-ops-options";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -95,6 +97,7 @@ type FuelKpisBurned = {
     daysCovered: number;
     daysExpected: number;
     coverageIncomplete: boolean;
+    progressPct?: number;
     breakdown: FieldFuelBreakdownRow[];
   };
 } | { ok: false; error: string };
@@ -113,11 +116,19 @@ type FuelKpisRefueled = {
   };
 } | { ok: false; error: string };
 
+type FuelKpisStorages = {
+  liters: number;
+  valueUah: number;
+  live: boolean;
+  asOf: string;
+};
+
 type FuelKpisResponse = {
   ok?: boolean;
   period?: FieldFuelPeriod;
   burned?: FuelKpisBurned | null;
   refueled?: FuelKpisRefueled | null;
+  storages?: FuelKpisStorages | null;
   error?: string;
 };
 
@@ -127,6 +138,21 @@ function fuelKpisCacheKey(period: FieldFuelPeriod) {
 
 function fuelKpisUrl(period: FieldFuelPeriod) {
   return `/api/fuel/kpis?period=${period}`;
+}
+
+function shouldDayCacheFuelKpis(
+  period: FieldFuelPeriod,
+  payload: FuelKpisResponse
+): boolean {
+  const incomplete =
+    payload.burned?.ok === true && payload.burned.data.coverageIncomplete;
+  if (incomplete) return false;
+  return (
+    period === "season" ||
+    period === "month" ||
+    period === "week" ||
+    period === "yesterday"
+  );
 }
 
 /** Діапазон дат для фільтра журналу (ISO через .toISOString()). */
@@ -712,14 +738,34 @@ export function FuelView({
     daysCovered: number;
     daysExpected: number;
     incomplete: boolean;
+    progressPct: number;
   } | null>(
     seedBurned
       ? {
           daysCovered: seedBurned.daysCovered,
           daysExpected: seedBurned.daysExpected,
           incomplete: seedBurned.coverageIncomplete,
+          progressPct:
+            seedBurned.progressPct ??
+            (seedBurned.daysExpected > 0
+              ? Math.min(
+                  100,
+                  Math.round(
+                    (seedBurned.daysCovered / seedBurned.daysExpected) * 100
+                  )
+                )
+              : 100),
         }
       : null
+  );
+  const [periodStorageLiters, setPeriodStorageLiters] = useState<number | null>(
+    seedKpis?.storages?.liters ?? null
+  );
+  const [periodStorageValue, setPeriodStorageValue] = useState<number | null>(
+    seedKpis?.storages?.valueUah ?? null
+  );
+  const [periodStorageLive, setPeriodStorageLive] = useState(
+    seedKpis?.storages?.live ?? true
   );
   const [refuelLiters, setRefuelLiters] = useState<number | null>(
     seedRefueled?.liters ?? null
@@ -1084,16 +1130,27 @@ export function FuelView({
         setFieldFuelTotal(burned.data.totalLiters);
         setFieldFuelHasData(burned.data.hasData);
         setFieldFuelBreakdown(burned.data.breakdown);
+        const progressPct =
+          burned.data.progressPct ??
+          (burned.data.daysExpected > 0
+            ? Math.min(
+                100,
+                Math.round(
+                  (burned.data.daysCovered / burned.data.daysExpected) * 100
+                )
+              )
+            : 100);
         setFieldFuelCoverage({
           daysCovered: burned.data.daysCovered,
           daysExpected: burned.data.daysExpected,
           incomplete: burned.data.coverageIncomplete,
+          progressPct,
         });
         if (burned.data.coverageIncomplete) {
           if (retryTimer) clearTimeout(retryTimer);
           retryTimer = setTimeout(() => {
             setKpiRefreshToken((n) => n + 1);
-          }, 2500);
+          }, 2800);
         }
       } else {
         setFieldFuelToday(null);
@@ -1111,6 +1168,15 @@ export function FuelView({
         setRefuelHasData(false);
         setRefuelBreakdown([]);
       }
+      if (payload.storages) {
+        setPeriodStorageLiters(payload.storages.liters);
+        setPeriodStorageValue(payload.storages.valueUah);
+        setPeriodStorageLive(payload.storages.live);
+      } else if (fieldFuelPeriod === "today") {
+        setPeriodStorageLiters(null);
+        setPeriodStorageValue(null);
+        setPeriodStorageLive(true);
+      }
     };
 
     if (seeded?.burned?.ok || seeded?.refueled?.ok) {
@@ -1120,6 +1186,16 @@ export function FuelView({
     } else {
       setFieldFuelLoading(true);
       setRefuelLoading(true);
+      setFieldFuelCoverage((prev) =>
+        prev?.incomplete
+          ? prev
+          : {
+              daysCovered: 0,
+              daysExpected: fieldFuelPeriod === "today" ? 1 : 0,
+              incomplete: true,
+              progressPct: 0,
+            }
+      );
     }
 
     const force = kpiRefreshToken > 0;
@@ -1133,6 +1209,9 @@ export function FuelView({
       .then(({ data }) => {
         if (cancelled) return;
         applyPayload(data);
+        if (shouldDayCacheFuelKpis(fieldFuelPeriod, data)) {
+          writeAppCache(cacheKey, data, { expiresAt: endOfKyivDayMs() });
+        }
       })
       .catch(() => {
         /* seed уже на екрані */
@@ -1269,6 +1348,9 @@ export function FuelView({
         storages={storages}
         totalLiters={totalLiters}
         totalValue={totalValue}
+        periodStorageLiters={periodStorageLiters}
+        periodStorageValue={periodStorageValue}
+        periodStorageLive={periodStorageLive}
         live={live}
         fieldFuelLiters={fieldFuelToday}
         fieldFuelTotalLiters={fieldFuelTotal}
@@ -1568,7 +1650,8 @@ export function FuelView({
               </PopoverTrigger>
               <PopoverContent
                 align="start"
-                className="w-auto rounded-2xl border border-zinc-200 bg-white p-2 shadow-xl"
+                sheetOnMobile={false}
+                className="w-[min(100vw-1.5rem,42rem)] rounded-2xl border border-zinc-200 bg-white p-3 shadow-xl"
               >
                 <Calendar
                   mode="range"
@@ -1580,7 +1663,7 @@ export function FuelView({
                     if (range?.from && range?.to) setRangeOpen(false);
                   }}
                   locale={uk}
-                  className="rounded-xl"
+                  className="rounded-xl [--cell-size:2.25rem]"
                 />
               </PopoverContent>
             </Popover>

@@ -105,6 +105,7 @@ function SelectContent({
       data-vaul-no-drag=""
       className={cn(
         "relative isolate w-(--anchor-width) min-w-36 origin-(--transform-origin) overflow-x-hidden rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-100 data-[align-trigger=true]:animate-none data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+        "pointer-events-auto",
         useSheet
           ? "max-h-(--available-height) overflow-y-auto"
           : "max-h-[min(var(--available-height,60dvh),24rem)] overflow-hidden",
@@ -179,7 +180,7 @@ function SelectContent({
         alignOffset={alignOffset}
         alignItemWithTrigger={alignWithTrigger}
         collisionPadding={12}
-        className="isolate z-[220]"
+        className="pointer-events-auto isolate z-[220]"
       >
         {popup}
       </SelectPrimitive.Positioner>

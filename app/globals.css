@@ -208,6 +208,16 @@ html[data-app-nav="1"] {
   display: none !important;
 }
 
+/*
+ * Mapbox LogoControl = <a href="https://www.mapbox.com/" target="_blank">.
+ * У PWA standalone (iOS/Android) target=_blank часто відкриває сайт
+ * у тому ж webview — «вилітає» mapbox.com замість застосунку.
+ * Логотип лишаємо видимим (ToS), але без кліку.
+ */
+.mapboxgl-ctrl-logo {
+  pointer-events: none !important;
+}
+
 /* Ховаємо порожні нативні контролі Mapbox Draw */
 .mapboxgl-ctrl-top-right .mapboxgl-ctrl-group:empty,
 .mapbox-gl-draw_controls {
