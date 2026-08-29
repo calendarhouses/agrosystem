@@ -11,7 +11,7 @@ type CommandCenterMapBootOverlayProps = {
   visible: boolean;
   icon: LucideIcon;
   title?: string;
-  subtitle: string;
+  subtitle?: string;
 };
 
 /**
@@ -55,7 +55,9 @@ export function CommandCenterMapBootOverlay({
           <Icon className="h-7 w-7 animate-pulse text-emerald-400" />
         </div>
         <p className="mt-3 text-sm font-semibold text-zinc-200">{title}</p>
-        <p className="mt-1 text-xs text-zinc-500">{subtitle}</p>
+        {subtitle ? (
+          <p className="mt-1 text-xs text-zinc-500">{subtitle}</p>
+        ) : null}
       </div>
     </div>
   );

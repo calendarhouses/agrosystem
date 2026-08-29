@@ -195,7 +195,9 @@ export function FleetDaySummaryBar({
             <PopoverContent
               align="end"
               sheetOnMobile={false}
-              className="w-auto overflow-hidden rounded-xl border border-border bg-popover p-0 shadow-xl"
+              sideOffset={8}
+              className="z-[220] w-auto overflow-hidden rounded-xl border border-border bg-popover p-0 shadow-xl"
+              data-vaul-no-drag=""
             >
               <div className="border-b border-border/60 px-3 py-2 text-xs font-medium text-muted-foreground">
                 {format(date, "d MMMM yyyy", { locale: uk })}

@@ -11,12 +11,7 @@ export const metadata: Metadata = {
 export default function EquipmentPage() {
   return (
     <Suspense
-      fallback={
-        <CommandCenterPageBootFallback
-          variant="equipment"
-          subtitle="Центруємо на вашому господарстві…"
-        />
-      }
+      fallback={<CommandCenterPageBootFallback variant="equipment" />}
     >
       <EquipmentView />
     </Suspense>

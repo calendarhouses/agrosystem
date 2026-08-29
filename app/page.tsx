@@ -11,11 +11,7 @@ export const metadata: Metadata = {
 /** Головний розділ — карта полів */
 export default function HomePage() {
   return (
-    <Suspense
-      fallback={
-        <CommandCenterPageBootFallback subtitle="Синхронізуємо геозони господарства…" />
-      }
-    >
+    <Suspense fallback={<CommandCenterPageBootFallback />}>
       <FieldsView />
     </Suspense>
   );

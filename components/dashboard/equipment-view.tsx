@@ -1178,7 +1178,9 @@ function TrackDatePicker({
       <PopoverContent
         align="end"
         sheetOnMobile={false}
-        className="w-[260px] overflow-hidden rounded-2xl border border-[#E5DFD3] bg-[#F4F1EA] p-0 text-zinc-900 shadow-[0_20px_50px_rgba(28,25,23,0.14)]"
+        sideOffset={8}
+        className="z-[220] w-[260px] overflow-hidden rounded-2xl border border-[#E5DFD3] bg-[#F4F1EA] p-0 text-zinc-900 shadow-[0_20px_50px_rgba(28,25,23,0.14)]"
+        data-vaul-no-drag=""
       >
         <div className="flex items-center justify-between gap-2 border-b border-[#E5DFD3]/80 px-2.5 py-2">
           <button
@@ -1843,10 +1845,45 @@ export function EquipmentView() {
 
   const openUnitFromList = (unit: FleetTrackedUnit) => {
     setSelectedSessionId(null);
-    setTrackDate(new Date());
+    setTrackDate(fleetSummaryDate);
     setSelectedUnit(unit);
     setMobileFleetExpanded(true);
     commandMapRef.current?.flyToUnit(unit.id, { pitch: 45, zoom: 16 });
+  };
+
+  const showUnitTrackerOnMap = () => {
+    setMobileFleetExpanded(false);
+    playback.setIsPlaying(false);
+    playback.setProgress(0);
+    const coords = trackGeoJSON?.geometry?.coordinates;
+    if (coords && coords.length >= 2) {
+      let minLng = coords[0]![0]!;
+      let minLat = coords[0]![1]!;
+      let maxLng = minLng;
+      let maxLat = minLat;
+      for (const c of coords) {
+        const lng = c[0]!;
+        const lat = c[1]!;
+        if (lng < minLng) minLng = lng;
+        if (lat < minLat) minLat = lat;
+        if (lng > maxLng) maxLng = lng;
+        if (lat > maxLat) maxLat = lat;
+      }
+      commandMapRef.current?.fitBounds(
+        expandBounds(
+          [
+            [minLng, minLat],
+            [maxLng, maxLat],
+          ],
+          0.002
+        ),
+        { padding: mapFitPadding, maxZoom: 16, pitch: 40 }
+      );
+      return;
+    }
+    if (selectedUnitId != null) {
+      commandMapRef.current?.flyToUnit(selectedUnitId, { pitch: 45, zoom: 15 });
+    }
   };
 
   const backToFleetList = () => {
@@ -2093,6 +2130,7 @@ export function EquipmentView() {
           selectedUnitId == null ? listHoveredUnitId : null
         }
         onBackToList={backToFleetList}
+        onShowTracker={showUnitTrackerOnMap}
         onSummaryDateChange={(next) => {
           setFleetSummaryDate(next);
           setTrackDate(next);
@@ -2190,7 +2228,10 @@ export function EquipmentView() {
                   <TrackDatePicker
                     date={trackDate}
                     unitId={liveSelectedUnit.id}
-                    onChange={setTrackDate}
+                    onChange={(next) => {
+                      setTrackDate(next);
+                      setFleetSummaryDate(next);
+                    }}
                   />
                   {/* Мобільний: експорти в меню; ПК — як було */}
                   <DropdownMenu>
@@ -2200,7 +2241,12 @@ export function EquipmentView() {
                     >
                       <MoreHorizontal className="h-4 w-4" />
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="min-w-44">
+                    <DropdownMenuContent
+                      align="end"
+                      sideOffset={8}
+                      className="z-[220] min-w-44"
+                      data-vaul-no-drag=""
+                    >
                       <DropdownMenuItem
                         className="gap-2"
                         disabled={trackLoading || locationSessions.length === 0}

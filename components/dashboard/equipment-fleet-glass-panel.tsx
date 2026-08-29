@@ -4,7 +4,7 @@ import type { ReactNode, TouchEvent as ReactTouchEvent } from "react";
 import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, ChevronDown, Radar, Tractor } from "lucide-react";
+import { ArrowLeft, ChevronDown, Radar, Route, Tractor } from "lucide-react";
 
 import {
   FleetDaySummaryBar,
@@ -259,6 +259,8 @@ type Props = {
   onUnitHover?: (unitId: number | null) => void;
   listHoveredUnitId?: number | null;
   onBackToList: () => void;
+  /** Моб: згорнути шторку і показати трек на карті */
+  onShowTracker?: () => void;
   onSummaryDateChange: (d: Date) => void;
   onSummaryMetricSelect: (m: FleetSummaryMetric | null) => void;
   onSummaryRefresh?: () => void;
@@ -269,7 +271,7 @@ type Props = {
 export function EquipmentFleetGlassPanel({
   units,
   nonTracked,
-  towedEquipment,
+  towedEquipment: _towedEquipment,
   fieldByUnitId,
   sortedUnitIds,
   unitAlertKinds,
@@ -291,6 +293,7 @@ export function EquipmentFleetGlassPanel({
   onUnitHover,
   listHoveredUnitId = null,
   onBackToList,
+  onShowTracker,
   onSummaryDateChange,
   onSummaryMetricSelect,
   onSummaryRefresh,
@@ -356,7 +359,7 @@ export function EquipmentFleetGlassPanel({
       </div>
 
       {(fleetSummary || fleetSummaryLoading) && (
-        <div className="border-b border-white/25 px-3 py-2">
+        <div className="border-b border-white/25 px-3 py-2" data-vaul-no-drag="">
           <FleetDaySummaryBar
             date={fleetSummaryDate}
             onDateChange={onSummaryDateChange}
@@ -372,7 +375,7 @@ export function EquipmentFleetGlassPanel({
       )}
 
       {!showDetail && !loading ? (
-        <div className="border-b border-white/20 px-3 py-2">
+        <div className="border-b border-white/20 px-3 py-2" data-vaul-no-drag="">
           <FleetAlertStrip
             alerts={fleetAlerts}
             activeKind={alertFilter}
@@ -383,7 +386,7 @@ export function EquipmentFleetGlassPanel({
         </div>
       ) : null}
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain" data-vaul-no-drag="" data-allow-pan="true">
         <div className="space-y-2 px-3 py-3">
             {loading
             ? Array.from({ length: 6 }).map((_, i) => (
@@ -436,7 +439,7 @@ export function EquipmentFleetGlassPanel({
         </div>
 
         {nonTracked.length > 0 ? (
-          <div className="px-3 pb-2">
+          <div className="px-3 pb-3">
             <div className="px-1 pt-1 pb-2">
               <h3 className="text-xs font-semibold text-muted-foreground">
                 Без трекера ({nonTracked.length})
@@ -477,50 +480,6 @@ export function EquipmentFleetGlassPanel({
             </div>
           </div>
         ) : null}
-
-        {towedEquipment.length > 0 ? (
-          <div className="px-3 pb-3">
-            <div className="px-1 pt-1 pb-2">
-              <h3 className="text-xs font-semibold text-muted-foreground">
-                Причіпне та знаряддя ({towedEquipment.length})
-              </h3>
-            </div>
-            <div className="space-y-2">
-              {towedEquipment.map((item) => (
-                <div
-                  key={`${item.source ?? "implement"}:${item.equipmentId}`}
-                  className={cn(
-                    "rounded-xl border bg-white/55 px-3 py-2.5 backdrop-blur-md",
-                    item.activeOp
-                      ? "border-emerald-300/70 ring-1 ring-emerald-200/50"
-                      : "border-white/40"
-                  )}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/60 bg-white/80 text-emerald-700">
-                      <Tractor className="h-4 w-4" strokeWidth={1.5} />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-zinc-900">
-                        {item.name}
-                      </p>
-                      <p className="truncate text-[11px] text-zinc-500">
-                        {item.code ? `${item.code} · ` : ""}
-                        {item.source === "implement" ? "Знаряддя" : "Причіп"}
-                      </p>
-                    </div>
-                  </div>
-                  {item.activeOp ? (
-                    <p className="mt-2 text-[11px] font-medium text-emerald-800">
-                      В роботі з {item.activeOp.machinery || "технікою"} ·{" "}
-                      {item.activeOp.fieldName}
-                    </p>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
       </div>
     </div>
   );
@@ -553,12 +512,29 @@ export function EquipmentFleetGlassPanel({
           ) : null}
         </div>
         {selectedUnitName ? (
-          <p className="mt-1 truncate px-2 text-base font-bold tracking-tight text-zinc-900">
-            {selectedUnitName}
-          </p>
+          <div className="mt-1.5 flex items-center gap-2 px-2">
+            <p className="min-w-0 flex-1 truncate text-base font-bold tracking-tight text-zinc-900">
+              {selectedUnitName}
+            </p>
+            {isMobile && onShowTracker ? (
+              <Button
+                type="button"
+                size="sm"
+                className="h-9 shrink-0 gap-1.5 rounded-xl bg-emerald-600 px-3 text-xs font-bold text-white shadow-sm shadow-emerald-700/25 hover:bg-emerald-700"
+                onClick={onShowTracker}
+              >
+                <Route className="h-3.5 w-3.5" />
+                Трекер
+              </Button>
+            ) : null}
+          </div>
         ) : null}
       </div>
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-3 py-3">
+      <div
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-3 py-3"
+        data-vaul-no-drag=""
+        data-allow-pan="true"
+      >
         {detailContent}
       </div>
     </div>
@@ -669,14 +645,17 @@ export function EquipmentFleetGlassPanel({
               onMobileExpandedChange(false);
             }}
             dismissible
+            handleOnly
             modal={false}
             shouldScaleBackground={false}
             noBodyStyles
           >
             <DrawerContent
+              showCloseButton={false}
+              overlayClassName="!bg-transparent !opacity-0 !pointer-events-none"
               className={cn(
                 EQUIPMENT_MOBILE_DRAWER_SIZE,
-                "flex flex-col border-white/40 bg-[#F4F1EA]/95 pb-3 backdrop-blur-2xl"
+                "flex flex-col rounded-b-none border-x-0 border-t border-b-0 border-white/40 bg-[#F4F1EA] pb-0 shadow-none"
               )}
             >
               <DrawerTitle className="sr-only">

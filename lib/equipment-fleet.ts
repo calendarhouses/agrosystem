@@ -74,6 +74,21 @@ export function isTowedEquipmentType(type: string): boolean {
   return TOWED_EQUIPMENT_TYPES.has(type.toLowerCase());
 }
 
+/** Назви причіпного / баків / знаряддя (коли type = other у Wialon) */
+const IMPLEMENT_NAME_RE =
+  /бак\s*для|бак\s*внесен|причіпн|\bпричіп\b|сівалк|плуг\b|борон|культиват|розкид|жатка|\bкотк|знарядд|навісн|глибокорозпуш|дисков|trailer|implement|сеялк|культиватор|диск\.?\s*борон|оприскувачн\s*бак/i;
+
+export function isImplementLikeName(name: string): boolean {
+  return IMPLEMENT_NAME_RE.test(name.trim());
+}
+
+/** Що показуємо у флоті моніторингу: трактори, комбайни тощо — без знаряддя */
+export function isFleetMonitorUnit(type: string, name: string): boolean {
+  if (isTowedEquipmentType(type)) return false;
+  if (isImplementLikeName(name)) return false;
+  return true;
+}
+
 /** Самохідна машина з довідника equipment (не сівалка/плуг тощо) */
 export function isSelfPropelledEquipmentType(type: string): boolean {
   const normalized = type.toLowerCase();
@@ -173,7 +188,8 @@ export function wialonFirstFleet(
         equipmentCode: eq?.code ?? null,
         activeOp: null,
       };
-    });
+    })
+    .filter((unit) => isFleetMonitorUnit(unit.equipmentType, unit.nm));
 
   tracked.sort((a, b) => a.nm.localeCompare(b.nm, "uk"));
 
@@ -193,7 +209,10 @@ export function wialonFirstFleet(
       activeOp: null,
     };
 
-    if (isSelfPropelledEquipmentType(row.type)) {
+    if (
+      isSelfPropelledEquipmentType(row.type) &&
+      isFleetMonitorUnit(row.type, row.name)
+    ) {
       nonTracked.push(item);
     } else {
       towedEquipment.push(item);
@@ -241,11 +260,26 @@ export function mergeEquipmentFleet(
         fuelTankVolume: tank,
         source: "equipment",
       };
-      if (isSelfPropelledEquipmentType(row.type)) {
+      if (
+        isSelfPropelledEquipmentType(row.type) &&
+        isFleetMonitorUnit(row.type, row.name)
+      ) {
         nonTracked.push(item);
       } else {
         towedEquipment.push(item);
       }
+      continue;
+    }
+
+    if (!isFleetMonitorUnit(row.type, row.name)) {
+      towedEquipment.push({
+        equipmentId: row.id,
+        name: row.name,
+        type: row.type,
+        code: row.code,
+        fuelTankVolume: tank,
+        source: "equipment",
+      });
       continue;
     }
 

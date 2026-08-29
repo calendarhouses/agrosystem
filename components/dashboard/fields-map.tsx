@@ -2283,7 +2283,6 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         <CommandCenterMapBootOverlay
           visible={showBootOverlay}
           icon={MapIcon}
-          subtitle="Синхронізуємо геозони господарства…"
         />
       </div>
     );

@@ -8,7 +8,7 @@ export function CommandCenterPageBootFallback({
   subtitle,
   variant = "fields",
 }: {
-  subtitle: string;
+  subtitle?: string;
   variant?: "fields" | "equipment";
 }) {
   const Icon = variant === "equipment" ? Radar : MapIcon;
@@ -40,7 +40,9 @@ export function CommandCenterPageBootFallback({
         <p className="mt-3 text-sm font-semibold text-zinc-200">
           Підготовка карти
         </p>
-        <p className="mt-1 text-xs text-zinc-500">{subtitle}</p>
+        {subtitle ? (
+          <p className="mt-1 text-xs text-zinc-500">{subtitle}</p>
+        ) : null}
       </div>
     </div>
   );

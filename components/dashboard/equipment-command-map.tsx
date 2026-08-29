@@ -634,7 +634,6 @@ export const EquipmentCommandMap = forwardRef<EquipmentCommandMapHandle, Props>(
         <CommandCenterMapBootOverlay
           visible={!viewSettled || dataLoading}
           icon={Radar}
-          subtitle="Центруємо на вашому господарстві…"
         />
       </div>
     );
