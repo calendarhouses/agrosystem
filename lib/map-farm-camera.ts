@@ -74,6 +74,11 @@ export function focusMapAroundFarmAnchor(
 
   const top = typeof padding === "number" ? padding : (padding.top ?? 0);
   const bottom = typeof padding === "number" ? padding : (padding.bottom ?? 0);
+  const left = typeof padding === "number" ? padding : (padding.left ?? 0);
+  const right = typeof padding === "number" ? padding : (padding.right ?? 0);
+  // Центр у видимій зоні між панеллю списку й краєм екрана (не посеред canvas).
+  const offsetX = (left - right) / 2;
+  const offsetY = (top - bottom) / 2;
 
   const boundsCenterLng = (west + east) / 2;
   const boundsCenterLat = (south + north) / 2;
@@ -92,7 +97,7 @@ export function focusMapAroundFarmAnchor(
       ? [anchorLng, anchorLat]
       : [boundsCenterLng, boundsCenterLat],
     zoom: fittedZoom,
-    offset: [0, -(bottom - top) / 2],
+    offset: [offsetX, offsetY],
     duration,
     essential: true,
     easing,

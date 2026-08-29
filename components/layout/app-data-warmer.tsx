@@ -34,21 +34,24 @@ export function AppDataWarmer() {
     let startTimer = 0;
 
     const warmApis = async () => {
-      for (const endpoint of APP_WARM_ENDPOINTS) {
-        if (cancelled || runId !== runIdRef.current) return;
-        if (peekAppCache(endpoint.key)) continue;
-        if (endpoint.delayMs) await sleep(endpoint.delayMs);
-        if (cancelled || runId !== runIdRef.current) return;
-        if (document.hidden) {
-          await sleep(800);
-          if (cancelled || document.hidden) continue;
-        }
-        try {
-          await cachedFetchJson(endpoint.key, endpoint.url);
-        } catch {
-          /* тихий прогрів */
-        }
-      }
+      // Паралельно з власним delayMs від старту — не чекаємо попередній важкий BAS
+      await Promise.all(
+        APP_WARM_ENDPOINTS.map(async (endpoint) => {
+          if (cancelled || runId !== runIdRef.current) return;
+          if (peekAppCache(endpoint.key)) return;
+          if (endpoint.delayMs) await sleep(endpoint.delayMs);
+          if (cancelled || runId !== runIdRef.current) return;
+          if (document.hidden) {
+            await sleep(800);
+            if (cancelled || document.hidden) return;
+          }
+          try {
+            await cachedFetchJson(endpoint.key, endpoint.url);
+          } catch {
+            /* тихий прогрів */
+          }
+        })
+      );
     };
 
     const prefetchRoutes = () => {

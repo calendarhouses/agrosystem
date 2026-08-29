@@ -59,7 +59,14 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import {
+  cachedFetchJson,
+  peekAppCache,
+  writeAppCache,
+} from "@/lib/client-data-cache";
+import {
+  defaultFinanceSeasonYear,
   getFinancePeriodRange,
+  getSeasonRange,
   toIsoRange,
   type FinancePeriod,
 } from "@/lib/finance-period";
@@ -291,11 +298,38 @@ export function AccountantHubView({
   const [period, setPeriod] = useState<FinancePeriod>("Сезон");
   const [seasonOpen, setSeasonOpen] = useState(false);
   const [tab, setTab] = useState<AccountantQueueTab>("all");
-  const [items, setItems] = useState<AccountantQueueItem[]>([]);
-  const [stats, setStats] = useState<AccountantQueueStats | null>(null);
+
+  const dateRange = useMemo(
+    () => getFinancePeriodRange(period, seasonYear),
+    [period, seasonYear]
+  );
+  const isoRange = useMemo(() => toIsoRange(dateRange), [dateRange]);
+
+  const warmSeason = defaultFinanceSeasonYear();
+  const warmRange = getSeasonRange(warmSeason);
+  const usesWarmQueueCache =
+    seasonYear === warmSeason &&
+    isoRange.startIso === warmRange.startIso &&
+    isoRange.endIso === warmRange.endIso;
+  const queueCacheKey = usesWarmQueueCache
+    ? "api:accounting:queue"
+    : `api:accounting:queue:${seasonYear}:${isoRange.startIso}:${isoRange.endIso}`;
+
+  const seedQueue = peekAppCache<{
+    ok?: boolean;
+    items?: AccountantQueueItem[];
+    stats?: AccountantQueueStats | null;
+  }>(queueCacheKey);
+
+  const [items, setItems] = useState<AccountantQueueItem[]>(
+    seedQueue?.ok ? (seedQueue.items ?? []) : []
+  );
+  const [stats, setStats] = useState<AccountantQueueStats | null>(
+    seedQueue?.ok ? (seedQueue.stats ?? null) : null
+  );
   const [archive, setArchive] = useState<AccountantArchiveItem[]>([]);
   const [archiveOpen, setArchiveOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!seedQueue?.ok);
   const [archiveLoading, setArchiveLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -315,32 +349,61 @@ export function AccountantHubView({
     null
   );
 
-  const dateRange = useMemo(
-    () => getFinancePeriodRange(period, seasonYear),
-    [period, seasonYear]
-  );
-  const isoRange = useMemo(() => toIsoRange(dateRange), [dateRange]);
-
   const load = useCallback(async () => {
-    setLoading(true);
+    const hadSeed = Boolean(
+      peekAppCache<{ ok?: boolean }>(queueCacheKey)?.ok
+    );
+    if (!hadSeed) setLoading(true);
     setError(null);
-    const res = await listAccountantQueue({
-      season: String(seasonYear),
-      startIso: isoRange.startIso,
-      endIso: isoRange.endIso,
-    });
-    setLoading(false);
-    if (!res.ok) {
-      setError(res.error);
-      setItems([]);
-      setStats(null);
+
+    const url = `/api/accounting/queue?season=${seasonYear}&start=${encodeURIComponent(isoRange.startIso)}&end=${encodeURIComponent(isoRange.endIso)}`;
+
+    try {
+      const { data } = await cachedFetchJson<{
+        ok?: boolean;
+        items?: AccountantQueueItem[];
+        stats?: AccountantQueueStats | null;
+        error?: string;
+      }>(queueCacheKey, url, undefined, { force: !hadSeed });
+
+      if (data.ok === false) {
+        throw new Error(data.error || "Не вдалося завантажити чергу бухгалтера");
+      }
+      setItems(data.items ?? []);
+      setStats(data.stats ?? null);
       setSelected(new Set());
-      return;
+    } catch (err) {
+      // Fallback на server action, якщо API недоступний
+      const res = await listAccountantQueue({
+        season: String(seasonYear),
+        startIso: isoRange.startIso,
+        endIso: isoRange.endIso,
+      });
+      if (!res.ok) {
+        setError(res.error);
+        setItems([]);
+        setStats(null);
+        setSelected(new Set());
+        return;
+      }
+      writeAppCache(queueCacheKey, {
+        ok: true,
+        seasonYear,
+        items: res.data.items,
+        stats: res.data.stats,
+        startIso: isoRange.startIso,
+        endIso: isoRange.endIso,
+      });
+      setItems(res.data.items);
+      setStats(res.data.stats);
+      setSelected(new Set());
+      if (err instanceof Error && !hadSeed) {
+        /* API впав, але action ок */
+      }
+    } finally {
+      setLoading(false);
     }
-    setItems(res.data.items);
-    setStats(res.data.stats);
-    setSelected(new Set());
-  }, [seasonYear, isoRange.startIso, isoRange.endIso]);
+  }, [seasonYear, isoRange.startIso, isoRange.endIso, queueCacheKey]);
 
   const loadArchive = useCallback(async () => {
     setArchiveLoading(true);

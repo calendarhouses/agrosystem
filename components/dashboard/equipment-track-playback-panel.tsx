@@ -145,10 +145,10 @@ export function EquipmentTrackPlaybackPanel({
           >
             <span
               className={cn(
-                "mb-1 whitespace-nowrap rounded-lg px-2 py-0.5 text-[12px] font-extrabold tabular-nums tracking-tight shadow-md",
+                "mb-1 whitespace-nowrap rounded-md border border-border/60 px-1.5 py-px text-[10px] font-bold tabular-nums tracking-tight shadow-sm",
                 scrubbing
-                  ? "bg-emerald-700 text-white scale-105"
-                  : "bg-zinc-900/90 text-white"
+                  ? "scale-105 border-emerald-600/40 bg-emerald-600/90 text-white"
+                  : "bg-zinc-200/95 text-zinc-700 backdrop-blur-sm"
               )}
             >
               {formatTrackClock(displayUnix)}

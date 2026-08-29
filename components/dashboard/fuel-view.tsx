@@ -24,8 +24,6 @@ import {
 import type { DateRange } from "react-day-picker";
 
 import {
-  getFieldFuelConsumed,
-  getFuelRefueledForPeriod,
   type FieldFuelBreakdownRow,
   type FieldFuelPeriod,
 } from "@/app/fuel/actions";
@@ -38,6 +36,10 @@ import {
 import { FuelDashboardHeader } from "@/components/dashboard/fuel-dashboard-header";
 import { FuelDetailSheet } from "@/components/dashboard/fuel-detail-sheet";
 import { FuelStorageDialog } from "@/components/dashboard/fuel-storage-dialog";
+import {
+  cachedFetchJson,
+  peekAppCache,
+} from "@/lib/client-data-cache";
 import { mergeEquipmentOpsOptions } from "@/lib/equipment-ops-options";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -88,6 +90,49 @@ const PERIOD_OPTIONS: JournalPeriod[] = [
   "Місяць",
   "Рік",
 ];
+
+type FuelKpisBurned = {
+  ok: true;
+  data: {
+    liters: number;
+    totalLiters: number;
+    hasData: boolean;
+    daysCovered: number;
+    daysExpected: number;
+    coverageIncomplete: boolean;
+    breakdown: FieldFuelBreakdownRow[];
+  };
+} | { ok: false; error: string };
+
+type FuelKpisRefueled = {
+  ok: true;
+  data: {
+    liters: number;
+    hasData: boolean;
+    breakdown: Array<{
+      equipmentName: string;
+      liters: number;
+      wialonUnitId: number | null;
+      source: "wialon" | "manual" | "mixed";
+    }>;
+  };
+} | { ok: false; error: string };
+
+type FuelKpisResponse = {
+  ok?: boolean;
+  period?: FieldFuelPeriod;
+  burned?: FuelKpisBurned | null;
+  refueled?: FuelKpisRefueled | null;
+  error?: string;
+};
+
+function fuelKpisCacheKey(period: FieldFuelPeriod) {
+  return `api:fuel:kpis:${period}`;
+}
+
+function fuelKpisUrl(period: FieldFuelPeriod) {
+  return `/api/fuel/kpis?period=${period}`;
+}
 
 /** Діапазон дат для фільтра журналу (ISO через .toISOString()). */
 function getDateRange(
@@ -646,23 +691,48 @@ export function FuelView({
 
   const [units, setUnits] = useState<FleetUnitOption[]>(FALLBACK_UNITS);
   const [unitsLoading, setUnitsLoading] = useState(false);
-  const [fieldFuelToday, setFieldFuelToday] = useState<number | null>(null);
-  const [fieldFuelTotal, setFieldFuelTotal] = useState<number | null>(null);
-  const [fieldFuelHasData, setFieldFuelHasData] = useState(false);
-  const [fieldFuelLoading, setFieldFuelLoading] = useState(true);
+
+  const seedKpis = peekAppCache<FuelKpisResponse>(fuelKpisCacheKey("today"));
+  const seedBurned =
+    seedKpis?.burned?.ok === true ? seedKpis.burned.data : null;
+  const seedRefueled =
+    seedKpis?.refueled?.ok === true ? seedKpis.refueled.data : null;
+
+  const [fieldFuelToday, setFieldFuelToday] = useState<number | null>(
+    seedBurned?.liters ?? null
+  );
+  const [fieldFuelTotal, setFieldFuelTotal] = useState<number | null>(
+    seedBurned?.totalLiters ?? null
+  );
+  const [fieldFuelHasData, setFieldFuelHasData] = useState(
+    seedBurned?.hasData ?? false
+  );
+  const [fieldFuelLoading, setFieldFuelLoading] = useState(!seedBurned);
   const [fieldFuelPeriod, setFieldFuelPeriod] =
     useState<FieldFuelPeriod>("today");
   const [fieldFuelBreakdown, setFieldFuelBreakdown] = useState<
     FieldFuelBreakdownRow[]
-  >([]);
+  >(seedBurned?.breakdown ?? []);
   const [fieldFuelCoverage, setFieldFuelCoverage] = useState<{
     daysCovered: number;
     daysExpected: number;
     incomplete: boolean;
-  } | null>(null);
-  const [refuelLiters, setRefuelLiters] = useState<number | null>(null);
-  const [refuelHasData, setRefuelHasData] = useState(false);
-  const [refuelLoading, setRefuelLoading] = useState(true);
+  } | null>(
+    seedBurned
+      ? {
+          daysCovered: seedBurned.daysCovered,
+          daysExpected: seedBurned.daysExpected,
+          incomplete: seedBurned.coverageIncomplete,
+        }
+      : null
+  );
+  const [refuelLiters, setRefuelLiters] = useState<number | null>(
+    seedRefueled?.liters ?? null
+  );
+  const [refuelHasData, setRefuelHasData] = useState(
+    seedRefueled?.hasData ?? false
+  );
+  const [refuelLoading, setRefuelLoading] = useState(!seedRefueled);
   const [refuelBreakdown, setRefuelBreakdown] = useState<
     Array<{
       equipmentName: string;
@@ -670,7 +740,7 @@ export function FuelView({
       wialonUnitId: number | null;
       source?: "wialon" | "manual" | "mixed";
     }>
-  >([]);
+  >(seedRefueled?.breakdown ?? []);
   const [kpiRefreshToken, setKpiRefreshToken] = useState(0);
   const [reverifyTxId, setReverifyTxId] = useState<string | null>(null);
   const [send1cTxId, setSend1cTxId] = useState<string | null>(null);
@@ -1008,14 +1078,13 @@ export function FuelView({
   useEffect(() => {
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
-    setFieldFuelLoading(true);
-    setRefuelLoading(true);
-    void Promise.all([
-      getFieldFuelConsumed(fieldFuelPeriod),
-      getFuelRefueledForPeriod(fieldFuelPeriod),
-    ]).then(([burned, refueled]) => {
-      if (cancelled) return;
-      if (burned.ok) {
+
+    const cacheKey = fuelKpisCacheKey(fieldFuelPeriod);
+    const seeded = peekAppCache<FuelKpisResponse>(cacheKey);
+    const applyPayload = (payload: FuelKpisResponse) => {
+      const burned = payload.burned;
+      const refueled = payload.refueled;
+      if (burned?.ok) {
         setFieldFuelToday(burned.data.liters);
         setFieldFuelTotal(burned.data.totalLiters);
         setFieldFuelHasData(burned.data.hasData);
@@ -1025,8 +1094,8 @@ export function FuelView({
           daysExpected: burned.data.daysExpected,
           incomplete: burned.data.coverageIncomplete,
         });
-        // Поки історія не закрита — підтягуємо наступну порцію днів
         if (burned.data.coverageIncomplete) {
+          if (retryTimer) clearTimeout(retryTimer);
           retryTimer = setTimeout(() => {
             setKpiRefreshToken((n) => n + 1);
           }, 2500);
@@ -1038,7 +1107,7 @@ export function FuelView({
         setFieldFuelBreakdown([]);
         setFieldFuelCoverage(null);
       }
-      if (refueled.ok) {
+      if (refueled?.ok) {
         setRefuelLiters(refueled.data.liters);
         setRefuelHasData(refueled.data.hasData);
         setRefuelBreakdown(refueled.data.breakdown);
@@ -1047,9 +1116,39 @@ export function FuelView({
         setRefuelHasData(false);
         setRefuelBreakdown([]);
       }
+    };
+
+    if (seeded?.burned?.ok || seeded?.refueled?.ok) {
+      applyPayload(seeded);
       setFieldFuelLoading(false);
       setRefuelLoading(false);
-    });
+    } else {
+      setFieldFuelLoading(true);
+      setRefuelLoading(true);
+    }
+
+    const force = kpiRefreshToken > 0;
+
+    void cachedFetchJson<FuelKpisResponse>(
+      cacheKey,
+      fuelKpisUrl(fieldFuelPeriod),
+      undefined,
+      { force }
+    )
+      .then(({ data }) => {
+        if (cancelled) return;
+        applyPayload(data);
+      })
+      .catch(() => {
+        /* seed уже на екрані */
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setFieldFuelLoading(false);
+          setRefuelLoading(false);
+        }
+      });
+
     return () => {
       cancelled = true;
       if (retryTimer) clearTimeout(retryTimer);

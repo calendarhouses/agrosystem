@@ -70,6 +70,13 @@ export function FuelRoute() {
         undefined,
         { signal: controller.signal, force: !seedTx }
       ),
+      // KPI (спалено/заправлено) — той самий ключ, що й прогрів з карти
+      cachedFetchJson(
+        "api:fuel:kpis:today",
+        "/api/fuel/kpis?period=today",
+        undefined,
+        { signal: controller.signal }
+      ).catch(() => null),
     ])
       .then(([storagesRes, txRes]) => {
         if (storagesRes.data.storages) {

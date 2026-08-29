@@ -141,26 +141,37 @@ export type WarmEndpoint = {
 };
 
 /**
- * Порядок прогріву: легке → карти → паливо → склад/фінанси/радар.
- * Поки користувач на Полях/Техніці — решта вже в кеші.
+ * Порядок прогріву (delay від старту, паралельно): карти → паливо KPI →
+ * склади/ТМЦ/фінанси/бухгалтерія. Поки на Полях/Техніці — решта вже в кеші.
  */
 export const APP_WARM_ENDPOINTS: readonly WarmEndpoint[] = [
   { key: "api:wialon", url: "/api/wialon", delayMs: 0 },
   { key: "api:fields", url: "/api/fields", delayMs: 0 },
-  { key: "api:equipment:fleet", url: "/api/equipment/fleet", delayMs: 200 },
-  { key: "api:fuel:storages", url: "/api/fuel/storages", delayMs: 600 },
+  { key: "api:equipment:fleet", url: "/api/equipment/fleet", delayMs: 150 },
+  { key: "api:fuel:storages", url: "/api/fuel/storages", delayMs: 350 },
   {
     key: "api:fuel:transactions",
     url: "/api/fuel/transactions?limit=200",
-    delayMs: 800,
+    delayMs: 450,
   },
-  { key: "api:agro-radar:stock", url: "/api/agro-radar/stock", delayMs: 1200 },
+  /** Спалено / заправлено — найповільніше на екрані Палива */
+  {
+    key: "api:fuel:kpis:today",
+    url: "/api/fuel/kpis?period=today",
+    delayMs: 500,
+  },
+  { key: "api:agro-radar:stock", url: "/api/agro-radar/stock", delayMs: 900 },
   {
     key: "api:inventory:dashboard",
     url: "/api/inventory/dashboard",
-    delayMs: 1600,
+    delayMs: 1100,
   },
-  { key: "api:finance:boot", url: "/api/finance/boot", delayMs: 2800 },
+  { key: "api:finance:boot", url: "/api/finance/boot", delayMs: 1400 },
+  {
+    key: "api:accounting:queue",
+    url: "/api/accounting/queue",
+    delayMs: 1800,
+  },
 ] as const;
 
 /** Маршрути для Next.js prefetch (RSC) */
