@@ -1917,7 +1917,7 @@ export function FieldDetailSheet({
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <div
               className={cn(
-                "relative shrink-0 overflow-hidden border-b px-4 py-3 md:px-6 md:py-5",
+                "relative shrink-0 overflow-hidden border-b px-4 py-3 md:px-6 md:py-3",
                 embeddedInMobileDrawer && "pr-4",
                 variant === "panel"
                   ? "border-white/35 bg-gradient-to-br from-white/55 via-[#F4F1EA]/40 to-emerald-50/30"
@@ -2011,13 +2011,13 @@ export function FieldDetailSheet({
                 onValueChange={(value) => setActiveTab(value as FieldHubTab)}
                 className="shrink-0 space-y-0 border-b border-[#E5DFD3] bg-[#F7F4EE]"
               >
-                <div className="px-3 pt-2 pb-2 sm:px-6 sm:pt-3">
+                <div className="px-3 pt-2 pb-2 sm:px-6 sm:pt-2 sm:pb-2">
                   <TabsList
                     variant="default"
                     className={cn(
-                      "mb-0 grid h-12 w-full grid-cols-4 gap-1 rounded-2xl p-1",
+                      "mb-0 grid h-11 w-full grid-cols-4 gap-1 rounded-2xl p-1 md:h-10",
                       "border border-[#E0DBD0] bg-[#EDE8DF] shadow-[inset_0_1px_2px_rgba(39,33,24,0.06)]",
-                      "group-data-horizontal/tabs:h-12"
+                      "group-data-horizontal/tabs:h-11 md:group-data-horizontal/tabs:h-10"
                     )}
                   >
                     {TAB_ITEMS.map((tab) => {
@@ -2027,7 +2027,7 @@ export function FieldDetailSheet({
                           key={tab.value}
                           value={tab.value}
                           className={cn(
-                            "group/hubtab h-10 min-w-0 gap-1 rounded-[14px] border-0 bg-transparent px-1.5 text-[11px] font-semibold tracking-tight shadow-none sm:gap-1.5 sm:px-2 sm:text-[12px]",
+                            "group/hubtab h-9 min-w-0 gap-1 rounded-[14px] border-0 bg-transparent px-1.5 text-[11px] font-semibold tracking-tight shadow-none sm:gap-1.5 sm:px-2 sm:text-[12px] md:h-8",
                             "text-zinc-500 transition-all duration-200",
                             "hover:bg-white/55 hover:text-zinc-800",
                             "focus-visible:ring-2 focus-visible:ring-[#276749]/25",
@@ -2058,7 +2058,7 @@ export function FieldDetailSheet({
                   data-allow-pan="true"
                 >
                   {(activeTab === "history" || activeTab === "tech") ? (
-                    <div className="sticky top-0 z-10 border-b border-[#E5DFD3]/70 bg-[#F4F1EA]/95 px-3 py-2.5 backdrop-blur-sm sm:px-6">
+                    <div className="border-b border-[#E5DFD3]/70 bg-[#F4F1EA] px-3 py-2.5 sm:px-6">
                       <div className="relative z-10 flex flex-wrap items-center gap-2 pointer-events-auto">
                         <Popover
                           open={seasonOpen}
@@ -2556,26 +2556,26 @@ export function FieldDetailSheet({
             </div>
 
             {showStickyActionFooter ? (
-              <footer className="z-20 shrink-0 border-t border-[#E5DFD3]/80 bg-[#F4F1EA] px-3 pt-3 pb-4 md:px-5 md:py-4">
-                <div className="grid w-full grid-cols-2 gap-2 md:gap-3">
+              <footer className="z-20 shrink-0 border-t border-[#E5DFD3]/80 bg-[#F4F1EA] px-3 pt-2.5 pb-3 md:px-5 md:py-2.5">
+                <div className="grid w-full grid-cols-2 gap-2 md:gap-2.5">
                   <button
                     type="button"
                     onClick={() => setQuickIssueOpen(true)}
                     className={cn(
-                      "flex min-h-[4.25rem] items-center gap-2.5 rounded-2xl px-3 text-left text-white md:gap-3 md:px-3.5",
+                      "flex min-h-[3.25rem] items-center gap-2 rounded-2xl px-3 text-left text-white md:min-h-[3rem] md:gap-2.5 md:px-3",
                       "bg-gradient-to-br from-[#1a3d2c] via-[#276749] to-[#3a8f5e]",
-                      "shadow-[0_16px_36px_-12px_rgba(39,103,73,0.65)]",
+                      "shadow-[0_12px_28px_-12px_rgba(39,103,73,0.55)]",
                       "transition-transform duration-200 hover:-translate-y-0.5"
                     )}
                   >
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/12 ring-1 ring-white/20">
-                      <PackageMinus className="h-5 w-5" />
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/12 ring-1 ring-white/20">
+                      <PackageMinus className="h-4 w-4" />
                     </span>
                     <span className="min-w-0">
-                      <span className="block text-sm font-bold tracking-tight">
+                      <span className="block text-[13px] font-bold tracking-tight">
                         Списати ТМЦ
                       </span>
-                      <span className="mt-0.5 block text-[11px] font-medium text-white/70">
+                      <span className="mt-0.5 block text-[10px] font-medium leading-tight text-white/70">
                         Насіння · ЗЗР · добрива
                       </span>
                     </span>
@@ -2588,16 +2588,16 @@ export function FieldDetailSheet({
                       setPlanPastWork(false);
                       setPlanOpen(true);
                     }}
-                    className="flex min-h-[4.25rem] items-center gap-2.5 rounded-2xl border border-[#D8D2C6] bg-white/85 px-3 text-left shadow-sm transition-colors hover:bg-white md:gap-3 md:px-3.5"
+                    className="flex min-h-[3.25rem] items-center gap-2 rounded-2xl border border-[#D8D2C6] bg-white/85 px-3 text-left shadow-sm transition-colors hover:bg-white md:min-h-[3rem] md:gap-2.5 md:px-3"
                   >
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#276749]/10 text-[#276749]">
-                      <Tractor className="h-5 w-5" />
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#276749]/10 text-[#276749]">
+                      <Tractor className="h-4 w-4" />
                     </span>
                     <span className="min-w-0">
-                      <span className="block text-sm font-bold tracking-tight text-zinc-900">
+                      <span className="block text-[13px] font-bold tracking-tight text-zinc-900">
                         Додати роботу
                       </span>
-                      <span className="mt-0.5 block text-[11px] font-medium text-zinc-500">
+                      <span className="mt-0.5 block text-[10px] font-medium leading-tight text-zinc-500">
                         Наряд або виконану операцію
                       </span>
                     </span>

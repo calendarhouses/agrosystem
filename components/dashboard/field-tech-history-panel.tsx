@@ -265,7 +265,7 @@ function OperationSourceBadge({ entry }: { entry: FieldEquipmentHistoryEntry }) 
     );
   }
 
-  const status = String(entry.status ?? "planned").toLowerCase();
+  const status = String(entry.status ?? "").toLowerCase();
 
   if (status === "completed") {
     return (
@@ -289,12 +289,23 @@ function OperationSourceBadge({ entry }: { entry: FieldEquipmentHistoryEntry }) 
     );
   }
 
+  if (status === "planned") {
+    return (
+      <Badge
+        className="border-zinc-200 bg-zinc-100 text-zinc-600"
+        variant="outline"
+      >
+        🗓 Заплановано
+      </Badge>
+    );
+  }
+
   return (
     <Badge
-      className="border-zinc-200 bg-zinc-100 text-zinc-600"
+      className="border-zinc-200 bg-zinc-50 text-zinc-500"
       variant="outline"
     >
-      🗓 Заплановано
+      Наряд
     </Badge>
   );
 }
@@ -670,7 +681,14 @@ export function FieldTechHistoryPanel({
     const merged = mergeTrackVisitsIntoHistory(filteredDbEntries, trackVisits, {
       areaCapHa: fieldAreaHa,
     });
-    if (!isCurrentSeason || liveEntries.length === 0) return merged;
+    // «Техніка» = хто був / є на полі. Чисті planned-наряди без виїзду — в Огляді / Історії.
+    const fieldPresence = merged.filter((entry) => {
+      if (entry.source === "gps_only") return true;
+      const status = String(entry.status ?? "").toLowerCase();
+      if (status === "planned") return false;
+      return true;
+    });
+    if (!isCurrentSeason || liveEntries.length === 0) return fieldPresence;
 
     const liveVisits = liveUnitsToVisits(liveEntries);
     const liveCards = liveVisits.map((visit) =>
@@ -678,7 +696,7 @@ export function FieldTechHistoryPanel({
     );
 
     // Live зверху сьогоднішнього дня
-    const withoutDupLive = merged.filter((e) => !e.id.startsWith("live:"));
+    const withoutDupLive = fieldPresence.filter((e) => !e.id.startsWith("live:"));
     return [...liveCards, ...withoutDupLive];
   }, [
     filteredDbEntries,
