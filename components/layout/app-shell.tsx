@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { useCallback, useLayoutEffect, useEffect, useState, type ReactNode } from "react";
 
 import { BottomNav } from "@/components/layout/bottom-nav";
+import { AppDataWarmer } from "@/components/layout/app-data-warmer";
 import { Sidebar } from "@/components/layout/sidebar";
 import { TopBar } from "@/components/layout/top-bar";
 import { isCommandCenterPath } from "@/lib/equipment-command-center-layout";
@@ -78,6 +79,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </div>
 
       <BottomNav />
+      <AppDataWarmer />
     </div>
   );
 }

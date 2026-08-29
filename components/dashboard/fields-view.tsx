@@ -22,6 +22,11 @@ import {
   type FieldsMapHandle,
 } from "@/components/dashboard/fields-map";
 import { getCompanyFinancialOverview } from "@/app/finance/actions";
+import {
+  cachedFetchJson,
+  peekAppCache,
+  peekAppCacheStale,
+} from "@/lib/client-data-cache";
 import { fieldCentroid } from "@/lib/field-centroid";
 import { useIsMobile } from "@/lib/use-mobile";
 import {
@@ -461,40 +466,65 @@ export function FieldsView() {
 
   useEffect(() => {
     const controller = new AbortController();
+    type WialonBoot = {
+      ok?: boolean;
+      units?: WialonUnit[];
+      geofences?: FeatureCollection<Polygon, WialonGeofenceProperties>;
+    };
+
+    const apply = (data: WialonBoot) => {
+      setWialonSeedUnits(Array.isArray(data.units) ? data.units : []);
+      setWialonGeofences(
+        data.geofences?.type === "FeatureCollection"
+          ? data.geofences
+          : EMPTY_GEOFENCES
+      );
+      setWialonLoadError(null);
+    };
+
+    const fresh = peekAppCache<WialonBoot>("api:wialon");
+    const stale = peekAppCacheStale<WialonBoot>("api:wialon");
+    if (fresh?.units || stale?.units) {
+      apply(fresh ?? stale!);
+      setWialonBootLoading(false);
+      if (fresh) return () => controller.abort();
+    } else {
+      setWialonBootLoading(true);
+    }
+    setWialonLoadError(null);
+
     let timedOut = false;
     const timeout = window.setTimeout(() => {
       timedOut = true;
       controller.abort();
     }, 12_000);
-    setWialonBootLoading(true);
-    setWialonLoadError(null);
 
-    fetch("/api/wialon", { signal: controller.signal })
-      .then(async (response) => {
-        const data = (await response.json()) as {
-          ok?: boolean;
-          units?: WialonUnit[];
-          geofences?: FeatureCollection<Polygon, WialonGeofenceProperties>;
-        };
-        if (!response.ok || !Array.isArray(data.units)) {
+    cachedFetchJson<WialonBoot>("api:wialon", "/api/wialon", undefined, {
+      signal: controller.signal,
+      force: !fresh,
+    })
+      .then(({ data }) => {
+        if (!Array.isArray(data.units)) {
           throw new Error("Не вдалося завантажити Wialon");
         }
-        setWialonSeedUnits(data.units);
-        setWialonGeofences(
-          data.geofences?.type === "FeatureCollection"
-            ? data.geofences
-            : EMPTY_GEOFENCES
-        );
-        setWialonLoadError(null);
+        apply(data);
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) {
           if (!timedOut) return;
+          if (stale?.units) {
+            apply(stale);
+            return;
+          }
           setWialonSeedUnits([]);
           setWialonGeofences(EMPTY_GEOFENCES);
           setWialonLoadError(
             "Wialon не відповів за 12 с — показуємо збережені поля"
           );
+          return;
+        }
+        if (stale?.units) {
+          apply(stale);
           return;
         }
         console.error(error);

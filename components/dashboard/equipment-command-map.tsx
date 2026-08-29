@@ -34,6 +34,7 @@ import {
   type WialonTrackLineFeature,
 } from "@/lib/wialon";
 import { FARM_BASE_LOCATION } from "@/lib/farm-base-location";
+import { focusMapAroundFarmAnchor } from "@/lib/map-farm-camera";
 import { cn } from "@/lib/utils";
 
 /** Дефолтний центр карти — база (Іванівка), не Київ */
@@ -272,22 +273,19 @@ export const EquipmentCommandMap = forwardRef<EquipmentCommandMapHandle, Props>(
         });
       },
       fitAllUnits() {
-        const map = mapRef.current;
+        const map = mapRef.current?.getMap();
         if (!map || !mapReady) return;
         const bounds = computeFleetBounds(units, geofences);
         if (!bounds) return;
-        map.fitBounds(bounds, {
+        focusMapAroundFarmAnchor(map, bounds, {
           padding: fitPadding ?? {
             top: 50,
             bottom: 110,
             left: 436,
             right: 48,
           },
-          duration: 1200,
           maxZoom: 14,
-          pitch: 0,
-          bearing: 0,
-          easing: cameraEasing,
+          duration: 1200,
         });
       },
     }));
@@ -312,13 +310,14 @@ export const EquipmentCommandMap = forwardRef<EquipmentCommandMapHandle, Props>(
         return;
       }
 
+      const map = mapRef.current?.getMap();
+      if (!map) return;
+
       initialFitDoneRef.current = true;
-      mapRef.current?.fitBounds(bounds, {
+      focusMapAroundFarmAnchor(map, bounds, {
         padding: fitPadding ?? { top: 50, bottom: 110, left: 436, right: 48 },
-        duration: 1000,
         maxZoom: 14,
-        pitch: 0,
-        bearing: 0,
+        duration: 1000,
       });
     }, [
       mapReady,
@@ -552,6 +551,8 @@ export const EquipmentCommandMap = forwardRef<EquipmentCommandMapHandle, Props>(
           {positionedUnits.map((unit) => {
             if (!unit.pos) return null;
             const selected = unit.id === selectedUnitId;
+            /** Режим трекера / картки — лише обрана техніка на мапі */
+            if (selectedUnitId != null && !selected) return null;
             const listHovered = unit.id === listHoveredUnitId;
             const hasOp = Boolean(unit.activeOp);
             const Icon = vehicleIcon(unit.nm);

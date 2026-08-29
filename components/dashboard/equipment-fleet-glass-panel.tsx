@@ -337,7 +337,7 @@ export function EquipmentFleetGlassPanel({
 
   const listView = (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="border-b border-white/30 px-4 py-3">
+      <div className="border-b border-white/30 px-4 py-3 pr-14">
         <div className="flex items-center gap-2">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-600/90 text-white shadow-md">
             <Radar className="h-4 w-4" />
@@ -486,31 +486,17 @@ export function EquipmentFleetGlassPanel({
 
   const detailView = (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="border-b border-white/30 px-3 py-2.5">
-        <div className="flex items-center gap-1">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-11 min-h-11 flex-1 justify-start gap-1.5 px-2 text-sm font-semibold text-foreground hover:bg-white/60 md:h-8 md:min-h-0 md:flex-none"
-            onClick={onBackToList}
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Назад до списку
-          </Button>
-          {isMobile ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-11 w-11 shrink-0 text-zinc-500 hover:bg-white/60"
-              aria-label="Згорнути шторку"
-              onClick={() => onMobileExpandedChange(false)}
-            >
-              <ChevronDown className="h-5 w-5" />
-            </Button>
-          ) : null}
-        </div>
+      <div className="border-b border-white/30 px-3 py-2.5 pr-14">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-11 min-h-11 justify-start gap-1.5 px-2 text-sm font-semibold text-foreground hover:bg-white/60 md:h-8 md:min-h-0"
+          onClick={onBackToList}
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Назад до списку
+        </Button>
         {selectedUnitName ? (
           <div className="mt-1.5 flex items-center gap-2 px-2">
             <p className="min-w-0 flex-1 truncate text-base font-bold tracking-tight text-zinc-900">
@@ -645,17 +631,14 @@ export function EquipmentFleetGlassPanel({
               onMobileExpandedChange(false);
             }}
             dismissible
-            handleOnly
             modal={false}
             shouldScaleBackground={false}
             noBodyStyles
           >
             <DrawerContent
-              showCloseButton={false}
-              overlayClassName="!bg-transparent !opacity-0 !pointer-events-none"
               className={cn(
                 EQUIPMENT_MOBILE_DRAWER_SIZE,
-                "flex flex-col rounded-b-none border-x-0 border-t border-b-0 border-white/40 bg-[#F4F1EA] pb-0 shadow-none"
+                "flex flex-col border-[#E5DFD3]/90 bg-[#F4F1EA] pb-3"
               )}
             >
               <DrawerTitle className="sr-only">
@@ -668,7 +651,7 @@ export function EquipmentFleetGlassPanel({
                 <button
                   type="button"
                   onClick={() => onMobileExpandedChange(false)}
-                  className="flex w-full shrink-0 items-center justify-between border-b border-[#E5DFD3]/80 px-4 py-2.5 text-left"
+                  className="flex w-full shrink-0 items-center justify-between border-b border-[#E5DFD3]/80 px-4 py-2.5 pr-14 text-left"
                 >
                   <span className="flex items-center gap-2">
                     <Radar className="h-4 w-4 text-emerald-700" />

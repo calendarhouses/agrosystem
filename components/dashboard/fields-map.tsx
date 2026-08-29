@@ -45,6 +45,7 @@ import type {
   WialonUnit,
 } from "@/lib/wialon";
 import { FARM_BASE_LOCATION } from "@/lib/farm-base-location";
+import { focusMapAroundFarmAnchor } from "@/lib/map-farm-camera";
 import { useSeasonStore } from "@/lib/season-store";
 import {
   CommandCenterMapBootOverlay,
@@ -471,51 +472,7 @@ function focusFieldsAroundAnchor(
   bounds: LngLatBoundsTuple,
   options?: { padding?: FitPadding; maxZoom?: number; duration?: number }
 ) {
-  const [west, south, east, north] = expandBounds(bounds);
-  const padding = options?.padding ?? 80;
-  const duration = options?.duration ?? 850;
-  const easing = (t: number) =>
-    t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-
-  let fittedZoom: number | undefined;
-  try {
-    fittedZoom = map.cameraForBounds(
-      [
-        [west, south],
-        [east, north],
-      ],
-      { padding, maxZoom: options?.maxZoom ?? 14 }
-    )?.zoom;
-  } catch {
-    fittedZoom = undefined;
-  }
-  if (fittedZoom == null || !Number.isFinite(fittedZoom)) return;
-
-  const top = typeof padding === "number" ? padding : (padding.top ?? 0);
-  const bottom = typeof padding === "number" ? padding : (padding.bottom ?? 0);
-
-  const boundsCenterLng = (west + east) / 2;
-  const boundsCenterLat = (south + north) / 2;
-  const anchorLng = FARM_BASE_LOCATION.longitude;
-  const anchorLat = FARM_BASE_LOCATION.latitude;
-  const padLng = Math.max((east - west) * 0.15, 0.02);
-  const padLat = Math.max((north - south) * 0.15, 0.015);
-  const anchorInBounds =
-    anchorLng >= west - padLng &&
-    anchorLng <= east + padLng &&
-    anchorLat >= south - padLat &&
-    anchorLat <= north + padLat;
-
-  map.easeTo({
-    center: anchorInBounds
-      ? [anchorLng, anchorLat]
-      : [boundsCenterLng, boundsCenterLat],
-    zoom: fittedZoom,
-    offset: [0, -(bottom - top) / 2],
-    duration,
-    essential: true,
-    easing,
-  });
+  focusMapAroundFarmAnchor(map, bounds, options);
 }
 
 function collectFieldBounds(
@@ -1000,11 +957,9 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       if (!merged) return;
 
       const padding = chromePadding(chrome);
-      const isDesktop =
-        typeof window !== "undefined" ? window.innerWidth >= 768 : true;
       const map = mapRef.current?.getMap();
 
-      if (!isDesktop && map) {
+      if (map) {
         focusFieldsAroundAnchor(map, merged, {
           padding,
           maxZoom: 14,
@@ -1014,7 +969,6 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       }
 
       focusBounds(merged, { padding });
-      if (map) waitForCameraSettle(map, 320);
     }, [
       chrome,
       chromePadding,
@@ -1783,26 +1737,11 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
                       : true;
                   const padding = mapCameraPadding(isDesktop, "left");
                   try {
-                    if (!isDesktop) {
-                      focusFieldsAroundAnchor(map, merged, {
-                        padding,
-                        maxZoom: 14,
-                        duration: 0,
-                      });
-                    } else {
-                      map.fitBounds(
-                        [
-                          [merged[0], merged[1]],
-                          [merged[2], merged[3]],
-                        ],
-                        {
-                          padding,
-                          duration: 0,
-                          maxZoom: 14,
-                          essential: true,
-                        }
-                      );
-                    }
+                    focusFieldsAroundAnchor(map, merged, {
+                      padding,
+                      maxZoom: 14,
+                      duration: 0,
+                    });
                     waitForCameraSettle(map, 200);
                     return;
                   } catch {

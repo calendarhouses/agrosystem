@@ -14,7 +14,15 @@ import { PlanInsightSheet } from "@/components/dashboard/calendar/plan-insight-s
 import { OrderTmcSheet } from "@/components/dashboard/calendar/order-tmc-sheet";
 import { AnomalyInsightCard } from "@/components/dashboard/calendar/anomaly-insight-card";
 import { SmartInsightCard } from "@/components/dashboard/calendar/smart-insight-card";
-import { getAgroRadarStockContext } from "@/app/calendar/actions";
+import {
+  getAgroRadarStockContext,
+  type AgroRadarStockContext,
+} from "@/app/calendar/actions";
+import {
+  cachedFetchJson,
+  peekAppCache,
+  peekAppCacheStale,
+} from "@/lib/client-data-cache";
 import {
   generateAgroInsights,
   type AgroCurrentWeather,
@@ -26,7 +34,7 @@ import {
 import type { AgroFleetUnit } from "@/lib/agronomy-fleet";
 import type { AgroInventoryItem } from "@/lib/agronomy-resources";
 import { fieldCentroid } from "@/lib/field-centroid";
-import { listFarmFields, type FarmField } from "@/lib/farm-fields";
+import { type FarmField } from "@/lib/farm-fields";
 import {
   DEFAULT_WEATHER_LOCATION,
   fetchPlanningWeather,
@@ -174,7 +182,47 @@ export function AgroRadarView() {
   useEffect(() => {
     let cancelled = false;
     setFieldsLoading(true);
-    void Promise.all([listFarmFields(), getAgroRadarStockContext()])
+
+    type FieldsResponse = { fields?: FarmField[]; error?: string };
+    type StockResponse = {
+      ok?: boolean;
+      stock?: AgroRadarStockContext | null;
+      error?: string;
+    };
+
+    const fieldsFresh = peekAppCache<FieldsResponse>("api:fields");
+    const fieldsStale = peekAppCacheStale<FieldsResponse>("api:fields");
+    const stockFresh = peekAppCache<StockResponse>("api:agro-radar:stock");
+    const stockStale = peekAppCacheStale<StockResponse>("api:agro-radar:stock");
+
+    const seedFields = fieldsFresh?.fields ?? fieldsStale?.fields;
+    const seedStock = stockFresh?.stock ?? stockStale?.stock;
+
+    if (seedFields) setFields(seedFields);
+    if (seedStock) {
+      setInventory(seedStock.inventory);
+      setFleet(seedStock.fleet);
+      setNdviAlerts(seedStock.ndviAlerts);
+      setFuelPriceUah(seedStock.fuelPriceUah);
+      setFieldsLoading(false);
+    }
+
+    void Promise.all([
+      cachedFetchJson<FieldsResponse>("api:fields", "/api/fields", undefined, {
+        force: !fieldsFresh,
+      }).then(({ data }) => data.fields ?? []),
+      cachedFetchJson<StockResponse>(
+        "api:agro-radar:stock",
+        "/api/agro-radar/stock",
+        undefined,
+        { force: !stockFresh }
+      )
+        .then(({ data }) => {
+          if (data.stock) return data.stock;
+          return getAgroRadarStockContext();
+        })
+        .catch(() => getAgroRadarStockContext()),
+    ])
       .then(([rows, stock]) => {
         if (cancelled) return;
         setFields(rows);
@@ -186,6 +234,7 @@ export function AgroRadarView() {
       .finally(() => {
         if (!cancelled) setFieldsLoading(false);
       });
+
     return () => {
       cancelled = true;
     };
@@ -321,12 +370,23 @@ export function AgroRadarView() {
   }
 
   function refreshStock() {
-    void getAgroRadarStockContext().then((stock) => {
-      setInventory(stock.inventory);
-      setFleet(stock.fleet);
-      setNdviAlerts(stock.ndviAlerts);
-      setFuelPriceUah(stock.fuelPriceUah);
-    });
+    void cachedFetchJson<{
+      ok?: boolean;
+      stock?: AgroRadarStockContext | null;
+    }>("api:agro-radar:stock", "/api/agro-radar/stock", undefined, {
+      force: true,
+    })
+      .then(({ data }) => {
+        if (data.stock) return data.stock;
+        return getAgroRadarStockContext();
+      })
+      .catch(() => getAgroRadarStockContext())
+      .then((stock) => {
+        setInventory(stock.inventory);
+        setFleet(stock.fleet);
+        setNdviAlerts(stock.ndviAlerts);
+        setFuelPriceUah(stock.fuelPriceUah);
+      });
   }
 
   return (

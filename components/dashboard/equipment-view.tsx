@@ -112,6 +112,12 @@ import {
   exportDayJournalXlsx,
   printDayJournalReport,
 } from "@/lib/equipment-export";
+import {
+  cachedFetchJson,
+  peekAppCache,
+  peekAppCacheStale,
+} from "@/lib/client-data-cache";
+import { progressUnixTime } from "@/lib/equipment-track-playback";
 import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
 import {
@@ -1353,37 +1359,61 @@ export function EquipmentView() {
 
   useEffect(() => {
     const controller = new AbortController();
-    setLoading(true);
+    type FleetResponse = {
+      ok?: boolean;
+      tracked?: FleetTrackedUnit[];
+      nonTracked?: FleetNonTrackedItem[];
+      towedEquipment?: FleetNonTrackedItem[];
+      geofences?: GeofenceCollection;
+      error?: string;
+      wialonError?: string | null;
+    };
+
+    const applyFleet = (data: FleetResponse) => {
+      setUnits(data.tracked ?? []);
+      setNonTracked(data.nonTracked ?? []);
+      setTowedEquipment(data.towedEquipment ?? []);
+      setGeofences(
+        data.geofences?.type === "FeatureCollection"
+          ? data.geofences
+          : EMPTY_GEOFENCES
+      );
+      if (data.wialonError && (data.tracked?.length ?? 0) === 0) {
+        setError(data.wialonError);
+      } else {
+        setError(null);
+      }
+    };
+
+    const stale = peekAppCacheStale<FleetResponse>("api:equipment:fleet");
+    const fresh = peekAppCache<FleetResponse>("api:equipment:fleet");
+    if (fresh?.ok !== false && (fresh?.tracked || stale?.tracked)) {
+      applyFleet(fresh ?? stale!);
+      setLoading(false);
+      if (fresh) return () => controller.abort();
+    } else {
+      setLoading(true);
+    }
     setError(null);
 
-    fetch("/api/equipment/fleet", { signal: controller.signal })
-      .then(async (response) => {
-        const data = (await response.json()) as {
-          ok?: boolean;
-          tracked?: FleetTrackedUnit[];
-          nonTracked?: FleetNonTrackedItem[];
-          towedEquipment?: FleetNonTrackedItem[];
-          geofences?: GeofenceCollection;
-          error?: string;
-          wialonError?: string | null;
-        };
-        if (!response.ok || data.ok === false) {
+    cachedFetchJson<FleetResponse>(
+      "api:equipment:fleet",
+      "/api/equipment/fleet",
+      undefined,
+      { signal: controller.signal, force: !fresh }
+    )
+      .then(({ data }) => {
+        if (data.ok === false) {
           throw new Error(data.error || "Не вдалося завантажити флот");
         }
-        setUnits(data.tracked ?? []);
-        setNonTracked(data.nonTracked ?? []);
-        setTowedEquipment(data.towedEquipment ?? []);
-        setGeofences(
-          data.geofences?.type === "FeatureCollection"
-            ? data.geofences
-            : EMPTY_GEOFENCES
-        );
-        if (data.wialonError && (data.tracked?.length ?? 0) === 0) {
-          setError(data.wialonError);
-        }
+        applyFleet(data);
       })
       .catch((err: unknown) => {
         if (controller.signal.aborted) return;
+        if (stale?.tracked) {
+          applyFleet(stale);
+          return;
+        }
         setUnits([]);
         setNonTracked([]);
         setTowedEquipment([]);
@@ -2075,6 +2105,7 @@ export function EquipmentView() {
           startUnix={playback.startUnix}
           endUnix={playback.endUnix}
           currentUnix={playback.currentUnix}
+          unixAtProgress={(p) => progressUnixTime(trackGeoJSON, p)}
           disabled={playback.disabled}
           loading={trackLoading}
           className="max-w-full"
@@ -2093,11 +2124,19 @@ export function EquipmentView() {
         </div>
       ) : null}
 
-      <div className="pointer-events-none absolute top-3 right-3 z-30 flex items-center gap-2">
-        <EquipmentSmartAlertsCenter
-          alerts={smartAlerts}
-          onAlertClick={handleSmartAlertClick}
-        />
+      <div
+        className={cn(
+          "pointer-events-none absolute z-30 inset-x-0 px-3",
+          "top-[calc(var(--safe-top)+0.4rem)]",
+          COMMAND_CENTER_MAP_AREA_CLASS
+        )}
+      >
+        <div className="flex justify-end">
+          <EquipmentSmartAlertsCenter
+            alerts={smartAlerts}
+            onAlertClick={handleSmartAlertClick}
+          />
+        </div>
       </div>
 
       <EquipmentFleetGlassPanel
@@ -2138,11 +2177,11 @@ export function EquipmentView() {
         onSummaryMetricSelect={(metric) => {
           setAlertFilter(null);
           setSummaryMetric(metric);
-          if (metric && fleetSummary) {
-            const firstId = fleetSummary.byMetric[metric]?.[0];
-            const unit =
-              firstId != null ? units.find((u) => u.id === firstId) : null;
-            if (unit) openUnitFromList(unit);
+          if (metric != null && selectedUnitId != null) {
+            playback.setIsPlaying(false);
+            playback.setProgress(0);
+            setSelectedUnit(null);
+            setSelectedSessionId(null);
           }
         }}
         onSummaryRefresh={() => {
@@ -2408,6 +2447,7 @@ export function EquipmentView() {
                 onFuelEventClick={(event: FuelDrainEvent) => {
                   setSelectedSessionId(null);
                   focusMainMap([event.lng, event.lat], null);
+                  if (isMobile) setMobileFleetExpanded(false);
                 }}
               />
               <LocationJournalTimeline
@@ -2419,6 +2459,7 @@ export function EquipmentView() {
                   playback.setIsPlaying(false);
                   playback.setProgress(session.endIndex);
                   focusMainMap(session.center, session.bounds);
+                  if (isMobile) setMobileFleetExpanded(false);
                 }}
               />
             </div>

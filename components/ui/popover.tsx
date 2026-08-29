@@ -11,8 +11,20 @@ import { cn } from "@/lib/utils"
 
 const MOBILE_OVERLAY_Z = "z-[200]"
 
-function Popover({ ...props }: PopoverPrimitive.Root.Props) {
-  return <PopoverPrimitive.Root data-slot="popover" {...props} />
+function Popover({
+  modal,
+  ...props
+}: PopoverPrimitive.Root.Props) {
+  const insideDrawer = useInsideDrawer()
+  // Усередині vaul — modal, інакше кліки «проходять» крізь календар на кнопки під ним
+  const resolvedModal = modal ?? (insideDrawer ? true : false)
+  return (
+    <PopoverPrimitive.Root
+      data-slot="popover"
+      modal={resolvedModal}
+      {...props}
+    />
+  )
 }
 
 function PopoverTrigger({ ...props }: PopoverPrimitive.Trigger.Props) {
@@ -46,7 +58,7 @@ function PopoverContent({
       data-slot="popover-content"
       data-vaul-no-drag=""
       className={cn(
-        "flex w-72 origin-(--transform-origin) flex-col gap-2.5 rounded-lg bg-popover p-2.5 text-sm text-popover-foreground shadow-md ring-1 ring-foreground/10 outline-hidden duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+        "pointer-events-auto flex w-72 origin-(--transform-origin) flex-col gap-2.5 rounded-lg bg-popover p-2.5 text-sm text-popover-foreground shadow-md ring-1 ring-foreground/10 outline-hidden duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
         className,
         useSheet &&
           "fixed inset-x-0 top-auto max-h-[var(--app-sheet-max)] w-full max-w-none origin-bottom gap-0 overflow-hidden rounded-t-3xl rounded-b-none p-0 pb-[max(0.75rem,var(--safe-bottom))] shadow-2xl ring-0 data-[side=bottom]:slide-in-from-bottom-4 data-open:zoom-in-100 bottom-[var(--app-bottom-inset)]",
@@ -78,7 +90,14 @@ function PopoverContent({
           </PopoverPrimitive.Close>
         </>
       ) : (
-        children
+        <>
+          {insideDrawer ? (
+            <PopoverPrimitive.Close className="sr-only" aria-label="Закрити">
+              Закрити
+            </PopoverPrimitive.Close>
+          ) : null}
+          {children}
+        </>
       )}
     </PopoverPrimitive.Popup>
   )
@@ -99,12 +118,20 @@ function PopoverContent({
 
   return (
     <PopoverPrimitive.Portal>
+      {insideDrawer ? (
+        <PopoverPrimitive.Backdrop
+          className={cn(
+            "fixed inset-x-0 top-0 bottom-[var(--app-bottom-inset)] z-[210]",
+            "bg-black/25 supports-backdrop-filter:backdrop-blur-[1px]"
+          )}
+        />
+      ) : null}
       <PopoverPrimitive.Positioner
         align={align}
         alignOffset={alignOffset}
         side={side}
         sideOffset={sideOffset}
-        className="isolate z-[220]"
+        className="pointer-events-auto isolate z-[220]"
       >
         {popup}
       </PopoverPrimitive.Positioner>
