@@ -122,8 +122,6 @@ import type { HourlyForecastHour, WeatherSnapshot } from "@/lib/weather";
 import type { FeatureCollection, Polygon } from "geojson";
 import type { MapFieldSource } from "@/lib/map-fields";
 import { toast } from "sonner";
-import { SwipeableSheet } from "@/components/ui/swipe-sheet";
-import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -145,7 +143,7 @@ type FieldDetailSheetProps = {
   onOpenChange: (open: boolean) => void;
   /** sheet — класичний оверлей; panel — вбудована права glass-панель */
   variant?: "sheet" | "panel";
-  /** Мобільна шторка vaul — без SwipeableSheet, свайп вниз ззовні */
+  /** Мобільна шторка vaul — окремий layout + nested drawers */
   embeddedInMobileDrawer?: boolean;
   /** «До списку» — горизонтальний перехід назад, не закриття на мапу */
   onBackToList?: () => void;
@@ -1444,7 +1442,6 @@ export function FieldDetailSheet({
   occupiedWialonZones = {},
   onIntegrationsFieldUpdated,
 }: FieldDetailSheetProps) {
-  const isMobile = useIsMobile();
   const activeSeason = useSeasonStore((s) => s.activeSeason);
   const operationSeasonYear = Number(activeSeason) || Number(currentAgroSeason()) || 2026;
   const [historySeasonYear, setHistorySeasonYear] = useState(operationSeasonYear);
@@ -1788,29 +1785,6 @@ export function FieldDetailSheet({
       return;
     }
     onOpenChange(false);
-  }
-
-  function handlePanelSwipeDown() {
-    if (correctOp) {
-      setCorrectOp(null);
-      return;
-    }
-    if (completeOp) {
-      setCompleteOp(null);
-      return;
-    }
-    if (planOpen) {
-      setPlanOpen(false);
-      setPlanPastWork(false);
-      setPlanPrefill(null);
-      setEditingOp(null);
-      return;
-    }
-    if (quickIssueOpen) {
-      setQuickIssueOpen(false);
-      return;
-    }
-    closeHub();
   }
 
   function closePlanForm() {
@@ -2705,16 +2679,11 @@ export function FieldDetailSheet({
         </>
       );
     }
+    // ПК: простий контейнер у FieldsDetailGlassFrame (як до мобільної шторки).
+    // Мобільний UI — лише гілка embeddedInMobileDrawer вище.
     return (
       <div className="flex h-full min-h-0 flex-col overflow-hidden bg-transparent">
-        <SwipeableSheet
-          className="h-full min-h-0"
-          disabled={!isMobile}
-          showHandle={isMobile}
-          onSwipeDown={handlePanelSwipeDown}
-        >
-          {hubInner}
-        </SwipeableSheet>
+        {hubInner}
       </div>
     );
   }

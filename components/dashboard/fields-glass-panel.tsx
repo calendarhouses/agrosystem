@@ -40,11 +40,8 @@ function PeekExpandCue({ className }: { className?: string }) {
     <span
       aria-hidden
       className={cn(
-        "pointer-events-none absolute top-1/2 right-2.5 z-10 -translate-y-1/2",
-        "flex h-11 w-9 items-center justify-center rounded-[1.1rem]",
-        "bg-gradient-to-b from-white/90 to-[#ECE7DC]/95",
-        "shadow-[0_6px_18px_-8px_rgba(24,24,27,0.45),inset_0_1px_0_rgba(255,255,255,0.9)]",
-        "ring-1 ring-[#276749]/18",
+        "pointer-events-none absolute top-1/2 right-3 z-10 -translate-y-1/2",
+        "flex items-center justify-center",
         className
       )}
     >
@@ -757,7 +754,7 @@ export function FieldsGlassPanel({
   );
 }
 
-/** ПК-деталі поля: лише md+. Мобільна шторка — окремо в `md:hidden` вище. */
+/** ПК-деталі: glass справа, як до мобільного рефактору. Мобільні класи навмисно відсутні. */
 export function FieldsDetailGlassFrame({
   children,
 }: {
