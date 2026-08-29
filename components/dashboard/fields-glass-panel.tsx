@@ -11,7 +11,6 @@ import {
 import { motion } from "framer-motion";
 import {
   Activity,
-  ChevronUp,
   Focus,
   Map as MapIcon,
   Search,
@@ -35,29 +34,53 @@ export const FIELDS_DRAWER_PEEK = "4.75rem";
 export const FIELDS_DRAWER_FULL = 0.88;
 const PEEK_SWIPE_UP_PX = 36;
 
-/** Права підказка «свайпни вгору» у peek-стані */
+/** Підказка «вгору» — на правому краї шторки, поза текстовим рядом */
 function PeekExpandCue({ className }: { className?: string }) {
   return (
     <span
+      aria-hidden
       className={cn(
-        "relative ml-auto flex h-9 w-9 shrink-0 items-center justify-center",
-        "rounded-full border border-[#D8D2C6]/90 bg-white/70 shadow-[0_4px_14px_-6px_rgba(39,103,73,0.35)]",
-        "ring-1 ring-[#276749]/10 backdrop-blur-sm",
+        "pointer-events-none absolute top-1/2 right-2.5 z-10 -translate-y-1/2",
+        "flex h-11 w-9 items-center justify-center rounded-[1.1rem]",
+        "bg-gradient-to-b from-white/90 to-[#ECE7DC]/95",
+        "shadow-[0_6px_18px_-8px_rgba(24,24,27,0.45),inset_0_1px_0_rgba(255,255,255,0.9)]",
+        "ring-1 ring-[#276749]/18",
         className
       )}
-      aria-hidden
     >
       <motion.span
-        className="flex flex-col items-center text-[#276749]"
-        animate={{ y: [2, -2, 2] }}
+        className="flex items-center justify-center"
+        animate={{ y: [1, -3, 1] }}
         transition={{
-          duration: 1.6,
+          duration: 1.45,
           repeat: Infinity,
           ease: "easeInOut",
         }}
       >
-        <ChevronUp className="h-3.5 w-3.5 stroke-[2.5]" />
-        <span className="-mt-1.5 h-0.5 w-2.5 rounded-full bg-[#276749]/35" />
+        <svg
+          width="15"
+          height="18"
+          viewBox="0 0 15 18"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+          className="overflow-visible"
+        >
+          <path
+            d="M2.5 8.25 7.5 3.5l5 4.75"
+            stroke="#276749"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            opacity="0.28"
+          />
+          <path
+            d="M2.5 13.25 7.5 8.5l5 4.75"
+            stroke="#276749"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
       </motion.span>
     </span>
   );
@@ -616,7 +639,7 @@ export function FieldsGlassPanel({
               type="button"
               aria-expanded={false}
               aria-label="Розгорнути список полів"
-              className="pointer-events-auto fixed inset-x-0 z-[140] flex flex-col border-t border-[#E5DFD3]/90 bg-[#F4F1EA] shadow-[0_-8px_30px_-12px_rgba(24,24,27,0.35)] touch-manipulation"
+              className="pointer-events-auto relative fixed inset-x-0 z-[140] flex flex-col border-t border-[#E5DFD3]/90 bg-[#F4F1EA] shadow-[0_-8px_30px_-12px_rgba(24,24,27,0.35)] touch-manipulation"
               style={{
                 bottom: "var(--app-bottom-inset)",
                 height: "var(--fields-peek-height)",
@@ -632,7 +655,7 @@ export function FieldsGlassPanel({
                 className="mx-auto mt-2 h-1.5 w-12 shrink-0 rounded-full bg-zinc-400/90"
                 aria-hidden
               />
-              <span className="flex min-h-0 flex-1 items-center gap-3 px-4 pb-2 text-left">
+              <span className="flex min-h-0 flex-1 items-center gap-3 pr-14 pl-4 pb-2 text-left">
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#276749] text-white shadow-sm shadow-[#276749]/25">
                   <MapIcon className="h-4 w-4" />
                 </span>
@@ -646,15 +669,15 @@ export function FieldsGlassPanel({
                       : `${formatCountPlural(fields.length, ["ділянка", "ділянки", "ділянок"])} · ${totalHa.toLocaleString("uk-UA")} га`}
                   </span>
                 </span>
-                <PeekExpandCue />
               </span>
+              <PeekExpandCue />
             </button>
           ) : (
             <button
               type="button"
               aria-label="Показати список полів"
               onClick={() => onMobileDrawerVisibleChange?.(true)}
-              className="pointer-events-auto fixed inset-x-4 z-[140] flex items-center gap-3 rounded-2xl border border-[#E5DFD3]/90 bg-[#F4F1EA]/95 px-4 py-3 shadow-lg backdrop-blur-xl touch-manipulation bottom-[calc(var(--app-bottom-inset)+0.5rem)]"
+              className="pointer-events-auto relative fixed inset-x-4 z-[140] flex items-center gap-3 rounded-2xl border border-[#E5DFD3]/90 bg-[#F4F1EA]/95 py-3 pr-14 pl-4 shadow-lg backdrop-blur-xl touch-manipulation bottom-[calc(var(--app-bottom-inset)+0.5rem)]"
             >
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#276749] text-white shadow-sm shadow-[#276749]/25">
                 <MapIcon className="h-4 w-4" />
