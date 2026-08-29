@@ -57,13 +57,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden overscroll-none bg-transparent text-zinc-900 md:bg-zinc-100">
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden overscroll-none bg-transparent text-zinc-900 md:bg-zinc-100">
       <Sidebar collapsed={collapsed} onToggleCollapsed={toggleCollapsed} />
 
       <div
         className={cn(
           "relative flex min-h-0 flex-1 flex-col overflow-hidden overscroll-none transition-[padding] duration-200 ease-out",
-          !isCommandCenter && "pb-[var(--bottom-nav-height)] md:pb-0",
           collapsed ? "md:pl-16" : "md:pl-[250px]"
         )}
       >

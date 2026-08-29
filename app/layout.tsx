@@ -81,7 +81,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           }}
         />
         <PwaBootstrap />
-        <div id="app-root" className="h-dvh min-h-0 overflow-hidden">
+        <div id="app-root" className="flex h-dvh min-h-0 flex-col overflow-hidden">
           <AppShell>{children}</AppShell>
         </div>
         <Toaster
