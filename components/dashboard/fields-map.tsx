@@ -2047,16 +2047,11 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
             )
           : null}
 
-        {!(overlayActive && chrome === "list") ? (
+        {!overlayActive ? (
         <div
           className={cn(
             "absolute z-40 flex flex-col items-end gap-2",
-            chrome === "detail"
-              ? cn(
-                  "top-[calc(var(--safe-top)+4.75rem)] right-3 md:top-auto md:bottom-3",
-                  COMMAND_CENTER_DETAIL_FLOAT_INSET_CLASS
-                )
-              : "right-3 bottom-[var(--map-float-bottom)] md:bottom-3"
+            "right-3 bottom-[var(--map-float-bottom)] md:bottom-3"
           )}
         >
           <div
@@ -2155,7 +2150,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         {mapViewMode === "economics" &&
         !focusMode &&
         !searchOpen &&
-        !(overlayActive && chrome === "list") ? (
+        !overlayActive ? (
           <div
             className={cn(
               "pointer-events-auto absolute z-40",

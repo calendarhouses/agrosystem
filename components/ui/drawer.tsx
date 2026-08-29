@@ -91,7 +91,7 @@ function DrawerContent({
         <DrawerPrimitive.Content
           data-slot="drawer-content"
           className={cn(
-            "fixed inset-x-0 bottom-[var(--app-bottom-inset)] z-[150] flex max-h-[calc(96dvh-var(--app-bottom-inset))] flex-col rounded-t-3xl border border-[#E5DFD3]/80 bg-[#F4F1EA] outline-none",
+            "fixed inset-x-0 bottom-[var(--app-bottom-inset)] z-[150] flex max-h-[calc(94dvh-var(--app-bottom-inset))] flex-col overflow-hidden rounded-t-[1.75rem] border border-[#E5DFD3]/80 bg-[#F4F1EA] outline-none",
             "pb-3",
             "data-[state=closed]:pointer-events-none data-[state=open]:pointer-events-auto",
             className
@@ -128,7 +128,7 @@ function DrawerHandle({
       data-slot="drawer-handle"
       className={cn(
         "relative mx-auto mt-1.5 mb-0.5 flex h-11 w-full shrink-0 touch-none items-center justify-center bg-transparent",
-        "before:block before:h-1.5 before:w-12 before:rounded-full before:bg-zinc-400/90 before:content-['']",
+        "before:block before:h-1.5 before:w-12 before:rounded-full before:bg-zinc-400/80 before:content-['']",
         className
       )}
       {...props}

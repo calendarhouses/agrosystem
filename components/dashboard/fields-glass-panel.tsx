@@ -28,7 +28,9 @@ import type { MapFieldItem } from "@/lib/map-fields";
 import { formatCountPlural } from "@/lib/plural";
 import { cn } from "@/lib/utils";
 
-/** Peek-висота шторки (sync з --fields-peek-height у globals.css) */
+/** Єдина висота мобільних шторок полів (список / деталі / наряд / списання) */
+export const FIELDS_MOBILE_DRAWER_SIZE =
+  "h-[calc(94dvh-var(--app-bottom-inset))] max-h-[calc(94dvh-var(--app-bottom-inset))]";
 export const FIELDS_DRAWER_PEEK = "4.75rem";
 export const FIELDS_DRAWER_FULL = 0.88;
 const PEEK_SWIPE_UP_PX = 36;
@@ -668,7 +670,12 @@ export function FieldsGlassPanel({
           shouldScaleBackground={false}
           noBodyStyles
         >
-          <DrawerContent className="flex h-[calc(92dvh-var(--app-bottom-inset))] max-h-[calc(92dvh-var(--app-bottom-inset))] flex-col border-[#E5DFD3]/90 bg-[#F4F1EA] pb-0">
+          <DrawerContent
+            className={cn(
+              FIELDS_MOBILE_DRAWER_SIZE,
+              "flex flex-col border-[#E5DFD3]/90 bg-[#F4F1EA] pb-3"
+            )}
+          >
             <DrawerTitle className="sr-only">
               {mobileDetailOpen ? "Деталі поля" : "Список полів"}
             </DrawerTitle>

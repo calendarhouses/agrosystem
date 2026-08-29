@@ -84,6 +84,7 @@ import {
 import { FieldPassportQuickFix } from "@/components/dashboard/field-passport-quick-fix";
 import { FieldTechHistoryPanel } from "@/components/dashboard/field-tech-history-panel";
 import { SmartWeatherAlert } from "@/components/dashboard/smart-weather-alert";
+import { FIELDS_MOBILE_DRAWER_SIZE } from "@/components/dashboard/fields-glass-panel";
 import { OperationClosePanel } from "@/components/dashboard/operation-close-modal";
 import type { CloseableOperation } from "@/components/dashboard/operation-close-modal";
 import {
@@ -1033,20 +1034,16 @@ function PlanWorkPanel({
   return (
     <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="relative overflow-hidden border-b border-[#E5DFD3]/80 bg-gradient-to-br from-[#E8F0EA] via-[#F4F1EA] to-[#EDE8DF] px-4 py-4 md:px-6 md:py-5">
-          <div
-            className="pointer-events-none absolute -top-12 -right-10 h-36 w-36 rounded-full bg-[#276749]/10 blur-3xl"
-            aria-hidden
-          />
+        <div className="relative shrink-0 border-b border-[#E5DFD3]/70 bg-[#F4F1EA] px-4 py-4 md:px-6 md:py-5">
           <button
             type="button"
             onClick={onBack}
-            className="relative mb-3 inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-zinc-600 transition-colors hover:bg-white/70 hover:text-zinc-900"
+            className="mb-3 inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-zinc-600 transition-colors hover:bg-white/70 hover:text-zinc-900"
           >
             <ChevronLeft className="h-4 w-4" />
             Назад до поля
           </button>
-          <div className="relative">
+          <div>
             <p className="mb-1.5 inline-flex items-center gap-1.5 rounded-full border border-[#276749]/15 bg-white/80 px-2.5 py-1 text-[10px] font-semibold tracking-wider text-[#276749] uppercase">
               <CalendarPlus className="h-3 w-3" />
               {isEdit
@@ -2558,7 +2555,7 @@ export function FieldDetailSheet({
             </div>
 
             {showStickyActionFooter ? (
-              <footer className="z-20 shrink-0 border-t border-[#E5DFD3]/80 bg-[#F4F1EA] px-3 py-3 md:px-5 md:py-4">
+              <footer className="z-20 shrink-0 border-t border-[#E5DFD3]/80 bg-[#F4F1EA] px-3 pt-3 pb-4 md:px-5 md:py-4">
                 <div className="grid w-full grid-cols-2 gap-2 md:gap-3">
                   <button
                     type="button"
@@ -2648,7 +2645,12 @@ export function FieldDetailSheet({
             shouldScaleBackground={false}
             noBodyStyles
           >
-            <DrawerContent className="z-[160] flex h-[calc(92dvh-var(--app-bottom-inset))] max-h-[calc(92dvh-var(--app-bottom-inset))] flex-col border-[#E5DFD3]/90 bg-[#F4F1EA] pb-0">
+            <DrawerContent
+              className={cn(
+                FIELDS_MOBILE_DRAWER_SIZE,
+                "z-[160] flex flex-col border-[#E5DFD3]/90 bg-[#F4F1EA] pb-3"
+              )}
+            >
               <DrawerTitle className="sr-only">
                 {editingOp
                   ? "Редагувати наряд"
@@ -2673,7 +2675,12 @@ export function FieldDetailSheet({
             shouldScaleBackground={false}
             noBodyStyles
           >
-            <DrawerContent className="z-[160] flex h-[calc(92dvh-var(--app-bottom-inset))] max-h-[calc(92dvh-var(--app-bottom-inset))] flex-col border-[#E5DFD3]/90 bg-[#F4F1EA] pb-0">
+            <DrawerContent
+              className={cn(
+                FIELDS_MOBILE_DRAWER_SIZE,
+                "z-[160] flex flex-col border-[#E5DFD3]/90 bg-[#F4F1EA] pb-3"
+              )}
+            >
               <DrawerTitle className="sr-only">Списати ТМЦ</DrawerTitle>
               <DrawerHandle />
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
