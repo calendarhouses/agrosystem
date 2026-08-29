@@ -552,12 +552,21 @@ export function InventoryView({ dashboard, error }: Props) {
   return (
     <main
       className={cn(
-        "h-full w-full overflow-y-auto overscroll-none",
-        "bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))]",
-        "from-slate-100 to-zinc-100 dark:from-slate-950 dark:to-zinc-950"
+        "relative h-full w-full overflow-y-auto overscroll-none",
+        "bg-gradient-to-br from-[#E8F0EA] via-[#F4F1EA] to-[#EDE8DF]",
+        "pb-[calc(var(--app-bottom-inset)+1.25rem)] md:pb-0"
       )}
     >
-      <div className="mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
+      <div
+        className="pointer-events-none absolute -top-24 right-0 h-72 w-72 rounded-full bg-[#276749]/10 blur-3xl"
+        aria-hidden
+      />
+      <div
+        className="pointer-events-none absolute top-48 -left-12 h-52 w-52 rounded-full bg-sky-400/10 blur-3xl"
+        aria-hidden
+      />
+
+      <div className="relative mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
         <div className="mb-4 flex flex-col gap-3 sm:mb-5 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <h1 className="text-2xl font-extrabold tracking-tight text-zinc-900 sm:text-3xl">
@@ -566,25 +575,25 @@ export function InventoryView({ dashboard, error }: Props) {
             <p className="mt-1 text-sm text-zinc-500">Оперативний облік ТМЦ</p>
           </div>
 
-          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-            <div className="flex items-center rounded-xl border border-zinc-200/90 bg-white/90 p-0.5 shadow-sm">
+          <div className="flex shrink-0 flex-wrap items-center gap-1.5 sm:gap-2">
+            <div className="flex items-center rounded-xl border border-[#E5DFD3]/90 bg-white/90 p-0.5 shadow-sm">
               <button
                 type="button"
                 onClick={() => setHistoryOpen(true)}
-                className="inline-flex h-9 items-center gap-1.5 rounded-[10px] px-2.5 text-xs font-semibold text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-900 sm:px-3"
+                className="inline-flex h-9 items-center gap-1.5 rounded-[10px] px-2.5 text-xs font-semibold text-zinc-600 transition hover:bg-[#F4F1EA] hover:text-zinc-900 sm:px-3"
                 title="Історія"
               >
                 <History className="h-3.5 w-3.5" />
-                <span className="hidden md:inline">Історія</span>
+                <span className="hidden sm:inline">Історія</span>
               </button>
               <button
                 type="button"
                 onClick={() => setExportOpen(true)}
-                className="inline-flex h-9 items-center gap-1.5 rounded-[10px] px-2.5 text-xs font-semibold text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-900 sm:px-3"
+                className="inline-flex h-9 items-center gap-1.5 rounded-[10px] px-2.5 text-xs font-semibold text-zinc-600 transition hover:bg-[#F4F1EA] hover:text-zinc-900 sm:px-3"
                 title="Експорт"
               >
                 <Download className="h-3.5 w-3.5" />
-                <span className="hidden md:inline">Експорт</span>
+                <span className="hidden sm:inline">Експорт</span>
               </button>
             </div>
             <button
@@ -601,7 +610,7 @@ export function InventoryView({ dashboard, error }: Props) {
               <button
                 type="button"
                 onClick={() => setQuickIssueOpen(true)}
-                className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-zinc-900 px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-zinc-800 sm:px-3.5"
+                className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[#276749] px-3 text-xs font-semibold text-white shadow-sm shadow-emerald-900/20 transition hover:bg-[#1f5339] sm:px-3.5"
               >
                 <PackageMinus className="h-3.5 w-3.5" />
                 Списати
@@ -679,7 +688,7 @@ export function InventoryView({ dashboard, error }: Props) {
           <>
             <div className="mb-5 space-y-3">
               <div className="flex flex-wrap items-center gap-2">
-                <div className="inline-flex items-center rounded-full border border-zinc-200/90 bg-white/80 p-1 shadow-sm">
+                <div className="inline-flex items-center rounded-full border border-[#E5DFD3]/90 bg-white/90 p-1 shadow-sm">
                   {PERIOD_OPTIONS.map((option) => (
                     <button
                       key={option}
@@ -831,7 +840,7 @@ export function InventoryView({ dashboard, error }: Props) {
                   <div
                     key={kpi.label}
                     className={cn(
-                      "min-h-[5.5rem] rounded-2xl border border-zinc-200/80 bg-gradient-to-br p-3 shadow-sm sm:p-4",
+                      "min-h-[5.5rem] rounded-2xl border border-[#E5DFD3]/90 bg-gradient-to-br p-3 shadow-[0_8px_24px_rgb(39,33,24,0.05)] sm:p-4",
                       kpi.tone
                     )}
                     title={kpi.value}
@@ -874,8 +883,8 @@ export function InventoryView({ dashboard, error }: Props) {
                         setQuery("");
                       }}
                       className={cn(
-                        "group relative min-h-[168px] overflow-hidden rounded-3xl border p-6 text-left shadow-sm transition-all",
-                        "hover:-translate-y-0.5 hover:shadow-md",
+                        "group relative min-h-[148px] overflow-hidden rounded-3xl border p-5 text-left shadow-[0_8px_30px_rgb(39,33,24,0.05)] transition-all sm:min-h-[168px] sm:p-6",
+                        "hover:-translate-y-0.5 hover:shadow-[0_12px_32px_rgb(39,33,24,0.08)]",
                         style.card
                       )}
                     >
@@ -974,8 +983,8 @@ export function InventoryView({ dashboard, error }: Props) {
                     className={cn(
                       "h-9 shrink-0 rounded-full px-3 text-xs font-semibold",
                       onlyActive
-                        ? "bg-zinc-900 text-white hover:bg-zinc-800"
-                        : "border-zinc-200 bg-white text-zinc-600"
+                        ? "bg-[#276749] text-white hover:bg-[#1f5339]"
+                        : "border-[#E5DFD3] bg-white text-zinc-600"
                     )}
                   >
                     {onlyActive ? "Лише за період" : "Увесь довідник"}
@@ -1408,9 +1417,9 @@ function InventoryItemCard({
   return (
     <div
       className={cn(
-        "group relative overflow-hidden rounded-3xl border border-zinc-200/80 bg-white p-5 shadow-sm",
-        "transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md",
-        selected && "border-emerald-300/70 ring-1 ring-emerald-500/15",
+        "group relative overflow-hidden rounded-3xl border border-[#E5DFD3]/90 bg-[#F4F1EA]/95 p-5 shadow-[0_8px_30px_rgb(39,33,24,0.05)]",
+        "transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_12px_32px_rgb(39,33,24,0.08)]",
+        selected && "border-emerald-300/80 ring-1 ring-emerald-500/20",
         isHidden && "opacity-50"
       )}
     >
@@ -1571,7 +1580,7 @@ function InventoryItemCard({
               type="button"
               disabled={pending}
               onClick={handleSaveEdit}
-              className="h-9 flex-1 rounded-xl bg-zinc-900 text-white hover:bg-zinc-800"
+              className="h-9 flex-1 rounded-xl bg-[#276749] text-white hover:bg-[#1f5339]"
             >
               {pending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />

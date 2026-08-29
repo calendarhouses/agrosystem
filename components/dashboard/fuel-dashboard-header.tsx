@@ -143,9 +143,9 @@ function PeriodSelect({
       <DropdownMenuTrigger
         className={cn(
           "inline-flex h-8 items-center gap-1.5 rounded-full px-3",
-          "border border-zinc-200/90 bg-white/80 text-[12px] font-semibold text-zinc-700",
+          "border border-[#E5DFD3]/90 bg-white/90 text-[12px] font-semibold text-zinc-700",
           "shadow-sm outline-none transition",
-          "hover:border-zinc-300 hover:bg-white hover:text-zinc-900",
+          "hover:border-[#D9D2C4] hover:bg-white hover:text-zinc-900",
           "focus-visible:ring-2 focus-visible:ring-emerald-500/20"
         )}
       >
@@ -161,7 +161,7 @@ function PeriodSelect({
             key={option.id}
             className={cn(
               "cursor-pointer rounded-lg px-2.5 py-2 text-sm",
-              period === option.id && "bg-zinc-100 font-semibold"
+              period === option.id && "bg-emerald-50 font-semibold text-emerald-900"
             )}
             onClick={() => onChange(option.id)}
           >
@@ -335,7 +335,7 @@ export function FuelDashboardHeader({
       : null;
 
   return (
-    <header className="mb-3 flex flex-col gap-4 px-6 py-5 sm:mb-4 sm:px-8">
+    <header className="relative mb-3 flex flex-col gap-4 px-4 py-5 sm:mb-4 sm:px-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-2xl font-extrabold tracking-tight text-zinc-900 sm:text-3xl">
@@ -354,9 +354,9 @@ export function FuelDashboardHeader({
       {/* KPI strip */}
       <div
         className={cn(
-          "relative overflow-hidden rounded-2xl border border-zinc-200/80",
-          "bg-gradient-to-br from-white via-zinc-50/80 to-emerald-50/40",
-          "shadow-[0_1px_0_rgba(255,255,255,0.8)_inset,0_8px_24px_-12px_rgba(24,24,27,0.12)]"
+          "relative overflow-hidden rounded-2xl border border-[#E5DFD3]/90",
+          "bg-gradient-to-br from-white via-[#F4F1EA]/90 to-emerald-50/50",
+          "shadow-[0_1px_0_rgba(255,255,255,0.85)_inset,0_8px_28px_-12px_rgba(39,33,24,0.12)]"
         )}
       >
         <div
@@ -364,7 +364,7 @@ export function FuelDashboardHeader({
           className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white to-transparent"
         />
 
-        <div className="grid grid-cols-1 divide-y divide-zinc-200/70 md:grid-cols-3 md:divide-x md:divide-y-0">
+        <div className="grid grid-cols-1 divide-y divide-[#E5DFD3]/80 md:grid-cols-3 md:divide-x md:divide-y-0">
           {/* Stock */}
           <div className="flex min-h-[7.25rem] flex-col justify-between gap-3 p-5 sm:p-6">
             <div className="flex items-center justify-between gap-2">

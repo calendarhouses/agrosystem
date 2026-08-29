@@ -109,8 +109,8 @@ export function InventoryDocumentsPanel({
               className={cn(
                 "rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors",
                 docFilter === f.id
-                  ? "border-zinc-900 bg-zinc-900 text-white"
-                  : "border-[#E5DFD3] bg-white text-zinc-600 hover:bg-zinc-50"
+                  ? "border-[#276749] bg-[#276749] text-white"
+                  : "border-[#E5DFD3] bg-white text-zinc-600 hover:bg-[#F4F1EA]"
               )}
             >
               {f.label}

@@ -21,7 +21,7 @@ export type FuelSheetAccent =
   | "fuel";
 
 const accentWell: Record<FuelSheetAccent, string> = {
-  zinc: "bg-zinc-900 text-white shadow-zinc-900/25",
+  zinc: "bg-[#276749] text-white shadow-emerald-900/25",
   emerald: "bg-emerald-600 text-white shadow-emerald-600/30",
   sky: "bg-sky-600 text-white shadow-sky-600/30",
   amber: "bg-amber-500 text-white shadow-amber-500/30",
@@ -30,7 +30,7 @@ const accentWell: Record<FuelSheetAccent, string> = {
 };
 
 const accentGlow: Record<FuelSheetAccent, string> = {
-  zinc: "from-zinc-900/[0.04]",
+  zinc: "from-[#276749]/[0.06]",
   emerald: "from-emerald-500/[0.07]",
   sky: "from-sky-500/[0.07]",
   amber: "from-amber-400/[0.09]",
@@ -40,15 +40,15 @@ const accentGlow: Record<FuelSheetAccent, string> = {
 
 /** Оболонка SheetContent — єдиний «пуш» стиль для /fuel */
 export const fuelSheetContentClass = cn(
-  "w-full gap-0 overflow-hidden border-l border-zinc-200/70",
-  "bg-[linear-gradient(180deg,#ffffff_0%,#fafaf9_48%,#f5f5f4_100%)]",
+  "w-full gap-0 overflow-hidden border-l border-[#E5DFD3]/80",
+  "bg-[linear-gradient(180deg,#ffffff_0%,#F4F1EA_55%,#EDE8DF_100%)]",
   "p-0 text-zinc-900",
-  "shadow-[-12px_0_40px_-12px_rgba(24,24,27,0.18)]",
+  "shadow-[-12px_0_40px_-12px_rgba(39,33,24,0.16)]",
   "sm:max-w-[26rem]",
   "[&_[data-slot=sheet-close]]:right-4 [&_[data-slot=sheet-close]]:top-4",
-  "[&_[data-slot=sheet-close]]:rounded-full [&_[data-slot=sheet-close]]:bg-white/80",
+  "[&_[data-slot=sheet-close]]:rounded-full [&_[data-slot=sheet-close]]:bg-white/90",
   "[&_[data-slot=sheet-close]]:text-zinc-500 [&_[data-slot=sheet-close]]:shadow-sm",
-  "[&_[data-slot=sheet-close]]:ring-1 [&_[data-slot=sheet-close]]:ring-zinc-200/80",
+  "[&_[data-slot=sheet-close]]:ring-1 [&_[data-slot=sheet-close]]:ring-[#E5DFD3]/90",
   "[&_[data-slot=sheet-close]]:hover:bg-white [&_[data-slot=sheet-close]]:hover:text-zinc-800"
 );
 
@@ -56,10 +56,10 @@ export const fuelSheetBodyClass =
   "flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-5 py-5 sm:px-6";
 
 export const fuelSheetStickyFooterClass = cn(
-  "mt-auto shrink-0 border-t border-zinc-200/70",
-  "bg-white/90 p-4 backdrop-blur-xl",
-  "supports-[backdrop-filter]:bg-white/80",
-  "shadow-[0_-8px_24px_-12px_rgba(24,24,27,0.08)]"
+  "mt-auto shrink-0 border-t border-[#E5DFD3]/80",
+  "bg-[#F4F1EA]/95 p-4 backdrop-blur-xl",
+  "supports-[backdrop-filter]:bg-[#F4F1EA]/85",
+  "shadow-[0_-8px_24px_-12px_rgba(39,33,24,0.08)]"
 );
 
 export const fuelFieldLabelClass =
@@ -92,8 +92,8 @@ export const fuelHeroAmountClass = cn(
 
 export const fuelPrimaryBtnClass = cn(
   "h-12 w-full rounded-2xl text-sm font-semibold text-white",
-  "bg-zinc-900 shadow-[0_8px_20px_-8px_rgba(24,24,27,0.45)]",
-  "transition-[transform,background-color,box-shadow] hover:bg-zinc-800",
+  "bg-[#276749] shadow-[0_8px_20px_-8px_rgba(31,83,57,0.45)]",
+  "transition-[transform,background-color,box-shadow] hover:bg-[#1f5339]",
   "active:scale-[0.99]",
   "disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
 );

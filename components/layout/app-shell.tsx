@@ -58,7 +58,15 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden overscroll-none bg-transparent text-zinc-900 md:bg-zinc-100">
+    <div
+      className={cn(
+        "flex h-full min-h-0 flex-col overflow-hidden overscroll-none text-zinc-900",
+        // Моб: світлий контент (не #18181b під прозорим main). Карти — окремо.
+        isCommandCenter
+          ? "bg-transparent md:bg-zinc-100"
+          : "bg-[#F4F1EA] md:bg-zinc-100"
+      )}
+    >
       <Sidebar collapsed={collapsed} onToggleCollapsed={toggleCollapsed} />
 
       <div
