@@ -61,6 +61,7 @@ function BottomNavBar({
           <Link
             key={item.href}
             href={item.href}
+            prefetch={false}
             aria-label={item.label}
             aria-current={active ? "page" : undefined}
             className={cn(
@@ -137,6 +138,7 @@ export function BottomNav() {
               <Link
                 key={item.href}
                 href={item.href}
+                prefetch={false}
                 onClick={() => setMoreOpen(false)}
                 className={cn(
                   "flex items-center gap-3 rounded-2xl px-3 py-3 transition-colors",

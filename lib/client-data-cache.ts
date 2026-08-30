@@ -192,7 +192,7 @@ export const APP_WARM_ENDPOINTS: readonly WarmEndpoint[] = [
   },
 ] as const;
 
-/** Маршрути для Next.js prefetch (RSC) */
+/** @deprecated RSC prefetch вимкнено — провокував React #412 при soft-nav */
 export const APP_WARM_ROUTES = [
   "/",
   "/equipment",

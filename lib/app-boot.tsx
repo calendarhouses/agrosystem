@@ -93,6 +93,11 @@ export function AppBootProvider({ children }: { children: ReactNode }) {
       // Safe-area / body → колір меню одночасно з появою chrome
       delete document.documentElement.dataset.booting;
       document.documentElement.dataset.appReady = "1";
+      try {
+        sessionStorage.removeItem("levada-softnav-reload");
+      } catch {
+        /* ignore */
+      }
     }
   }, [isAppLoading]);
 

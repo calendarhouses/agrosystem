@@ -14,9 +14,18 @@ import { MappingStudioLazy } from "@/components/dashboard/accounting/mapping-stu
 import { ReconciliationStudio } from "@/components/dashboard/accounting/reconciliation-studio";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { MappingCatalogKind } from "@/lib/bas-mapping";
+import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
 
+const HUB_TABS = [
+  { id: "export", label: "Експорт", short: "Експорт", icon: FileSpreadsheet },
+  { id: "reconcile", label: "Звірка", short: "Звірка", icon: Scale },
+  { id: "mapping", label: "Мапінг", short: "Мапінг", icon: Link2 },
+  { id: "activity", label: "Журнал", short: "Журнал", icon: History },
+] as const;
+
 export function AccountingHub() {
+  const isMobile = useIsMobile();
   const [tab, setTab] = useState("export");
   const [recon, setRecon] = useState<AccountingReconciliationData | null>(null);
   const [reconError, setReconError] = useState<string | null>(null);
@@ -57,79 +66,99 @@ export function AccountingHub() {
         onValueChange={setTab}
         className="flex min-h-0 flex-1 flex-col gap-0"
       >
-        <div
-          className={cn(
-            "sticky top-0 z-50 border-b border-[#E5DFD3]/80 bg-[#F4F1EA]/90",
-            "px-4 py-3 backdrop-blur-2xl sm:px-6"
-          )}
-        >
-          <div className="mx-auto flex w-full max-w-7xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              <h1 className="truncate text-xl font-extrabold tracking-tight text-zinc-900 sm:text-2xl">
-                Бухгалтерія
-              </h1>
-            </div>
-            <TabsList
-              className={cn(
-                "h-auto w-full flex-wrap justify-start gap-1 rounded-2xl bg-white/70 p-1",
-                "group-data-horizontal/tabs:h-auto sm:w-auto"
-              )}
+        {isMobile ? (
+          <div className="sticky top-0 z-50 border-b border-[#E5DFD3]/80 bg-[#F4F1EA]/92 px-3 pt-[max(0.5rem,var(--safe-top))] pb-2 backdrop-blur-xl">
+            <div
+              className="inline-flex w-full rounded-2xl border border-[#E5DFD3]/90 bg-white/85 p-1 shadow-sm"
+              role="tablist"
+              aria-label="Розділ бухгалтерії"
             >
-              <TabsTrigger
-                value="export"
-                className={cn(
-                  "gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold",
-                  "data-active:bg-[#276749] data-active:text-white data-active:shadow-sm"
-                )}
-              >
-                <FileSpreadsheet className="h-3.5 w-3.5" />
-                Експорт
-              </TabsTrigger>
-              <TabsTrigger
-                value="reconcile"
-                className={cn(
-                  "gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold",
-                  "data-active:bg-[#276749] data-active:text-white data-active:shadow-sm"
-                )}
-              >
-                <Scale className="h-3.5 w-3.5" />
-                Звірка
-                {badgeCount > 0 ? (
-                  <span
+              {HUB_TABS.map((item) => {
+                const Icon = item.icon;
+                const active = tab === item.id;
+                return (
+                  <TabsTrigger
+                    key={item.id}
+                    value={item.id}
                     className={cn(
-                      "ml-0.5 inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums",
-                      tab === "reconcile"
-                        ? "bg-white text-[#276749]"
-                        : "bg-amber-500 text-white"
+                      "relative min-h-10 flex-1 gap-0 rounded-xl px-1 text-[11px] font-bold transition-all",
+                      "data-active:bg-[#276749] data-active:text-white",
+                      "data-active:shadow-[0_4px_12px_-4px_rgba(39,103,73,0.55)]",
+                      "data-[state=inactive]:text-zinc-500"
                     )}
                   >
-                    {badgeCount > 99 ? "99+" : badgeCount}
-                  </span>
-                ) : null}
-              </TabsTrigger>
-              <TabsTrigger
-                value="mapping"
-                className={cn(
-                  "gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold",
-                  "data-active:bg-[#276749] data-active:text-white data-active:shadow-sm"
-                )}
-              >
-                <Link2 className="h-3.5 w-3.5" />
-                Мапінг
-              </TabsTrigger>
-              <TabsTrigger
-                value="activity"
-                className={cn(
-                  "gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold",
-                  "data-active:bg-[#276749] data-active:text-white data-active:shadow-sm"
-                )}
-              >
-                <History className="h-3.5 w-3.5" />
-                Журнал
-              </TabsTrigger>
-            </TabsList>
+                    <span className="flex flex-col items-center gap-0.5">
+                      <Icon className="h-3.5 w-3.5" strokeWidth={2.1} />
+                      <span className="leading-none">{item.short}</span>
+                    </span>
+                    {item.id === "reconcile" && badgeCount > 0 ? (
+                      <span
+                        className={cn(
+                          "absolute -top-0.5 -right-0.5 inline-flex min-w-[1.1rem] items-center justify-center rounded-full px-1 py-px text-[9px] font-bold tabular-nums",
+                          active
+                            ? "bg-white text-[#276749]"
+                            : "bg-amber-500 text-white"
+                        )}
+                      >
+                        {badgeCount > 99 ? "99+" : badgeCount}
+                      </span>
+                    ) : null}
+                  </TabsTrigger>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        ) : (
+          <div
+            className={cn(
+              "sticky top-0 z-50 border-b border-[#E5DFD3]/80 bg-[#F4F1EA]/90",
+              "px-4 py-3 backdrop-blur-2xl sm:px-6"
+            )}
+          >
+            <div className="mx-auto flex w-full max-w-7xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <h1 className="truncate text-xl font-extrabold tracking-tight text-zinc-900 sm:text-2xl">
+                  Бухгалтерія
+                </h1>
+              </div>
+              <TabsList
+                className={cn(
+                  "h-auto w-full flex-wrap justify-start gap-1 rounded-2xl bg-white/70 p-1",
+                  "group-data-horizontal/tabs:h-auto sm:w-auto"
+                )}
+              >
+                {HUB_TABS.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <TabsTrigger
+                      key={item.id}
+                      value={item.id}
+                      className={cn(
+                        "gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold",
+                        "data-active:bg-[#276749] data-active:text-white data-active:shadow-sm"
+                      )}
+                    >
+                      <Icon className="h-3.5 w-3.5" />
+                      {item.label}
+                      {item.id === "reconcile" && badgeCount > 0 ? (
+                        <span
+                          className={cn(
+                            "ml-0.5 inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums",
+                            tab === "reconcile"
+                              ? "bg-white text-[#276749]"
+                              : "bg-amber-500 text-white"
+                          )}
+                        >
+                          {badgeCount > 99 ? "99+" : badgeCount}
+                        </span>
+                      ) : null}
+                    </TabsTrigger>
+                  );
+                })}
+              </TabsList>
+            </div>
+          </div>
+        )}
 
         <TabsContent
           value="export"
@@ -184,24 +213,36 @@ export function AccountingHub() {
           className="mt-0 min-h-0 flex-1 overflow-y-auto overscroll-none outline-none data-[hidden]:hidden"
         >
           {tab === "mapping" ? (
-            <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+            <div
+              className={cn(
+                "mx-auto w-full max-w-7xl",
+                isMobile ? "px-3 py-3 pb-[calc(var(--app-bottom-inset)+1rem)]" : "px-4 py-6 sm:px-6 lg:px-8"
+              )}
+            >
               <div
                 className={cn(
-                  "rounded-3xl border border-[#E5DFD3]/80 bg-[#F4F1EA]/75 p-6",
-                  "shadow-[0_8px_30px_rgb(39,33,24,0.06)] backdrop-blur-2xl"
+                  "border border-[#E5DFD3]/80 bg-[#F4F1EA]/75",
+                  "shadow-[0_8px_30px_rgb(39,33,24,0.06)] backdrop-blur-2xl",
+                  isMobile
+                    ? "rounded-2xl p-3.5"
+                    : "rounded-3xl p-6"
                 )}
               >
-                <div className="mb-5">
-                  <h2 className="text-lg font-bold text-zinc-900">
-                    Мапінг
-                  </h2>
-                  <p className="mt-1 text-sm text-zinc-500">
-                    Зіставте наші поля, техніку, склади ДП і товари з довідниками
-                    BAS AGRO. Нові позиції зʼявляються самі; точні збіги
-                    пропонуються автоматично. У BAS AGRO нічого не пишемо —
-                    лише зберігаємо звʼязок у нас.
+                {!isMobile ? (
+                  <div className="mb-5">
+                    <h2 className="text-lg font-bold text-zinc-900">Мапінг</h2>
+                    <p className="mt-1 text-sm text-zinc-500">
+                      Зіставте наші поля, техніку, склади ДП і товари з
+                      довідниками BAS AGRO. Нові позиції зʼявляються самі; точні
+                      збіги пропонуються автоматично. У BAS AGRO нічого не
+                      пишемо — лише зберігаємо звʼязок у нас.
+                    </p>
+                  </div>
+                ) : (
+                  <p className="mb-3 text-[11px] leading-snug text-zinc-500">
+                    Звʼязок з BAS AGRO — лише у нашій базі, без запису в 1С.
                   </p>
-                </div>
+                )}
                 <MappingStudioLazy initialCatalog={mappingCatalog} />
               </div>
             </div>
@@ -212,7 +253,7 @@ export function AccountingHub() {
           value="activity"
           className="mt-0 min-h-0 flex-1 overflow-y-auto overscroll-none bg-gradient-to-br from-[#E8F0EA] via-[#F4F1EA] to-[#EDE8DF] outline-none data-[hidden]:hidden"
         >
-          {tab === "activity" ? <ActivityJournalPanel /> : null}
+          {tab === "activity" ? <ActivityJournalPanel compact={isMobile} /> : null}
         </TabsContent>
       </Tabs>
     </div>

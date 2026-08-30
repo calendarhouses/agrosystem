@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import {
   Drawer,
@@ -128,36 +129,55 @@ export function FuelPanelShell({
   const isMobile = useIsMobile();
 
   if (isMobile) {
+    const dim =
+      open && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              aria-hidden
+              className="fixed top-0 right-0 bottom-[var(--app-bottom-inset)] left-0 z-[149] bg-black/70 supports-backdrop-filter:backdrop-blur-[3px]"
+              onClick={() => onOpenChange(false)}
+            />,
+            document.body
+          )
+        : null;
+
     return (
-      <Drawer
-        open={open}
-        onOpenChange={onOpenChange}
-        dismissible
-        modal
-        shouldScaleBackground={false}
-        noBodyStyles
-      >
-        <DrawerContent
-          className={cn(
-            FUEL_MOBILE_DRAWER_SIZE,
-            "flex flex-col overflow-hidden border-[#E5DFD3]/90 bg-[#F4F1EA] pb-0",
-            className
-          )}
-          overlayClassName="bg-black/70"
-          showCloseButton
+      <>
+        {/*
+          modal={false}: Vaul при modal ставить body { pointer-events:none },
+          і портальні Select/Popover (Прихід / Списати / Продаж) не клікаються.
+          Затемнення — окремим шаром під шторкою (z < content).
+        */}
+        {dim}
+        <Drawer
+          open={open}
+          onOpenChange={onOpenChange}
+          dismissible
+          modal={false}
+          shouldScaleBackground={false}
+          noBodyStyles
         >
-          <DrawerHandle />
-          <DrawerTitle className="sr-only">{title}</DrawerTitle>
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            {children}
-          </div>
-        </DrawerContent>
-      </Drawer>
+          <DrawerContent
+            className={cn(
+              FUEL_MOBILE_DRAWER_SIZE,
+              "flex flex-col overflow-hidden border-[#E5DFD3]/90 bg-[#F4F1EA] pb-0",
+              className
+            )}
+            showCloseButton
+          >
+            <DrawerHandle />
+            <DrawerTitle className="sr-only">{title}</DrawerTitle>
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              {children}
+            </div>
+          </DrawerContent>
+        </Drawer>
+      </>
     );
   }
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} modal>
+    <Sheet open={open} onOpenChange={onOpenChange} modal={false}>
       <SheetContent
         side="right"
         showOverlay

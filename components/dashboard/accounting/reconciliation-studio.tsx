@@ -52,6 +52,7 @@ import type {
   ReconciliationLinkDomain,
   ReconciliationLinkGaps,
 } from "@/lib/reconciliation-gaps";
+import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
 
 const numberFormat = new Intl.NumberFormat("uk-UA", {
@@ -174,6 +175,7 @@ export function ReconciliationStudio({
   onRefresh,
   onOpenMapping,
 }: Props) {
+  const isMobile = useIsMobile();
   const [domain, setDomain] = useState<DomainTab>("overview");
   const [focus, setFocus] = useState<FieldFocus>("all");
   const [pending, startTransition] = useTransition();
@@ -315,62 +317,99 @@ export function ReconciliationStudio({
         aria-hidden
       />
 
-      <header className="sticky top-0 z-40 border-b border-[#E5DFD3]/80 bg-[#F4F1EA]/85 px-4 py-4 backdrop-blur-2xl sm:px-6">
-        <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <Scale className="h-5 w-5 text-[#276749]" />
-              <h2 className="truncate text-lg font-bold tracking-tight text-zinc-900">
+      <header
+        className={cn(
+          "sticky top-0 z-40 border-b border-[#E5DFD3]/80 bg-[#F4F1EA]/90 backdrop-blur-xl",
+          isMobile ? "px-3 py-2.5" : "px-4 py-4 sm:px-6"
+        )}
+      >
+        <div
+          className={cn(
+            "mx-auto flex w-full max-w-7xl",
+            isMobile
+              ? "items-center gap-2"
+              : "flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"
+          )}
+        >
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+              {!isMobile ? (
+                <Scale className="h-5 w-5 text-[#276749]" />
+              ) : null}
+              <h2
+                className={cn(
+                  "truncate font-bold tracking-tight text-zinc-900",
+                  isMobile ? "text-sm" : "text-lg"
+                )}
+              >
                 Звірка
               </h2>
               {counts.totalOpen > 0 ? (
-                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-900 ring-1 ring-amber-200/80">
-                  {counts.totalOpen} потребують уваги
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900 ring-1 ring-amber-200/80 sm:text-[11px]">
+                  {isMobile
+                    ? counts.totalOpen
+                    : `${counts.totalOpen} потребують уваги`}
                 </span>
               ) : (
-                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-800 ring-1 ring-emerald-200/80">
-                  Усе зведено
+                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800 ring-1 ring-emerald-200/80 sm:text-[11px]">
+                  {isMobile ? "OK" : "Усе зведено"}
                 </span>
               )}
             </div>
-            <p className="mt-0.5 text-sm text-zinc-500">
-              Розбіжності з довідниками BAS AGRO
-            </p>
+            {!isMobile ? (
+              <p className="mt-0.5 text-sm text-zinc-500">
+                Розбіжності з довідниками BAS AGRO
+              </p>
+            ) : null}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
             <Button
               type="button"
               variant="outline"
               size="sm"
               disabled={refreshing || pending}
               onClick={() => void handleRefresh()}
-              className="h-9 gap-1.5 rounded-xl border-[#E5DFD3] bg-white/90"
+              className={cn(
+                "rounded-xl border-[#E5DFD3] bg-white/90",
+                isMobile ? "h-10 w-10 px-0" : "h-9 gap-1.5"
+              )}
+              aria-label="Оновити"
             >
               <RefreshCw
                 className={cn("h-3.5 w-3.5", refreshing && "animate-spin")}
               />
-              Оновити
+              {!isMobile ? "Оновити" : null}
             </Button>
             <Button
               type="button"
               size="sm"
               disabled={pending && busyKey === "workbook"}
               onClick={handleWorkbook}
-              className="h-9 gap-1.5 rounded-xl bg-[#276749] text-white hover:bg-[#1f5339]"
+              className={cn(
+                "rounded-xl bg-[#276749] text-white hover:bg-[#1f5339]",
+                isMobile ? "h-10 gap-1 px-2.5 text-[11px]" : "h-9 gap-1.5"
+              )}
             >
               {pending && busyKey === "workbook" ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
                 <FileSpreadsheet className="h-3.5 w-3.5" />
               )}
-              Файл для BAS AGRO
+              {isMobile ? "Файл" : "Файл для BAS AGRO"}
             </Button>
           </div>
         </div>
       </header>
 
-      <div className="relative mx-auto w-full max-w-7xl space-y-6 px-4 py-6 sm:px-6 lg:px-8">
+      <div
+        className={cn(
+          "relative mx-auto w-full max-w-7xl",
+          isMobile
+            ? "space-y-3 px-3 py-3 pb-[calc(var(--app-bottom-inset)+1rem)]"
+            : "space-y-6 px-4 py-6 sm:px-6 lg:px-8"
+        )}
+      >
         {basError ? (
           <motion.div
             initial={{ opacity: 0, y: 8 }}
@@ -386,7 +425,7 @@ export function ReconciliationStudio({
         ) : null}
 
         {/* Domain overview */}
-        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <section className="-mx-3 flex gap-2 overflow-x-auto px-3 pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 lg:grid-cols-5 [&::-webkit-scrollbar]:hidden">
           <DomainChip
             active={domain === "overview"}
             onClick={() => setDomain("overview")}
@@ -395,6 +434,7 @@ export function ReconciliationStudio({
             hint="усі розбіжності"
             icon={Sparkles}
             tone={counts.totalOpen === 0 ? "ok" : "warn"}
+            compact
           />
           <DomainChip
             active={domain === "fields"}
@@ -404,6 +444,7 @@ export function ReconciliationStudio({
             hint={`${ha(openHa)} у роботі`}
             icon={MapIcon}
             tone={counts.fieldsOpen > 0 ? "accent" : "ok"}
+            compact
           />
           {(["machinery", "storages", "tmc"] as const).map((id) => {
             const meta = LINK_DOMAIN_META[id];
@@ -419,6 +460,7 @@ export function ReconciliationStudio({
                 hint={n > 0 ? "без зіставлення" : "усе зіставлено"}
                 icon={Icon}
                 tone={n > 0 ? "warn" : "ok"}
+                compact
               />
             );
           })}
@@ -915,6 +957,7 @@ function DomainChip({
   hint,
   icon: Icon,
   tone,
+  compact = false,
 }: {
   active: boolean;
   onClick: () => void;
@@ -923,14 +966,18 @@ function DomainChip({
   hint: string;
   icon: typeof Plus;
   tone: "ok" | "warn" | "accent" | "neutral";
+  compact?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        "rounded-2xl border px-4 py-3.5 text-left transition",
+        "shrink-0 rounded-2xl border text-left transition",
         "shadow-[0_4px_16px_rgb(39,33,24,0.04)] backdrop-blur-xl",
+        compact
+          ? "min-w-[7.25rem] px-3 py-2.5 sm:min-w-0 sm:px-4 sm:py-3.5"
+          : "px-4 py-3.5",
         active
           ? "border-[#276749]/40 bg-[#276749] text-white ring-2 ring-[#276749]/25"
           : "border-[#E5DFD3]/80 bg-[#FDFBF7]/90 text-zinc-900 hover:border-[#276749]/25 hover:bg-white"
@@ -939,7 +986,7 @@ function DomainChip({
       <div className="flex items-center justify-between gap-2">
         <span
           className={cn(
-            "text-[11px] font-bold tracking-wide uppercase",
+            "text-[10px] font-bold tracking-wide uppercase sm:text-[11px]",
             active ? "text-white/70" : "text-zinc-400"
           )}
         >
@@ -947,28 +994,29 @@ function DomainChip({
         </span>
         <Icon
           className={cn(
-            "h-3.5 w-3.5",
+            "h-3.5 w-3.5 shrink-0",
             active ? "text-white/80" : "text-zinc-400"
           )}
         />
       </div>
       <p
         className={cn(
-          "mt-1 text-2xl font-extrabold tracking-tight tabular-nums",
-          !active && tone === "warn" && "text-amber-800",
-          !active && tone === "ok" && "text-emerald-700"
+          "mt-1 font-semibold tabular-nums tracking-tight",
+          compact ? "text-xl sm:text-2xl" : "text-2xl"
         )}
       >
         {value}
       </p>
       <p
         className={cn(
-          "mt-0.5 truncate text-[12px]",
-          active ? "text-white/65" : "text-zinc-500"
+          "mt-0.5 text-[10px] leading-snug sm:text-[11px]",
+          active ? "text-white/65" : "text-zinc-500",
+          compact && "line-clamp-1"
         )}
       >
         {hint}
       </p>
+      <span className="sr-only">{tone}</span>
     </button>
   );
 }

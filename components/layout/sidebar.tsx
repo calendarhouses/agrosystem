@@ -38,6 +38,7 @@ export function Sidebar({ collapsed, onToggleCollapsed }: SidebarProps) {
     const link = (
       <Link
         href={item.href}
+        prefetch={false}
         aria-label={item.label}
         aria-current={active ? "page" : undefined}
         className={cn(

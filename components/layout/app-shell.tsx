@@ -42,7 +42,9 @@ function AppShellChrome({
           ? "bg-zinc-950"
           : isCommandCenter
             ? "bg-transparent md:bg-zinc-100"
-            : "bg-[#F4F1EA] md:bg-zinc-100"
+            : "bg-[#F4F1EA] md:bg-zinc-100",
+        // Не клікати меню під час boot — інакше soft-nav рве RSC-потік
+        isAppLoading && "pointer-events-none"
       )}
     >
       <Sidebar collapsed={collapsed} onToggleCollapsed={onToggleCollapsed} />

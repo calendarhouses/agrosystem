@@ -74,6 +74,7 @@ import {
 import { downloadAccountantPackageExcel } from "@/lib/inventory-excel-export";
 import { seasonLabel } from "@/lib/season";
 import { useSeasonStore } from "@/lib/season-store";
+import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
 
 const PERIOD_TABS: FinancePeriod[] = ["Сьогодні", "Місяць", "Сезон"];
@@ -82,13 +83,14 @@ const SIDEBAR_COLLAPSED_KEY = "agrosystem-sidebar-collapsed";
 const QUEUE_TABS: {
   id: AccountantQueueTab;
   label: string;
+  short: string;
   icon: typeof Package;
 }[] = [
-  { id: "all", label: "Усі", icon: FileSpreadsheet },
-  { id: "outbound", label: "Списання", icon: PackageMinus },
-  { id: "inbound", label: "Прихід", icon: PackagePlus },
-  { id: "sale", label: "Продажі", icon: ShoppingCart },
-  { id: "fuel", label: "Паливо", icon: Fuel },
+  { id: "all", label: "Усі", short: "Усі", icon: FileSpreadsheet },
+  { id: "outbound", label: "Списання", short: "Спис.", icon: PackageMinus },
+  { id: "inbound", label: "Прихід", short: "Прих.", icon: PackagePlus },
+  { id: "sale", label: "Продажі", short: "Прод.", icon: ShoppingCart },
+  { id: "fuel", label: "Паливо", short: "ДП", icon: Fuel },
 ];
 
 /** Українські форми: 1 / 2–4 / 5+ */
@@ -263,7 +265,8 @@ const glassCard = cn(
 );
 
 const kpiShell = cn(
-  "group relative isolate flex min-h-[148px] flex-col overflow-hidden rounded-2xl p-4 text-left sm:p-5",
+  "group relative isolate flex flex-col overflow-hidden rounded-2xl text-left",
+  "min-h-[96px] p-3 sm:min-h-[148px] sm:p-5",
   "border border-white/70 shadow-[0_6px_24px_rgb(0,0,0,0.06)]",
   "backdrop-blur-2xl transition-all duration-200",
   "hover:shadow-[0_10px_28px_rgb(0,0,0,0.09)]",
@@ -271,10 +274,10 @@ const kpiShell = cn(
 );
 
 const kpiLabelClass =
-  "relative mb-2 text-left text-[10px] font-bold tracking-[0.14em] text-zinc-500 uppercase";
+  "relative mb-1 text-left text-[9px] font-bold tracking-[0.12em] text-zinc-500 uppercase sm:mb-2 sm:text-[10px] sm:tracking-[0.14em]";
 
 const kpiValueClass =
-  "text-[1.85rem] leading-none font-semibold tracking-tight tabular-nums sm:text-3xl lg:text-[2.15rem]";
+  "text-[1.35rem] leading-none font-semibold tracking-tight tabular-nums sm:text-[1.85rem] lg:text-[2.15rem]";
 
 const periodPill = (active: boolean) =>
   cn(
@@ -290,6 +293,7 @@ export function AccountantHubView({
   /** Вкладений у Accounting Hub — без другого full-page chrome */
   embedded?: boolean;
 }) {
+  const isMobile = useIsMobile();
   const activeSeason = useSeasonStore((s) => s.activeSeason);
   const setActiveSeason = useSeasonStore((s) => s.setActiveSeason);
   const availableSeasons = useSeasonStore((s) => s.availableSeasons);
@@ -652,49 +656,88 @@ export function AccountantHubView({
 
       <header
         className={cn(
-          "sticky z-40 w-full border-b border-[#E5DFD3]/80 bg-[#F4F1EA]/85 px-4 py-4 backdrop-blur-2xl sm:px-6",
-          embedded ? "top-0" : "top-0"
+          "sticky z-40 w-full border-b border-[#E5DFD3]/80 bg-[#F4F1EA]/90 backdrop-blur-xl",
+          isMobile
+            ? "top-0 px-3 py-2.5"
+            : "top-0 px-4 py-4 sm:px-6"
         )}
       >
-        <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div className="min-w-0">
-            {!embedded ? (
-              <h1 className="truncate text-3xl font-extrabold tracking-tight text-zinc-900">
-                Бухгалтерія
-              </h1>
-            ) : (
-              <h2 className="truncate text-lg font-bold tracking-tight text-zinc-900">
-                Експорт
-              </h2>
-            )}
-            <p className={cn("text-sm text-zinc-500", embedded ? "mt-0.5" : "mt-1")}>
-              {seasonLabel(String(seasonYear))}
-            </p>
-          </div>
+        {isMobile ? (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              {!embedded ? (
+                <h1 className="min-w-0 flex-1 truncate text-base font-extrabold tracking-tight text-zinc-900">
+                  Бухгалтерія
+                </h1>
+              ) : (
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] font-bold tracking-[0.12em] text-zinc-400 uppercase">
+                    Черга експорту
+                  </p>
+                  <p className="truncate text-sm font-bold text-zinc-900">
+                    {seasonLabel(String(seasonYear))}
+                  </p>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => void load()}
+                disabled={loading || pending}
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#E0DBD0] bg-white text-zinc-600 shadow-sm disabled:opacity-50"
+                aria-label="Оновити"
+              >
+                <RefreshCw
+                  className={cn("h-4 w-4", loading && "animate-spin")}
+                />
+              </button>
+              <Button
+                type="button"
+                size="sm"
+                disabled={loading || pending || packageSummary.count === 0}
+                onClick={() => handleDownload(packageSummary.rows)}
+                className={cn(
+                  "h-10 shrink-0 rounded-xl px-3 font-bold text-white",
+                  "bg-gradient-to-r from-[#1f5239] via-[#276749] to-[#2f7a52]"
+                )}
+              >
+                <Download className="h-3.5 w-3.5" />
+                {packageSummary.count || "—"}
+              </Button>
+            </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex items-center rounded-full border border-zinc-200/90 bg-white/80 p-1 shadow-sm">
+            <div className="flex min-w-0 items-center gap-0.5 rounded-xl bg-[#EDE8DF] p-0.5">
               {PERIOD_TABS.filter((t) => t !== "Сезон").map((p) => (
                 <button
                   key={p}
                   type="button"
                   onClick={() => setPeriod(p)}
-                  className={periodPill(period === p)}
+                  className={cn(
+                    "h-10 min-w-0 flex-1 rounded-[10px] px-1 text-[11px] font-semibold transition-all",
+                    period === p
+                      ? "bg-[#276749] text-white shadow-[0_4px_12px_-4px_rgba(39,103,73,0.55)]"
+                      : "text-zinc-500 active:bg-white/70"
+                  )}
                 >
                   {p}
                 </button>
               ))}
               <Popover open={seasonOpen} onOpenChange={setSeasonOpen}>
                 <PopoverTrigger
-                  className={periodPill(period === "Сезон")}
                   onClick={() => setPeriod("Сезон")}
+                  className={cn(
+                    "inline-flex h-10 min-w-0 flex-[1.15] items-center justify-center gap-1 rounded-[10px] px-1.5 text-[11px] font-semibold transition-all",
+                    period === "Сезон"
+                      ? "bg-[#276749] text-white shadow-[0_4px_12px_-4px_rgba(39,103,73,0.55)]"
+                      : "text-zinc-500 active:bg-white/70"
+                  )}
                 >
-                  Сезон {seasonYear}
-                  <ChevronDown className="h-3.5 w-3.5 opacity-50" />
+                  <span className="truncate tabular-nums">{seasonYear}</span>
+                  <ChevronDown className="h-3 w-3 shrink-0 opacity-70" />
                 </PopoverTrigger>
                 <PopoverContent
                   align="end"
-                  className="w-44 rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-xl"
+                  sheetOnMobile={false}
+                  className="z-[100] w-44 rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-xl"
                 >
                   {availableSeasons.map((s) => {
                     const y = Number(s);
@@ -704,10 +747,10 @@ export function AccountantHubView({
                         type="button"
                         onClick={() => selectSeason(y)}
                         className={cn(
-                          "flex w-full rounded-xl px-3 py-2 text-left text-sm font-medium",
+                          "flex w-full rounded-xl px-3 py-2.5 text-left text-sm font-medium",
                           seasonYear === y
                             ? "bg-[#276749]/10 text-[#276749]"
-                            : "text-zinc-700 hover:bg-zinc-50"
+                            : "text-zinc-700 active:bg-zinc-50"
                         )}
                       >
                         {seasonLabel(s)}
@@ -717,42 +760,121 @@ export function AccountantHubView({
                 </PopoverContent>
               </Popover>
             </div>
-
-            <button
-              type="button"
-              onClick={() => void load()}
-              disabled={loading || pending}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-zinc-200/90 bg-white/90 text-zinc-600 shadow-sm transition hover:bg-white disabled:opacity-50"
-              aria-label="Оновити"
-            >
-              <RefreshCw
-                className={cn("h-4 w-4", loading && "animate-spin")}
-              />
-            </button>
-
-            <Button
-              type="button"
-              size="sm"
-              disabled={loading || pending || packageSummary.count === 0}
-              onClick={() => handleDownload(packageSummary.rows)}
-              className={cn(
-                "h-9 rounded-full px-4 font-bold text-white",
-                "bg-gradient-to-r from-[#1f5239] via-[#276749] to-[#2f7a52]",
-                "shadow-[0_8px_20px_-6px_rgba(39,103,73,0.55)]",
-                "hover:brightness-105"
-              )}
-            >
-              <Download className="h-4 w-4" />
-              Excel · {packageSummary.count || "—"}
-            </Button>
           </div>
-        </div>
+        ) : (
+          <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div className="min-w-0">
+              {!embedded ? (
+                <h1 className="truncate text-3xl font-extrabold tracking-tight text-zinc-900">
+                  Бухгалтерія
+                </h1>
+              ) : (
+                <h2 className="truncate text-lg font-bold tracking-tight text-zinc-900">
+                  Експорт
+                </h2>
+              )}
+              <p
+                className={cn(
+                  "text-sm text-zinc-500",
+                  embedded ? "mt-0.5" : "mt-1"
+                )}
+              >
+                {seasonLabel(String(seasonYear))}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="inline-flex items-center rounded-full border border-zinc-200/90 bg-white/80 p-1 shadow-sm">
+                {PERIOD_TABS.filter((t) => t !== "Сезон").map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setPeriod(p)}
+                    className={periodPill(period === p)}
+                  >
+                    {p}
+                  </button>
+                ))}
+                <Popover open={seasonOpen} onOpenChange={setSeasonOpen}>
+                  <PopoverTrigger
+                    className={periodPill(period === "Сезон")}
+                    onClick={() => setPeriod("Сезон")}
+                  >
+                    Сезон {seasonYear}
+                    <ChevronDown className="h-3.5 w-3.5 opacity-50" />
+                  </PopoverTrigger>
+                  <PopoverContent
+                    align="end"
+                    className="w-44 rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-xl"
+                  >
+                    {availableSeasons.map((s) => {
+                      const y = Number(s);
+                      return (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => selectSeason(y)}
+                          className={cn(
+                            "flex w-full rounded-xl px-3 py-2 text-left text-sm font-medium",
+                            seasonYear === y
+                              ? "bg-[#276749]/10 text-[#276749]"
+                              : "text-zinc-700 hover:bg-zinc-50"
+                          )}
+                        >
+                          {seasonLabel(s)}
+                        </button>
+                      );
+                    })}
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => void load()}
+                disabled={loading || pending}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-zinc-200/90 bg-white/90 text-zinc-600 shadow-sm transition hover:bg-white disabled:opacity-50"
+                aria-label="Оновити"
+              >
+                <RefreshCw
+                  className={cn("h-4 w-4", loading && "animate-spin")}
+                />
+              </button>
+
+              <Button
+                type="button"
+                size="sm"
+                disabled={loading || pending || packageSummary.count === 0}
+                onClick={() => handleDownload(packageSummary.rows)}
+                className={cn(
+                  "h-9 rounded-full px-4 font-bold text-white",
+                  "bg-gradient-to-r from-[#1f5239] via-[#276749] to-[#2f7a52]",
+                  "shadow-[0_8px_20px_-6px_rgba(39,103,73,0.55)]",
+                  "hover:brightness-105"
+                )}
+              >
+                <Download className="h-4 w-4" />
+                Excel · {packageSummary.count || "—"}
+              </Button>
+            </div>
+          </div>
+        )}
       </header>
 
       <div
         className={cn(
-          "mx-auto w-full max-w-7xl space-y-5 px-4 py-6 sm:px-6 lg:px-8",
-          showDock ? "pb-24" : "pb-8"
+          "mx-auto w-full max-w-7xl",
+          isMobile
+            ? cn(
+                "space-y-3 px-3 py-3",
+                showDock
+                  ? "pb-[calc(var(--app-bottom-inset)+5.5rem)]"
+                  : "pb-[calc(var(--app-bottom-inset)+1rem)]"
+              )
+            : cn(
+                "space-y-5 px-4 py-6 sm:px-6 lg:px-8",
+                showDock ? "pb-24" : "pb-8"
+              )
         )}
       >
         {error ? (
@@ -766,7 +888,7 @@ export function AccountantHubView({
           </div>
         ) : null}
 
-        <section className="grid grid-cols-1 gap-3 md:grid-cols-3 md:gap-4">
+        <section className="grid grid-cols-3 gap-2 md:gap-4">
           <button
             type="button"
             onClick={() => setTab("all")}
@@ -786,7 +908,7 @@ export function AccountantHubView({
               <p className={cn(kpiValueClass, "text-emerald-800")}>
                 {loading ? "…" : (stats?.total ?? 0)}
               </p>
-              <p className="mt-auto pt-3 text-[11px] leading-snug text-emerald-900/55">
+              <p className="mt-auto hidden pt-3 text-[11px] leading-snug text-emerald-900/55 sm:block">
                 {stats
                   ? [
                       labelOutbound(stats.outbound),
@@ -810,19 +932,19 @@ export function AccountantHubView({
               aria-hidden
             />
             <div className="relative flex h-full flex-col">
-              <p className={kpiLabelClass}>Сума пакету</p>
+              <p className={kpiLabelClass}>Сума</p>
               <p
                 className={cn(
                   kpiValueClass,
-                  "inline-flex items-baseline gap-1.5 text-teal-800"
+                  "inline-flex flex-wrap items-baseline gap-x-1 gap-y-0 text-teal-800"
                 )}
               >
                 <span>{loading ? "…" : packageHero.text}</span>
-                <span className="text-sm font-medium tracking-tight text-zinc-500/90">
+                <span className="text-[10px] font-medium tracking-tight text-zinc-500/90 sm:text-sm">
                   {packageHero.unit}
                 </span>
               </p>
-              <p className="mt-auto pt-3 text-[11px] leading-snug text-teal-900/55">
+              <p className="mt-auto hidden pt-3 text-[11px] leading-snug text-teal-900/55 sm:block">
                 {packageSummary.count > 0
                   ? `${labelSelected(packageSummary.count)} · ${formatUah(packageSummary.amount)} ₴`
                   : "Оберіть рядки в черзі"}
@@ -857,8 +979,8 @@ export function AccountantHubView({
               >
                 {loading ? "…" : `${readinessPct}%`}
               </p>
-              <div className="mt-auto space-y-2 pt-3">
-                <div className="h-1.5 overflow-hidden rounded-full bg-zinc-900/5">
+              <div className="mt-auto space-y-1.5 pt-2 sm:space-y-2 sm:pt-3">
+                <div className="h-1 overflow-hidden rounded-full bg-zinc-900/5 sm:h-1.5">
                   <div
                     className={cn(
                       "h-full rounded-full transition-all",
@@ -867,7 +989,7 @@ export function AccountantHubView({
                     style={{ width: `${loading ? 0 : readinessPct}%` }}
                   />
                 </div>
-                <p className="text-[11px] leading-snug text-zinc-500">
+                <p className="hidden text-[11px] leading-snug text-zinc-500 sm:block">
                   {stats?.withoutAttachment
                     ? labelWithoutInvoice(stats.withoutAttachment)
                     : "Усі з документами"}
@@ -881,20 +1003,22 @@ export function AccountantHubView({
         </section>
 
         {stats && stats.total > 0 ? (
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="-mx-3 flex gap-1.5 overflow-x-auto px-3 pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 [&::-webkit-scrollbar]:hidden">
             {stats.withoutAttachment > 0 ? (
               <button
                 type="button"
                 onClick={() => toggleInsight("no_attachment")}
                 className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold ring-1 transition",
+                  "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[11px] font-semibold ring-1 transition",
                   insightFilter === "no_attachment"
                     ? "bg-amber-500 text-white ring-amber-500"
                     : "bg-amber-500/10 text-amber-900 ring-amber-500/15 hover:bg-amber-500/15"
                 )}
               >
                 <AlertTriangle className="h-3.5 w-3.5" />
-                {labelWithoutInvoice(stats.withoutAttachment)}
+                {isMobile
+                  ? `${stats.withoutAttachment} без накл.`
+                  : labelWithoutInvoice(stats.withoutAttachment)}
               </button>
             ) : null}
             {stats.newItems > 0 ? (
@@ -902,7 +1026,7 @@ export function AccountantHubView({
                 type="button"
                 onClick={() => toggleInsight("new_sku")}
                 className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold ring-1 transition",
+                  "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[11px] font-semibold ring-1 transition",
                   insightFilter === "new_sku"
                     ? "bg-sky-600 text-white ring-sky-600"
                     : "bg-sky-500/10 text-sky-900 ring-sky-500/15 hover:bg-sky-500/15"
@@ -917,23 +1041,25 @@ export function AccountantHubView({
                 type="button"
                 onClick={() => toggleInsight("no_fuel_price")}
                 className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold ring-1 transition",
+                  "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[11px] font-semibold ring-1 transition",
                   insightFilter === "no_fuel_price"
                     ? "bg-orange-600 text-white ring-orange-600"
                     : "bg-orange-500/10 text-orange-900 ring-orange-500/15 hover:bg-orange-500/15"
                 )}
               >
                 <Fuel className="h-3.5 w-3.5" />
-                {labelFuelNoPrice(stats.fuelWithoutPrice)}
+                {isMobile
+                  ? `${stats.fuelWithoutPrice} без ціни`
+                  : labelFuelNoPrice(stats.fuelWithoutPrice)}
               </button>
             ) : null}
             {insightFilter ? (
               <button
                 type="button"
                 onClick={() => setInsightFilter(null)}
-                className="text-[11px] font-semibold text-zinc-500 underline-offset-2 hover:text-zinc-800 hover:underline"
+                className="shrink-0 self-center text-[11px] font-semibold text-zinc-500 underline-offset-2 hover:text-zinc-800 hover:underline"
               >
-                Скинути фільтр
+                Скинути
               </button>
             ) : null}
           </div>
@@ -941,13 +1067,19 @@ export function AccountantHubView({
 
         <section
           className={cn(
-            "overflow-hidden rounded-[1.75rem]",
-            "border border-[#E5DFD3]/90 bg-[#FDFBF7]/90",
-            "shadow-[0_16px_40px_-18px_rgba(39,33,24,0.18)] backdrop-blur-xl"
+            "overflow-hidden",
+            isMobile
+              ? "rounded-2xl border border-[#E5DFD3]/90 bg-[#FDFBF7]/95 shadow-sm"
+              : "rounded-[1.75rem] border border-[#E5DFD3]/90 bg-[#FDFBF7]/90 shadow-[0_16px_40px_-18px_rgba(39,33,24,0.18)] backdrop-blur-xl"
           )}
         >
-          <div className="flex flex-col gap-3 border-b border-[#E5DFD3]/80 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-            <div className="inline-flex max-w-full flex-wrap gap-1 rounded-2xl bg-[#F4F1EA]/90 p-1 ring-1 ring-[#E5DFD3]/90">
+          <div
+            className={cn(
+              "flex flex-col gap-2 border-b border-[#E5DFD3]/80",
+              isMobile ? "px-2.5 py-2.5" : "gap-3 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-5"
+            )}
+          >
+            <div className="-mx-0.5 flex max-w-full gap-1 overflow-x-auto rounded-xl bg-[#F4F1EA]/90 p-1 ring-1 ring-[#E5DFD3]/90 [-ms-overflow-style:none] [scrollbar-width:none] sm:mx-0 sm:inline-flex sm:flex-wrap sm:overflow-visible [&::-webkit-scrollbar]:hidden">
               {QUEUE_TABS.map((t) => {
                 const Icon = t.icon;
                 const count =
@@ -967,15 +1099,15 @@ export function AccountantHubView({
                     type="button"
                     onClick={() => setTab(t.id)}
                     className={cn(
-                      "inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition",
+                      "inline-flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-2 text-[11px] font-semibold transition sm:gap-1.5 sm:rounded-xl sm:px-3 sm:text-xs",
                       active
                         ? "bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200/80"
                         : "text-zinc-500 hover:bg-white/60 hover:text-zinc-800"
                     )}
                   >
                     <Icon className="h-3.5 w-3.5" strokeWidth={2} />
-                    {t.label}
-                    <span className="ml-0.5 text-[10px] text-zinc-400 tabular-nums">
+                    {isMobile ? t.short : t.label}
+                    <span className="text-[10px] text-zinc-400 tabular-nums">
                       {loading ? "—" : (count ?? 0)}
                     </span>
                   </button>
@@ -986,7 +1118,9 @@ export function AccountantHubView({
             <button
               type="button"
               onClick={toggleVisibleAll}
-              className="inline-flex items-center gap-2 self-start rounded-xl px-3 py-2 text-xs font-semibold text-zinc-500 transition hover:bg-white hover:text-zinc-800 sm:self-auto"
+              className={cn(
+                "inline-flex items-center gap-2 self-start rounded-xl px-2.5 py-2 text-[11px] font-semibold text-zinc-500 transition hover:bg-white hover:text-zinc-800 sm:self-auto sm:px-3 sm:text-xs"
+              )}
             >
               <span
                 className={cn(
@@ -998,7 +1132,7 @@ export function AccountantHubView({
               >
                 {allVisibleSelected ? <Check className="h-3 w-3" /> : null}
               </span>
-              Обрати видимі
+              {isMobile ? "Усі" : "Обрати видимі"}
             </button>
           </div>
 
@@ -1216,8 +1350,10 @@ export function AccountantHubView({
                         >
                           <div
                             className={cn(
-                              "grid items-center gap-2 px-4 py-3.5 transition sm:px-5",
-                              "grid-cols-[auto_minmax(0,1fr)_auto] md:grid-cols-[auto_7rem_minmax(0,1.2fr)_minmax(0,0.9fr)_6.5rem_6.5rem_4.5rem_5.5rem]",
+                              "grid items-center gap-2 transition",
+                              isMobile
+                                ? "grid-cols-[auto_minmax(0,1fr)_auto] px-3 py-2.5"
+                                : "grid-cols-[auto_minmax(0,1fr)_auto] px-4 py-3.5 sm:px-5 md:grid-cols-[auto_7rem_minmax(0,1.2fr)_minmax(0,0.9fr)_6.5rem_6.5rem_4.5rem_5.5rem]",
                               checked
                                 ? "bg-[#276749]/[0.06]"
                                 : "hover:bg-[#F4F1EA]/70"
@@ -1248,29 +1384,32 @@ export function AccountantHubView({
                             </span>
 
                             <div className="min-w-0">
-                              <div className="mb-1 flex items-center gap-2 md:hidden">
+                              <div className="mb-0.5 flex items-center gap-1.5 md:hidden">
                                 <span
                                   className={cn(
-                                    "inline-flex h-7 w-7 items-center justify-center rounded-lg",
+                                    "inline-flex h-6 w-6 items-center justify-center rounded-md",
                                     meta.well
                                   )}
                                 >
-                                  <Icon className="h-3.5 w-3.5" />
+                                  <Icon className="h-3 w-3" />
                                 </span>
-                                <span className="text-[10px] font-bold tracking-wider text-zinc-400 uppercase">
+                                <span className="text-[9px] font-bold tracking-wider text-zinc-400 uppercase">
                                   {meta.label}
                                 </span>
+                                <span className="ml-auto text-[10px] tabular-nums text-zinc-400">
+                                  {formatDate(item.date)}
+                                </span>
                               </div>
-                              <p className="truncate text-sm font-semibold text-zinc-900">
+                              <p className="truncate text-[13px] font-semibold text-zinc-900 sm:text-sm">
                                 {item.title}
                                 {item.isLocalItem ? (
-                                  <span className="ml-2 align-middle text-[9px] font-bold tracking-wider text-sky-600 uppercase">
+                                  <span className="ml-1.5 align-middle text-[9px] font-bold tracking-wider text-sky-600 uppercase">
                                     нова
                                   </span>
                                 ) : null}
                                 {item.basDraftSent ? (
                                   <span
-                                    className="ml-2 align-middle text-[9px] font-bold tracking-wider text-emerald-700 uppercase"
+                                    className="ml-1.5 align-middle text-[9px] font-bold tracking-wider text-emerald-700 uppercase"
                                     title="Чернетка вже створена в BAS AGRO"
                                   >
                                     у BAS
@@ -1278,7 +1417,12 @@ export function AccountantHubView({
                                 ) : null}
                               </p>
                               <p className="mt-0.5 truncate text-[11px] text-zinc-400 md:hidden">
-                                {[item.party, item.note]
+                                {[
+                                  item.party,
+                                  item.amountUah != null
+                                    ? `${formatUah(item.amountUah)} ₴`
+                                    : null,
+                                ]
                                   .filter(Boolean)
                                   .join(" · ") || "—"}
                               </p>
@@ -1497,9 +1641,13 @@ export function AccountantHubView({
       {/* Compact centered dock — only when selection > 0 */}
       <div
         className={cn(
-          "pointer-events-none fixed bottom-3 z-40 flex justify-center px-3 transition-all duration-300",
-          "right-0 left-16",
-          !sidebarCollapsed && "md:left-[250px]",
+          "pointer-events-none fixed z-40 flex justify-center px-3 transition-all duration-300",
+          isMobile
+            ? "right-0 bottom-[calc(var(--app-bottom-inset)+0.65rem)] left-0"
+            : cn(
+                "right-0 bottom-3 left-16",
+                !sidebarCollapsed && "md:left-[250px]"
+              ),
           showDock
             ? "translate-y-0 opacity-100"
             : "pointer-events-none translate-y-4 opacity-0"
@@ -1509,19 +1657,20 @@ export function AccountantHubView({
         {showDock ? (
           <div
             className={cn(
-              "pointer-events-auto flex items-center gap-3 rounded-2xl px-3 py-2",
+              "pointer-events-auto flex items-center gap-2 rounded-2xl px-2.5 py-2 sm:gap-3 sm:px-3",
               "border border-[#E5DFD3]/95 bg-[#FDFBF7]/95",
-              "shadow-[0_12px_40px_-10px_rgba(39,33,24,0.35)] backdrop-blur-xl"
+              "shadow-[0_12px_40px_-10px_rgba(39,33,24,0.35)] backdrop-blur-xl",
+              "max-w-[min(100%,28rem)]"
             )}
           >
-            <div className="min-w-0 pl-1">
-              <p className="text-[10px] font-bold tracking-[0.14em] text-zinc-400 uppercase">
+            <div className="min-w-0 pl-0.5 sm:pl-1">
+              <p className="text-[9px] font-bold tracking-[0.12em] text-zinc-400 uppercase sm:text-[10px] sm:tracking-[0.14em]">
                 Пакет
               </p>
-              <p className="whitespace-nowrap text-sm font-semibold text-zinc-900">
+              <p className="truncate text-[13px] font-semibold text-zinc-900 sm:whitespace-nowrap sm:text-sm">
                 {labelOps(packageSummary.count)}
                 {packageSummary.amount > 0 ? (
-                  <span className="ml-2 tabular-nums text-[#276749]">
+                  <span className="ml-1.5 tabular-nums text-[#276749] sm:ml-2">
                     {(() => {
                       const h = formatHeroNumber(packageSummary.amount);
                       return `${h.text} ${h.unit}`;
@@ -1530,24 +1679,24 @@ export function AccountantHubView({
                 ) : null}
               </p>
             </div>
-            <div className="h-8 w-px bg-[#E5DFD3]" />
+            <div className="h-8 w-px shrink-0 bg-[#E5DFD3]" />
             <Button
               type="button"
               size="sm"
               variant="outline"
               disabled={pending}
               onClick={() => handleDownload(packageSummary.rows)}
-              className="h-9 shrink-0 rounded-xl border-[#E5DFD3] bg-white px-3 text-xs font-semibold"
+              className="h-9 shrink-0 rounded-xl border-[#E5DFD3] bg-white px-2.5 text-xs font-semibold sm:px-3"
             >
               <Download className="h-3.5 w-3.5" />
-              Excel
+              <span className="hidden sm:inline">Excel</span>
             </Button>
             <Button
               type="button"
               size="sm"
               disabled={pending}
               onClick={() => setConfirmOpen(true)}
-              className="h-9 shrink-0 rounded-xl bg-[#276749] px-3.5 text-xs font-bold text-white hover:bg-[#1f5239]"
+              className="h-9 shrink-0 rounded-xl bg-[#276749] px-3 text-xs font-bold text-white hover:bg-[#1f5239] sm:px-3.5"
             >
               {pending ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />

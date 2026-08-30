@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useState, useTransition, type FormEvent } from "react";
 import { Loader2, Lock, Sprout, UserRound } from "lucide-react";
 
@@ -18,7 +18,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 export function LoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const nextPath = searchParams.get("next") || "/";
   const [login, setLogin] = useState("");
@@ -35,8 +34,10 @@ export function LoginForm() {
         setError(res.error);
         return;
       }
-      router.replace(nextPath.startsWith("/") ? nextPath : "/");
-      router.refresh();
+      // Hard navigation: soft router.replace після логіну + LEVADA-boot + RSC prefetch
+      // давали React #412 («Connection closed») → global-error.
+      const dest = nextPath.startsWith("/") ? nextPath : "/";
+      window.location.assign(dest);
     });
   }
 

@@ -1,11 +1,18 @@
 "use client";
 
 /**
- * Ловить помилки сегмента (включно з падінням soft-navigation),
- * щоб не вилітати одразу в terminal global-error.
+ * Ловить помилки сегмента. На React #412 / Connection closed —
+ * один раз hard reload (єдиний надійний recovery для Next soft-nav).
  */
 
 import { useEffect } from "react";
+
+function isSoftNavCrash(error: Error): boolean {
+  const msg = `${error.message} ${error.name} ${(error as Error & { digest?: string }).digest ?? ""}`;
+  return /connection closed|#412|\b412\b|failed to fetch rsc|fetchserverresponse/i.test(
+    msg
+  );
+}
 
 export default function Error({
   error,
@@ -15,7 +22,16 @@ export default function Error({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error("[app/error]", error);
+    console.error("[app/error]", error.message, error.digest, error);
+    if (!isSoftNavCrash(error)) return;
+    const key = "levada-softnav-reload";
+    try {
+      if (sessionStorage.getItem(key) === "1") return;
+      sessionStorage.setItem(key, "1");
+      window.location.reload();
+    } catch {
+      /* ignore */
+    }
   }, [error]);
 
   return (
@@ -24,24 +40,29 @@ export default function Error({
         Розділ не завантажився
       </h1>
       <p className="max-w-sm text-sm text-zinc-400">
-        Спробуйте ще раз. Якщо повторюється — оновіть сторінку.
+        {error.message || "Спробуйте ще раз або оновіть сторінку."}
       </p>
       <div className="flex flex-wrap items-center justify-center gap-2">
         <button
           type="button"
-          onClick={() => reset()}
+          onClick={() => {
+            try {
+              sessionStorage.removeItem("levada-softnav-reload");
+            } catch {
+              /* ignore */
+            }
+            window.location.reload();
+          }}
           className="rounded-xl bg-[#C05621] px-4 py-2.5 text-sm font-semibold text-white"
         >
-          Спробувати знову
+          Оновити сторінку
         </button>
         <button
           type="button"
-          onClick={() => {
-            window.location.href = "/";
-          }}
+          onClick={() => reset()}
           className="rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-2.5 text-sm font-medium text-zinc-200"
         >
-          На головну
+          Спробувати знову
         </button>
       </div>
       {error.digest ? (

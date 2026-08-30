@@ -17,7 +17,13 @@ function formatWhen(iso: string): string {
   return format(d, "d MMM, HH:mm", { locale: uk });
 }
 
-export function ActivityJournalPanel({ className }: { className?: string }) {
+export function ActivityJournalPanel({
+  className,
+  compact = false,
+}: {
+  className?: string;
+  compact?: boolean;
+}) {
   const [rows, setRows] = useState<ActivityLogRow[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -34,18 +40,47 @@ export function ActivityJournalPanel({ className }: { className?: string }) {
   }, []);
 
   return (
-    <div className={cn("mx-auto w-full max-w-3xl px-4 py-6 sm:px-6", className)}>
-      <div className="mb-5 flex items-center gap-3">
-        <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-zinc-900/5 text-zinc-700">
-          <History className="h-5 w-5" />
+    <div
+      className={cn(
+        "mx-auto w-full max-w-3xl",
+        compact
+          ? "px-3 py-3 pb-[calc(var(--app-bottom-inset)+1rem)]"
+          : "px-4 py-6 sm:px-6",
+        className
+      )}
+    >
+      <div
+        className={cn(
+          "flex items-center gap-3",
+          compact ? "mb-3" : "mb-5"
+        )}
+      >
+        <span
+          className={cn(
+            "flex items-center justify-center rounded-2xl bg-zinc-900/5 text-zinc-700",
+            compact ? "h-9 w-9" : "h-11 w-11"
+          )}
+        >
+          <History className={compact ? "h-4 w-4" : "h-5 w-5"} />
         </span>
-        <div>
-          <h2 className="text-lg font-bold tracking-tight text-zinc-900">
+        <div className="min-w-0">
+          <h2
+            className={cn(
+              "font-bold tracking-tight text-zinc-900",
+              compact ? "text-sm" : "text-lg"
+            )}
+          >
             Журнал дій
           </h2>
-          <p className="text-sm text-zinc-500">
-            Хто що зробив у системі — створення, зміни, видалення
-          </p>
+          {!compact ? (
+            <p className="text-sm text-zinc-500">
+              Хто що зробив у системі — створення, зміни, видалення
+            </p>
+          ) : (
+            <p className="truncate text-[11px] text-zinc-500">
+              Останні дії в системі
+            </p>
+          )}
         </div>
       </div>
 
@@ -63,10 +98,20 @@ export function ActivityJournalPanel({ className }: { className?: string }) {
           {rows.map((row) => (
             <li
               key={row.id}
-              className="flex flex-col gap-0.5 px-4 py-3 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4"
+              className={cn(
+                "flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4",
+                compact ? "px-3 py-2.5" : "px-4 py-3"
+              )}
             >
               <div className="min-w-0">
-                <p className="text-sm font-medium text-zinc-900">{row.summary}</p>
+                <p
+                  className={cn(
+                    "font-medium text-zinc-900",
+                    compact ? "text-[13px] leading-snug" : "text-sm"
+                  )}
+                >
+                  {row.summary}
+                </p>
                 <p className="mt-0.5 text-[11px] font-semibold tracking-wide text-zinc-400 uppercase">
                   {row.actorName}
                 </p>

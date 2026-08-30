@@ -354,8 +354,8 @@ export function MappingStudioLazy({
   const loading = rowsLoading;
 
   return (
-    <div className="flex flex-col gap-5 lg:flex-row lg:gap-6">
-      <aside className="flex shrink-0 flex-row flex-wrap gap-1.5 lg:w-52 lg:flex-col">
+    <div className="flex flex-col gap-3 lg:flex-row lg:gap-6">
+      <aside className="-mx-0.5 flex shrink-0 gap-1 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] lg:mx-0 lg:w-52 lg:flex-col lg:overflow-visible lg:pb-0 [&::-webkit-scrollbar]:hidden">
         {CATALOGS.map((c) => {
           const Icon = c.icon;
           const active = catalog === c.id;
@@ -366,31 +366,31 @@ export function MappingStudioLazy({
               onClick={() => setCatalog(c.id)}
               disabled={pending}
               className={cn(
-                "inline-flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-left text-sm font-semibold transition",
+                "inline-flex shrink-0 items-center gap-1.5 rounded-xl px-2.5 py-2 text-left text-[11px] font-semibold transition sm:gap-2.5 sm:px-3.5 sm:py-2.5 sm:text-sm",
                 active
                   ? "bg-[#276749] text-white shadow-md"
                   : "bg-white/70 text-zinc-600 hover:bg-white hover:text-zinc-900",
                 pending && "opacity-60"
               )}
             >
-              <Icon className="h-4 w-4 shrink-0" />
-              <span className="flex-1">{c.label}</span>
+              <Icon className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
+              <span className="flex-1 whitespace-nowrap">{c.label}</span>
             </button>
           );
         })}
       </aside>
 
       <div className="min-w-0 flex-1">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-bold text-zinc-900">
+        <div className="mb-3 flex flex-col gap-2 sm:mb-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-3">
+          <div className="min-w-0">
+            <p className="text-[13px] font-bold text-zinc-900 sm:text-sm">
               Зіставлення · {meta.label}
             </p>
-            <p className="text-xs text-zinc-500">
-              {meta.hint}
+            <p className="text-[11px] leading-snug text-zinc-500 sm:text-xs">
+              <span className="hidden sm:inline">{meta.hint} · </span>
               {loading
-                ? " · завантаження…"
-                : ` · ${mappedCount} / ${rows.length} зіставлено`}
+                ? "завантаження…"
+                : `${mappedCount} / ${rows.length} зіставлено`}
               {basLoading ? " · довідник BAS…" : null}
             </p>
           </div>
@@ -403,10 +403,11 @@ export function MappingStudioLazy({
                 pending || loading || basLoading || rows.length === 0
               }
               onClick={runAutoMatch}
-              className="h-9 gap-1.5 rounded-xl border-[#E5DFD3] bg-white"
+              className="h-9 gap-1.5 rounded-xl border-[#E5DFD3] bg-white text-[11px] sm:text-xs"
             >
               <Wand2 className="h-3.5 w-3.5" />
-              Авто-зіставлення
+              Авто
+              <span className="hidden sm:inline">-зіставлення</span>
             </Button>
             {pendingAuto ? (
               <Button
@@ -478,7 +479,7 @@ export function MappingStudioLazy({
                     <li
                       key={row.id}
                       className={cn(
-                        "mb-3 flex flex-col gap-3 rounded-2xl border bg-white/70 p-4 shadow-sm backdrop-blur-xl transition-all",
+                        "mb-2.5 flex flex-col gap-2.5 rounded-2xl border bg-white/70 p-3 shadow-sm backdrop-blur-xl transition-all sm:mb-3 sm:gap-3 sm:p-4",
                         "hover:shadow-md sm:flex-row sm:items-center sm:justify-between",
                         shared
                           ? "border-amber-300/90 ring-1 ring-amber-200/60"

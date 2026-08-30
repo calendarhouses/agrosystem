@@ -1,10 +1,17 @@
 "use client";
 
 /**
- * Останній рівень: замінює дефолтний Next «This page couldn’t load».
+ * Root crash. Soft-nav #412 → hard reload на головну один раз.
  */
 
 import { useEffect } from "react";
+
+function isSoftNavCrash(error: Error): boolean {
+  const msg = `${error.message} ${error.name} ${(error as Error & { digest?: string }).digest ?? ""}`;
+  return /connection closed|#412|\b412\b|failed to fetch rsc|fetchserverresponse/i.test(
+    msg
+  );
+}
 
 export default function GlobalError({
   error,
@@ -14,7 +21,16 @@ export default function GlobalError({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error("[app/global-error]", error);
+    console.error("[app/global-error]", error.message, error.digest, error);
+    if (!isSoftNavCrash(error)) return;
+    const key = "levada-softnav-reload";
+    try {
+      if (sessionStorage.getItem(key) === "1") return;
+      sessionStorage.setItem(key, "1");
+      window.location.href = "/";
+    } catch {
+      /* ignore */
+    }
   }, [error]);
 
   return (
@@ -36,9 +52,8 @@ export default function GlobalError({
           <h1 style={{ fontSize: 18, fontWeight: 600, margin: "0 0 8px" }}>
             Сторінка не завантажилась
           </h1>
-          <p style={{ fontSize: 14, color: "#a1a1aa", margin: "0 0 20px" }}>
-            Тимчасова помилка навігації. Оновіть сторінку або поверніться
-            назад.
+          <p style={{ fontSize: 14, color: "#a1a1aa", margin: "0 0 12px" }}>
+            {error.message || "Оновіть сторінку або поверніться на головну."}
           </p>
           <div
             style={{
@@ -50,7 +65,14 @@ export default function GlobalError({
           >
             <button
               type="button"
-              onClick={() => reset()}
+              onClick={() => {
+                try {
+                  sessionStorage.removeItem("levada-softnav-reload");
+                } catch {
+                  /* ignore */
+                }
+                window.location.href = "/";
+              }}
               style={{
                 border: 0,
                 borderRadius: 12,
@@ -62,13 +84,11 @@ export default function GlobalError({
                 cursor: "pointer",
               }}
             >
-              Спробувати знову
+              На головну
             </button>
             <button
               type="button"
-              onClick={() => {
-                window.location.href = "/";
-              }}
+              onClick={() => reset()}
               style={{
                 border: "1px solid #3f3f46",
                 borderRadius: 12,
@@ -80,7 +100,7 @@ export default function GlobalError({
                 cursor: "pointer",
               }}
             >
-              На головну
+              Спробувати знову
             </button>
           </div>
           {error.digest ? (

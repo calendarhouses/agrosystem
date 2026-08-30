@@ -17,7 +17,7 @@ function maskableSvg() {
 function renderPng(svg, size) {
   const resvg = new Resvg(Buffer.from(svg, "utf8"), {
     fitTo: { mode: "width", value: size },
-    background: "#276749",
+    background: "#09090b",
   });
   return resvg.render().asPng();
 }
