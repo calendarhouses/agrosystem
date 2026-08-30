@@ -31,14 +31,14 @@ export function EquipmentSmartAlertsCenter({ alerts, onAlertClick }: Props) {
     <DropdownMenu>
       <DropdownMenuTrigger
         className={cn(
-          "pointer-events-auto inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-white/40 shadow-xl transition hover:bg-white/90",
+          "pointer-events-auto inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/40 shadow-xl transition hover:bg-white/90 sm:h-11 sm:w-11",
           "bg-background/80 backdrop-blur-2xl outline-none",
           count > 0 && "ring-2 ring-rose-400/30"
         )}
         aria-label={`Сповіщення: ${count}`}
       >
         <span className="relative">
-          <Bell className="h-5 w-5 text-zinc-800" strokeWidth={1.6} />
+          <Bell className="h-4 w-4 text-zinc-800 sm:h-5 sm:w-5" strokeWidth={1.6} />
           {count > 0 ? (
             <span className="absolute -top-2 -right-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold text-white">
               {count > 9 ? "9+" : count}
