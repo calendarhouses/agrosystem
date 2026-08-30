@@ -429,13 +429,6 @@ export function FuelDashboardHeader({
     Boolean(fieldFuelCoverage?.incomplete) ||
     displayProgressPct != null;
 
-  const coverageHint =
-    fieldFuelCoverage &&
-    fieldFuelCoverage.daysExpected > 1 &&
-    fieldFuelCoverage.incomplete
-      ? `дані за ${fieldFuelCoverage.daysCovered} з ${fieldFuelCoverage.daysExpected} дн.`
-      : null;
-
   const isMobile = useIsMobile();
 
   const progressBar =
@@ -461,9 +454,6 @@ export function FuelDashboardHeader({
             }}
           />
         </div>
-        {coverageHint ? (
-          <p className="text-[10px] font-medium text-amber-700">{coverageHint}</p>
-        ) : null}
       </div>
     ) : null;
 
