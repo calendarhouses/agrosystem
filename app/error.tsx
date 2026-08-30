@@ -1,17 +1,24 @@
 "use client";
 
 /**
- * Ловить помилки сегмента. На React #412 / Connection closed —
- * один раз hard reload (єдиний надійний recovery для Next soft-nav).
+ * Ловить помилки сегмента. Soft-nav #412 / DOM NotFoundError —
+ * один раз hard reload (єдиний надійний recovery).
  */
 
 import { useEffect } from "react";
 
-function isSoftNavCrash(error: Error): boolean {
-  const msg = `${error.message} ${error.name} ${(error as Error & { digest?: string }).digest ?? ""}`;
-  return /connection closed|#412|\b412\b|failed to fetch rsc|fetchserverresponse/i.test(
+function isRecoverableCrash(error: Error): boolean {
+  const msg = `${error.name} ${error.message} ${(error as Error & { digest?: string }).digest ?? ""}`;
+  return /connection closed|#412|\b412\b|failed to fetch rsc|fetchserverresponse|notfounderror|object can not be found|object cannot be found|removechild/i.test(
     msg
   );
+}
+
+function userFacingMessage(error: Error): string {
+  if (isRecoverableCrash(error)) {
+    return "Тимчасова помилка відображення. Оновіть сторінку.";
+  }
+  return error.message || "Спробуйте ще раз або оновіть сторінку.";
 }
 
 export default function Error({
@@ -23,7 +30,7 @@ export default function Error({
 }) {
   useEffect(() => {
     console.error("[app/error]", error.message, error.digest, error);
-    if (!isSoftNavCrash(error)) return;
+    if (!isRecoverableCrash(error)) return;
     const key = "levada-softnav-reload";
     try {
       if (sessionStorage.getItem(key) === "1") return;
@@ -39,9 +46,7 @@ export default function Error({
       <h1 className="text-lg font-semibold tracking-tight">
         Розділ не завантажився
       </h1>
-      <p className="max-w-sm text-sm text-zinc-400">
-        {error.message || "Спробуйте ще раз або оновіть сторінку."}
-      </p>
+      <p className="max-w-sm text-sm text-zinc-400">{userFacingMessage(error)}</p>
       <div className="flex flex-wrap items-center justify-center gap-2">
         <button
           type="button"

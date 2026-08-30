@@ -26,11 +26,11 @@ export const metadata: Metadata = {
   applicationName: "LEVADA SYSTEM",
   icons: {
     icon: [
-      { url: "/icons/icon-192.png?v=5", sizes: "192x192", type: "image/png" },
-      { url: "/icons/icon-512.png?v=5", sizes: "512x512", type: "image/png" },
+      { url: "/icons/icon-192.png?v=6", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512.png?v=6", sizes: "512x512", type: "image/png" },
     ],
     apple: [
-      { url: "/apple-touch-icon.png?v=5", sizes: "180x180", type: "image/png" },
+      { url: "/apple-touch-icon.png?v=6", sizes: "180x180", type: "image/png" },
     ],
   },
   appleWebApp: {

@@ -133,10 +133,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   useLayoutEffect(() => {
     document.documentElement.dataset.appNav = isAuthScreen ? "0" : "1";
     if (isAuthScreen) {
-      // Логін/install: жодного LEVADA-boot — прибрати splash і booting
+      // Логін/install: жодного LEVADA-boot — splash ховається CSS (data-booting)
       delete document.documentElement.dataset.booting;
       delete document.documentElement.dataset.appReady;
-      document.getElementById("boot-splash")?.remove();
     }
     // Без cleanup appNav=0: Strict Mode / remount на мить вмикає «логін» CSS
     // і html[data-app-nav=1]:not([data-app-ready]) лишає чорний екран.

@@ -6,20 +6,16 @@ type PreloaderProps = {
   isLoading: boolean;
 };
 
-function removeStaticBootSplash() {
-  const el = document.getElementById("boot-splash");
-  if (el) el.remove();
-}
-
 /**
  * Boot-екран LEVADA.
  * Без AnimatePresence/exit: Framer exit під час soft-nav рве дерево і валить global-error.
+ * #boot-splash лишаємо в DOM — лише CSS (data-booting). `.remove()` на React-вузлі
+ * → NotFoundError «The object can not be found here» на кожному оновленні Toaster/body.
  */
 export function Preloader({ isLoading }: PreloaderProps) {
   useLayoutEffect(() => {
     if (isLoading) {
       document.documentElement.dataset.booting = "1";
-      removeStaticBootSplash();
     }
   }, [isLoading]);
 

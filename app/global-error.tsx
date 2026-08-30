@@ -1,16 +1,23 @@
 "use client";
 
 /**
- * Root crash. Soft-nav #412 → hard reload на головну один раз.
+ * Root crash. Soft-nav #412 / DOM NotFoundError → hard reload на головну один раз.
  */
 
 import { useEffect } from "react";
 
-function isSoftNavCrash(error: Error): boolean {
-  const msg = `${error.message} ${error.name} ${(error as Error & { digest?: string }).digest ?? ""}`;
-  return /connection closed|#412|\b412\b|failed to fetch rsc|fetchserverresponse/i.test(
+function isRecoverableCrash(error: Error): boolean {
+  const msg = `${error.name} ${error.message} ${(error as Error & { digest?: string }).digest ?? ""}`;
+  return /connection closed|#412|\b412\b|failed to fetch rsc|fetchserverresponse|notfounderror|object can not be found|object cannot be found|removechild/i.test(
     msg
   );
+}
+
+function userFacingMessage(error: Error): string {
+  if (isRecoverableCrash(error)) {
+    return "Тимчасова помилка відображення. Повертаємось на головну…";
+  }
+  return error.message || "Оновіть сторінку або поверніться на головну.";
 }
 
 export default function GlobalError({
@@ -22,7 +29,7 @@ export default function GlobalError({
 }) {
   useEffect(() => {
     console.error("[app/global-error]", error.message, error.digest, error);
-    if (!isSoftNavCrash(error)) return;
+    if (!isRecoverableCrash(error)) return;
     const key = "levada-softnav-reload";
     try {
       if (sessionStorage.getItem(key) === "1") return;
@@ -53,7 +60,7 @@ export default function GlobalError({
             Сторінка не завантажилась
           </h1>
           <p style={{ fontSize: 14, color: "#a1a1aa", margin: "0 0 12px" }}>
-            {error.message || "Оновіть сторінку або поверніться на головну."}
+            {userFacingMessage(error)}
           </p>
           <div
             style={{
@@ -88,7 +95,14 @@ export default function GlobalError({
             </button>
             <button
               type="button"
-              onClick={() => reset()}
+              onClick={() => {
+                try {
+                  sessionStorage.removeItem("levada-softnav-reload");
+                } catch {
+                  /* ignore */
+                }
+                window.location.reload();
+              }}
               style={{
                 border: "1px solid #3f3f46",
                 borderRadius: 12,
