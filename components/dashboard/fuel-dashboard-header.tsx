@@ -11,7 +11,7 @@ import {
   Warehouse,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type {
   FieldFuelBreakdownRow,
@@ -19,12 +19,6 @@ import type {
 } from "@/app/fuel/actions";
 import { FuelRefuelRadar } from "@/components/dashboard/fuel-refuel-radar";
 import { Button } from "@/components/ui/button";
-import {
-  Drawer,
-  DrawerContent,
-  DrawerHandle,
-  DrawerTitle,
-} from "@/components/ui/drawer";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -116,27 +110,27 @@ function KpiBreakdownList({
 }) {
   if (rows.length === 0) {
     return (
-      <p className="px-1 py-2 text-xs text-muted-foreground">{emptyLabel}</p>
+      <p className="px-1 py-3 text-center text-xs text-zinc-400">{emptyLabel}</p>
     );
   }
   return (
-    <ul className="max-h-64 space-y-0.5 overflow-y-auto pr-0.5">
+    <ul className="max-h-[min(40vh,16rem)] space-y-0.5 overflow-y-auto overscroll-contain pr-0.5">
       {rows.map((row, index) => (
         <li
           key={`${row.title}-${row.subtitle ?? ""}-${index}`}
-          className="flex items-start justify-between gap-3 rounded-xl px-2.5 py-2 hover:bg-zinc-50"
+          className="flex items-start justify-between gap-3 rounded-xl px-2.5 py-2 transition-colors hover:bg-[#F4F1EA]/90"
         >
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-zinc-900">
+            <p className="truncate text-[13px] font-semibold text-zinc-900">
               {row.title}
             </p>
             {row.subtitle ? (
               <p className="truncate text-[11px] text-zinc-500">{row.subtitle}</p>
             ) : null}
           </div>
-          <p className="shrink-0 text-sm font-bold tabular-nums text-zinc-900">
+          <p className="shrink-0 text-[13px] font-bold tabular-nums text-zinc-900">
             {formatLiters(row.liters)}{" "}
-            <span className="text-[11px] font-semibold text-zinc-400">л</span>
+            <span className="text-[10px] font-semibold text-zinc-400">л</span>
           </p>
         </li>
       ))}
@@ -210,8 +204,52 @@ function KpiValue({
   breakdownRows: Array<{ title: string; subtitle?: string; liters: number }>;
   accentClass?: string;
 }) {
-  const isMobile = useIsMobile();
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const [open, setOpen] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const isInsidePanel = (target: EventTarget | null) => {
+      if (!(target instanceof Node)) return false;
+      if (panelRef.current?.contains(target)) return true;
+      if (
+        target instanceof Element &&
+        target.closest("[data-slot='popover-trigger']")
+      ) {
+        return true;
+      }
+      return false;
+    };
+
+    const onScrollOrWheel = (event: Event) => {
+      if (isInsidePanel(event.target)) return;
+      setOpen(false);
+    };
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (isInsidePanel(event.target)) return;
+      setOpen(false);
+    };
+
+    window.addEventListener("scroll", onScrollOrWheel, true);
+    window.addEventListener("wheel", onScrollOrWheel, {
+      capture: true,
+      passive: true,
+    });
+    window.addEventListener("touchmove", onScrollOrWheel, {
+      capture: true,
+      passive: true,
+    });
+    document.addEventListener("pointerdown", onPointerDown, true);
+
+    return () => {
+      window.removeEventListener("scroll", onScrollOrWheel, true);
+      window.removeEventListener("wheel", onScrollOrWheel, true);
+      window.removeEventListener("touchmove", onScrollOrWheel, true);
+      document.removeEventListener("pointerdown", onPointerDown, true);
+    };
+  }, [open]);
 
   if (loading) {
     return (
@@ -257,68 +295,8 @@ function KpiValue({
 
   if (!interactive) return value;
 
-  const breakdown = (
-    <KpiBreakdownList emptyLabel={breakdownEmpty} rows={breakdownRows} />
-  );
-
-  /** Моб: окрема Drawer — Popover→bottom-sheet раніше валив сторінку */
-  if (isMobile) {
-    return (
-      <>
-        <button
-          type="button"
-          className="group inline-flex text-left outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/20 rounded-xl"
-          onClick={() => setMobileOpen(true)}
-        >
-          {value}
-        </button>
-        <Drawer
-          open={mobileOpen}
-          onOpenChange={setMobileOpen}
-          dismissible
-          modal={false}
-          shouldScaleBackground={false}
-          noBodyStyles
-        >
-          <DrawerContent
-            className="flex max-h-[min(70dvh,calc(100dvh-var(--app-bottom-inset)-1rem))] flex-col border-[#E5DFD3]/90 bg-[#F4F1EA] pb-0"
-            overlayClassName="pointer-events-none bg-black/45"
-            showCloseButton={false}
-          >
-            <DrawerHandle />
-            <div className="flex items-start justify-between gap-3 border-b border-[#E5DFD3]/80 px-5 py-3">
-              <div className="min-w-0">
-                <DrawerTitle className="text-base font-bold text-zinc-900">
-                  {popoverTitle}
-                </DrawerTitle>
-                <p className="mt-0.5 text-[12px] text-zinc-500">
-                  {popoverDescription}
-                </p>
-              </div>
-              <button
-                type="button"
-                aria-label="Закрити"
-                onClick={() => setMobileOpen(false)}
-                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-zinc-500 shadow-sm ring-1 ring-[#E5DFD3]"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div
-              className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 pb-8 touch-pan-y"
-              data-vaul-no-drag=""
-              data-allow-pan="true"
-            >
-              {breakdown}
-            </div>
-          </DrawerContent>
-        </Drawer>
-      </>
-    );
-  }
-
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen} modal={false}>
       <PopoverTrigger
         className={cn(
           "group inline-flex text-left outline-none",
@@ -330,14 +308,51 @@ function KpiValue({
       <PopoverContent
         align="start"
         side="bottom"
+        sideOffset={10}
         sheetOnMobile={false}
-        className="w-[20rem] rounded-2xl border border-zinc-200 bg-white p-3 text-zinc-900 shadow-xl"
+        className={cn(
+          "w-[min(calc(100vw-1.5rem),20.5rem)] gap-0 overflow-hidden rounded-2xl border border-[#E5DFD3]/90 p-0 text-zinc-900",
+          "bg-[linear-gradient(180deg,#ffffff_0%,#FBF9F5_55%,#F4F1EA_100%)]",
+          "shadow-[0_18px_48px_-16px_rgba(39,33,24,0.35),0_0_0_1px_rgba(255,255,255,0.7)_inset]"
+        )}
       >
-        <div className="mb-2 gap-0.5 px-1">
-          <p className="text-sm font-bold text-zinc-900">{popoverTitle}</p>
-          <p className="text-[11px] text-zinc-500">{popoverDescription}</p>
+        <div ref={panelRef} className="relative">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white to-transparent"
+          />
+          <div className="flex items-start gap-3 border-b border-[#E5DFD3]/70 px-3.5 py-3 pr-12">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#276749]/12 text-[#276749] shadow-sm ring-1 ring-[#276749]/10">
+              <Fuel className="h-4 w-4" strokeWidth={2} />
+            </div>
+            <div className="min-w-0 pt-0.5">
+              <p className="truncate text-sm font-bold tracking-tight text-zinc-900">
+                {popoverTitle}
+              </p>
+              <p className="mt-0.5 truncate text-[11px] leading-snug text-zinc-500">
+                {popoverDescription}
+              </p>
+            </div>
+            <button
+              type="button"
+              aria-label="Закрити"
+              onClick={() => setOpen(false)}
+              className={cn(
+                "absolute top-2.5 right-2.5 inline-flex h-8 w-8 items-center justify-center rounded-full",
+                "bg-white/90 text-zinc-400 shadow-sm ring-1 ring-[#E5DFD3]/90",
+                "transition hover:bg-white hover:text-zinc-700"
+              )}
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <div className="px-2 py-2" data-allow-pan="true">
+            <KpiBreakdownList
+              emptyLabel={breakdownEmpty}
+              rows={breakdownRows}
+            />
+          </div>
         </div>
-        {breakdown}
       </PopoverContent>
     </Popover>
   );
