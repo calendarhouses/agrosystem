@@ -12,14 +12,17 @@ import {
   Edit2,
   Factory,
   Fuel,
+  LayoutDashboard,
   Loader2,
   MoreHorizontal,
   Plus,
   RefreshCw,
+  ScrollText,
   Settings2,
   Tractor,
   Trash2,
   Truck,
+  type LucideIcon,
 } from "lucide-react";
 import type { DateRange } from "react-day-picker";
 
@@ -1407,11 +1410,16 @@ export function FuelView({
           >
             {(
               [
-                { id: "overview", label: "Огляд" },
-                { id: "journal", label: "Журнал" },
-              ] as const
+                { id: "overview", label: "Огляд", icon: LayoutDashboard },
+                { id: "journal", label: "Журнал", icon: ScrollText },
+              ] as const satisfies ReadonlyArray<{
+                id: "overview" | "journal";
+                label: string;
+                icon: LucideIcon;
+              }>
             ).map((tab) => {
               const active = mobileTab === tab.id;
+              const Icon = tab.icon;
               return (
                 <button
                   key={tab.id}
@@ -1420,13 +1428,17 @@ export function FuelView({
                   aria-selected={active}
                   onClick={() => setMobileTab(tab.id)}
                   className={cn(
-                    "min-h-10 flex-1 rounded-xl text-[13px] font-bold transition-all",
+                    "flex min-h-10 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[12px] font-bold transition-all",
                     active
                       ? "bg-[#276749] text-white shadow-sm shadow-emerald-900/20"
                       : "text-zinc-500"
                   )}
                 >
-                  {tab.label}
+                  <Icon
+                    className="h-3.5 w-3.5"
+                    strokeWidth={active ? 2.25 : 2}
+                  />
+                  <span className="leading-none">{tab.label}</span>
                 </button>
               );
             })}

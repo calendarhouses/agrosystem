@@ -14,8 +14,7 @@ export function GlassCard({
     <div
       className={cn(
         "group relative overflow-hidden rounded-xl border border-[#E5DFD3] bg-[#F4F1EA] p-6 text-zinc-900",
-        "shadow-sm transition-all duration-300 ease-out",
-        "hover:-translate-y-0.5 hover:shadow-md",
+        "shadow-sm",
         className
       )}
     >

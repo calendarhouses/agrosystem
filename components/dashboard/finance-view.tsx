@@ -13,6 +13,7 @@ import {
   FileSpreadsheet,
   Fuel,
   Landmark,
+  LayoutDashboard,
   Leaf,
   Loader2,
   MapPinned,
@@ -23,6 +24,7 @@ import {
   TrendingUp,
   Wallet,
   Wheat,
+  type LucideIcon,
 } from "lucide-react";
 
 import { getCompanyFinancialOverview, getFinanceBasDashboard } from "@/app/finance/actions";
@@ -716,12 +718,17 @@ export function FinanceView({
           >
             {(
               [
-                { id: "overview", label: "Огляд" },
-                { id: "fields", label: "Поля" },
-                { id: "flow", label: "Динаміка" },
-              ] as const
+                { id: "overview", label: "Огляд", icon: LayoutDashboard },
+                { id: "fields", label: "Поля", icon: MapPinned },
+                { id: "flow", label: "Динаміка", icon: TrendingUp },
+              ] as const satisfies ReadonlyArray<{
+                id: "overview" | "fields" | "flow";
+                label: string;
+                icon: LucideIcon;
+              }>
             ).map((tab) => {
               const active = mobileTab === tab.id;
+              const Icon = tab.icon;
               return (
                 <button
                   key={tab.id}
@@ -730,13 +737,17 @@ export function FinanceView({
                   aria-selected={active}
                   onClick={() => setMobileTab(tab.id)}
                   className={cn(
-                    "min-h-10 flex-1 rounded-xl text-[13px] font-bold transition-all",
+                    "flex min-h-10 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[12px] font-bold transition-all",
                     active
                       ? "bg-[#276749] text-white shadow-[0_4px_12px_-4px_rgba(39,103,73,0.55)]"
                       : "text-zinc-500 active:bg-white/80"
                   )}
                 >
-                  {tab.label}
+                  <Icon
+                    className="h-3.5 w-3.5"
+                    strokeWidth={active ? 2.25 : 2}
+                  />
+                  <span className="leading-none">{tab.label}</span>
                 </button>
               );
             })}

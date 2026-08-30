@@ -30,6 +30,7 @@ import {
   Pencil,
   Plus,
   Search,
+  ShoppingBag,
   ShoppingCart,
   Sprout,
   Trash2,
@@ -241,11 +242,17 @@ function formatCompactUah(amount: number): string {
 
 
 type Props = {
-  dashboard: InventoryFullDashboard | null;
+  dashboard: InventoryFullDashboard;
   error: string | null;
+  /** Перше завантаження без кешу — скелетон лише в блоці даних */
+  isLoading?: boolean;
 };
 
-export function InventoryView({ dashboard, error }: Props) {
+export function InventoryView({
+  dashboard,
+  error,
+  isLoading = false,
+}: Props) {
   const router = useRouter();
   const isMobile = useIsMobile();
   const [category, setCategory] = useState<InventoryCategory | null>(null);
@@ -311,19 +318,19 @@ export function InventoryView({ dashboard, error }: Props) {
     [period, seasonYear, customRange]
   );
 
-  const view = useMemo(() => {
-    if (!dashboard) return null;
-    return filterDashboardByRange(
-      dashboard,
-      toIsoDay(dateRange.start),
-      toIsoDay(dateRange.end)
-    );
-  }, [dashboard, dateRange]);
+  const view = useMemo(
+    () =>
+      filterDashboardByRange(
+        dashboard,
+        toIsoDay(dateRange.start),
+        toIsoDay(dateRange.end)
+      ),
+    [dashboard, dateRange]
+  );
 
   /** Lifetime BAS qtyIn/qtyOut (не зрізане періодом) — для «На складі». */
   const lifetimeQtyInByRef = useMemo(() => {
     const map: Record<string, number> = {};
-    if (!dashboard) return map;
     for (const item of dashboard.items) {
       map[item.id.toLowerCase()] = Number(item.qtyIn) || 0;
     }
@@ -332,7 +339,6 @@ export function InventoryView({ dashboard, error }: Props) {
 
   const lifetimeQtyOutByRef = useMemo(() => {
     const map: Record<string, number> = {};
-    if (!dashboard) return map;
     for (const item of dashboard.items) {
       map[item.id.toLowerCase()] = Number(item.qtyOut) || 0;
     }
@@ -694,7 +700,7 @@ export function InventoryView({ dashboard, error }: Props) {
               <button
                 type="button"
                 onClick={() => setInboundOpen(true)}
-                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border border-sky-200/90 bg-sky-50 px-4 text-sm font-bold text-sky-950 shadow-sm transition hover:bg-sky-100"
+                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border border-sky-200/90 bg-sky-50 px-4 text-sm font-bold text-sky-950 shadow-sm transition"
               >
                 <PackagePlus className="h-4 w-4 shrink-0" />
                 Прихід
@@ -702,7 +708,7 @@ export function InventoryView({ dashboard, error }: Props) {
               <button
                 type="button"
                 onClick={() => setQuickIssueOpen(true)}
-                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl bg-zinc-900 px-4 text-sm font-bold text-white shadow-sm shadow-zinc-900/25 transition hover:bg-zinc-800"
+                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl bg-zinc-900 px-4 text-sm font-bold text-white shadow-sm shadow-zinc-900/25 transition"
               >
                 <PackageMinus className="h-4 w-4 shrink-0" />
                 Списати
@@ -710,7 +716,7 @@ export function InventoryView({ dashboard, error }: Props) {
               <button
                 type="button"
                 onClick={() => setSaleOpen(true)}
-                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border border-amber-200/90 bg-amber-50 px-4 text-sm font-bold text-amber-950 shadow-sm transition hover:bg-amber-100"
+                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border border-amber-200/90 bg-amber-50 px-4 text-sm font-bold text-amber-950 shadow-sm transition"
               >
                 <ShoppingCart className="h-4 w-4 shrink-0" />
                 Продаж
@@ -718,7 +724,7 @@ export function InventoryView({ dashboard, error }: Props) {
               <button
                 type="button"
                 onClick={() => setHistoryOpen(true)}
-                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#E5DFD3]/90 bg-white/90 text-zinc-600 shadow-sm transition hover:bg-[#F4F1EA] hover:text-zinc-900"
+                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#E5DFD3]/90 bg-white/90 text-zinc-600 shadow-sm transition"
                 title="Історія"
                 aria-label="Історія"
               >
@@ -727,7 +733,7 @@ export function InventoryView({ dashboard, error }: Props) {
               <button
                 type="button"
                 onClick={() => setExportOpen(true)}
-                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#E5DFD3]/90 bg-white/90 text-zinc-600 shadow-sm transition hover:bg-[#F4F1EA] hover:text-zinc-900"
+                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#E5DFD3]/90 bg-white/90 text-zinc-600 shadow-sm transition"
                 title="Експорт"
                 aria-label="Експорт"
               >
@@ -802,8 +808,7 @@ export function InventoryView({ dashboard, error }: Props) {
           </div>
         ) : null}
 
-        {view ? (
-          <>
+        <>
             <div className="mb-5 space-y-2.5">
               {/* 1: сезон + діапазон */}
               <div className="flex items-center gap-2">
@@ -822,7 +827,7 @@ export function InventoryView({ dashboard, error }: Props) {
                       "inline-flex h-11 min-w-0 flex-1 items-center gap-2 rounded-xl border px-2.5 text-left text-sm font-semibold transition-all md:h-9 md:flex-none md:text-xs",
                       period === "Сезон"
                         ? "border-[#276749] bg-[#276749] text-white shadow-[0_6px_16px_-6px_rgba(39,103,73,0.55)]"
-                        : "border-[#E0DBD0] bg-white text-zinc-700 hover:border-[#276749]/35"
+                        : "border-[#E0DBD0] bg-white text-zinc-700"
                     )}
                     aria-label="Обрати агросезон"
                   >
@@ -869,7 +874,7 @@ export function InventoryView({ dashboard, error }: Props) {
                             "flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left transition-colors",
                             seasonYear === year
                               ? "bg-[#276749] text-white"
-                              : "text-zinc-800 hover:bg-zinc-50"
+                              : "text-zinc-800"
                           )}
                         >
                           <span className="text-sm font-semibold">
@@ -906,7 +911,7 @@ export function InventoryView({ dashboard, error }: Props) {
                       "inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl border px-3 text-sm font-semibold transition-all md:h-9 md:text-xs",
                       period === "custom"
                         ? "border-[#276749] bg-[#276749] text-white shadow-[0_6px_16px_-6px_rgba(39,103,73,0.55)]"
-                        : "border-[#E0DBD0] bg-white text-zinc-700 hover:border-[#276749]/35"
+                        : "border-[#E0DBD0] bg-white text-zinc-700"
                     )}
                   >
                     <CalendarIcon
@@ -958,7 +963,7 @@ export function InventoryView({ dashboard, error }: Props) {
                           applyPeriod("Сезон");
                           setRangeOpen(false);
                         }}
-                        className="h-11 flex-1 rounded-xl border border-zinc-200 bg-white text-sm font-semibold text-zinc-600 hover:bg-zinc-50"
+                        className="h-11 flex-1 rounded-xl border border-zinc-200 bg-white text-sm font-semibold text-zinc-600"
                       >
                         Скинути
                       </button>
@@ -976,7 +981,7 @@ export function InventoryView({ dashboard, error }: Props) {
                           setPeriod("custom");
                           setRangeOpen(false);
                         }}
-                        className="h-11 flex-[1.4] rounded-xl bg-[#276749] text-sm font-bold text-white hover:bg-[#22543d] disabled:opacity-50"
+                        className="h-11 flex-[1.4] rounded-xl bg-[#276749] text-sm font-bold text-white disabled:opacity-50"
                       >
                         Застосувати
                       </button>
@@ -997,7 +1002,7 @@ export function InventoryView({ dashboard, error }: Props) {
                         "h-11 min-w-0 flex-1 rounded-[10px] px-1 text-[11px] font-semibold transition-all sm:px-2 sm:text-xs md:h-8",
                         period === option
                           ? "bg-[#276749] text-white shadow-[0_4px_12px_-4px_rgba(39,103,73,0.55)]"
-                          : "text-zinc-500 hover:bg-white/70 hover:text-zinc-800"
+                          : "text-zinc-500"
                       )}
                     >
                       {option}
@@ -1009,7 +1014,7 @@ export function InventoryView({ dashboard, error }: Props) {
                     <button
                       type="button"
                       onClick={() => setHistoryOpen(true)}
-                      className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#E5DFD3]/90 bg-white/90 text-zinc-600 shadow-sm transition hover:bg-[#F4F1EA] hover:text-zinc-900"
+                      className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#E5DFD3]/90 bg-white/90 text-zinc-600 shadow-sm transition"
                       title="Історія"
                       aria-label="Історія"
                     >
@@ -1018,7 +1023,7 @@ export function InventoryView({ dashboard, error }: Props) {
                     <button
                       type="button"
                       onClick={() => setExportOpen(true)}
-                      className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#E5DFD3]/90 bg-white/90 text-zinc-600 shadow-sm transition hover:bg-[#F4F1EA] hover:text-zinc-900"
+                      className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#E5DFD3]/90 bg-white/90 text-zinc-600 shadow-sm transition"
                       title="Експорт"
                       aria-label="Експорт"
                     >
@@ -1035,6 +1040,8 @@ export function InventoryView({ dashboard, error }: Props) {
                     {
                       id: "purchase" as const,
                       label: "Закупки",
+                      icon: ShoppingBag,
+                      iconTone: "bg-emerald-100 text-emerald-700",
                       value: formatCompactUah(
                         view.totalReceipts + localPeriodFinance.receiptsUah
                       ),
@@ -1049,6 +1056,8 @@ export function InventoryView({ dashboard, error }: Props) {
                     {
                       id: "sale" as const,
                       label: "Продажі",
+                      icon: ShoppingCart,
+                      iconTone: "bg-sky-100 text-sky-700",
                       value: formatCompactUah(
                         view.totalSales + localPeriodFinance.salesUah
                       ),
@@ -1062,6 +1071,8 @@ export function InventoryView({ dashboard, error }: Props) {
                     {
                       id: "harvest" as const,
                       label: "Випуск",
+                      icon: Wheat,
+                      iconTone: "bg-amber-100 text-amber-800",
                       value: formatCompactUah(
                         view.totalHarvest + localPeriodFinance.harvestUah
                       ),
@@ -1073,6 +1084,7 @@ export function InventoryView({ dashboard, error }: Props) {
                   ] as const
                 ).map((kpi) => {
                   const active = flowFilter === kpi.id;
+                  const Icon = kpi.icon;
                   return (
                     <button
                       key={kpi.id}
@@ -1089,9 +1101,19 @@ export function InventoryView({ dashboard, error }: Props) {
                       title={`${kpi.label}: ${kpi.value}`}
                       aria-pressed={active}
                     >
-                      <p className="text-[10px] font-semibold tracking-[0.14em] text-zinc-400 uppercase">
-                        {kpi.label}
-                      </p>
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className={cn(
+                            "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg",
+                            kpi.iconTone
+                          )}
+                        >
+                          <Icon className="h-3.5 w-3.5" strokeWidth={2.1} />
+                        </span>
+                        <p className="truncate text-[10px] font-semibold tracking-[0.12em] text-zinc-400 uppercase">
+                          {kpi.label}
+                        </p>
+                      </div>
                       <p className="mt-1.5 truncate text-lg font-bold tracking-tight text-zinc-900 tabular-nums sm:text-xl">
                         {kpi.value}
                       </p>
@@ -1109,7 +1131,7 @@ export function InventoryView({ dashboard, error }: Props) {
                   <button
                     type="button"
                     onClick={() => setInboundOpen(true)}
-                    className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border border-sky-200/90 bg-sky-50 px-2 text-[13px] font-bold text-sky-950 shadow-sm transition active:scale-[0.98] hover:bg-sky-100"
+                    className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border border-sky-200/90 bg-sky-50 px-2 text-[13px] font-bold text-sky-950 shadow-sm transition active:scale-[0.98]"
                   >
                     <PackagePlus className="h-4 w-4 shrink-0" />
                     Прихід
@@ -1117,7 +1139,7 @@ export function InventoryView({ dashboard, error }: Props) {
                   <button
                     type="button"
                     onClick={() => setQuickIssueOpen(true)}
-                    className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl bg-zinc-900 px-2 text-[13px] font-bold text-white shadow-sm shadow-zinc-900/25 transition active:scale-[0.98] hover:bg-zinc-800"
+                    className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl bg-zinc-900 px-2 text-[13px] font-bold text-white shadow-sm shadow-zinc-900/25 transition active:scale-[0.98]"
                   >
                     <PackageMinus className="h-4 w-4 shrink-0" />
                     Списати
@@ -1125,7 +1147,7 @@ export function InventoryView({ dashboard, error }: Props) {
                   <button
                     type="button"
                     onClick={() => setSaleOpen(true)}
-                    className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border border-amber-200/90 bg-amber-50 px-2 text-[13px] font-bold text-amber-950 shadow-sm transition active:scale-[0.98] hover:bg-amber-100"
+                    className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border border-amber-200/90 bg-amber-50 px-2 text-[13px] font-bold text-amber-950 shadow-sm transition active:scale-[0.98]"
                   >
                     <ShoppingCart className="h-4 w-4 shrink-0" />
                     Продаж
@@ -1134,7 +1156,9 @@ export function InventoryView({ dashboard, error }: Props) {
               ) : null}
             </div>
 
-            {!showingItems ? (
+            {isLoading ? (
+              <InventoryBootSkeleton />
+            ) : !showingItems ? (
               <div className="space-y-3">
                 {flowFilter ? (
                   <div className="flex flex-wrap items-center gap-2">
@@ -1145,7 +1169,7 @@ export function InventoryView({ dashboard, error }: Props) {
                         setOpenItemId(null);
                         setQuery("");
                       }}
-                      className="inline-flex h-9 items-center gap-1.5 rounded-full border border-zinc-200/90 bg-white px-3 text-xs font-semibold text-zinc-600 shadow-sm transition hover:text-zinc-900"
+                      className="inline-flex h-9 items-center gap-1.5 rounded-full border border-zinc-200/90 bg-white px-3 text-xs font-semibold text-zinc-600 shadow-sm transition active:bg-zinc-50"
                     >
                       <ChevronLeft className="h-3.5 w-3.5" />
                       До огляду
@@ -1191,7 +1215,7 @@ export function InventoryView({ dashboard, error }: Props) {
                             setQuery("");
                           }}
                           className={cn(
-                            "group relative overflow-hidden rounded-2xl border text-left shadow-[0_8px_30px_rgb(39,33,24,0.05)] transition-colors",
+                            "group relative overflow-hidden rounded-2xl border text-left shadow-[0_8px_30px_rgb(39,33,24,0.05)]",
                             "p-3 sm:min-h-[168px] sm:rounded-3xl sm:p-6",
                             "active:scale-[0.99]",
                             style.card
@@ -1256,7 +1280,7 @@ export function InventoryView({ dashboard, error }: Props) {
                       setOpenItemId(null);
                       setQuery("");
                     }}
-                    className="inline-flex h-9 items-center gap-1.5 rounded-full border border-zinc-200/90 bg-white px-3 text-xs font-semibold text-zinc-600 shadow-sm transition hover:text-zinc-900"
+                    className="inline-flex h-9 items-center gap-1.5 rounded-full border border-zinc-200/90 bg-white px-3 text-xs font-semibold text-zinc-600 shadow-sm transition"
                   >
                     <ChevronLeft className="h-3.5 w-3.5" />
                     {flowFilter ? "До категорій" : "Усі категорії"}
@@ -1316,7 +1340,7 @@ export function InventoryView({ dashboard, error }: Props) {
                     className={cn(
                       "h-9 shrink-0 rounded-full px-3 text-xs font-semibold",
                       onlyActive
-                        ? "bg-[#276749] text-white hover:bg-[#1f5339]"
+                        ? "bg-[#276749] text-white"
                         : "border-[#E5DFD3] bg-white text-zinc-600"
                     )}
                   >
@@ -1330,7 +1354,7 @@ export function InventoryView({ dashboard, error }: Props) {
                       "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition-all",
                       showHidden
                         ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                        : "border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50"
+                        : "border-zinc-200 bg-white text-zinc-500"
                     )}
                   >
                     {showHidden ? (
@@ -1413,10 +1437,7 @@ export function InventoryView({ dashboard, error }: Props) {
                 )}
               </div>
             )}
-          </>
-        ) : !error ? (
-          <InventoryBootSkeleton />
-        ) : null}
+        </>
       </div>
     </main>
   );
@@ -1424,24 +1445,12 @@ export function InventoryView({ dashboard, error }: Props) {
 
 function InventoryBootSkeleton() {
   return (
-    <div className="mt-1 space-y-4" aria-busy="true" aria-label="Склад">
-      <div className="flex gap-2">
-        <div className="h-11 flex-1 animate-pulse rounded-xl bg-white/70" />
-        <div className="h-11 w-28 animate-pulse rounded-xl bg-white/70" />
-      </div>
-      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => (
+    <div className="space-y-3" aria-busy="true" aria-label="Завантаження складу">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-2 sm:gap-3 xl:grid-cols-3">
+        {Array.from({ length: 5 }).map((_, i) => (
           <div
             key={i}
-            className="h-24 animate-pulse rounded-2xl border border-[#E5DFD3]/80 bg-white/60"
-          />
-        ))}
-      </div>
-      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div
-            key={i}
-            className="h-28 animate-pulse rounded-2xl border border-[#E5DFD3]/80 bg-white/55"
+            className="h-[7.5rem] animate-pulse rounded-2xl border border-[#E5DFD3]/80 bg-white/60 sm:min-h-[168px] sm:rounded-3xl"
           />
         ))}
       </div>
@@ -1799,8 +1808,8 @@ function InventoryItemCard({
               className={cn(
                 "inline-flex h-7 w-7 items-center justify-center rounded-full",
                 isHarvest
-                  ? "bg-amber-50 text-amber-800 hover:bg-amber-100"
-                  : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
+                  ? "bg-amber-50 text-amber-800"
+                  : "bg-emerald-50 text-emerald-700",
                 "transition",
                 "outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/25"
               )}
@@ -1817,7 +1826,7 @@ function InventoryItemCard({
           <DropdownMenuTrigger
             className={cn(
               "inline-flex h-7 w-7 items-center justify-center rounded-full text-zinc-400",
-              "outline-none transition hover:bg-zinc-100 hover:text-zinc-700",
+              "outline-none transition",
               "focus-visible:ring-2 focus-visible:ring-zinc-900/10"
             )}
             onClick={(e) => e.stopPropagation()}
@@ -1939,7 +1948,7 @@ function InventoryItemCard({
               type="button"
               disabled={pending}
               onClick={handleSaveEdit}
-              className="h-9 flex-1 rounded-xl bg-[#276749] text-white hover:bg-[#1f5339]"
+              className="h-9 flex-1 rounded-xl bg-[#276749] text-white"
             >
               {pending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -2272,7 +2281,7 @@ function ItemDocumentsSheet({
                 "h-9 flex-1 rounded-[10px] px-2 text-[11px] font-semibold transition",
                 kindFilter === id
                   ? "bg-[#276749] text-white shadow-[0_4px_12px_-4px_rgba(39,103,73,0.55)]"
-                  : "text-zinc-500 hover:bg-white/70 hover:text-zinc-800"
+                  : "text-zinc-500"
               )}
             >
               {label}
@@ -2387,7 +2396,7 @@ function SheetDocumentRow({
   }
 
   const rowClass =
-    "group flex w-full items-center justify-between gap-3 border-b border-[#E5DFD3]/80 px-3.5 py-3.5 text-left transition-colors last:border-0 hover:bg-[#F4F1EA]/70";
+    "group flex w-full items-center justify-between gap-3 border-b border-[#E5DFD3]/80 px-3.5 py-3.5 text-left transition-colors last:border-0";
 
   const body = (
     <>
@@ -2429,7 +2438,7 @@ function SheetDocumentRow({
                 onEditLocal?.();
               }}
               disabled={deleting || editLoading}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition hover:bg-white hover:text-zinc-800"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition"
               title="Редагувати"
             >
               {editLoading ? (
@@ -2445,7 +2454,7 @@ function SheetDocumentRow({
                 handleDelete();
               }}
               disabled={deleting || editLoading}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition hover:bg-red-50 hover:text-red-600"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition"
               title="Видалити"
             >
               {deleting ? (
@@ -2465,7 +2474,7 @@ function SheetDocumentRow({
           {formatSignedQty(doc.qty, unit, inbound)}
         </p>
         {canOpenBas ? (
-          <ExternalLink className="h-3.5 w-3.5 text-zinc-300 opacity-0 transition-opacity group-hover:opacity-100" />
+          <ExternalLink className="h-3.5 w-3.5 text-zinc-300 opacity-0 transition-opacity" />
         ) : null}
       </div>
     </>

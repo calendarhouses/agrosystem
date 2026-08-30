@@ -354,6 +354,37 @@ export type InventoryFullDashboard = InventoryDashboard & {
   moves: ItemMove[];
 };
 
+/** Порожній дашборд — Склад відкривається одразу, дані дотягуються на місці. */
+export function emptyInventoryDashboard(): InventoryFullDashboard {
+  return {
+    periodLabel: "",
+    since: "",
+    categories: INVENTORY_CATEGORIES.map((category) => {
+      const meta = INVENTORY_CATEGORY_META[category];
+      return {
+        category,
+        label: meta.label,
+        description: meta.description,
+        itemCount: 0,
+        activeCount: 0,
+        totalQty: 0,
+        totalCost: 0,
+        topUnit: null,
+      };
+    }),
+    items: [],
+    stockNote: "",
+    docs: [],
+    monthly: [],
+    totalReceipts: 0,
+    totalSales: 0,
+    totalHarvest: 0,
+    topBuyers: [],
+    topSuppliers: [],
+    moves: [],
+  };
+}
+
 export type ItemMove = {
   itemId: string;
   date: string;

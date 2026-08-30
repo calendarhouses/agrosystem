@@ -317,7 +317,7 @@ function DocCard({ doc }: { doc: DocRow }) {
   }
 
   return (
-    <GlassCard className="overflow-hidden p-0 shadow-sm hover:translate-y-0 hover:shadow-sm">
+    <GlassCard className="overflow-hidden p-0 shadow-sm">
       <button
         type="button"
         onClick={toggle}
