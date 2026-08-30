@@ -1125,6 +1125,9 @@ export function FuelView({
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
+    // Не тягнути оцінку часу від попереднього періоду (тиждень → місяць)
+    setKpiExpectedLoadMs(null);
+
     const cacheKey = fuelKpisCacheKey(fieldFuelPeriod);
     const seeded = peekAppCache<FuelKpisResponse>(cacheKey);
     const applyPayload = (payload: FuelKpisResponse) => {
@@ -1208,12 +1211,21 @@ export function FuelView({
     }
 
     const force = kpiRefreshToken > 0;
+    const useDayExpiry =
+      fieldFuelPeriod === "season" ||
+      fieldFuelPeriod === "month" ||
+      fieldFuelPeriod === "week" ||
+      fieldFuelPeriod === "yesterday";
 
     void cachedFetchJson<FuelKpisResponse>(
       cacheKey,
       fuelKpisUrl(fieldFuelPeriod),
       undefined,
-      { force }
+      {
+        force,
+        // Сезон/місяць/тиждень — одразу з day-expiry, не 2.5 хв
+        ...(useDayExpiry ? { expiresAt: endOfKyivDayMs() } : {}),
+      }
     )
       .then(({ data }) => {
         if (cancelled) return;

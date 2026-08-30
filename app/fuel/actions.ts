@@ -20,6 +20,7 @@ import {
   ensureFieldFuelPeriodCoverage,
   listFieldFuelBreakdownForPeriod,
   listUnsyncedFieldFuelDates,
+  resolveFieldFuelPeriodBounds,
   sumFieldFuelConsumedForPeriod,
   type FieldFuelBreakdownRow,
   type FieldFuelPeriod,
@@ -70,30 +71,44 @@ export async function getFieldFuelConsumed(
     const safe = normalizePeriod(period);
     let liveSynced = false;
 
-    try {
-      const coverage = await ensureFieldFuelPeriodCoverage(safe, {
-        maxDays:
-          safe === "season"
-            ? 6
-            : safe === "month"
-              ? 5
+    // week/month/season: якщо всі дні вже в БД — не чіпаємо Wialon.
+    // today/yesterday — завжди свіжий sync.
+    let shouldSync = safe === "today" || safe === "yesterday";
+    if (!shouldSync) {
+      try {
+        const { fromDate, toDate } = resolveFieldFuelPeriodBounds(safe);
+        const missing = await listUnsyncedFieldFuelDates(fromDate, toDate);
+        shouldSync = missing.length > 0;
+      } catch {
+        shouldSync = true;
+      }
+    }
+
+    if (shouldSync) {
+      try {
+        const coverage = await ensureFieldFuelPeriodCoverage(safe, {
+          maxDays:
+            safe === "season"
+              ? 6
+              : safe === "month"
+                ? 5
+                : safe === "week"
+                  ? 4
+                  : 1,
+          budgetMs:
+            safe === "today" || safe === "yesterday"
+              ? 12_000
               : safe === "week"
-                ? 4
-                : 1,
-        // Короткі чанки — клієнт оновлює % і доганяє наступними запитами
-        budgetMs:
-          safe === "today" || safe === "yesterday"
-            ? 12_000
-            : safe === "week"
-              ? 14_000
-              : 16_000,
-      });
-      liveSynced = coverage.daysSyncedNow > 0 || !coverage.truncated;
-    } catch (syncErr) {
-      console.error(
-        "[field-fuel] period coverage",
-        syncErr instanceof Error ? syncErr.message : syncErr
-      );
+                ? 14_000
+                : 16_000,
+        });
+        liveSynced = coverage.daysSyncedNow > 0 || !coverage.truncated;
+      } catch (syncErr) {
+        console.error(
+          "[field-fuel] period coverage",
+          syncErr instanceof Error ? syncErr.message : syncErr
+        );
+      }
     }
 
     const [sum, breakdown] = await Promise.all([

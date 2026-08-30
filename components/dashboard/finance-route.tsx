@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
 
 import { FinanceView } from "@/components/dashboard/finance-view";
 import {
@@ -21,17 +20,7 @@ type FinanceBootResponse = {
   error?: string;
 };
 
-function BootScreen() {
-  return (
-    <div className="flex h-full min-h-0 flex-col items-center justify-center gap-3 bg-[#F4F1EA] px-6 text-center">
-      <Loader2 className="h-7 w-7 animate-spin text-emerald-700" />
-      <p className="text-sm font-semibold text-zinc-800">Завантаження фінансів</p>
-      <p className="text-xs text-zinc-500">Дані вже можуть бути в кеші…</p>
-    </div>
-  );
-}
-
-/** Клієнтський вхід у Фінанси — миттєво з кеша після прогріву */
+/** Клієнтський вхід у Фінанси — одразу сторінка; дані дотягуються на місці. */
 export function FinanceRoute() {
   const fresh = peekAppCache<FinanceBootResponse>("api:finance:boot");
   const stale = peekAppCacheStale<FinanceBootResponse>("api:finance:boot");
@@ -50,7 +39,6 @@ export function FinanceRoute() {
   const [basError, setBasError] = useState<string | null>(
     seed?.overview || seed?.bas ? null : (seed?.error ?? null)
   );
-  const [loading, setLoading] = useState(!(seed?.overview || seed?.bas));
 
   useEffect(() => {
     const controller = new AbortController();
@@ -78,18 +66,11 @@ export function FinanceRoute() {
           err instanceof Error ? err.message : "Не вдалося завантажити фінанси";
         setOverviewError(message);
         setBasError(message);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
       });
 
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once
   }, []);
-
-  if (loading && !overview && !bas) {
-    return <BootScreen />;
-  }
 
   return (
     <FinanceView

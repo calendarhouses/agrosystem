@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
 
 import { FuelView } from "@/components/dashboard/fuel-view";
 import {
@@ -24,17 +23,7 @@ type TransactionsResponse = {
   error?: string;
 };
 
-function BootScreen() {
-  return (
-    <div className="flex h-full min-h-0 flex-col items-center justify-center gap-3 bg-[#F4F1EA] px-6 text-center">
-      <Loader2 className="h-7 w-7 animate-spin text-emerald-700" />
-      <p className="text-sm font-semibold text-zinc-800">Завантаження палива</p>
-      <p className="text-xs text-zinc-500">Дані вже можуть бути в кеші…</p>
-    </div>
-  );
-}
-
-/** Клієнтський вхід у Паливо — миттєво з кеша після прогріву */
+/** Клієнтський вхід у Паливо — одразу сторінка; дані дотягуються на місці. */
 export function FuelRoute() {
   const storagesFresh = peekAppCache<StoragesResponse>("api:fuel:storages");
   const storagesStale = peekAppCacheStale<StoragesResponse>("api:fuel:storages");
@@ -51,7 +40,6 @@ export function FuelRoute() {
   const [transactions, setTransactions] = useState<FuelTransaction[]>(
     seedTx ?? []
   );
-  const [loading, setLoading] = useState(!seedStorages);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -70,7 +58,6 @@ export function FuelRoute() {
         undefined,
         { signal: controller.signal, force: !seedTx }
       ),
-      // KPI (спалено/заправлено) — той самий ключ, що й прогрів з карти
       cachedFetchJson(
         "api:fuel:kpis:today",
         "/api/fuel/kpis?period=today",
@@ -88,18 +75,11 @@ export function FuelRoute() {
       })
       .catch(() => {
         /* seed вже на екрані */
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
       });
 
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once
   }, []);
-
-  if (loading && storages.length === 0) {
-    return <BootScreen />;
-  }
 
   return (
     <FuelView

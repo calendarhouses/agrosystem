@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import type { FieldFuelPeriod } from "@/app/fuel/actions";
 import { FUEL_KPI_LOAD_SEED_MS } from "@/lib/fuel-kpi-load-constants";
 
-const CACHE_KEY = "agrosystem-fuel-kpi-load-ms-shared-v1";
+const CACHE_KEY = "agrosystem-fuel-kpi-load-ms-shared-v2";
 
 type Store = Partial<Record<FieldFuelPeriod, number>>;
 
@@ -31,7 +31,7 @@ function writeLocalCache(period: FieldFuelPeriod, ms: number) {
   }
 }
 
-/** Локальний кеш спільної оцінки (щоб шкала стартувала одразу). */
+/** Локальний кеш спільної оцінки саме для цього періоду. */
 export function peekSharedFuelKpiLoadMs(period: FieldFuelPeriod): number {
   const hit = readLocalCache()[period];
   if (hit != null && Number.isFinite(hit) && hit >= 2500) {
@@ -80,14 +80,14 @@ function easeOutCubic(t: number): number {
 }
 
 /**
- * Шкала 1% → 100% за спільною оцінкою часу (сервер).
- * Після завершення шле замір на API — усі наступні клієнти бачать оновлену EMA.
+ * Шкала 1% → 100% з окремим темпом на кожен період.
+ * Якщо запит довший за оцінку — темп розтягується, без зависання на 99%.
  */
 export function useFuelLoadProgress(opts: {
   loading: boolean;
   incomplete: boolean;
   period: FieldFuelPeriod;
-  /** З відповіді /api/fuel/kpis — спільна оцінка для всіх */
+  /** Оцінка саме для поточного period (з API); null = ще не прийшла */
   sharedExpectedMs?: number | null;
 }): number | null {
   const { loading, incomplete, period, sharedExpectedMs } = opts;
@@ -96,30 +96,35 @@ export function useFuelLoadProgress(opts: {
   const startedAtRef = useRef<number | null>(null);
   const sessionActiveRef = useRef(false);
   const expectedRef = useRef(peekSharedFuelKpiLoadMs(period));
+  const periodRef = useRef(period);
   const finishFromRef = useRef(1);
 
+  // Новий період — завжди свій темп, не чужий sharedExpectedMs
   useEffect(() => {
-    if (sharedExpectedMs != null && Number.isFinite(sharedExpectedMs)) {
-      rememberSharedFuelKpiLoadMs(period, sharedExpectedMs);
-      // Підкрутити ціль лише якщо сесія ще на початку (<40%)
-      if (!sessionActiveRef.current || finishFromRef.current < 40) {
-        expectedRef.current = Math.round(sharedExpectedMs);
-      }
-    }
-  }, [sharedExpectedMs, period]);
-
-  useEffect(() => {
+    periodRef.current = period;
     startedAtRef.current = null;
     sessionActiveRef.current = false;
     expectedRef.current = peekSharedFuelKpiLoadMs(period);
+    finishFromRef.current = 1;
     setPct(null);
   }, [period]);
+
+  // Підхопити серверну оцінку лише для цього period і не пізно в сесії
+  useEffect(() => {
+    if (sharedExpectedMs == null || !Number.isFinite(sharedExpectedMs)) return;
+    if (periodRef.current !== period) return;
+    rememberSharedFuelKpiLoadMs(period, sharedExpectedMs);
+    if (!sessionActiveRef.current || finishFromRef.current < 45) {
+      expectedRef.current = Math.round(sharedExpectedMs);
+    }
+  }, [sharedExpectedMs, period]);
 
   useEffect(() => {
     if (active) {
       if (!sessionActiveRef.current) {
         sessionActiveRef.current = true;
         startedAtRef.current = Date.now();
+        // Не брати stale sharedExpectedMs від попереднього періоду
         expectedRef.current =
           sharedExpectedMs != null && Number.isFinite(sharedExpectedMs)
             ? Math.round(sharedExpectedMs)
@@ -130,17 +135,15 @@ export function useFuelLoadProgress(opts: {
       const id = window.setInterval(() => {
         const started = startedAtRef.current ?? Date.now();
         const elapsed = Date.now() - started;
-        const expected = Math.max(2500, expectedRef.current);
-        let next: number;
-        if (elapsed <= expected) {
-          next = 1 + easeOutCubic(elapsed / expected) * 94;
-        } else {
-          const over = elapsed - expected;
-          next =
-            95 +
-            (1 - Math.exp(-over / Math.max(4_000, expected * 0.4))) * 4;
+        let expected = Math.max(2500, expectedRef.current);
+        // Якщо ще вантажимось довше оцінки — розтягуємо темп (~90% стеля)
+        if (elapsed > expected) {
+          expected = Math.max(expected, elapsed / 0.9);
+          expectedRef.current = expected;
         }
-        const rounded = Math.min(99, Math.max(1, Math.round(next)));
+        const ratio = Math.min(1, elapsed / expected);
+        const next = 1 + easeOutCubic(ratio) * 94;
+        const rounded = Math.min(95, Math.max(1, Math.round(next)));
         finishFromRef.current = rounded;
         setPct(rounded);
       }, 80);

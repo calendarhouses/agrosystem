@@ -14,11 +14,11 @@ comment on table public.fuel_kpi_load_stats is
 
 insert into public.fuel_kpi_load_stats (period, ema_ms, samples)
 values
-  ('today', 5500, 1),
-  ('yesterday', 6000, 1),
-  ('week', 9000, 1),
-  ('month', 12000, 1),
-  ('season', 22000, 1)
+  ('today', 6000, 1),
+  ('yesterday', 7000, 1),
+  ('week', 12000, 1),
+  ('month', 40000, 1),
+  ('season', 75000, 1)
 on conflict (period) do nothing;
 
 alter table public.fuel_kpi_load_stats enable row level security;

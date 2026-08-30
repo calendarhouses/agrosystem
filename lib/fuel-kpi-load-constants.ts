@@ -1,12 +1,12 @@
 import type { FieldFuelPeriod } from "@/app/fuel/actions";
 
-/** Стартові оцінки часу KPI, поки в БД мало замірів. */
+/** Стартові оцінки повного циклу KPI (чанки бекенду + retry). */
 export const FUEL_KPI_LOAD_SEED_MS: Record<FieldFuelPeriod, number> = {
-  today: 5_500,
-  yesterday: 6_000,
-  week: 9_000,
-  month: 12_000,
-  season: 22_000,
+  today: 6_000,
+  yesterday: 7_000,
+  week: 12_000,
+  month: 40_000,
+  season: 75_000,
 };
 
 export const FUEL_KPI_LOAD_PERIODS: FieldFuelPeriod[] = [

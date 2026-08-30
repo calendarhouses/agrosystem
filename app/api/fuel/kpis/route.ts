@@ -10,6 +10,11 @@ import {
   peekFuelKpisServerCache,
   writeFuelKpisServerCache,
 } from "@/lib/fuel-kpis-cache";
+import {
+  isFuelKpiDayCachePeriod,
+  readFuelKpisDayCache,
+  writeFuelKpisDayCache,
+} from "@/lib/fuel-kpis-day-cache";
 import { getSharedFuelKpiLoadMs } from "@/lib/fuel-kpi-load-stats";
 import { sumStorageVolumeForPeriod } from "@/lib/fuel-storage-period";
 import { todayKyivYmd } from "@/lib/kyiv-date";
@@ -42,26 +47,37 @@ type KpisPayload = {
   burned: Awaited<ReturnType<typeof getFieldFuelConsumed>>;
   refueled: Awaited<ReturnType<typeof getFuelRefueledForPeriod>>;
   storages: Awaited<ReturnType<typeof sumStorageVolumeForPeriod>> | null;
-  /** Спільна оцінка часу повного циклу для шкали у всіх клієнтів */
   expectedLoadMs: number;
 };
 
 /**
  * GET /api/fuel/kpis?period=today|week|month|season
- * Спалено + заправлено + залишок складів на кінець періоду.
+ * Сезон/місяць/тиждень: спільний кеш у БД до кінця дня Києва (для всіх).
  */
 export async function GET(request: Request) {
   const period = parsePeriod(new URL(request.url).searchParams.get("period"));
-  const cacheKey = `fuel:kpis:${period}:${todayKyivYmd()}`;
+  const dayYmd = todayKyivYmd();
+  const cacheKey = `fuel:kpis:${period}:${dayYmd}`;
 
-  const cached = peekFuelKpisServerCache<KpisPayload>(cacheKey);
-  if (cached) {
+  const mem = peekFuelKpisServerCache<KpisPayload>(cacheKey);
+  if (mem) {
     const expectedLoadMs =
-      cached.expectedLoadMs ?? (await getSharedFuelKpiLoadMs(period));
+      mem.expectedLoadMs ?? (await getSharedFuelKpiLoadMs(period));
     return NextResponse.json(
-      { ...cached, expectedLoadMs },
+      { ...mem, expectedLoadMs },
       { headers: JSON_UTF8 }
     );
+  }
+
+  if (isFuelKpiDayCachePeriod(period)) {
+    const durable = await readFuelKpisDayCache<KpisPayload>(period, dayYmd);
+    if (durable?.ok) {
+      const expectedLoadMs =
+        durable.expectedLoadMs ?? (await getSharedFuelKpiLoadMs(period));
+      const payload = { ...durable, expectedLoadMs };
+      writeFuelKpisServerCache(cacheKey, payload, endOfKyivDayMs());
+      return NextResponse.json(payload, { headers: JSON_UTF8 });
+    }
   }
 
   try {
@@ -89,13 +105,10 @@ export async function GET(request: Request) {
 
     const incomplete =
       burned.ok === true && burned.data.coverageIncomplete === true;
-    if (
-      !incomplete &&
-      (period === "season" || period === "month" || period === "week")
-    ) {
+
+    if (!incomplete && isFuelKpiDayCachePeriod(period)) {
       writeFuelKpisServerCache(cacheKey, payload, endOfKyivDayMs());
-    } else if (!incomplete && period === "yesterday") {
-      writeFuelKpisServerCache(cacheKey, payload, endOfKyivDayMs());
+      void writeFuelKpisDayCache(period, payload, dayYmd);
     }
 
     return NextResponse.json(payload, { headers: JSON_UTF8 });
