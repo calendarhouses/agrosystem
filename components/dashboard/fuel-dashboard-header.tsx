@@ -549,7 +549,11 @@ export function FuelDashboardHeader({
               <KpiValue
                 liters={burnedTotal}
                 loading={fieldFuelLoading}
-                empty={!fieldFuelHasData}
+                empty={
+                  !fieldFuelHasData &&
+                  !fieldFuelLoading &&
+                  !fieldFuelCoverage?.incomplete
+                }
                 interactive={fieldFuelHasData && !fieldFuelLoading}
                 popoverTitle="Хто скільки спалив"
                 popoverDescription={`Техніка × поле · ${periodLabel.toLowerCase()}`}

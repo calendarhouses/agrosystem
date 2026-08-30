@@ -139,7 +139,12 @@ export async function getFieldFuelConsumed(
         period: sum.period,
         fromDate: sum.fromDate,
         toDate: sum.toDate,
-        hasData: sum.hasData,
+        // Флот або поля — достатньо, щоб не показувати «немає даних» при partial sync
+        hasData:
+          sum.hasData ||
+          fleet.hasData ||
+          sum.liters > 0 ||
+          fleet.liters > 0,
         liveSynced,
         // Без міграції 036 денного кешу витрати ще немає — не показуємо 0
         totalLiters: fleet.hasData

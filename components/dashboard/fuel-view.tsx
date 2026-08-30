@@ -146,15 +146,34 @@ function shouldDayCacheFuelKpis(
   period: FieldFuelPeriod,
   payload: FuelKpisResponse
 ): boolean {
-  const incomplete =
-    payload.burned?.ok === true && payload.burned.data.coverageIncomplete;
-  if (incomplete) return false;
+  const burned = payload.burned;
+  if (burned?.ok !== true) return false;
+  if (burned.data.coverageIncomplete) return false;
+  // Порожній сезон після partial sync не кешуємо на день
+  if (!burned.data.hasData && burned.data.liters <= 0) return false;
   return (
     period === "season" ||
     period === "month" ||
     period === "week" ||
     period === "yesterday"
   );
+}
+
+/** Seed лише якщо є що показувати; incomplete-порожнє — ще вантажимо */
+function isUsableKpiSeed(payload: FuelKpisResponse | null): boolean {
+  if (!payload) return false;
+  if (!(payload.burned?.ok || payload.refueled?.ok)) return false;
+  const burned = payload.burned;
+  if (
+    burned?.ok === true &&
+    burned.data.coverageIncomplete &&
+    !burned.data.hasData &&
+    burned.data.liters <= 0 &&
+    (burned.data.totalLiters ?? 0) <= 0
+  ) {
+    return false;
+  }
+  return true;
 }
 
 /** Діапазон дат для фільтра журналу (ISO через .toISOString()). */
@@ -790,6 +809,12 @@ export function FuelView({
   const [kpiRefreshToken, setKpiRefreshToken] = useState(0);
   /** Фоновий догруз відсутніх днів — без повторного «Завантаження…» */
   const kpiSilentRefreshRef = useRef(false);
+  const kpiBackfillAttemptsRef = useRef(0);
+
+  useEffect(() => {
+    kpiBackfillAttemptsRef.current = 0;
+  }, [fieldFuelPeriod]);
+
   const [reverifyTxId, setReverifyTxId] = useState<string | null>(null);
   const [send1cTxId, setSend1cTxId] = useState<string | null>(null);
   const [deleteStorage, setDeleteStorage] = useState<FuelStorage | null>(null);
@@ -1126,12 +1151,16 @@ export function FuelView({
   useEffect(() => {
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    /** Incomplete без цифр — не знімати спінер у finally */
+    let keepLoadingAfterFetch = false;
 
     // Не тягнути оцінку часу від попереднього періоду (тиждень → місяць)
     setKpiExpectedLoadMs(null);
 
     const cacheKey = fuelKpisCacheKey(fieldFuelPeriod);
-    const seeded = peekAppCache<FuelKpisResponse>(cacheKey);
+    const seededRaw = peekAppCache<FuelKpisResponse>(cacheKey);
+    const seeded = isUsableKpiSeed(seededRaw) ? seededRaw : null;
+
     const applyPayload = (payload: FuelKpisResponse) => {
       const burned = payload.burned;
       const refueled = payload.refueled;
@@ -1142,9 +1171,17 @@ export function FuelView({
         setKpiExpectedLoadMs(Math.round(payload.expectedLoadMs));
       }
       if (burned?.ok) {
-        setFieldFuelToday(burned.data.liters);
-        setFieldFuelTotal(burned.data.totalLiters);
-        setFieldFuelHasData(burned.data.hasData);
+        const liters = burned.data.liters;
+        const totalLiters = burned.data.totalLiters;
+        const hasData =
+          burned.data.hasData ||
+          liters > 0 ||
+          (totalLiters != null && totalLiters > 0);
+        const incomplete = burned.data.coverageIncomplete;
+
+        setFieldFuelToday(liters);
+        setFieldFuelTotal(totalLiters);
+        setFieldFuelHasData(hasData);
         setFieldFuelBreakdown(burned.data.breakdown);
         const progressPct =
           burned.data.progressPct ??
@@ -1159,15 +1196,31 @@ export function FuelView({
         setFieldFuelCoverage({
           daysCovered: burned.data.daysCovered,
           daysExpected: burned.data.daysExpected,
-          incomplete: burned.data.coverageIncomplete,
+          incomplete,
           progressPct,
         });
-        if (burned.data.coverageIncomplete) {
+
+        if (incomplete && !hasData) {
+          keepLoadingAfterFetch = true;
+          setFieldFuelLoading(true);
+          setRefuelLoading(true);
+        } else {
+          keepLoadingAfterFetch = false;
+        }
+
+        if (incomplete) {
           if (retryTimer) clearTimeout(retryTimer);
           retryTimer = setTimeout(() => {
-            // Уже є цифри на екрані — догруз у фоні без повторної смужки
-            kpiSilentRefreshRef.current =
-              burned.data.hasData || burned.data.liters > 0;
+            if (kpiBackfillAttemptsRef.current >= 40) {
+              // Досить спроб — не крутити вічно, якщо дні «биті»
+              keepLoadingAfterFetch = false;
+              setFieldFuelLoading(false);
+              setRefuelLoading(false);
+              return;
+            }
+            kpiBackfillAttemptsRef.current += 1;
+            // Догруз завжди тихий (не чистимо вже показані цифри)
+            kpiSilentRefreshRef.current = true;
             setKpiRefreshToken((n) => n + 1);
           }, 2800);
         }
@@ -1201,10 +1254,12 @@ export function FuelView({
     const silent = kpiSilentRefreshRef.current;
     kpiSilentRefreshRef.current = false;
 
-    if (seeded?.burned?.ok || seeded?.refueled?.ok) {
+    if (seeded) {
       applyPayload(seeded);
-      setFieldFuelLoading(false);
-      setRefuelLoading(false);
+      if (!keepLoadingAfterFetch) {
+        setFieldFuelLoading(false);
+        setRefuelLoading(false);
+      }
     } else if (!silent) {
       setFieldFuelLoading(true);
       setRefuelLoading(true);
@@ -1223,11 +1278,6 @@ export function FuelView({
     }
 
     const force = kpiRefreshToken > 0;
-    const useDayExpiry =
-      fieldFuelPeriod === "season" ||
-      fieldFuelPeriod === "month" ||
-      fieldFuelPeriod === "week" ||
-      fieldFuelPeriod === "yesterday";
 
     void cachedFetchJson<FuelKpisResponse>(
       cacheKey,
@@ -1235,8 +1285,8 @@ export function FuelView({
       undefined,
       {
         force,
-        // Сезон/місяць/тиждень — одразу з day-expiry, не 2.5 хв
-        ...(useDayExpiry ? { expiresAt: endOfKyivDayMs() } : {}),
+        // Не ставимо day-expiry тут: інакше incomplete/порожнє кешується на день.
+        // Повний день — лише через writeAppCache нижче після shouldDayCacheFuelKpis.
       }
     )
       .then(({ data }) => {
@@ -1244,13 +1294,17 @@ export function FuelView({
         applyPayload(data);
         if (shouldDayCacheFuelKpis(fieldFuelPeriod, data)) {
           writeAppCache(cacheKey, data, { expiresAt: endOfKyivDayMs() });
+        } else {
+          // Короткий TTL для incomplete, щоб silent retry не сіяв порожнє на весь день
+          writeAppCache(cacheKey, data);
         }
       })
       .catch(() => {
         /* seed уже на екрані */
       })
       .finally(() => {
-        if (!cancelled) {
+        if (cancelled) return;
+        if (!keepLoadingAfterFetch) {
           setFieldFuelLoading(false);
           setRefuelLoading(false);
         }
