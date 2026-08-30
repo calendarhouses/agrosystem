@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   Building2,
   Calendar as CalendarIcon,
+  CheckCircle2,
   ChevronDown,
   FileSpreadsheet,
   Fuel,
@@ -16,7 +17,9 @@ import {
   Loader2,
   MapPinned,
   Percent,
+  Sprout,
   Sun,
+  Target,
   TrendingDown,
   TrendingUp,
   Wallet,
@@ -47,10 +50,12 @@ import type {
 import type { Field } from "@/lib/dashboard-data";
 import { listFarmFields, type FarmField } from "@/lib/farm-fields";
 import {
+  FINANCE_QUICK_PERIODS,
   getFinancePeriodRange,
   toIsoRange,
   type FinancePeriod,
 } from "@/lib/finance-period";
+import { nextDateRangeSelection } from "@/lib/date-range-select";
 import {
   filterDashboardByRange,
   type InventoryFullDashboard,
@@ -219,14 +224,6 @@ function BreakEvenBar({
 
 const SEASON_OPTIONS = [2026, 2025, 2024] as const;
 
-const periodPillBtn = (active: boolean) =>
-  cn(
-    "inline-flex h-9 min-h-9 flex-1 items-center justify-center gap-1 rounded-[10px] px-2 text-[11px] font-semibold transition-all sm:h-8 sm:flex-none sm:rounded-full sm:px-3.5 sm:text-xs",
-    active
-      ? "bg-[#276749] text-white shadow-[0_4px_12px_-4px_rgba(39,103,73,0.55)] sm:bg-white sm:text-zinc-900 sm:shadow-sm"
-      : "text-zinc-500 hover:bg-white/70 hover:text-zinc-800"
-  );
-
 function fieldBudgetTone(burnRate: number | null): {
   card: string;
   bar: string;
@@ -336,8 +333,8 @@ export function FinanceView({
   const [seasonYear, setSeasonYear] = useState(storeSeasonYear);
   const [seasonOpen, setSeasonOpen] = useState(false);
   const [rangeOpen, setRangeOpen] = useState(false);
+  const [showBudgeted, setShowBudgeted] = useState(false);
   const [showUnplanned, setShowUnplanned] = useState(false);
-  const rangePickStarted = useRef(false);
   const [customRange, setCustomRange] = useState<DateRange | undefined>();
 
   // Не показуємо SSR-огляд іншого сезону — інакше маржа «стрибає» 98%→100%
@@ -508,7 +505,6 @@ export function FinanceView({
 
   const burn = overview?.globalBurnRate ?? null;
   const tone = globalBarTone(burn);
-  const barWidth = burn != null ? Math.min(100, Math.max(0, burn)) : 0;
 
   /** Витрати лише коли overview відповідає сезону + періоду — інакше хибна маржа */
   const overviewInSync =
@@ -543,6 +539,16 @@ export function FinanceView({
       ),
     };
   }, [overview?.fields]);
+
+  const budgetedTotals = useMemo(() => {
+    let fact = 0;
+    let plan = 0;
+    for (const f of budgetedFields) {
+      fact += f.spentUah;
+      plan += f.budgetUah ?? 0;
+    }
+    return { fact, plan };
+  }, [budgetedFields]);
 
   const anatomySlices = overview?.expenseAnatomy ?? [];
   const hasAnatomy = anatomySlices.some((s) => s.amountUah > 0);
@@ -669,12 +675,6 @@ export function FinanceView({
     };
   }, [overview, revenueUah, opsCostUah, unplannedFields, marginPctDisplay]);
 
-  useEffect(() => {
-    if (budgetedFields.length === 0 && unplannedFields.length > 0) {
-      setShowUnplanned(true);
-    }
-  }, [budgetedFields.length, unplannedFields.length]);
-
   return (
     <main
       className={cn(
@@ -723,18 +723,9 @@ export function FinanceView({
             })}
           </div>
 
-          <div className="mt-2.5 space-y-2">
-            <div className="flex w-full items-center gap-0.5 rounded-xl bg-[#EDE8DF] p-0.5">
-              {(["Сьогодні", "Місяць"] as const).map((tab) => (
-                <button
-                  key={tab}
-                  type="button"
-                  onClick={() => setPeriod(tab)}
-                  className={periodPillBtn(period === tab)}
-                >
-                  {tab}
-                </button>
-              ))}
+          <div className="mt-2.5 space-y-2.5">
+            {/* 1: сезон + діапазон */}
+            <div className="flex items-center gap-2">
               <Popover
                 open={seasonOpen}
                 onOpenChange={(next) => {
@@ -745,102 +736,192 @@ export function FinanceView({
                   }
                 }}
               >
-                <PopoverTrigger className={periodPillBtn(period === "Сезон")}>
-                  Сезон {seasonYear}
-                  <ChevronDown className="h-3.5 w-3.5 opacity-70" />
+                <PopoverTrigger
+                  className={cn(
+                    "inline-flex h-11 min-w-0 flex-1 items-center gap-2 rounded-xl border px-2.5 text-left text-sm font-semibold transition-all",
+                    period === "Сезон"
+                      ? "border-[#276749] bg-[#276749] text-white shadow-[0_6px_16px_-6px_rgba(39,103,73,0.55)]"
+                      : "border-[#E0DBD0] bg-white text-zinc-700 hover:border-[#276749]/35"
+                  )}
+                  aria-label="Обрати агросезон"
+                >
+                  <span
+                    className={cn(
+                      "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg",
+                      period === "Сезон"
+                        ? "bg-white/15 text-white"
+                        : "bg-[#276749]/12 text-[#276749]"
+                    )}
+                  >
+                    <Sprout className="h-3.5 w-3.5" />
+                  </span>
+                  <span className="truncate tabular-nums">
+                    Сезон {seasonYear}
+                  </span>
+                  <ChevronDown
+                    className={cn(
+                      "ml-auto h-3.5 w-3.5 shrink-0",
+                      period === "Сезон" ? "text-white/80" : "text-zinc-400"
+                    )}
+                  />
                 </PopoverTrigger>
                 <PopoverContent
                   align="start"
+                  sideOffset={6}
                   sheetOnMobile={false}
-                  className="z-[100] w-44 rounded-xl border border-zinc-200 bg-white p-1 shadow-xl"
+                  className="z-[100] w-[min(100vw-2rem,22rem)] rounded-2xl border border-zinc-200 bg-white p-2 shadow-xl"
                 >
-                  {SEASON_OPTIONS.map((year) => (
-                    <button
-                      key={year}
-                      type="button"
-                      onClick={() => selectSeasonYear(year)}
-                      className={cn(
-                        "flex w-full items-center rounded-lg px-3 py-2.5 text-left text-sm transition-colors",
-                        seasonYear === year && period === "Сезон"
-                          ? "bg-emerald-50 font-semibold text-emerald-800"
-                          : "text-zinc-700 hover:bg-zinc-50"
-                      )}
-                    >
-                      Сезон {year}
-                    </button>
-                  ))}
+                  <p className="px-2.5 pt-1.5 pb-2 text-[11px] leading-snug text-zinc-500">
+                    Фільтр фінансів за агросезоном (березень–лютий).
+                  </p>
+                  <div className="space-y-1">
+                    {SEASON_OPTIONS.map((year) => (
+                      <button
+                        key={year}
+                        type="button"
+                        onClick={() => selectSeasonYear(year)}
+                        className={cn(
+                          "flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left transition-colors",
+                          seasonYear === year
+                            ? "bg-[#276749] text-white"
+                            : "text-zinc-800 hover:bg-zinc-50"
+                        )}
+                      >
+                        <span className="text-sm font-semibold">
+                          Сезон {year}
+                        </span>
+                        <span
+                          className={cn(
+                            "text-[11px] font-medium",
+                            seasonYear === year
+                              ? "text-white/75"
+                              : "text-zinc-400"
+                          )}
+                        >
+                          бер {year} – лют {year + 1}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 </PopoverContent>
               </Popover>
-            </div>
 
-            <div className="flex items-center gap-2">
               <Popover
                 open={rangeOpen}
-                onOpenChange={(open) => {
-                  setRangeOpen(open);
-                  if (open) {
+                onOpenChange={(next) => {
+                  setRangeOpen(next);
+                  if (next) {
                     setSeasonOpen(false);
-                    rangePickStarted.current = false;
+                    setPeriod("Діапазон");
                   }
                 }}
               >
                 <PopoverTrigger
                   className={cn(
-                    "inline-flex h-10 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl border px-3 text-sm font-semibold shadow-sm transition-all",
+                    "inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl border px-3 text-sm font-semibold transition-all",
                     period === "Діапазон"
-                      ? "border-[#276749] bg-[#276749] text-white"
-                      : "border-[#E0DBD0] bg-white text-zinc-700"
+                      ? "border-[#276749] bg-[#276749] text-white shadow-[0_6px_16px_-6px_rgba(39,103,73,0.55)]"
+                      : "border-[#E0DBD0] bg-white text-zinc-700 hover:border-[#276749]/35"
                   )}
                 >
-                  <CalendarIcon className="h-3.5 w-3.5 shrink-0 opacity-70" />
-                  <span className="truncate">
-                    {period === "Діапазон" && customRange?.from
-                      ? `${format(customRange.from, "d MMM", { locale: uk })}${
-                          customRange.to
-                            ? ` – ${format(customRange.to, "d MMM", { locale: uk })}`
-                            : ""
-                        }`
-                      : "Діапазон"}
-                  </span>
+                  <CalendarIcon
+                    className={cn(
+                      "h-3.5 w-3.5 shrink-0",
+                      period === "Діапазон" ? "text-white/90" : "text-zinc-500"
+                    )}
+                    aria-hidden
+                  />
+                  {period === "Діапазон" && customRange?.from
+                    ? `${format(customRange.from, "d MMM", { locale: uk })}${
+                        customRange.to
+                          ? ` – ${format(customRange.to, "d MMM", { locale: uk })}`
+                          : " → …"
+                      }`
+                    : "Діапазон"}
                 </PopoverTrigger>
                 <PopoverContent
                   align="end"
+                  sideOffset={6}
                   sheetOnMobile={false}
                   className="z-[100] w-[min(100vw-1.5rem,22.5rem)] rounded-2xl border border-zinc-200 bg-white p-3 shadow-xl"
                 >
+                  <p className="mb-2 px-1 text-[11px] text-zinc-500">
+                    {customRange?.from && customRange?.to
+                      ? "Натисніть дату, щоб обрати новий початок"
+                      : customRange?.from
+                        ? "Тепер оберіть кінець періоду"
+                        : "Оберіть початок, потім кінець періоду"}
+                  </p>
                   <Calendar
                     mode="range"
                     numberOfMonths={1}
                     selected={customRange}
                     defaultMonth={customRange?.from ?? new Date()}
-                    onSelect={(range) => {
+                    onSelect={(range, triggerDate) => {
                       setPeriod("Діапазон");
-                      if (!range?.from) {
-                        setCustomRange(undefined);
-                        rangePickStarted.current = false;
-                        return;
-                      }
-                      if (!rangePickStarted.current) {
-                        rangePickStarted.current = true;
-                        setCustomRange({ from: range.from, to: undefined });
-                        return;
-                      }
-                      if (!range.to) {
-                        setCustomRange({ from: range.from, to: undefined });
-                        return;
-                      }
-                      setCustomRange(range);
-                      rangePickStarted.current = false;
-                      setRangeOpen(false);
+                      setCustomRange(
+                        nextDateRangeSelection(customRange, range, triggerDate)
+                      );
                     }}
                     locale={uk}
                     className="w-full rounded-xl [--cell-size:2.5rem]"
                   />
+                  <div className="mt-3 flex items-center gap-2 border-t border-zinc-100 pt-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCustomRange(undefined);
+                        setPeriod("Сезон");
+                        setRangeOpen(false);
+                      }}
+                      className="h-11 flex-1 rounded-xl border border-zinc-200 bg-white text-sm font-semibold text-zinc-600 hover:bg-zinc-50"
+                    >
+                      Скинути
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!customRange?.from}
+                      onClick={() => {
+                        if (!customRange?.from) return;
+                        if (!customRange.to) {
+                          setCustomRange({
+                            from: customRange.from,
+                            to: customRange.from,
+                          });
+                        }
+                        setPeriod("Діапазон");
+                        setRangeOpen(false);
+                      }}
+                      className="h-11 flex-[1.4] rounded-xl bg-[#276749] text-sm font-bold text-white hover:bg-[#22543d] disabled:opacity-50"
+                    >
+                      Застосувати
+                    </button>
+                  </div>
                 </PopoverContent>
               </Popover>
+
               {overviewLoading ? (
                 <Loader2 className="h-4 w-4 shrink-0 animate-spin text-zinc-400" />
               ) : null}
+            </div>
+
+            {/* 2: швидкі періоди */}
+            <div className="flex min-w-0 items-center gap-0.5 rounded-xl bg-[#EDE8DF] p-0.5">
+              {FINANCE_QUICK_PERIODS.map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setPeriod(tab)}
+                  className={cn(
+                    "h-11 min-w-0 flex-1 rounded-[10px] px-1 text-[11px] font-semibold transition-all sm:px-2 sm:text-xs",
+                    period === tab
+                      ? "bg-[#276749] text-white shadow-[0_4px_12px_-4px_rgba(39,103,73,0.55)]"
+                      : "text-zinc-500 hover:bg-white/70 hover:text-zinc-800"
+                  )}
+                >
+                  {tab}
+                </button>
+              ))}
             </div>
           </div>
         </div>
@@ -856,33 +937,50 @@ export function FinanceView({
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="inline-flex items-center rounded-full border border-zinc-200/90 bg-white/80 p-1 shadow-sm">
-                {(["Сьогодні", "Місяць"] as const).map((tab) => (
-                  <button
-                    key={tab}
-                    type="button"
-                    onClick={() => setPeriod(tab)}
-                    className={periodPillBtn(period === tab)}
-                  >
-                    {tab}
-                  </button>
-                ))}
-
+            <div className="w-full max-w-xl space-y-2 lg:w-auto">
+              <div className="flex items-center gap-2">
                 <Popover
                   open={seasonOpen}
                   onOpenChange={(next) => {
                     setSeasonOpen(next);
-                    if (next) setPeriod("Сезон");
+                    if (next) {
+                      setRangeOpen(false);
+                      setPeriod("Сезон");
+                    }
                   }}
                 >
-                  <PopoverTrigger className={periodPillBtn(period === "Сезон")}>
-                    Сезон {seasonYear}
-                    <ChevronDown className="h-3.5 w-3.5 opacity-70" />
+                  <PopoverTrigger
+                    className={cn(
+                      "inline-flex h-9 min-w-0 flex-1 items-center gap-2 rounded-xl border px-2.5 text-left text-xs font-semibold transition-all",
+                      period === "Сезон"
+                        ? "border-[#276749] bg-[#276749] text-white shadow-[0_6px_16px_-6px_rgba(39,103,73,0.55)]"
+                        : "border-[#E0DBD0] bg-white text-zinc-700 hover:border-[#276749]/35"
+                    )}
+                    aria-label="Обрати агросезон"
+                  >
+                    <span
+                      className={cn(
+                        "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg",
+                        period === "Сезон"
+                          ? "bg-white/15 text-white"
+                          : "bg-[#276749]/12 text-[#276749]"
+                      )}
+                    >
+                      <Sprout className="h-3.5 w-3.5" />
+                    </span>
+                    <span className="truncate tabular-nums">
+                      Сезон {seasonYear}
+                    </span>
+                    <ChevronDown
+                      className={cn(
+                        "ml-auto h-3.5 w-3.5 shrink-0",
+                        period === "Сезон" ? "text-white/80" : "text-zinc-400"
+                      )}
+                    />
                   </PopoverTrigger>
                   <PopoverContent
                     align="start"
-                    className="z-[100] w-40 rounded-xl border border-zinc-200 bg-white p-1 shadow-xl"
+                    className="z-[100] w-56 rounded-2xl border border-zinc-200 bg-white p-2 shadow-xl"
                   >
                     {SEASON_OPTIONS.map((year) => (
                       <button
@@ -890,82 +988,147 @@ export function FinanceView({
                         type="button"
                         onClick={() => selectSeasonYear(year)}
                         className={cn(
-                          "flex w-full items-center rounded-lg px-3 py-2 text-left text-sm transition-colors",
-                          seasonYear === year && period === "Сезон"
-                            ? "bg-emerald-50 font-semibold text-emerald-800"
-                            : "text-zinc-700 hover:bg-zinc-50"
+                          "flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition-colors",
+                          seasonYear === year
+                            ? "bg-[#276749] text-white"
+                            : "text-zinc-800 hover:bg-zinc-50"
                         )}
                       >
-                        Сезон {year}
+                        <span className="font-semibold">Сезон {year}</span>
+                        <span
+                          className={cn(
+                            "text-[11px]",
+                            seasonYear === year
+                              ? "text-white/75"
+                              : "text-zinc-400"
+                          )}
+                        >
+                          бер–лют
+                        </span>
                       </button>
                     ))}
                   </PopoverContent>
                 </Popover>
+
+                <Popover
+                  open={rangeOpen}
+                  onOpenChange={(next) => {
+                    setRangeOpen(next);
+                    if (next) {
+                      setSeasonOpen(false);
+                      setPeriod("Діапазон");
+                    }
+                  }}
+                >
+                  <PopoverTrigger
+                    className={cn(
+                      "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold transition-all",
+                      period === "Діапазон"
+                        ? "border-[#276749] bg-[#276749] text-white shadow-[0_6px_16px_-6px_rgba(39,103,73,0.55)]"
+                        : "border-[#E0DBD0] bg-white text-zinc-700 hover:border-[#276749]/35"
+                    )}
+                  >
+                    <CalendarIcon
+                      className={cn(
+                        "h-3.5 w-3.5 shrink-0",
+                        period === "Діапазон"
+                          ? "text-white/90"
+                          : "text-zinc-500"
+                      )}
+                      aria-hidden
+                    />
+                    {period === "Діапазон" && customRange?.from
+                      ? `${format(customRange.from, "d MMM", { locale: uk })}${
+                          customRange.to
+                            ? ` – ${format(customRange.to, "d MMM", { locale: uk })}`
+                            : " → …"
+                        }`
+                      : "Діапазон"}
+                  </PopoverTrigger>
+                  <PopoverContent
+                    align="end"
+                    className="z-[100] w-auto rounded-2xl border border-zinc-200 bg-white p-3 shadow-xl"
+                  >
+                    <p className="mb-2 px-1 text-[11px] text-zinc-500">
+                      {customRange?.from && customRange?.to
+                        ? "Натисніть дату, щоб обрати новий початок"
+                        : customRange?.from
+                          ? "Тепер оберіть кінець періоду"
+                          : "Оберіть початок, потім кінець періоду"}
+                    </p>
+                    <Calendar
+                      mode="range"
+                      numberOfMonths={1}
+                      selected={customRange}
+                      defaultMonth={customRange?.from ?? new Date()}
+                      onSelect={(range, triggerDate) => {
+                        setPeriod("Діапазон");
+                        setCustomRange(
+                          nextDateRangeSelection(
+                            customRange,
+                            range,
+                            triggerDate
+                          )
+                        );
+                      }}
+                      locale={uk}
+                    />
+                    <div className="mt-3 flex items-center gap-2 border-t border-zinc-100 pt-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomRange(undefined);
+                          setPeriod("Сезон");
+                          setRangeOpen(false);
+                        }}
+                        className="h-9 flex-1 rounded-xl border border-zinc-200 bg-white text-xs font-semibold text-zinc-600 hover:bg-zinc-50"
+                      >
+                        Скинути
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!customRange?.from}
+                        onClick={() => {
+                          if (!customRange?.from) return;
+                          if (!customRange.to) {
+                            setCustomRange({
+                              from: customRange.from,
+                              to: customRange.from,
+                            });
+                          }
+                          setPeriod("Діапазон");
+                          setRangeOpen(false);
+                        }}
+                        className="h-9 flex-[1.4] rounded-xl bg-[#276749] text-xs font-bold text-white hover:bg-[#22543d] disabled:opacity-50"
+                      >
+                        Застосувати
+                      </button>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+
+                {overviewLoading ? (
+                  <Loader2 className="h-4 w-4 shrink-0 animate-spin text-zinc-400" />
+                ) : null}
               </div>
 
-              <Popover
-                open={rangeOpen}
-                onOpenChange={(open) => {
-                  setRangeOpen(open);
-                  if (open) rangePickStarted.current = false;
-                }}
-              >
-                <PopoverTrigger
-                  className={cn(
-                    "inline-flex h-8 items-center gap-2 rounded-full border border-zinc-200/90 px-3 text-xs font-semibold shadow-sm transition-all",
-                    period === "Діапазон"
-                      ? "bg-white text-zinc-900"
-                      : "bg-white/80 text-zinc-500 hover:text-zinc-800"
-                  )}
-                >
-                  <CalendarIcon className="h-3.5 w-3.5 shrink-0 opacity-70" />
-                  {period === "Діапазон" && customRange?.from
-                    ? `${format(customRange.from, "d MMM", { locale: uk })}${
-                        customRange.to
-                          ? ` – ${format(customRange.to, "d MMM", { locale: uk })}`
-                          : ""
-                      }`
-                    : "Діапазон"}
-                </PopoverTrigger>
-                <PopoverContent
-                  align="end"
-                  className="z-[100] w-auto rounded-2xl border border-zinc-200 bg-white p-2 shadow-xl"
-                >
-                  <Calendar
-                    mode="range"
-                    numberOfMonths={1}
-                    selected={customRange}
-                    onSelect={(range) => {
-                      setPeriod("Діапазон");
-                      if (!range?.from) {
-                        setCustomRange(undefined);
-                        rangePickStarted.current = false;
-                        return;
-                      }
-
-                      if (!rangePickStarted.current) {
-                        rangePickStarted.current = true;
-                        setCustomRange({ from: range.from, to: undefined });
-                        return;
-                      }
-
-                      if (!range.to) {
-                        setCustomRange({ from: range.from, to: undefined });
-                        return;
-                      }
-
-                      setCustomRange(range);
-                      rangePickStarted.current = false;
-                      setRangeOpen(false);
-                    }}
-                    locale={uk}
-                  />
-                </PopoverContent>
-              </Popover>
-
-              {overviewLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin text-zinc-400" />
-              ) : null}
+              <div className="flex min-w-0 items-center gap-0.5 rounded-xl bg-[#EDE8DF] p-0.5">
+                {FINANCE_QUICK_PERIODS.map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => setPeriod(tab)}
+                    className={cn(
+                      "h-8 min-w-0 flex-1 rounded-[10px] px-2 text-xs font-semibold transition-all",
+                      period === tab
+                        ? "bg-[#276749] text-white shadow-[0_4px_12px_-4px_rgba(39,103,73,0.55)]"
+                        : "text-zinc-500 hover:bg-white/70 hover:text-zinc-800"
+                    )}
+                  >
+                    {tab}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </header>
@@ -1186,11 +1349,12 @@ export function FinanceView({
               "p-2 shadow-[0_8px_30px_rgb(39,33,24,0.06)] backdrop-blur-2xl"
             )}
           >
-            <div className="no-scrollbar flex min-w-0 snap-x snap-mandatory items-stretch gap-2 overflow-x-auto">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
               <button
                 type="button"
                 onClick={() => {
                   setShowUnplanned(true);
+                  setShowBudgeted(false);
                   if (isMobile) {
                     setMobileTab("fields");
                     return;
@@ -1205,7 +1369,7 @@ export function FinanceView({
                   }, 50);
                 }}
                 className={cn(
-                  "flex min-w-[min(78vw,220px)] shrink-0 snap-start items-center gap-3 rounded-xl px-3.5 py-3 text-left sm:min-w-[220px] sm:flex-1",
+                  "flex min-w-0 items-center gap-3 rounded-xl px-3.5 py-3 text-left",
                   "bg-white/55 transition hover:bg-white/80 active:scale-[0.99]",
                   "ring-1 ring-transparent hover:ring-rose-200/60"
                 )}
@@ -1220,25 +1384,25 @@ export function FinanceView({
                 >
                   <MapPinned size={16} strokeWidth={2} />
                 </span>
-                <span className="min-w-0">
+                <span className="min-w-0 flex-1">
                   <span className="block text-[10px] font-bold tracking-[0.12em] text-zinc-400 uppercase">
                     Бюджети
                   </span>
-                  <span className="mt-0.5 block truncate text-sm font-semibold text-zinc-900">
+                  <span className="mt-0.5 block text-sm leading-snug font-semibold text-zinc-900">
                     {unplannedFields.length > 0
                       ? `${unplannedFields.length} ${pluralFields(unplannedFields.length)} без плану ₴/га`
                       : "Усі поля з планом ₴/га"}
                   </span>
                 </span>
                 {unplannedFields.length > 0 ? (
-                  <span className="ml-auto h-2 w-2 shrink-0 animate-pulse rounded-full bg-rose-500" />
+                  <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-rose-500" />
                 ) : null}
               </button>
 
               <Link
                 href="/accounting"
                 className={cn(
-                  "flex min-w-[min(78vw,220px)] shrink-0 snap-start items-center gap-3 rounded-xl px-3.5 py-3 sm:min-w-[220px] sm:flex-1",
+                  "flex min-w-0 items-center gap-3 rounded-xl px-3.5 py-3",
                   "bg-white/55 transition hover:bg-white/80 active:scale-[0.99]",
                   "ring-1 ring-transparent hover:ring-amber-200/60"
                 )}
@@ -1253,13 +1417,13 @@ export function FinanceView({
                 >
                   <FileSpreadsheet size={16} strokeWidth={2} />
                 </span>
-                <span className="min-w-0">
+                <span className="min-w-0 flex-1">
                   <span className="block text-[10px] font-bold tracking-[0.12em] text-zinc-400 uppercase">
                     Бухгалтерія
                   </span>
                   <span
                     className={cn(
-                      "mt-0.5 block truncate text-sm font-semibold",
+                      "mt-0.5 block text-sm leading-snug font-semibold",
                       overview.draftMovesCount > 0
                         ? "text-amber-800"
                         : "text-zinc-900"
@@ -1282,7 +1446,7 @@ export function FinanceView({
                   })
                 }
                 className={cn(
-                  "flex min-w-[min(78vw,220px)] shrink-0 snap-start items-center gap-3 rounded-xl px-3.5 py-3 text-left sm:min-w-[220px] sm:flex-1",
+                  "flex min-w-0 items-center gap-3 rounded-xl px-3.5 py-3 text-left",
                   "bg-white/55 transition hover:bg-white/80 active:scale-[0.99]",
                   "ring-1 ring-transparent hover:ring-emerald-200/60"
                 )}
@@ -1297,13 +1461,13 @@ export function FinanceView({
                 >
                   <Percent size={16} strokeWidth={2} />
                 </span>
-                <span className="min-w-0">
+                <span className="min-w-0 flex-1">
                   <span className="block text-[10px] font-bold tracking-[0.12em] text-zinc-400 uppercase">
                     Маржа
                   </span>
                   <span
                     className={cn(
-                      "mt-0.5 block whitespace-nowrap text-sm font-semibold leading-snug",
+                      "mt-0.5 block text-sm leading-snug font-semibold",
                       !marginReady
                         ? "text-zinc-400"
                         : pnlUah >= 0
@@ -1647,137 +1811,214 @@ export function FinanceView({
             <div
               className={cn(
                 "mb-4 overflow-hidden rounded-2xl border border-[#E5DFD3]/80",
-                "bg-white/55 shadow-sm backdrop-blur-md"
+                "bg-gradient-to-br from-white/75 via-white/55 to-[#F4F1EA]/70",
+                "shadow-[0_8px_28px_-12px_rgba(39,33,24,0.12)] backdrop-blur-md"
               )}
             >
               <div className="grid grid-cols-2 divide-x divide-y divide-[#E5DFD3]/70 sm:grid-cols-3 lg:grid-cols-5 lg:divide-y-0">
-                <div className="px-3.5 py-3 sm:px-4">
-                  <p className="text-[9px] font-bold tracking-wider text-zinc-400 uppercase">
-                    Полів
-                  </p>
-                  <p className="mt-1 font-mono text-sm font-semibold tabular-nums text-zinc-900 sm:text-base">
-                    {overview.fieldsCount}
-                  </p>
-                </div>
-                <div className="px-3.5 py-3 sm:px-4">
-                  <p className="text-[9px] font-bold tracking-wider text-zinc-400 uppercase">
-                    Факт
-                  </p>
-                  <p className="mt-1 font-mono text-sm font-semibold tabular-nums text-zinc-900 sm:text-base">
-                    {formatUah(overview.globalFactUah)} ₴
-                  </p>
-                </div>
-                <div className="px-3.5 py-3 sm:px-4">
-                  <p className="text-[9px] font-bold tracking-wider text-zinc-400 uppercase">
-                    План
-                  </p>
-                  <p className="mt-1 font-mono text-sm font-semibold tabular-nums text-zinc-900 sm:text-base">
-                    {overview.globalPlanUah > 0
-                      ? `${formatUah(overview.globalPlanUah)} ₴`
-                      : "—"}
-                  </p>
-                </div>
-                {burn != null ? (
-                  <div className="px-3.5 py-3 sm:px-4">
-                    <p className="text-[9px] font-bold tracking-wider text-zinc-400 uppercase">
-                      {overview.burnComparesToSeasonPlan
+                {(
+                  [
+                    {
+                      key: "fields",
+                      label: "Полів",
+                      icon: MapPinned,
+                      iconClass: "bg-[#276749]/10 text-[#276749]",
+                      value: String(overview.fieldsCount),
+                      valueClass: "text-zinc-900",
+                    },
+                    {
+                      key: "fact",
+                      label: "Факт",
+                      icon: Wallet,
+                      iconClass: "bg-sky-500/10 text-sky-700",
+                      value: `${formatUah(overview.globalFactUah)} ₴`,
+                      valueClass: "text-zinc-900",
+                    },
+                    {
+                      key: "plan",
+                      label: "План",
+                      icon: Target,
+                      iconClass: "bg-violet-500/10 text-violet-700",
+                      value:
+                        overview.globalPlanUah > 0
+                          ? `${formatUah(overview.globalPlanUah)} ₴`
+                          : "—",
+                      valueClass: "text-zinc-900",
+                    },
+                    {
+                      key: "burn",
+                      label: overview.burnComparesToSeasonPlan
                         ? "Від плану"
-                        : "% сез. плану"}
-                    </p>
-                    <p
+                        : "% сез. плану",
+                      icon: Percent,
+                      iconClass:
+                        burn == null
+                          ? "bg-zinc-500/10 text-zinc-500"
+                          : burn > 100
+                            ? "bg-rose-500/10 text-rose-600"
+                            : burn >= 80
+                              ? "bg-amber-500/10 text-amber-700"
+                              : "bg-emerald-500/10 text-emerald-700",
+                      value: burn != null ? `${Math.round(burn)}%` : "—",
+                      valueClass:
+                        burn != null ? tone.label : "text-zinc-400",
+                    },
+                    {
+                      key: "diesel",
+                      label: "ДП",
+                      icon: Fuel,
+                      iconClass: "bg-amber-500/10 text-amber-700",
+                      value: overview.dieselPriceUah
+                        ? `${formatUah(overview.dieselPriceUah)} ₴/л`
+                        : "—",
+                      valueClass: "text-zinc-900",
+                      span: true,
+                    },
+                  ] as const
+                ).map((cell) => {
+                  const Icon = cell.icon;
+                  return (
+                    <div
+                      key={cell.key}
                       className={cn(
-                        "mt-1 font-mono text-sm font-semibold tabular-nums sm:text-base",
-                        tone.label
+                        "flex items-start gap-2.5 px-3.5 py-3.5 sm:px-4",
+                        "span" in cell &&
+                          cell.span &&
+                          "col-span-2 sm:col-span-1 lg:col-span-1"
                       )}
                     >
-                      {Math.round(burn)}%
-                    </p>
-                  </div>
-                ) : (
-                  <div className="px-3.5 py-3 sm:px-4">
-                    <p className="text-[9px] font-bold tracking-wider text-zinc-400 uppercase">
-                      Від плану
-                    </p>
-                    <p className="mt-1 font-mono text-sm font-semibold tabular-nums text-zinc-400 sm:text-base">
-                      —
-                    </p>
-                  </div>
-                )}
-                <div className="col-span-2 px-3.5 py-3 sm:col-span-1 sm:px-4 lg:col-span-1">
-                  <p className="text-[9px] font-bold tracking-wider text-zinc-400 uppercase">
-                    ДП
-                  </p>
-                  <p className="mt-1 font-mono text-sm font-semibold tabular-nums text-zinc-900 sm:text-base">
-                    {overview.dieselPriceUah
-                      ? `${formatUah(overview.dieselPriceUah)} ₴/л`
-                      : "—"}
-                  </p>
-                </div>
+                      <span
+                        className={cn(
+                          "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl",
+                          cell.iconClass
+                        )}
+                      >
+                        <Icon className="h-3.5 w-3.5" strokeWidth={2.25} />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-[9px] font-bold tracking-wider text-zinc-400 uppercase">
+                          {cell.label}
+                        </p>
+                        <p
+                          className={cn(
+                            "mt-1 font-mono text-sm font-semibold tabular-nums sm:text-base",
+                            cell.valueClass
+                          )}
+                        >
+                          {cell.value}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
-            {overview.globalPlanUah > 0 ? (
-              <div
-                className={cn(
-                  "mb-5 h-1.5 w-full overflow-hidden rounded-full",
-                  tone.track
-                )}
-                role="progressbar"
-                aria-valuenow={Math.round(barWidth)}
-                aria-valuemin={0}
-                aria-valuemax={100}
-              >
+            <div className="space-y-3">
+              {budgetedFields.length > 0 ? (
                 <div
-                  className={cn(
-                    "h-full rounded-full transition-all duration-700",
-                    tone.bar
-                  )}
-                  style={{ width: `${barWidth}%` }}
-                />
-              </div>
-            ) : null}
-
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {budgetedFields.map((field) => (
-                <FieldBudgetCard
-                  key={field.fieldId}
-                  field={field}
-                  onOpen={() => openFieldDetail(field)}
-                />
-              ))}
-            </div>
-
-            {unplannedFields.length > 0 ? (
-              <div
-                id="finance-unplanned-fields"
-                className="mt-5 scroll-mt-28"
-              >
-                <button
-                  type="button"
-                  onClick={() => setShowUnplanned((v) => !v)}
-                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-500 transition hover:text-zinc-800"
+                  id="finance-budgeted-fields"
+                  className="overflow-hidden rounded-2xl border border-[#E5DFD3]/90 bg-white/50 shadow-sm backdrop-blur-md"
                 >
-                  <ChevronDown
-                    className={cn(
-                      "h-3.5 w-3.5 transition",
-                      showUnplanned && "rotate-180"
-                    )}
-                  />
-                  Без плану ₴/га · {unplannedFields.length} полів
-                </button>
-                {showUnplanned ? (
-                  <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                    {unplannedFields.map((field) => (
-                      <FieldBudgetCard
-                        key={field.fieldId}
-                        field={field}
-                        onOpen={() => openFieldDetail(field)}
-                      />
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
+                  <button
+                    type="button"
+                    onClick={() => setShowBudgeted((v) => !v)}
+                    aria-expanded={showBudgeted}
+                    className="flex w-full items-center gap-3 px-3.5 py-3.5 text-left transition hover:bg-white/70 sm:px-4"
+                  >
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/12 text-emerald-700">
+                      <CheckCircle2 className="h-4 w-4" strokeWidth={2.25} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-bold tracking-tight text-zinc-900">
+                        З планом
+                      </span>
+                      <span className="mt-0.5 block text-[11px] leading-snug text-zinc-500">
+                        {budgetedFields.length}{" "}
+                        {pluralFields(budgetedFields.length)}
+                        {" · "}
+                        факт {formatUah(budgetedTotals.fact)} ₴
+                        {budgetedTotals.plan > 0
+                          ? ` · план ${formatUah(budgetedTotals.plan)} ₴`
+                          : ""}
+                        {burn != null ? ` · ${Math.round(burn)}%` : ""}
+                      </span>
+                    </span>
+                    <ChevronDown
+                      className={cn(
+                        "h-4 w-4 shrink-0 text-zinc-400 transition-transform duration-200",
+                        showBudgeted && "rotate-180"
+                      )}
+                    />
+                  </button>
+                  {showBudgeted ? (
+                    <div className="border-t border-[#E5DFD3]/80 px-3 pb-3.5 pt-3 sm:px-4">
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                        {budgetedFields.map((field) => (
+                          <FieldBudgetCard
+                            key={field.fieldId}
+                            field={field}
+                            onOpen={() => openFieldDetail(field)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {unplannedFields.length > 0 ? (
+                <div
+                  id="finance-unplanned-fields"
+                  className="scroll-mt-28 overflow-hidden rounded-2xl border border-[#E5DFD3]/90 bg-white/50 shadow-sm backdrop-blur-md"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setShowUnplanned((v) => !v)}
+                    aria-expanded={showUnplanned}
+                    className="flex w-full items-center gap-3 px-3.5 py-3.5 text-left transition hover:bg-white/70 sm:px-4"
+                  >
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-500/10 text-rose-600">
+                      <MapPinned className="h-4 w-4" strokeWidth={2.25} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-bold tracking-tight text-zinc-900">
+                        Без плану
+                      </span>
+                      <span className="mt-0.5 block text-[11px] leading-snug text-zinc-500">
+                        {unplannedFields.length}{" "}
+                        {pluralFields(unplannedFields.length)} без ₴/га
+                        {" · "}
+                        факт{" "}
+                        {formatUah(
+                          unplannedFields.reduce((s, f) => s + f.spentUah, 0)
+                        )}{" "}
+                        ₴
+                      </span>
+                    </span>
+                    <ChevronDown
+                      className={cn(
+                        "h-4 w-4 shrink-0 text-zinc-400 transition-transform duration-200",
+                        showUnplanned && "rotate-180"
+                      )}
+                    />
+                  </button>
+                  {showUnplanned ? (
+                    <div className="border-t border-[#E5DFD3]/80 px-3 pb-3.5 pt-3 sm:px-4">
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                        {unplannedFields.map((field) => (
+                          <FieldBudgetCard
+                            key={field.fieldId}
+                            field={field}
+                            onOpen={() => openFieldDetail(field)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
           </section>
         ) : null}
 

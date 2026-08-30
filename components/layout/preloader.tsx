@@ -14,10 +14,11 @@ function removeStaticBootSplash() {
 
 /**
  * Кінематографічний boot-екран LEVADA.
+ * Єдине місце з текстом бренду на старті (HTML-splash лише чорний фон).
  * Вихід тексту — лише blur + opacity (без scale/zoom).
  */
 export function Preloader({ isLoading }: PreloaderProps) {
-  // До paint: React-прелоадер уже в DOM → прибираємо HTML-splash без сірого кадру
+  // До paint: React-прелоадер уже в DOM → знімаємо чорний HTML-шар без сірого кадру
   useLayoutEffect(() => {
     if (isLoading) {
       document.documentElement.dataset.booting = "1";

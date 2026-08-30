@@ -39,6 +39,7 @@ import { Label } from "@/components/ui/label";
 import { DatePicker } from "@/components/ui/date-picker";
 import { TimePicker } from "@/components/ui/time-picker";
 import { Button } from "@/components/ui/button";
+import { nextDateRangeSelection } from "@/lib/date-range-select";
 import {
   deleteFieldOperation,
   estimateAreaHaFromTrack,
@@ -123,6 +124,7 @@ import type { FeatureCollection, Polygon } from "geojson";
 import type { MapFieldSource } from "@/lib/map-fields";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { useIsMobile } from "@/lib/use-mobile";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export type FieldHubTab = "overview" | "history" | "tech" | "settings";
@@ -1442,6 +1444,7 @@ export function FieldDetailSheet({
   occupiedWialonZones = {},
   onIntegrationsFieldUpdated,
 }: FieldDetailSheetProps) {
+  const isMobile = useIsMobile();
   const activeSeason = useSeasonStore((s) => s.activeSeason);
   const operationSeasonYear = Number(activeSeason) || Number(currentAgroSeason()) || 2026;
   const [historySeasonYear, setHistorySeasonYear] = useState(operationSeasonYear);
@@ -2059,7 +2062,9 @@ export function FieldDetailSheet({
                 >
                   {(activeTab === "history" || activeTab === "tech") ? (
                     <div className="border-b border-[#E5DFD3]/70 bg-[#F4F1EA] px-3 py-2.5 sm:px-6">
-                      <div className="relative z-10 flex flex-wrap items-center gap-2 pointer-events-auto">
+                      <div className="relative z-10 space-y-2 pointer-events-auto">
+                        {/* 1: сезон + діапазон */}
+                        <div className="flex items-center gap-2">
                         <Popover
                           open={seasonOpen}
                           onOpenChange={(next) => {
@@ -2072,7 +2077,7 @@ export function FieldDetailSheet({
                         >
                           <PopoverTrigger
                             className={cn(
-                              "inline-flex h-11 shrink-0 items-center gap-2 rounded-xl border px-2.5 text-left text-sm font-semibold transition-all md:h-9 md:text-xs",
+                              "inline-flex h-11 min-w-0 flex-1 items-center gap-2 rounded-xl border px-2.5 text-left text-sm font-semibold transition-all md:h-9 md:text-xs",
                               period === "Сезон"
                                 ? "border-[#276749] bg-[#276749] text-white shadow-[0_6px_16px_-6px_rgba(39,103,73,0.55)]"
                                 : "border-[#E0DBD0] bg-white text-zinc-700 hover:border-[#276749]/35"
@@ -2081,7 +2086,7 @@ export function FieldDetailSheet({
                           >
                             <span
                               className={cn(
-                                "inline-flex h-6 w-6 items-center justify-center rounded-lg",
+                                "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg",
                                 period === "Сезон"
                                   ? "bg-white/15 text-white"
                                   : "bg-[#276749]/12 text-[#276749]"
@@ -2089,12 +2094,12 @@ export function FieldDetailSheet({
                             >
                               <Sprout className="h-3.5 w-3.5" />
                             </span>
-                            <span className="tabular-nums">
+                            <span className="truncate tabular-nums">
                               Сезон {historySeasonYear}
                             </span>
                             <ChevronDown
                               className={cn(
-                                "h-3.5 w-3.5",
+                                "ml-auto h-3.5 w-3.5 shrink-0",
                                 period === "Сезон"
                                   ? "text-white/80"
                                   : "text-zinc-400"
@@ -2147,28 +2152,6 @@ export function FieldDetailSheet({
                           </PopoverContent>
                         </Popover>
 
-                        <div className="inline-flex w-fit max-w-full flex-wrap items-center gap-0.5 rounded-xl bg-[#EDE8DF] p-0.5">
-                          {PERIOD_OPTIONS.map((option) => (
-                            <button
-                              key={option}
-                              type="button"
-                              onClick={(event) => {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                applyHistoryPeriod(option);
-                              }}
-                              className={cn(
-                                "h-11 rounded-[10px] px-2.5 text-xs font-semibold transition-all sm:px-3 md:h-8",
-                                period === option
-                                  ? "bg-[#276749] text-white shadow-[0_4px_12px_-4px_rgba(39,103,73,0.55)]"
-                                  : "text-zinc-500 hover:bg-white/70 hover:text-zinc-800"
-                              )}
-                            >
-                              {option}
-                            </button>
-                          ))}
-                        </div>
-
                         <Popover
                           open={rangeOpen}
                           onOpenChange={(next) => {
@@ -2192,8 +2175,9 @@ export function FieldDetailSheet({
                                 "h-3.5 w-3.5 shrink-0",
                                 period === "custom"
                                   ? "text-white/90"
-                                  : "opacity-70"
+                                  : "text-zinc-500"
                               )}
+                              aria-hidden
                             />
                             {period === "custom" && customRange?.from
                               ? `${format(customRange.from, "d MMM", { locale: uk })}${
@@ -2223,19 +2207,13 @@ export function FieldDetailSheet({
                               defaultMonth={customRange?.from ?? new Date()}
                               onSelect={(range, triggerDate) => {
                                 applyHistoryPeriod("custom");
-                                // Повний діапазон уже був — новий клік починає вибір заново
-                                if (
-                                  customRange?.from &&
-                                  customRange?.to &&
-                                  triggerDate
-                                ) {
-                                  setCustomRange({
-                                    from: triggerDate,
-                                    to: undefined,
-                                  });
-                                  return;
-                                }
-                                setCustomRange(range);
+                                setCustomRange(
+                                  nextDateRangeSelection(
+                                    customRange,
+                                    range,
+                                    triggerDate
+                                  )
+                                );
                               }}
                               locale={uk}
                               className="rounded-xl"
@@ -2273,6 +2251,30 @@ export function FieldDetailSheet({
                             </div>
                           </PopoverContent>
                         </Popover>
+                        </div>
+
+                        {/* 2: швидкі періоди */}
+                        <div className="flex min-w-0 items-center gap-0.5 rounded-xl bg-[#EDE8DF] p-0.5">
+                          {PERIOD_OPTIONS.map((option) => (
+                            <button
+                              key={option}
+                              type="button"
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                applyHistoryPeriod(option);
+                              }}
+                              className={cn(
+                                "h-11 min-w-0 flex-1 rounded-[10px] px-1 text-[11px] font-semibold transition-all sm:px-2 sm:text-xs md:h-8",
+                                period === option
+                                  ? "bg-[#276749] text-white shadow-[0_4px_12px_-4px_rgba(39,103,73,0.55)]"
+                                  : "text-zinc-500 hover:bg-white/70 hover:text-zinc-800"
+                              )}
+                            >
+                              {option}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   ) : null}
@@ -2701,7 +2703,36 @@ export function FieldDetailSheet({
     );
   }
 
-  return (
+  return isMobile ? (
+    <Drawer
+      open={open}
+      onOpenChange={(next) => {
+        if (next) onOpenChange(true);
+        else closeHub();
+      }}
+      dismissible
+      modal={false}
+      shouldScaleBackground={false}
+      noBodyStyles
+    >
+      <DrawerContent
+        className={cn(
+          FIELDS_MOBILE_DRAWER_SIZE,
+          "flex flex-col overflow-hidden border-[#E5DFD3]/90 bg-[#F4F1EA] pb-0"
+        )}
+        overlayClassName="pointer-events-none bg-black/45"
+        showCloseButton
+      >
+        <DrawerHandle />
+        <DrawerTitle className="sr-only">
+          {field?.name ? `Поле ${field.name}` : "Деталі поля"}
+        </DrawerTitle>
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          {hubInner}
+        </div>
+      </DrawerContent>
+    </Drawer>
+  ) : (
     <Sheet
       open={open}
       onOpenChange={(next) => {

@@ -8,14 +8,27 @@ import type { DateRange } from "react-day-picker";
 
 import { currentAgroSeason } from "@/lib/season";
 
-export type FinancePeriod = "Сьогодні" | "Місяць" | "Сезон" | "Діапазон";
+export type FinancePeriod =
+  | "Сьогодні"
+  | "Вчора"
+  | "Тиждень"
+  | "Місяць"
+  | "Сезон"
+  | "Діапазон";
 
 export const FINANCE_PERIOD_TABS: FinancePeriod[] = [
   "Сьогодні",
+  "Вчора",
+  "Тиждень",
   "Місяць",
   "Сезон",
   "Діапазон",
 ];
+
+/** Швидкі таби під сезоном/діапазоном (як у Складі) */
+export const FINANCE_QUICK_PERIODS: Array<
+  Exclude<FinancePeriod, "Сезон" | "Діапазон">
+> = ["Сьогодні", "Вчора", "Тиждень", "Місяць"];
 
 const KYIV_TZ = "Europe/Kyiv";
 
@@ -134,6 +147,29 @@ export function getFinancePeriodRange(
       end: parseIsoAsUtcNoon(endIso),
       startIso,
       endIso,
+    };
+  }
+
+  if (period === "Тиждень") {
+    const endIso = minIso(todayIso, season.endIso);
+    let startIso = addDaysIso(endIso, -6);
+    startIso = maxIso(startIso, season.startIso);
+    return {
+      start: parseIsoAsUtcNoon(startIso),
+      end: parseIsoAsUtcNoon(endIso),
+      startIso,
+      endIso,
+    };
+  }
+
+  if (period === "Вчора") {
+    const yIso = addDaysIso(todayIso, -1);
+    const clamped = minIso(maxIso(yIso, season.startIso), season.endIso);
+    return {
+      start: parseIsoAsUtcNoon(clamped),
+      end: parseIsoAsUtcNoon(clamped),
+      startIso: clamped,
+      endIso: clamped,
     };
   }
 

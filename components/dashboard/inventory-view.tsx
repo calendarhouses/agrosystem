@@ -100,6 +100,7 @@ import {
   type ItemMove,
 } from "@/lib/inventory-bas";
 import { useSeasonStore } from "@/lib/season-store";
+import { nextDateRangeSelection } from "@/lib/date-range-select";
 import { useFieldRealtime } from "@/lib/use-field-realtime";
 import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
@@ -942,18 +943,9 @@ export function InventoryView({ dashboard, error }: Props) {
                       defaultMonth={customRange?.from ?? new Date()}
                       onSelect={(range, triggerDate) => {
                         applyPeriod("custom");
-                        if (
-                          customRange?.from &&
-                          customRange?.to &&
-                          triggerDate
-                        ) {
-                          setCustomRange({
-                            from: triggerDate,
-                            to: undefined,
-                          });
-                          return;
-                        }
-                        setCustomRange(range);
+                        setCustomRange(
+                          nextDateRangeSelection(customRange, range, triggerDate)
+                        );
                       }}
                       locale={uk}
                       className="w-full rounded-xl [--cell-size:2.5rem]"

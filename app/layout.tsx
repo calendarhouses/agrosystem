@@ -70,7 +70,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         {/* Критично: до JS — zinc-950 з !important (інакше Tailwind --background дає сірий спалах) */}
         <style
           dangerouslySetInnerHTML={{
-            __html: `html,body,#app-root{background-color:#09090b!important}html[data-app-nav="0"],html[data-app-nav="0"] body,html[data-app-nav="0"] #app-root{background-color:#f4f4f5!important}html[data-app-nav="1"][data-app-ready="1"],html[data-app-nav="1"][data-app-ready="1"] body,html[data-app-nav="1"][data-app-ready="1"] #app-root{background-color:#18181b!important;transition:background-color .7s ease-out .5s}html[data-booting="1"] [data-bottom-nav],html[data-booting="1"] [data-fields-mobile-chrome]{opacity:0;pointer-events:none;transform:translateY(12px)}#boot-splash{position:fixed;inset:0;z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#09090b;pointer-events:none}#boot-splash .boot-title{color:#fff;font-weight:200;font-size:1.65rem;letter-spacing:0.3em;font-family:system-ui,-apple-system,sans-serif}#boot-splash .boot-sub{margin-top:0.75rem;color:#71717a;font-size:0.75rem;letter-spacing:0.2em;font-family:system-ui,-apple-system,sans-serif}`,
+            __html: `html,body,#app-root{background-color:#09090b!important}html[data-app-nav="0"],html[data-app-nav="0"] body,html[data-app-nav="0"] #app-root{background-color:#f4f4f5!important}html[data-app-nav="1"][data-app-ready="1"],html[data-app-nav="1"][data-app-ready="1"] body,html[data-app-nav="1"][data-app-ready="1"] #app-root{background-color:#18181b!important;transition:background-color .7s ease-out .5s}html[data-booting="1"] [data-bottom-nav],html[data-booting="1"] [data-fields-mobile-chrome]{opacity:0;pointer-events:none;transform:translateY(12px)}#boot-splash{position:fixed;inset:0;z-index:10000;background:#09090b;pointer-events:none}`,
           }}
         />
       </head>
@@ -80,11 +80,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             __html: `(function(){var p=location.pathname;var auth=p==='/login'||p==='/install';document.documentElement.dataset.appNav=auth?'0':'1';if(!auth)document.documentElement.dataset.booting='1';})();`,
           }}
         />
-        {/* Миттєвий splash до гідрації React — той самий zinc-950 що LEVADA */}
-        <div id="boot-splash" aria-hidden="true">
-          <div className="boot-title">L E V A D A</div>
-          <div className="boot-sub">AGRO OPERATING SYSTEM</div>
-        </div>
+        {/* Лише zinc-950 до гідрації — без тексту (інакше LEVADA «стрибає» коли підхоплює React) */}
+        <div id="boot-splash" aria-hidden="true" />
         <script
           dangerouslySetInnerHTML={{
             __html: `(function(){if(document.documentElement.dataset.appNav==='0'){var s=document.getElementById('boot-splash');if(s)s.remove();}})();`,
