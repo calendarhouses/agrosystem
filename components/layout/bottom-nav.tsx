@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
 import { LogOut } from "lucide-react";
 
 import { logoutAction } from "@/app/login/actions";
@@ -14,6 +15,7 @@ import {
   MORE_MENU_ITEMS,
   MORE_NAV_TRIGGER,
 } from "@/lib/navigation";
+import { useAppBoot } from "@/lib/app-boot";
 import { ROLE_LABEL_UK, type AppActor } from "@/lib/app-actor-shared";
 import { cn } from "@/lib/utils";
 
@@ -33,11 +35,18 @@ function BottomNavBar({
   onMoreOpen: (open: boolean) => void;
   moreActive: boolean;
 }) {
+  const { revealChrome } = useAppBoot();
+
   return (
-    <nav
+    <motion.nav
       data-bottom-nav
       className="fixed inset-x-0 bottom-0 z-[250] bg-[var(--nav-bg)] pb-[env(safe-area-inset-bottom,0px)] md:hidden"
       aria-label="Головна навігація"
+      initial={{ y: 20, opacity: 0 }}
+      animate={
+        revealChrome ? { y: 0, opacity: 1 } : { y: 20, opacity: 0 }
+      }
+      transition={{ duration: 0.7, delay: 0.5, ease: "easeOut" }}
     >
       <div className="flex items-end justify-around px-1 pt-1.5">
       {BOTTOM_NAV_ITEMS.map((item) => {
@@ -81,7 +90,7 @@ function BottomNavBar({
         <span className={NAV_TEXT_CLASS}>{MORE_NAV_TRIGGER.label}</span>
       </button>
       </div>
-    </nav>
+    </motion.nav>
   );
 }
 

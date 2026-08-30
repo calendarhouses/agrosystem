@@ -17,6 +17,8 @@ import {
 } from "lucide-react";
 
 import { COMMAND_CENTER_GLASS_PANEL_CLASS } from "@/lib/equipment-command-center-layout";
+import { BootReveal } from "@/components/layout/boot-reveal";
+import { useAppBoot } from "@/lib/app-boot";
 import {
   Drawer,
   DrawerContent,
@@ -289,6 +291,14 @@ export function FieldsGlassPanel({
   onFitAll,
 }: FieldsGlassPanelProps) {
   const isMobile = useIsMobile();
+  const { revealChrome } = useAppBoot();
+  const chromeReveal = {
+    initial: { y: 20, opacity: 0 },
+    animate: revealChrome
+      ? { y: 0, opacity: 1 }
+      : { y: 20, opacity: 0 },
+    transition: { duration: 0.7, delay: 0.5, ease: "easeOut" as const },
+  };
   const [query, setQuery] = useState("");
   // Drawer порталиться в body — md:hidden батька його НЕ ховає. Лише JS-гард.
   const showFullSnap = isMobile && (mobileDetailOpen || mobileExpanded);
@@ -623,21 +633,21 @@ export function FieldsGlassPanel({
   return (
     <>
       {/* ПК-список: ховається ззовні (fields-view), коли відкриті деталі */}
-      <aside
+      <BootReveal
         className={cn(
           COMMAND_CENTER_GLASS_PANEL_CLASS,
           "left-3 w-[min(100%,400px)]"
         )}
       >
         {list}
-      </aside>
+      </BootReveal>
 
       {/* Мобільна шторка: mount лише на <768px — інакше vaul portal лізе на ПК */}
       {isMobile ? (
       <div data-fields-mobile-chrome="">
         {!mobileDetailOpen && !mobileExpanded ? (
           mobileDrawerVisible ? (
-            <button
+            <motion.button
               type="button"
               aria-expanded={false}
               aria-label="Розгорнути список полів"
@@ -652,6 +662,7 @@ export function FieldsGlassPanel({
               onTouchStart={onPeekTouchStart}
               onTouchEnd={onPeekTouchEnd}
               onClick={onPeekClick}
+              {...chromeReveal}
             >
               <div
                 className="mx-auto mt-2 h-1.5 w-12 shrink-0 rounded-full bg-zinc-400/90"
@@ -673,7 +684,7 @@ export function FieldsGlassPanel({
                 </span>
               </span>
               <PeekExpandCue />
-            </button>
+            </motion.button>
           ) : (
             <button
               type="button"

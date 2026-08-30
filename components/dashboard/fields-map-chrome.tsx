@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/popover";
 import { searchPlaces, type GeoSearchResult } from "@/lib/geocode";
 import { useIsMobile } from "@/lib/use-mobile";
+import { BootReveal } from "@/components/layout/boot-reveal";
 import {
   DEFAULT_WEATHER_LOCATION,
   fetchWeather,
@@ -351,7 +352,7 @@ export function FieldsMapChrome({ align = "end" }: FieldsMapChromeProps) {
   );
 
   return (
-    <div
+    <BootReveal
       className={cn(
         "pointer-events-auto flex flex-wrap items-center gap-2",
         align === "start" ? "justify-start" : "justify-end"
@@ -449,6 +450,6 @@ export function FieldsMapChrome({ align = "end" }: FieldsMapChromeProps) {
           </Popover>
         )}
       </div>
-    </div>
+    </BootReveal>
   );
 }

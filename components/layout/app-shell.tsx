@@ -7,6 +7,7 @@ import { BottomNav } from "@/components/layout/bottom-nav";
 import { AppDataWarmer } from "@/components/layout/app-data-warmer";
 import { Sidebar } from "@/components/layout/sidebar";
 import { TopBar } from "@/components/layout/top-bar";
+import { AppBootProvider } from "@/lib/app-boot";
 import { isCommandCenterPath } from "@/lib/equipment-command-center-layout";
 import { cn } from "@/lib/utils";
 
@@ -82,36 +83,38 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div
-      className={cn(
-        "flex h-full min-h-0 flex-col overflow-hidden overscroll-none text-zinc-900",
-        // Моб: світлий контент (не #18181b під прозорим main). Карти — окремо.
-        isCommandCenter
-          ? "bg-transparent md:bg-zinc-100"
-          : "bg-[#F4F1EA] md:bg-zinc-100"
-      )}
-    >
-      <Sidebar collapsed={collapsed} onToggleCollapsed={toggleCollapsed} />
-
+    <AppBootProvider>
       <div
         className={cn(
-          "relative flex min-h-0 flex-1 flex-col overflow-hidden overscroll-none transition-[padding] duration-200 ease-out",
-          collapsed ? "md:pl-16" : "md:pl-[250px]"
+          "flex h-full min-h-0 flex-col overflow-hidden overscroll-none text-zinc-900",
+          // Моб: світлий контент (не #18181b під прозорим main). Карти — окремо.
+          isCommandCenter
+            ? "bg-transparent md:bg-zinc-100"
+            : "bg-[#F4F1EA] md:bg-zinc-100"
         )}
       >
-        <TopBar />
+        <Sidebar collapsed={collapsed} onToggleCollapsed={toggleCollapsed} />
+
         <div
           className={cn(
-            "relative min-h-0 flex-1 overflow-hidden overscroll-none",
-            isCommandCenter && "min-h-0 bg-zinc-950"
+            "relative flex min-h-0 flex-1 flex-col overflow-hidden overscroll-none transition-[padding] duration-200 ease-out",
+            collapsed ? "md:pl-16" : "md:pl-[250px]"
           )}
         >
-          {children}
+          <TopBar />
+          <div
+            className={cn(
+              "relative min-h-0 flex-1 overflow-hidden overscroll-none",
+              isCommandCenter && "min-h-0 bg-zinc-950"
+            )}
+          >
+            {children}
+          </div>
         </div>
-      </div>
 
-      <BottomNav />
-      <AppDataWarmer />
-    </div>
+        <BottomNav />
+        <AppDataWarmer />
+      </div>
+    </AppBootProvider>
   );
 }
