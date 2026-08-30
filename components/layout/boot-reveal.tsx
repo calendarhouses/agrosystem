@@ -28,7 +28,12 @@ export function BootReveal({ children, className, ...rest }: BootRevealProps) {
       animate={
         revealChrome ? { y: 0, opacity: 1 } : { y: 20, opacity: 0 }
       }
-      transition={{ duration: 0.7, delay: 0.5, ease: "easeOut" }}
+      transition={{
+        duration: 0.7,
+        delay: revealChrome ? 0.5 : 0,
+        ease: "easeOut",
+      }}
+      style={{ pointerEvents: revealChrome ? undefined : "none" }}
       {...rest}
     >
       {children}

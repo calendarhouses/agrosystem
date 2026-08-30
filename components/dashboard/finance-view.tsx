@@ -58,6 +58,7 @@ import {
 import { seasonLabel } from "@/lib/season";
 import { useSeasonStore } from "@/lib/season-store";
 import { useAnimatedNumber } from "@/lib/use-animated-number";
+import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
 
 function formatUah(value: number): string {
@@ -220,10 +221,10 @@ const SEASON_OPTIONS = [2026, 2025, 2024] as const;
 
 const periodPillBtn = (active: boolean) =>
   cn(
-    "inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-semibold transition-all sm:px-3.5",
+    "inline-flex h-9 min-h-9 flex-1 items-center justify-center gap-1 rounded-[10px] px-2 text-[11px] font-semibold transition-all sm:h-8 sm:flex-none sm:rounded-full sm:px-3.5 sm:text-xs",
     active
-      ? "bg-white text-zinc-900 shadow-sm"
-      : "text-zinc-500 hover:text-zinc-800"
+      ? "bg-[#276749] text-white shadow-[0_4px_12px_-4px_rgba(39,103,73,0.55)] sm:bg-white sm:text-zinc-900 sm:shadow-sm"
+      : "text-zinc-500 hover:bg-white/70 hover:text-zinc-800"
   );
 
 function fieldBudgetTone(burnRate: number | null): {
@@ -319,6 +320,10 @@ export function FinanceView({
   /** Сезон, під який пораховано initialOverview на сервері */
   initialSeasonYear: number;
 }) {
+  const isMobile = useIsMobile();
+  const [mobileTab, setMobileTab] = useState<"overview" | "fields" | "flow">(
+    "overview"
+  );
   const activeSeason = useSeasonStore((s) => s.activeSeason);
   const setActiveSeason = useSeasonStore((s) => s.setActiveSeason);
 
@@ -674,7 +679,8 @@ export function FinanceView({
     <main
       className={cn(
         "relative h-full w-full overflow-y-auto overscroll-none",
-        "min-h-0 h-full bg-gradient-to-br from-[#E8F0EA] via-[#F4F1EA] to-[#EDE8DF]"
+        "min-h-0 bg-gradient-to-br from-[#E8F0EA] via-[#F4F1EA] to-[#EDE8DF]",
+        "pb-[calc(var(--app-bottom-inset)+1.25rem)] md:pb-0"
       )}
     >
       <div
@@ -682,19 +688,43 @@ export function FinanceView({
         aria-hidden
       />
 
-      <header className="sticky top-0 z-40 w-full border-b border-[#E5DFD3]/80 bg-[#F4F1EA]/80 px-6 py-4 backdrop-blur-2xl">
-        <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="min-w-0">
-            <h1 className="truncate text-2xl font-extrabold tracking-tight text-zinc-900 sm:text-3xl">
-              Фінанси
-            </h1>
-            <p className="mt-1 truncate text-sm text-zinc-500">
-              {seasonLabel(String(seasonYear))} · аналітика компанії
-            </p>
+      {isMobile ? (
+        <div className="sticky top-0 z-40 border-b border-[#E5DFD3]/80 bg-[#F4F1EA]/92 px-4 pt-[max(0.75rem,var(--safe-top))] pb-2.5 backdrop-blur-xl">
+          <div
+            className="inline-flex w-full rounded-2xl border border-[#E5DFD3]/90 bg-white/85 p-1 shadow-sm"
+            role="tablist"
+            aria-label="Розділ фінансів"
+          >
+            {(
+              [
+                { id: "overview", label: "Огляд" },
+                { id: "fields", label: "Поля" },
+                { id: "flow", label: "Динаміка" },
+              ] as const
+            ).map((tab) => {
+              const active = mobileTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setMobileTab(tab.id)}
+                  className={cn(
+                    "min-h-10 flex-1 rounded-xl text-[13px] font-bold transition-all",
+                    active
+                      ? "bg-[#276749] text-white shadow-[0_4px_12px_-4px_rgba(39,103,73,0.55)]"
+                      : "text-zinc-500 active:bg-white/80"
+                  )}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex items-center rounded-full border border-zinc-200/90 bg-white/80 p-1 shadow-sm">
+          <div className="mt-2.5 space-y-2">
+            <div className="flex w-full items-center gap-0.5 rounded-xl bg-[#EDE8DF] p-0.5">
               {(["Сьогодні", "Місяць"] as const).map((tab) => (
                 <button
                   key={tab}
@@ -705,12 +735,14 @@ export function FinanceView({
                   {tab}
                 </button>
               ))}
-
               <Popover
                 open={seasonOpen}
                 onOpenChange={(next) => {
                   setSeasonOpen(next);
-                  if (next) setPeriod("Сезон");
+                  if (next) {
+                    setRangeOpen(false);
+                    setPeriod("Сезон");
+                  }
                 }}
               >
                 <PopoverTrigger className={periodPillBtn(period === "Сезон")}>
@@ -719,7 +751,8 @@ export function FinanceView({
                 </PopoverTrigger>
                 <PopoverContent
                   align="start"
-                  className="z-[100] w-40 rounded-xl border border-zinc-200 bg-white p-1 shadow-xl"
+                  sheetOnMobile={false}
+                  className="z-[100] w-44 rounded-xl border border-zinc-200 bg-white p-1 shadow-xl"
                 >
                   {SEASON_OPTIONS.map((year) => (
                     <button
@@ -727,7 +760,7 @@ export function FinanceView({
                       type="button"
                       onClick={() => selectSeasonYear(year)}
                       className={cn(
-                        "flex w-full items-center rounded-lg px-3 py-2 text-left text-sm transition-colors",
+                        "flex w-full items-center rounded-lg px-3 py-2.5 text-left text-sm transition-colors",
                         seasonYear === year && period === "Сезон"
                           ? "bg-emerald-50 font-semibold text-emerald-800"
                           : "text-zinc-700 hover:bg-zinc-50"
@@ -740,74 +773,205 @@ export function FinanceView({
               </Popover>
             </div>
 
-            <Popover
-              open={rangeOpen}
-              onOpenChange={(open) => {
-                setRangeOpen(open);
-                if (open) rangePickStarted.current = false;
-              }}
-            >
-              <PopoverTrigger
-                className={cn(
-                  "inline-flex h-8 items-center gap-2 rounded-full border border-zinc-200/90 px-3 text-xs font-semibold shadow-sm transition-all",
-                  period === "Діапазон"
-                    ? "bg-white text-zinc-900"
-                    : "bg-white/80 text-zinc-500 hover:text-zinc-800"
-                )}
-              >
-                <CalendarIcon className="h-3.5 w-3.5 shrink-0 opacity-70" />
-                {period === "Діапазон" && customRange?.from
-                  ? `${format(customRange.from, "d MMM", { locale: uk })}${
-                      customRange.to
-                        ? ` – ${format(customRange.to, "d MMM", { locale: uk })}`
-                        : ""
-                    }`
-                  : "Діапазон"}
-              </PopoverTrigger>
-              <PopoverContent
-                align="end"
-                className="z-[100] w-auto rounded-2xl border border-zinc-200 bg-white p-2 shadow-xl"
-              >
-                <Calendar
-                  mode="range"
-                  numberOfMonths={1}
-                  selected={customRange}
-                  onSelect={(range) => {
-                    setPeriod("Діапазон");
-                    if (!range?.from) {
-                      setCustomRange(undefined);
-                      rangePickStarted.current = false;
-                      return;
-                    }
-
-                    if (!rangePickStarted.current) {
-                      rangePickStarted.current = true;
-                      setCustomRange({ from: range.from, to: undefined });
-                      return;
-                    }
-
-                    if (!range.to) {
-                      setCustomRange({ from: range.from, to: undefined });
-                      return;
-                    }
-
-                    setCustomRange(range);
+            <div className="flex items-center gap-2">
+              <Popover
+                open={rangeOpen}
+                onOpenChange={(open) => {
+                  setRangeOpen(open);
+                  if (open) {
+                    setSeasonOpen(false);
                     rangePickStarted.current = false;
-                    setRangeOpen(false);
-                  }}
-                  locale={uk}
-                />
-              </PopoverContent>
-            </Popover>
-
-            {overviewLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin text-zinc-400" />
-            ) : null}
+                  }
+                }}
+              >
+                <PopoverTrigger
+                  className={cn(
+                    "inline-flex h-10 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl border px-3 text-sm font-semibold shadow-sm transition-all",
+                    period === "Діапазон"
+                      ? "border-[#276749] bg-[#276749] text-white"
+                      : "border-[#E0DBD0] bg-white text-zinc-700"
+                  )}
+                >
+                  <CalendarIcon className="h-3.5 w-3.5 shrink-0 opacity-70" />
+                  <span className="truncate">
+                    {period === "Діапазон" && customRange?.from
+                      ? `${format(customRange.from, "d MMM", { locale: uk })}${
+                          customRange.to
+                            ? ` – ${format(customRange.to, "d MMM", { locale: uk })}`
+                            : ""
+                        }`
+                      : "Діапазон"}
+                  </span>
+                </PopoverTrigger>
+                <PopoverContent
+                  align="end"
+                  sheetOnMobile={false}
+                  className="z-[100] w-[min(100vw-1.5rem,22.5rem)] rounded-2xl border border-zinc-200 bg-white p-3 shadow-xl"
+                >
+                  <Calendar
+                    mode="range"
+                    numberOfMonths={1}
+                    selected={customRange}
+                    defaultMonth={customRange?.from ?? new Date()}
+                    onSelect={(range) => {
+                      setPeriod("Діапазон");
+                      if (!range?.from) {
+                        setCustomRange(undefined);
+                        rangePickStarted.current = false;
+                        return;
+                      }
+                      if (!rangePickStarted.current) {
+                        rangePickStarted.current = true;
+                        setCustomRange({ from: range.from, to: undefined });
+                        return;
+                      }
+                      if (!range.to) {
+                        setCustomRange({ from: range.from, to: undefined });
+                        return;
+                      }
+                      setCustomRange(range);
+                      rangePickStarted.current = false;
+                      setRangeOpen(false);
+                    }}
+                    locale={uk}
+                    className="w-full rounded-xl [--cell-size:2.5rem]"
+                  />
+                </PopoverContent>
+              </Popover>
+              {overviewLoading ? (
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-zinc-400" />
+              ) : null}
+            </div>
           </div>
         </div>
-      </header>
+      ) : (
+        <header className="sticky top-0 z-40 w-full border-b border-[#E5DFD3]/80 bg-[#F4F1EA]/80 px-6 py-4 backdrop-blur-2xl">
+          <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <h1 className="truncate text-2xl font-extrabold tracking-tight text-zinc-900 sm:text-3xl">
+                Фінанси
+              </h1>
+              <p className="mt-1 truncate text-sm text-zinc-500">
+                {seasonLabel(String(seasonYear))} · аналітика компанії
+              </p>
+            </div>
 
-      <div className="mx-auto w-full max-w-7xl space-y-6 px-4 py-6 pb-14 sm:px-6 lg:px-8">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="inline-flex items-center rounded-full border border-zinc-200/90 bg-white/80 p-1 shadow-sm">
+                {(["Сьогодні", "Місяць"] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => setPeriod(tab)}
+                    className={periodPillBtn(period === tab)}
+                  >
+                    {tab}
+                  </button>
+                ))}
+
+                <Popover
+                  open={seasonOpen}
+                  onOpenChange={(next) => {
+                    setSeasonOpen(next);
+                    if (next) setPeriod("Сезон");
+                  }}
+                >
+                  <PopoverTrigger className={periodPillBtn(period === "Сезон")}>
+                    Сезон {seasonYear}
+                    <ChevronDown className="h-3.5 w-3.5 opacity-70" />
+                  </PopoverTrigger>
+                  <PopoverContent
+                    align="start"
+                    className="z-[100] w-40 rounded-xl border border-zinc-200 bg-white p-1 shadow-xl"
+                  >
+                    {SEASON_OPTIONS.map((year) => (
+                      <button
+                        key={year}
+                        type="button"
+                        onClick={() => selectSeasonYear(year)}
+                        className={cn(
+                          "flex w-full items-center rounded-lg px-3 py-2 text-left text-sm transition-colors",
+                          seasonYear === year && period === "Сезон"
+                            ? "bg-emerald-50 font-semibold text-emerald-800"
+                            : "text-zinc-700 hover:bg-zinc-50"
+                        )}
+                      >
+                        Сезон {year}
+                      </button>
+                    ))}
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              <Popover
+                open={rangeOpen}
+                onOpenChange={(open) => {
+                  setRangeOpen(open);
+                  if (open) rangePickStarted.current = false;
+                }}
+              >
+                <PopoverTrigger
+                  className={cn(
+                    "inline-flex h-8 items-center gap-2 rounded-full border border-zinc-200/90 px-3 text-xs font-semibold shadow-sm transition-all",
+                    period === "Діапазон"
+                      ? "bg-white text-zinc-900"
+                      : "bg-white/80 text-zinc-500 hover:text-zinc-800"
+                  )}
+                >
+                  <CalendarIcon className="h-3.5 w-3.5 shrink-0 opacity-70" />
+                  {period === "Діапазон" && customRange?.from
+                    ? `${format(customRange.from, "d MMM", { locale: uk })}${
+                        customRange.to
+                          ? ` – ${format(customRange.to, "d MMM", { locale: uk })}`
+                          : ""
+                      }`
+                    : "Діапазон"}
+                </PopoverTrigger>
+                <PopoverContent
+                  align="end"
+                  className="z-[100] w-auto rounded-2xl border border-zinc-200 bg-white p-2 shadow-xl"
+                >
+                  <Calendar
+                    mode="range"
+                    numberOfMonths={1}
+                    selected={customRange}
+                    onSelect={(range) => {
+                      setPeriod("Діапазон");
+                      if (!range?.from) {
+                        setCustomRange(undefined);
+                        rangePickStarted.current = false;
+                        return;
+                      }
+
+                      if (!rangePickStarted.current) {
+                        rangePickStarted.current = true;
+                        setCustomRange({ from: range.from, to: undefined });
+                        return;
+                      }
+
+                      if (!range.to) {
+                        setCustomRange({ from: range.from, to: undefined });
+                        return;
+                      }
+
+                      setCustomRange(range);
+                      rangePickStarted.current = false;
+                      setRangeOpen(false);
+                    }}
+                    locale={uk}
+                  />
+                </PopoverContent>
+              </Popover>
+
+              {overviewLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin text-zinc-400" />
+              ) : null}
+            </div>
+          </div>
+        </header>
+      )}
+
+      <div className="mx-auto w-full max-w-7xl space-y-5 px-4 py-4 sm:space-y-6 sm:px-6 sm:py-6 lg:px-8">
         {overviewError && !overview ? (
           <div
             className={cn(
@@ -844,7 +1008,8 @@ export function FinanceView({
         ) : null}
 
         {/* 1. Hero KPI — компактні кольорові картки */}
-        <section className="grid grid-cols-1 gap-3 md:grid-cols-3 md:gap-4">
+        {(!isMobile || mobileTab === "overview") && (
+        <section className="grid grid-cols-1 gap-2.5 sm:gap-3 md:grid-cols-3 md:gap-4">
           <button
             type="button"
             disabled={Boolean(basDataError && !localSalesUah) || (!basReady && overviewLoading)}
@@ -1010,9 +1175,10 @@ export function FinanceView({
             </div>
           </button>
         </section>
+        )}
 
         {/* Smart Insights Strip */}
-        {overview ? (
+        {overview && (!isMobile || mobileTab === "overview") ? (
           <section
             className={cn(
               "overflow-hidden rounded-2xl border border-white/60",
@@ -1020,11 +1186,15 @@ export function FinanceView({
               "p-2 shadow-[0_8px_30px_rgb(39,33,24,0.06)] backdrop-blur-2xl"
             )}
           >
-            <div className="no-scrollbar flex min-w-0 items-stretch gap-2 overflow-x-auto">
+            <div className="no-scrollbar flex min-w-0 snap-x snap-mandatory items-stretch gap-2 overflow-x-auto">
               <button
                 type="button"
                 onClick={() => {
                   setShowUnplanned(true);
+                  if (isMobile) {
+                    setMobileTab("fields");
+                    return;
+                  }
                   window.setTimeout(() => {
                     document
                       .getElementById("finance-unplanned-fields")
@@ -1035,8 +1205,8 @@ export function FinanceView({
                   }, 50);
                 }}
                 className={cn(
-                  "flex min-w-[220px] flex-1 items-center gap-3 rounded-xl px-3.5 py-3 text-left",
-                  "bg-white/55 transition hover:bg-white/80",
+                  "flex min-w-[min(78vw,220px)] shrink-0 snap-start items-center gap-3 rounded-xl px-3.5 py-3 text-left sm:min-w-[220px] sm:flex-1",
+                  "bg-white/55 transition hover:bg-white/80 active:scale-[0.99]",
                   "ring-1 ring-transparent hover:ring-rose-200/60"
                 )}
               >
@@ -1068,8 +1238,8 @@ export function FinanceView({
               <Link
                 href="/accounting"
                 className={cn(
-                  "flex min-w-[220px] flex-1 items-center gap-3 rounded-xl px-3.5 py-3",
-                  "bg-white/55 transition hover:bg-white/80",
+                  "flex min-w-[min(78vw,220px)] shrink-0 snap-start items-center gap-3 rounded-xl px-3.5 py-3 sm:min-w-[220px] sm:flex-1",
+                  "bg-white/55 transition hover:bg-white/80 active:scale-[0.99]",
                   "ring-1 ring-transparent hover:ring-amber-200/60"
                 )}
               >
@@ -1112,8 +1282,8 @@ export function FinanceView({
                   })
                 }
                 className={cn(
-                  "flex min-w-[220px] flex-1 items-center gap-3 rounded-xl px-3.5 py-3 text-left",
-                  "bg-white/55 transition hover:bg-white/80",
+                  "flex min-w-[min(78vw,220px)] shrink-0 snap-start items-center gap-3 rounded-xl px-3.5 py-3 text-left sm:min-w-[220px] sm:flex-1",
+                  "bg-white/55 transition hover:bg-white/80 active:scale-[0.99]",
                   "ring-1 ring-transparent hover:ring-emerald-200/60"
                 )}
               >
@@ -1153,8 +1323,9 @@ export function FinanceView({
           </section>
         ) : null}
 
-        {(overviewLoading || overview) ? (
-          <section className="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
+        {(overviewLoading || overview) &&
+        (!isMobile || mobileTab === "overview") ? (
+          <section className="mb-2 grid grid-cols-1 gap-4 sm:mb-8 sm:gap-6 lg:grid-cols-2">
             {overviewLoading && !overviewInSync ? (
               <>
                 <div
@@ -1223,16 +1394,16 @@ export function FinanceView({
                       <li
                         key={row.crop}
                         className={cn(
-                          "mb-3 flex items-center justify-between gap-4 rounded-2xl p-4",
-                          "bg-white/50 transition-transform hover:scale-[1.01]",
-                          "dark:bg-black/40 last:mb-0"
+                          "mb-3 flex flex-col gap-3 rounded-2xl p-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:p-4",
+                          "bg-white/50 transition-transform sm:hover:scale-[1.01]",
+                          "active:scale-[0.99] dark:bg-black/40 last:mb-0"
                         )}
                       >
                         <div className="flex min-w-0 flex-1 items-center gap-3">
                           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
                             <Icon size={18} />
                           </span>
-                          <div className="min-w-0">
+                          <div className="min-w-0 flex-1">
                             <p className="truncate text-sm font-bold text-zinc-900">
                               {row.crop}
                             </p>
@@ -1241,9 +1412,12 @@ export function FinanceView({
                               {pluralFields(row.fields)}
                             </p>
                           </div>
+                          <p className="shrink-0 text-right font-mono text-base font-semibold tabular-nums text-zinc-900 sm:hidden">
+                            {formatUah(row.spentUah)} ₴
+                          </p>
                         </div>
 
-                        <div className="hidden w-32 shrink-0 sm:block">
+                        <div className="w-full sm:w-32 sm:shrink-0">
                           <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-zinc-700">
                             <div
                               className="h-full rounded-full bg-emerald-500 transition-all duration-700"
@@ -1257,7 +1431,7 @@ export function FinanceView({
                           </p>
                         </div>
 
-                        <p className="shrink-0 text-right font-mono text-lg font-medium tabular-nums text-zinc-900">
+                        <p className="hidden shrink-0 text-right font-mono text-lg font-medium tabular-nums text-zinc-900 sm:block">
                           {formatUah(row.spentUah)} ₴
                         </p>
                       </li>
@@ -1270,7 +1444,7 @@ export function FinanceView({
             {ownerPulse ? (
               <div
                 className={cn(
-                  "flex max-h-[560px] flex-col rounded-3xl border border-white/10 bg-slate-900 p-5 text-white shadow-lg",
+                  "flex flex-col rounded-3xl border border-white/10 bg-slate-900 p-4 text-white shadow-lg sm:max-h-[560px] sm:p-5",
                   "dark:bg-zinc-950"
                 )}
               >
@@ -1383,7 +1557,7 @@ export function FinanceView({
                       Усі показники в нормі
                     </p>
                   ) : (
-                    <ul className="no-scrollbar max-h-[220px] space-y-2 overflow-y-auto pr-0.5">
+                    <ul className="no-scrollbar max-h-[min(40vh,280px)] space-y-2 overflow-y-auto overscroll-contain pr-0.5 sm:max-h-[220px]">
                       {ownerPulse.risks.map((risk) => (
                         <li key={risk.id}>
                           <button
@@ -1430,8 +1604,26 @@ export function FinanceView({
           </section>
         ) : null}
 
-        {overview && !overviewLoading && overview.fields.length > 0 ? (
-          <section id="finance-field-budget" className="mt-8">
+        {overview &&
+        !overviewLoading &&
+        overview.fields.length === 0 &&
+        isMobile &&
+        mobileTab === "fields" ? (
+          <div
+            className={cn(
+              glassCardClass,
+              "px-4 py-10 text-center text-sm text-zinc-500"
+            )}
+          >
+            Немає даних по полях за цей період
+          </div>
+        ) : null}
+
+        {overview &&
+        !overviewLoading &&
+        overview.fields.length > 0 &&
+        (!isMobile || mobileTab === "fields") ? (
+          <section id="finance-field-budget" className="mt-2 sm:mt-8">
             <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
               <h3 className="text-sm font-bold tracking-tight text-zinc-900">
                 Бюджет полів
@@ -1589,14 +1781,15 @@ export function FinanceView({
           </section>
         ) : null}
 
-        {hasAnatomy ? (
+        {hasAnatomy && (!isMobile || mobileTab === "overview") ? (
           <section>
             <FinanceExpenseAnatomy slices={anatomySlices} />
           </section>
         ) : null}
 
         {basView &&
-        (basView.topBuyers.length > 0 || basView.topSuppliers.length > 0) ? (
+        (basView.topBuyers.length > 0 || basView.topSuppliers.length > 0) &&
+        (!isMobile || mobileTab === "overview") ? (
           <section
             id="finance-counterparties"
             className={cn(
@@ -1641,7 +1834,7 @@ export function FinanceView({
           </section>
         ) : null}
 
-        {basDataError ? (
+        {(!isMobile || mobileTab === "flow") && basDataError ? (
           <div
             className={cn(
               glassCardClass,
@@ -1653,9 +1846,13 @@ export function FinanceView({
             </p>
             <p className="mt-1 text-xs text-amber-900/80">{basDataError}</p>
           </div>
-        ) : basView &&
-          (basView.docs.length > 0 ||
-            basView.monthly.some((m) => m.sales > 0 || m.receipts > 0)) ? (
+        ) : null}
+
+        {(!isMobile || mobileTab === "flow") &&
+        !basDataError &&
+        basView &&
+        (basView.docs.length > 0 ||
+          basView.monthly.some((m) => m.sales > 0 || m.receipts > 0)) ? (
           <FinanceCashflowChart
             docs={basView.docs}
             monthly={basView.monthly}
@@ -1885,8 +2082,8 @@ function FieldBudgetCard({
       type="button"
       onClick={onOpen}
       className={cn(
-        "cursor-pointer rounded-2xl border p-5 text-left shadow-sm",
-        "backdrop-blur-md transition-all",
+        "cursor-pointer rounded-2xl border p-4 text-left shadow-sm sm:p-5",
+        "backdrop-blur-md transition-all active:scale-[0.99]",
         "outline-none focus-visible:ring-2 focus-visible:ring-zinc-900/15",
         tone.card
       )}
@@ -1947,7 +2144,7 @@ function CounterpartyList({
   return (
     <div
       className={cn(
-        "rounded-3xl border border-white/50 bg-white/40 p-6",
+        "rounded-3xl border border-white/50 bg-white/40 p-4 sm:p-6",
         "backdrop-blur-xl dark:border-white/10 dark:bg-black/20"
       )}
     >
@@ -1967,7 +2164,7 @@ function CounterpartyList({
               <button
                 type="button"
                 onClick={() => onSelect?.(item.name)}
-                className="flex w-full items-center justify-between py-3 text-left transition hover:opacity-80"
+                className="flex w-full items-center justify-between gap-3 py-3 text-left transition active:scale-[0.99] hover:opacity-80"
               >
                 <div className="flex min-w-0 items-center">
                   <div className="mr-3 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/60 dark:bg-black/40">
@@ -1980,7 +2177,7 @@ function CounterpartyList({
                     {item.name || "—"}
                   </p>
                 </div>
-                <p className="min-w-[120px] shrink-0 text-right font-mono text-sm font-medium tabular-nums text-zinc-900">
+                <p className="shrink-0 text-right font-mono text-sm font-medium tabular-nums text-zinc-900">
                   {formatUah(item.total)} ₴
                 </p>
               </button>

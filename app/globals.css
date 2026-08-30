@@ -150,24 +150,25 @@ body {
     color: var(--foreground);
   }
 
-  /* PWA mobile: html/body = колір boot/меню, щоб у заокругленнях корпусу не було білої смуги */
+  /* PWA mobile: під час boot — zinc-950; після — колір меню (safe-area під nav) */
   @media (max-width: 767px) {
     html,
-    body {
-      background-color: #09090b;
+    body,
+    #app-root {
+      background-color: #09090b !important;
     }
 
     html[data-app-nav="0"],
-    html[data-app-nav="0"] body {
-      background-color: var(--background);
-    }
-
-    #app-root {
-      background-color: #09090b;
-    }
-
+    html[data-app-nav="0"] body,
     html[data-app-nav="0"] #app-root {
-      background-color: var(--background);
+      background-color: var(--background) !important;
+    }
+
+    html[data-app-nav="1"][data-app-ready="1"],
+    html[data-app-nav="1"][data-app-ready="1"] body,
+    html[data-app-nav="1"][data-app-ready="1"] #app-root {
+      background-color: var(--nav-bg) !important;
+      transition: background-color 0.7s ease-out 0.5s;
     }
   }
 }

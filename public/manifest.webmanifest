@@ -8,7 +8,7 @@
   "display": "standalone",
   "orientation": "portrait-primary",
   "background_color": "#09090b",
-  "theme_color": "#09090b",
+  "theme_color": "#18181b",
   "lang": "uk",
   "prefer_related_applications": false,
   "categories": ["business", "productivity"],

@@ -16,6 +16,7 @@ import {
 } from "recharts";
 
 import type { DocRow, MonthBucket } from "@/lib/inventory-bas";
+import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
 
 export type CashflowPoint = {
@@ -171,6 +172,7 @@ export function FinanceCashflowChart({
     [docs, monthly, startIso, endIso]
   );
 
+  const isMobile = useIsMobile();
   const granularity = daysBetween(startIso, endIso) <= 45 ? "дні" : "місяці";
 
   if (data.length === 0) {
@@ -188,15 +190,15 @@ export function FinanceCashflowChart({
   }
 
   return (
-    <div className={cn(glassChartClass, className)}>
-      <div className="mb-5 flex flex-wrap items-end justify-between gap-2">
+    <div className={cn(glassChartClass, "p-4 sm:p-6", className)}>
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-2 sm:mb-5">
         <div>
           <h3 className="text-sm font-bold tracking-tight text-zinc-900">
-            Динаміка BAS (реалізації / надходження)
+            {isMobile ? "Динаміка BAS" : "Динаміка BAS (реалізації / надходження)"}
           </h3>
           <p className="mt-0.5 text-xs text-zinc-500">{granularity}</p>
         </div>
-        <div className="flex flex-wrap gap-4 text-[11px] font-medium text-zinc-500">
+        <div className="flex flex-wrap gap-3 text-[11px] font-medium text-zinc-500 sm:gap-4">
           <span className="inline-flex items-center gap-1.5">
             <span className="h-2.5 w-2.5 rounded-sm bg-emerald-400" />
             Реалізації
@@ -212,13 +214,18 @@ export function FinanceCashflowChart({
         </div>
       </div>
 
-      <div className="h-[300px] w-full sm:h-[340px]">
+      <div className="h-[240px] w-full touch-pan-y sm:h-[300px] md:h-[340px]">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart
             data={data}
-            margin={{ top: 12, right: 12, left: 0, bottom: 4 }}
-            barGap={4}
-            barCategoryGap="24%"
+            margin={{
+              top: 12,
+              right: isMobile ? 4 : 12,
+              left: 0,
+              bottom: 4,
+            }}
+            barGap={isMobile ? 2 : 4}
+            barCategoryGap={isMobile ? "18%" : "24%"}
             onClick={(state) => {
               const raw = state as {
                 activePayload?: Array<{ payload?: CashflowPoint }>;
@@ -276,40 +283,44 @@ export function FinanceCashflowChart({
               dataKey="label"
               axisLine={false}
               tickLine={false}
-              tick={{ fontSize: 11, fill: "#8a8478" }}
+              tick={{ fontSize: isMobile ? 10 : 11, fill: "#8a8478" }}
               dy={8}
               interval="preserveStartEnd"
-              minTickGap={32}
+              minTickGap={isMobile ? 48 : 32}
             />
             <YAxis
               yAxisId="bars"
               axisLine={false}
               tickLine={false}
-              tick={{ fontSize: 11, fill: "#8a8478" }}
-              width={52}
+              tick={{ fontSize: isMobile ? 10 : 11, fill: "#8a8478" }}
+              width={isMobile ? 36 : 52}
               tickFormatter={(v) =>
                 Math.abs(v) >= 1_000_000
-                  ? `${(v / 1_000_000).toFixed(v % 1_000_000 === 0 ? 0 : 1)} млн`
-                  : Math.abs(v) >= 1000
-                    ? `${Math.round(v / 1000)} тис`
-                    : String(v)
-              }
-            />
-            <YAxis
-              yAxisId="cumul"
-              orientation="right"
-              axisLine={false}
-              tickLine={false}
-              tick={{ fontSize: 10, fill: "#27674999" }}
-              width={48}
-              tickFormatter={(v) =>
-                Math.abs(v) >= 1_000_000
-                  ? `${Math.round(v / 1_000_000)}м`
+                  ? `${(v / 1_000_000).toFixed(v % 1_000_000 === 0 ? 0 : 1)}м`
                   : Math.abs(v) >= 1000
                     ? `${Math.round(v / 1000)}к`
                     : String(v)
               }
             />
+            {!isMobile ? (
+              <YAxis
+                yAxisId="cumul"
+                orientation="right"
+                axisLine={false}
+                tickLine={false}
+                tick={{ fontSize: 10, fill: "#27674999" }}
+                width={48}
+                tickFormatter={(v) =>
+                  Math.abs(v) >= 1_000_000
+                    ? `${Math.round(v / 1_000_000)}м`
+                    : Math.abs(v) >= 1000
+                      ? `${Math.round(v / 1000)}к`
+                      : String(v)
+                }
+              />
+            ) : (
+              <YAxis yAxisId="cumul" orientation="right" hide width={0} />
+            )}
             <Tooltip
               content={<CashflowTooltip />}
               cursor={{ fill: "rgba(39, 103, 73, 0.07)", radius: 8 }}
@@ -320,7 +331,7 @@ export function FinanceCashflowChart({
               name="Реалізації BAS"
               fill="url(#cf-income)"
               radius={[6, 6, 0, 0]}
-              maxBarSize={26}
+              maxBarSize={isMobile ? 18 : 26}
             />
             <Bar
               yAxisId="bars"
@@ -328,7 +339,7 @@ export function FinanceCashflowChart({
               name="Надходження BAS"
               fill="url(#cf-expense)"
               radius={[6, 6, 0, 0]}
-              maxBarSize={26}
+              maxBarSize={isMobile ? 18 : 26}
             />
             <Area
               yAxisId="cumul"

@@ -55,7 +55,7 @@ export const viewport: Viewport = {
   viewportFit: "cover",
   interactiveWidget: "overlays-content",
   themeColor: [
-    { media: "(max-width: 767px)", color: "#09090b" },
+    { media: "(max-width: 767px)", color: "#18181b" },
     { color: "#276749" },
   ],
 };
@@ -67,10 +67,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} antialiased`}
     >
       <head>
-        {/* Критично: до JS — zinc-950 одразу, без чорного→сірого спалаху */}
+        {/* Критично: до JS — zinc-950 з !important (інакше Tailwind --background дає сірий спалах) */}
         <style
           dangerouslySetInnerHTML={{
-            __html: `html,body{background-color:#09090b!important}@media(max-width:767px){html[data-app-nav="0"],html[data-app-nav="0"] body{background-color:#f4f4f5!important}}html[data-booting="1"] [data-bottom-nav],html[data-booting="1"] [data-fields-mobile-chrome]{visibility:hidden!important;opacity:0!important;pointer-events:none!important}#boot-splash{position:fixed;inset:0;z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#09090b;pointer-events:none}#boot-splash .boot-title{color:#fff;font-weight:200;font-size:1.65rem;letter-spacing:0.3em;font-family:system-ui,-apple-system,sans-serif}#boot-splash .boot-sub{margin-top:0.75rem;color:#71717a;font-size:0.75rem;letter-spacing:0.2em;font-family:system-ui,-apple-system,sans-serif}`,
+            __html: `html,body,#app-root{background-color:#09090b!important}html[data-app-nav="0"],html[data-app-nav="0"] body,html[data-app-nav="0"] #app-root{background-color:#f4f4f5!important}html[data-app-nav="1"][data-app-ready="1"],html[data-app-nav="1"][data-app-ready="1"] body,html[data-app-nav="1"][data-app-ready="1"] #app-root{background-color:#18181b!important;transition:background-color .7s ease-out .5s}html[data-booting="1"] [data-bottom-nav],html[data-booting="1"] [data-fields-mobile-chrome]{opacity:0;pointer-events:none;transform:translateY(12px)}#boot-splash{position:fixed;inset:0;z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#09090b;pointer-events:none}#boot-splash .boot-title{color:#fff;font-weight:200;font-size:1.65rem;letter-spacing:0.3em;font-family:system-ui,-apple-system,sans-serif}#boot-splash .boot-sub{margin-top:0.75rem;color:#71717a;font-size:0.75rem;letter-spacing:0.2em;font-family:system-ui,-apple-system,sans-serif}`,
           }}
         />
       </head>

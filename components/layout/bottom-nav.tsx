@@ -35,12 +35,7 @@ function BottomNavBar({
   onMoreOpen: (open: boolean) => void;
   moreActive: boolean;
 }) {
-  const { revealChrome, isAppLoading } = useAppBoot();
-
-  // Під час LEVADA nav повністю ховаємо (інакше iOS тягне сіру смужку під home indicator)
-  if (isAppLoading) {
-    return null;
-  }
+  const { revealChrome } = useAppBoot();
 
   return (
     <motion.nav
@@ -49,9 +44,14 @@ function BottomNavBar({
       aria-label="Головна навігація"
       initial={{ y: 20, opacity: 0 }}
       animate={
-        revealChrome ? { y: 0, opacity: 1 } : { y: 20, opacity: 0 }
+        revealChrome
+          ? { y: 0, opacity: 1 }
+          : { y: 20, opacity: 0 }
       }
-      transition={{ duration: 0.7, delay: 0.5, ease: "easeOut" }}
+      transition={{ duration: 0.7, delay: revealChrome ? 0.5 : 0, ease: "easeOut" }}
+      style={{
+        pointerEvents: revealChrome ? "auto" : "none",
+      }}
     >
       <div className="flex items-end justify-around px-1 pt-1.5">
       {BOTTOM_NAV_ITEMS.map((item) => {

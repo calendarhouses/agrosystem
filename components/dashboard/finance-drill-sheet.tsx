@@ -22,12 +22,10 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+  FuelPanelShell,
+  fuelSheetBodyClass,
+  FuelSheetHeader,
+} from "@/components/dashboard/fuel-sheet-chrome";
 import type { CompanyFieldBurnRow } from "@/lib/company-finance";
 import type { DocRow } from "@/lib/inventory-bas";
 import { cn } from "@/lib/utils";
@@ -162,96 +160,99 @@ export function FinanceDrillSheet({
   }, [open, target?.kind, target?.title, target?.periodKey, target?.counterparty]);
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="right"
-        initialFocus={focusRef}
-        className={cn(
-          "gap-0 overflow-hidden border-l border-[#E5DFD3] bg-[#F4F1EA] p-0 text-zinc-900",
-          "sm:max-w-lg"
-        )}
+    <FuelPanelShell
+      open={open}
+      onOpenChange={onOpenChange}
+      title={target?.title ?? "Деталі"}
+    >
+      <FuelSheetHeader
+        icon={
+          target?.kind === "revenue"
+            ? TrendingUp
+            : target?.kind === "expense"
+              ? TrendingDown
+              : target?.kind === "result"
+                ? Wallet
+                : FileText
+        }
+        title={target?.title ?? "Деталі"}
+        description={target?.subtitle}
+        accent={
+          target?.kind === "revenue"
+            ? "emerald"
+            : target?.kind === "expense"
+              ? "amber"
+              : target?.kind === "result"
+                ? "zinc"
+                : "sky"
+        }
+      />
+
+      <div
+        ref={bodyRef}
+        data-vaul-no-drag=""
+        className={cn(fuelSheetBodyClass, "gap-4 pt-4")}
       >
-        <SheetHeader className="shrink-0 space-y-1 border-b border-[#E5DFD3]/80 bg-gradient-to-br from-[#E8F0EA] via-[#F4F1EA] to-[#EDE8DF] px-6 py-5 pr-14 text-left">
-          <div
-            ref={focusRef}
-            tabIndex={-1}
-            className="outline-none"
-          >
-            <SheetTitle className="text-lg font-bold tracking-tight">
-              {target?.title ?? "Деталі"}
-            </SheetTitle>
-            {target?.subtitle ? (
-              <SheetDescription className="text-xs text-zinc-500">
-                {target.subtitle}
-              </SheetDescription>
-            ) : null}
-          </div>
-        </SheetHeader>
+        <div ref={focusRef} tabIndex={-1} className="outline-none" />
+        {target?.kind === "revenue" ? (
+          <RevenuePanel
+            key={`rev-${target.title}`}
+            basSales={docsTotal}
+            localSalesUah={localSalesUah}
+            revenueUah={revenueUah}
+            docs={filteredDocs}
+          />
+        ) : null}
 
-        <div
-          ref={bodyRef}
-          className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4"
-        >
-          {target?.kind === "revenue" ? (
-            <RevenuePanel
-              key={`rev-${target.title}`}
-              basSales={docsTotal}
-              localSalesUah={localSalesUah}
-              revenueUah={revenueUah}
-              docs={filteredDocs}
-            />
-          ) : null}
+        {target?.kind === "expense" ? (
+          <ExpensePanel
+            opsCostUah={opsCostUah}
+            inventorySpentUah={inventorySpentUah}
+            fuelCostUah={fuelCostUah}
+            salaryUah={salaryUah}
+            localInboundUah={localInboundUah}
+            topFields={topFields}
+            onOpenField={onOpenField}
+          />
+        ) : null}
 
-          {target?.kind === "expense" ? (
-            <ExpensePanel
-              opsCostUah={opsCostUah}
-              inventorySpentUah={inventorySpentUah}
-              fuelCostUah={fuelCostUah}
-              salaryUah={salaryUah}
-              localInboundUah={localInboundUah}
-              topFields={topFields}
-              onOpenField={onOpenField}
-            />
-          ) : null}
+        {target?.kind === "result" ? (
+          <ResultPanel
+            revenueUah={revenueUah}
+            opsCostUah={opsCostUah}
+            inventorySpentUah={inventorySpentUah}
+            fuelCostUah={fuelCostUah}
+            salaryUah={salaryUah}
+          />
+        ) : null}
 
-          {target?.kind === "result" ? (
-            <ResultPanel
-              revenueUah={revenueUah}
-              opsCostUah={opsCostUah}
-              inventorySpentUah={inventorySpentUah}
-              fuelCostUah={fuelCostUah}
-              salaryUah={salaryUah}
-            />
-          ) : null}
+        {target?.kind === "counterparty" || target?.kind === "period" ? (
+          <DocsPanel
+            docs={filteredDocs}
+            total={docsTotal}
+            emptyHint={
+              target.kind === "period"
+                ? "Немає документів за цю дату"
+                : "Немає операцій з цим контрагентом за період"
+            }
+          />
+        ) : null}
 
-          {target?.kind === "counterparty" || target?.kind === "period" ? (
+        {target?.kind === "revenue" ? (
+          <div className="mt-1">
+            <p className="mb-2 text-[11px] font-semibold tracking-wider text-zinc-400 uppercase">
+              Документи реалізації
+            </p>
             <DocsPanel
               docs={filteredDocs}
               total={docsTotal}
-              emptyHint={
-                target.kind === "period"
-                  ? "Немає документів за цю дату"
-                  : "Немає операцій з цим контрагентом за період"
-              }
+              emptyHint="Немає реалізацій за період"
+              compact
             />
-          ) : null}
-
-          {target?.kind === "revenue" ? (
-            <div className="mt-5">
-              <p className="mb-2 text-[11px] font-semibold tracking-wider text-zinc-400 uppercase">
-                Документи реалізації
-              </p>
-              <DocsPanel
-                docs={filteredDocs}
-                total={docsTotal}
-                emptyHint="Немає реалізацій за період"
-                compact
-              />
-            </div>
-          ) : null}
-        </div>
-      </SheetContent>
-    </Sheet>
+          </div>
+        ) : null}
+      </div>
+    </FuelPanelShell>
   );
 }
 

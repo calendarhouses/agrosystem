@@ -88,7 +88,7 @@ export function FinanceExpenseAnatomy({
       </div>
 
       <div className="flex flex-col items-center gap-6 lg:flex-row lg:items-start">
-        <div className="relative mx-auto aspect-square h-[220px] w-[220px] shrink-0 select-none sm:h-[240px] sm:w-[240px] [&_svg]:outline-none [&_path]:outline-none">
+        <div className="relative mx-auto aspect-square h-[min(52vw,200px)] w-[min(52vw,200px)] shrink-0 select-none sm:h-[240px] sm:w-[240px] [&_svg]:outline-none [&_path]:outline-none">
           <ResponsiveContainer width="100%" height="100%">
             <PieChart margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
               <Pie

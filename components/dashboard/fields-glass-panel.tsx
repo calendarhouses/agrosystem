@@ -297,7 +297,11 @@ export function FieldsGlassPanel({
     animate: revealChrome
       ? { y: 0, opacity: 1 }
       : { y: 20, opacity: 0 },
-    transition: { duration: 0.7, delay: 0.5, ease: "easeOut" as const },
+    transition: {
+      duration: 0.7,
+      delay: revealChrome ? 0.5 : 0,
+      ease: "easeOut" as const,
+    },
   };
   const [query, setQuery] = useState("");
   // Drawer порталиться в body — md:hidden батька його НЕ ховає. Лише JS-гард.
@@ -658,6 +662,7 @@ export function FieldsGlassPanel({
                 borderTopLeftRadius: "1.25rem",
                 borderTopRightRadius: "1.25rem",
                 touchAction: "pan-y",
+                pointerEvents: revealChrome ? "auto" : "none",
               }}
               onTouchStart={onPeekTouchStart}
               onTouchEnd={onPeekTouchEnd}
