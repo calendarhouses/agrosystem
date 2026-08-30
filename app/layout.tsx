@@ -60,6 +60,22 @@ export const viewport: Viewport = {
   ],
 };
 
+/** Inline: шлях → auth vs app. Має бути ДО CSS, інакше логін на мить/назавжди чорний. */
+const BOOT_PATH_SCRIPT = `(function(){var p=location.pathname;var auth=p==='/login'||p==='/install';document.documentElement.dataset.appNav=auth?'0':'1';if(auth){delete document.documentElement.dataset.booting;delete document.documentElement.dataset.appReady;}else{document.documentElement.dataset.booting='1';}})();`;
+
+/**
+ * Чорний boot-шар лише при data-booting=1 (після логіну в систему).
+ * Логін/install (data-app-nav=0) — світлий фон, без splash.
+ */
+const BOOT_CRITICAL_CSS = [
+  "html[data-app-nav='0'],html[data-app-nav='0'] body,html[data-app-nav='0'] #app-root{background-color:#f4f4f5!important}",
+  "html[data-booting='1'],html[data-booting='1'] body,html[data-booting='1'] #app-root{background-color:#09090b!important}",
+  "html[data-app-nav='1'][data-app-ready='1'],html[data-app-nav='1'][data-app-ready='1'] body,html[data-app-nav='1'][data-app-ready='1'] #app-root{background-color:#18181b!important;transition:background-color .7s ease-out .5s}",
+  "html[data-booting='1'] [data-bottom-nav],html[data-booting='1'] [data-fields-mobile-chrome]{opacity:0;pointer-events:none;transform:translateY(12px)}",
+  "#boot-splash{display:none;position:fixed;inset:0;z-index:10000;background:#09090b;pointer-events:none}",
+  "html[data-booting='1'] #boot-splash{display:block}",
+].join("");
+
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
@@ -67,26 +83,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} antialiased`}
     >
       <head>
-        {/* Критично: до JS — zinc-950 з !important (інакше Tailwind --background дає сірий спалах) */}
-        <style
-          dangerouslySetInnerHTML={{
-            __html: `html,body,#app-root{background-color:#09090b!important}html[data-app-nav="0"],html[data-app-nav="0"] body,html[data-app-nav="0"] #app-root{background-color:#f4f4f5!important}html[data-app-nav="1"][data-app-ready="1"],html[data-app-nav="1"][data-app-ready="1"] body,html[data-app-nav="1"][data-app-ready="1"] #app-root{background-color:#18181b!important;transition:background-color .7s ease-out .5s}html[data-booting="1"] [data-bottom-nav],html[data-booting="1"] [data-fields-mobile-chrome]{opacity:0;pointer-events:none;transform:translateY(12px)}#boot-splash{position:fixed;inset:0;z-index:10000;background:#09090b;pointer-events:none}`,
-          }}
-        />
+        <script dangerouslySetInnerHTML={{ __html: BOOT_PATH_SCRIPT }} />
+        <style dangerouslySetInnerHTML={{ __html: BOOT_CRITICAL_CSS }} />
       </head>
       <body className="overflow-hidden font-sans text-zinc-900">
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `(function(){var p=location.pathname;var auth=p==='/login'||p==='/install';document.documentElement.dataset.appNav=auth?'0':'1';if(!auth)document.documentElement.dataset.booting='1';})();`,
-          }}
-        />
-        {/* Лише zinc-950 до гідрації — без тексту (інакше LEVADA «стрибає» коли підхоплює React) */}
+        {/* Видимий лише при data-booting=1 — ніколи не накриває /login */}
         <div id="boot-splash" aria-hidden="true" />
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `(function(){if(document.documentElement.dataset.appNav==='0'){var s=document.getElementById('boot-splash');if(s)s.remove();}})();`,
-          }}
-        />
         <PwaBootstrap />
         <div id="app-root" className="h-dvh min-h-0 overflow-hidden">
           <AppShell>{children}</AppShell>

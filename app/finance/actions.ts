@@ -28,13 +28,18 @@ export type ActionResult<T = null> =
 
 /**
  * Огляд: Plan/Fact + матриця burnRate + локальні продажі/приходи.
- * range — yyyy-MM-dd; без range = увесь сезон (фільтр лише season у запитах).
+ * startIso/endIso — yyyy-MM-dd (окремі args — надійніше для Server Actions).
  */
 export async function getCompanyFinancialOverview(
-  activeSeason?: string,
-  range?: FinanceDateRange | null
+  activeSeason: string,
+  startIso?: string | null,
+  endIso?: string | null
 ): Promise<ActionResult<CompanyFinancialOverview>> {
   try {
+    const range: FinanceDateRange | null =
+      startIso && endIso
+        ? { startIso, endIso }
+        : null;
     const data = await fetchCompanyFinancialOverview(activeSeason, range);
     return { ok: true, data };
   } catch (error) {

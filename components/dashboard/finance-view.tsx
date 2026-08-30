@@ -20,7 +20,6 @@ import {
   Sprout,
   Sun,
   Target,
-  TrendingDown,
   TrendingUp,
   Wallet,
   Wheat,
@@ -30,7 +29,6 @@ import { getCompanyFinancialOverview, getFinanceBasDashboard } from "@/app/finan
 import { FinanceCashflowChart } from "@/components/dashboard/finance-cashflow-chart";
 import {
   FinanceDrillSheet,
-  KpiClickHint,
   type FinanceDrillTarget,
 } from "@/components/dashboard/finance-drill-sheet";
 import Link from "next/link";
@@ -70,6 +68,10 @@ function formatUah(value: number): string {
   return new Intl.NumberFormat("uk-UA", {
     maximumFractionDigits: 0,
   }).format(Math.round(value));
+}
+
+function parseIsoLocal(iso: string): Date {
+  return new Date(`${iso}T12:00:00`);
 }
 
 function pluralFields(n: number): string {
@@ -133,7 +135,7 @@ function AnimatedUah({
     >
       <span
         className={cn(
-          "text-[1.85rem] leading-none font-semibold tracking-tight tabular-nums sm:text-3xl lg:text-[2.15rem]",
+          "text-[1.35rem] leading-none font-semibold tracking-tight tabular-nums sm:text-2xl lg:text-[1.85rem]",
           toneClassName
         )}
       >
@@ -153,7 +155,7 @@ const glassCardClass = cn(
 );
 
 const kpiGlassClass = cn(
-  "group relative isolate overflow-hidden rounded-2xl p-4 text-left sm:p-5",
+  "group relative isolate overflow-hidden rounded-xl p-3 text-left sm:rounded-2xl sm:p-4",
   "border border-white/70 shadow-[0_6px_24px_rgb(0,0,0,0.06)]",
   "backdrop-blur-2xl",
   "transition-all duration-200",
@@ -164,7 +166,7 @@ const kpiGlassClass = cn(
 );
 
 const kpiLabelClass =
-  "relative mb-2 text-left text-[10px] font-bold tracking-[0.14em] text-zinc-500 uppercase";
+  "relative mb-1 text-left text-[9px] font-bold tracking-[0.14em] text-zinc-500 uppercase sm:mb-1.5 sm:text-[10px]";
 
 const kpiGradientRevenue = "text-emerald-700";
 
@@ -335,6 +337,7 @@ export function FinanceView({
   const [rangeOpen, setRangeOpen] = useState(false);
   const [showBudgeted, setShowBudgeted] = useState(false);
   const [showUnplanned, setShowUnplanned] = useState(false);
+  const [showCrops, setShowCrops] = useState(false);
   const [customRange, setCustomRange] = useState<DateRange | undefined>();
 
   // Не показуємо SSR-огляд іншого сезону — інакше маржа «стрибає» 98%→100%
@@ -454,24 +457,27 @@ export function FinanceView({
     // Не чистимо overview одразу — лишаємо каркас блоку; маржа все одно
     // чекає overviewInSync (overviewSeasonYear скидаємо).
     setOverviewSeasonYear(null);
-    // Завжди той самий календарний зріз, що й BAS (включно з «Сезон»).
-    const rangeArg = isoRange;
+    // Примітиви start/end — надійніше для Server Action, ніж обʼєкт range.
     const fetchSeason = seasonYear;
-    void getCompanyFinancialOverview(String(fetchSeason), rangeArg).then(
-      (res) => {
-        if (cancelled) return;
-        setOverviewLoading(false);
-        if (!res.ok) {
-          setOverview(null);
-          setOverviewSeasonYear(null);
-          setOverviewError(res.error);
-          return;
-        }
-        setOverview(res.data);
-        setOverviewSeasonYear(fetchSeason);
-        setOverviewError(null);
+    const fetchStart = isoRange.startIso;
+    const fetchEnd = isoRange.endIso;
+    void getCompanyFinancialOverview(
+      String(fetchSeason),
+      fetchStart,
+      fetchEnd
+    ).then((res) => {
+      if (cancelled) return;
+      setOverviewLoading(false);
+      if (!res.ok) {
+        setOverview(null);
+        setOverviewSeasonYear(null);
+        setOverviewError(res.error);
+        return;
       }
-    );
+      setOverview(res.data);
+      setOverviewSeasonYear(fetchSeason);
+      setOverviewError(null);
+    });
     return () => {
       cancelled = true;
     };
@@ -513,6 +519,19 @@ export function FinanceView({
     !overviewLoading &&
     overview.periodStartIso === isoRange.startIso &&
     overview.periodEndIso === isoRange.endIso;
+
+  const fieldsPeriodLabel = useMemo(() => {
+    if (period === "Сезон") return `Сезон ${seasonYear}`;
+    if (period === "Діапазон" && customRange?.from) {
+      const from = format(customRange.from, "d MMM", { locale: uk });
+      const to = customRange.to
+        ? format(customRange.to, "d MMM", { locale: uk })
+        : from;
+      return `${from} – ${to}`;
+    }
+    if (period === "Діапазон") return "Діапазон";
+    return `${period} · ${format(parseIsoLocal(isoRange.startIso), "d MMM", { locale: uk })} – ${format(parseIsoLocal(isoRange.endIso), "d MMM", { locale: uk })}`;
+  }, [period, seasonYear, customRange, isoRange.startIso, isoRange.endIso]);
   const basInSync =
     basSeasonYear === seasonYear &&
     !basLoading &&
@@ -1170,9 +1189,9 @@ export function FinanceView({
           </div>
         ) : null}
 
-        {/* 1. Hero KPI — компактні кольорові картки */}
+        {/* 1. Hero KPI — виручка+витрати в ряд, результат під ними */}
         {(!isMobile || mobileTab === "overview") && (
-        <section className="grid grid-cols-1 gap-2.5 sm:gap-3 md:grid-cols-3 md:gap-4">
+        <section className="grid grid-cols-2 gap-2 sm:gap-2.5 md:gap-3">
           <button
             type="button"
             disabled={Boolean(basDataError && !localSalesUah) || (!basReady && overviewLoading)}
@@ -1201,7 +1220,7 @@ export function FinanceView({
             <div className="relative">
               <p className={kpiLabelClass}>Виручка</p>
               {basDataError && !localSalesUah ? (
-                <p className="text-sm text-amber-800">Дані виручки недоступні</p>
+                <p className="text-xs text-amber-800 sm:text-sm">Дані недоступні</p>
               ) : !basReady && overviewLoading ? (
                 <div className="flex items-center gap-2 text-sm text-zinc-400">
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -1212,16 +1231,15 @@ export function FinanceView({
                     value={revenueUah}
                     toneClassName={kpiGradientRevenue}
                   />
-                  <p className="mt-2 text-[11px] text-emerald-800/60">
+                  <p className="mt-1 line-clamp-2 text-[10px] leading-snug text-emerald-800/60 sm:mt-1.5 sm:text-[11px]">
                     {basDataError
                       ? "лише продажі зі складу"
                       : revenueUah === 0
-                        ? "Немає реалізацій за період"
+                        ? "Немає реалізацій"
                         : localSalesUah > 0
-                          ? `Реалізації ${formatHeroUah(basSalesUah)} · свої ${formatHeroUah(localSalesUah)}`
+                          ? `Реал. ${formatHeroUah(basSalesUah)} · свої ${formatHeroUah(localSalesUah)}`
                           : `${basView?.docs.filter((d) => d.type === "sale").length ?? 0} реалізацій`}
                   </p>
-                  <KpiClickHint icon={TrendingUp} />
                 </>
               )}
             </div>
@@ -1263,9 +1281,9 @@ export function FinanceView({
                     value={opsCostUah}
                     toneClassName={kpiGradientExpense}
                   />
-                  <p className="mt-2 text-[11px] text-orange-900/55">
+                  <p className="mt-1 line-clamp-2 text-[10px] leading-snug text-orange-900/55 sm:mt-1.5 sm:text-[11px]">
                     {opsCostUah <= 0
-                      ? "Немає операційних витрат за період"
+                      ? "Немає витрат"
                       : [
                           overview.inventorySpentUah > 0
                             ? `ТМЦ ${formatHeroUah(overview.inventorySpentUah)}`
@@ -1280,7 +1298,6 @@ export function FinanceView({
                           .filter(Boolean)
                           .join(" · ") || "Деталі по кліку"}
                   </p>
-                  <KpiClickHint icon={TrendingDown} />
                 </>
               )}
             </div>
@@ -1300,6 +1317,7 @@ export function FinanceView({
             }
             className={cn(
               kpiGlassClass,
+              "col-span-2",
               pnlUah >= 0
                 ? "bg-gradient-to-br from-teal-50/95 via-white/80 to-emerald-50/70 hover:border-teal-300/50"
                 : "bg-gradient-to-br from-rose-50/95 via-white/80 to-orange-50/60 hover:border-rose-300/50"
@@ -1314,14 +1332,14 @@ export function FinanceView({
               )}
               aria-hidden
             />
-            <div className="relative">
-              <p className={kpiLabelClass}>Результат</p>
-              {overviewLoading || !overview || (!basReady && !basDataError) ? (
-                <div className="flex items-center gap-2 text-sm text-zinc-400">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                </div>
-              ) : (
-                <>
+            <div className="relative flex flex-wrap items-end justify-between gap-3">
+              <div className="min-w-0">
+                <p className={kpiLabelClass}>Результат</p>
+                {overviewLoading || !overview || (!basReady && !basDataError) ? (
+                  <div className="flex items-center gap-2 text-sm text-zinc-400">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  </div>
+                ) : (
                   <AnimatedUah
                     value={pnlUah}
                     showPlus
@@ -1329,12 +1347,13 @@ export function FinanceView({
                       pnlUah >= 0 ? kpiGradientRevenue : kpiGradientLoss
                     }
                   />
+                )}
+              </div>
+              {!overviewLoading && overview && (basReady || basDataError) ? (
+                <div className="min-w-[40%] flex-1 sm:min-w-[12rem]">
                   <BreakEvenBar revenue={revenueUah} expense={opsCostUah} />
-                  <KpiClickHint
-                    icon={pnlUah >= 0 ? TrendingUp : TrendingDown}
-                  />
-                </>
-              )}
+                </div>
+              ) : null}
             </div>
           </button>
         </section>
@@ -1344,12 +1363,12 @@ export function FinanceView({
         {overview && (!isMobile || mobileTab === "overview") ? (
           <section
             className={cn(
-              "overflow-hidden rounded-2xl border border-white/60",
+              "overflow-hidden rounded-xl border border-white/60",
               "bg-gradient-to-r from-white/70 via-[#F4F1EA]/75 to-white/60",
-              "p-2 shadow-[0_8px_30px_rgb(39,33,24,0.06)] backdrop-blur-2xl"
+              "p-1.5 shadow-[0_8px_30px_rgb(39,33,24,0.06)] backdrop-blur-2xl"
             )}
           >
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <div className="grid grid-cols-2 gap-1.5">
               <button
                 type="button"
                 onClick={() => {
@@ -1369,151 +1388,84 @@ export function FinanceView({
                   }, 50);
                 }}
                 className={cn(
-                  "flex min-w-0 items-center gap-3 rounded-xl px-3.5 py-3 text-left",
+                  "flex min-w-0 items-center gap-2 rounded-lg px-2.5 py-2 text-left",
                   "bg-white/55 transition hover:bg-white/80 active:scale-[0.99]",
                   "ring-1 ring-transparent hover:ring-rose-200/60"
                 )}
               >
                 <span
                   className={cn(
-                    "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl",
+                    "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg",
                     unplannedFields.length > 0
                       ? "bg-rose-500/10 text-rose-600"
                       : "bg-emerald-500/10 text-emerald-600"
                   )}
                 >
-                  <MapPinned size={16} strokeWidth={2} />
+                  <MapPinned size={14} strokeWidth={2} />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-[10px] font-bold tracking-[0.12em] text-zinc-400 uppercase">
+                  <span className="block text-[9px] font-bold tracking-[0.12em] text-zinc-400 uppercase">
                     Бюджети
                   </span>
-                  <span className="mt-0.5 block text-sm leading-snug font-semibold text-zinc-900">
+                  <span className="mt-0.5 block text-[11px] leading-snug font-semibold text-zinc-900 sm:text-xs">
                     {unplannedFields.length > 0
-                      ? `${unplannedFields.length} ${pluralFields(unplannedFields.length)} без плану ₴/га`
-                      : "Усі поля з планом ₴/га"}
+                      ? `${unplannedFields.length} без плану`
+                      : "Усі з планом"}
                   </span>
                 </span>
                 {unplannedFields.length > 0 ? (
-                  <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-rose-500" />
+                  <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-rose-500" />
                 ) : null}
               </button>
 
               <Link
                 href="/accounting"
                 className={cn(
-                  "flex min-w-0 items-center gap-3 rounded-xl px-3.5 py-3",
+                  "flex min-w-0 items-center gap-2 rounded-lg px-2.5 py-2",
                   "bg-white/55 transition hover:bg-white/80 active:scale-[0.99]",
                   "ring-1 ring-transparent hover:ring-amber-200/60"
                 )}
               >
                 <span
                   className={cn(
-                    "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl",
+                    "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg",
                     overview.draftMovesCount > 0
                       ? "bg-amber-500/10 text-amber-600"
                       : "bg-zinc-500/10 text-zinc-500"
                   )}
                 >
-                  <FileSpreadsheet size={16} strokeWidth={2} />
+                  <FileSpreadsheet size={14} strokeWidth={2} />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-[10px] font-bold tracking-[0.12em] text-zinc-400 uppercase">
+                  <span className="block text-[9px] font-bold tracking-[0.12em] text-zinc-400 uppercase">
                     Бухгалтерія
                   </span>
                   <span
                     className={cn(
-                      "mt-0.5 block text-sm leading-snug font-semibold",
+                      "mt-0.5 block text-[11px] leading-snug font-semibold sm:text-xs",
                       overview.draftMovesCount > 0
                         ? "text-amber-800"
                         : "text-zinc-900"
                     )}
                   >
                     {overview.draftMovesCount > 0
-                      ? `${overview.draftMovesCount} ${pluralDrafts(overview.draftMovesCount)} до експорту`
+                      ? `${overview.draftMovesCount} ${pluralDrafts(overview.draftMovesCount)}`
                       : "Немає чернеток"}
                   </span>
                 </span>
               </Link>
-
-              <button
-                type="button"
-                onClick={() =>
-                  openDrill({
-                    kind: "result",
-                    title: "Результат",
-                    subtitle: "P&L за період",
-                  })
-                }
-                className={cn(
-                  "flex min-w-0 items-center gap-3 rounded-xl px-3.5 py-3 text-left",
-                  "bg-white/55 transition hover:bg-white/80 active:scale-[0.99]",
-                  "ring-1 ring-transparent hover:ring-emerald-200/60"
-                )}
-              >
-                <span
-                  className={cn(
-                    "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl",
-                    pnlUah >= 0
-                      ? "bg-emerald-500/10 text-emerald-600"
-                      : "bg-rose-500/10 text-rose-600"
-                  )}
-                >
-                  <Percent size={16} strokeWidth={2} />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[10px] font-bold tracking-[0.12em] text-zinc-400 uppercase">
-                    Маржа
-                  </span>
-                  <span
-                    className={cn(
-                      "mt-0.5 block text-sm leading-snug font-semibold",
-                      !marginReady
-                        ? "text-zinc-400"
-                        : pnlUah >= 0
-                          ? "text-emerald-800"
-                          : "text-rose-800"
-                    )}
-                  >
-                    {!marginReady
-                      ? "…"
-                      : marginPctDisplay != null
-                        ? `${marginPctDisplay}% від виручки`
-                        : "Немає даних"}
-                  </span>
-                </span>
-              </button>
             </div>
           </section>
         ) : null}
 
         {(overviewLoading || overview) &&
         (!isMobile || mobileTab === "overview") ? (
-          <section className="mb-2 grid grid-cols-1 gap-4 sm:mb-8 sm:gap-6 lg:grid-cols-2">
+          <section className="mb-2 space-y-3 sm:mb-8 sm:space-y-4">
             {overviewLoading && !overviewInSync ? (
               <>
                 <div
                   className={cn(
-                    "rounded-3xl border border-white/50 bg-white/40 p-6 shadow-sm",
-                    "backdrop-blur-2xl dark:border-white/10 dark:bg-black/20"
-                  )}
-                >
-                  <div className="mb-5 flex items-start justify-between gap-2">
-                    <div>
-                      <h3 className="text-base font-bold tracking-tight text-zinc-900">
-                        Економіка культур
-                      </h3>
-                      <p className="mt-0.5 text-xs text-zinc-500">
-                        Витрати ₴/га
-                      </p>
-                    </div>
-                    <Loader2 className="h-4 w-4 shrink-0 animate-spin text-zinc-400" />
-                  </div>
-                  <MidTierCropSkeleton />
-                </div>
-                <div
-                  className={cn(
-                    "flex min-h-[320px] flex-col rounded-3xl border border-white/10 bg-slate-900 p-5 text-white shadow-lg",
+                    "flex min-h-[280px] flex-col rounded-3xl border border-white/10 bg-slate-900 p-5 text-white shadow-lg",
                     "dark:bg-zinc-950"
                   )}
                 >
@@ -1525,86 +1477,25 @@ export function FinanceView({
                   </div>
                   <MidTierPulseSkeleton />
                 </div>
+                <div
+                  className={cn(
+                    "overflow-hidden rounded-2xl border border-white/50 bg-white/40 shadow-sm",
+                    "backdrop-blur-2xl"
+                  )}
+                >
+                  <div className="flex items-center gap-3 px-3.5 py-3 sm:px-4">
+                    <Loader2 className="h-4 w-4 shrink-0 animate-spin text-zinc-400" />
+                    <div>
+                      <p className="text-sm font-bold text-zinc-900">
+                        Економіка культур
+                      </p>
+                      <p className="text-[11px] text-zinc-500">Витрати ₴/га</p>
+                    </div>
+                  </div>
+                </div>
               </>
             ) : (
               <>
-            {cropEconomics.length > 0 ? (
-              <div
-                className={cn(
-                  "rounded-3xl border border-white/50 bg-white/40 p-6 shadow-sm",
-                  "backdrop-blur-2xl dark:border-white/10 dark:bg-black/20"
-                )}
-              >
-                <div className="mb-5">
-                  <h3 className="text-base font-bold tracking-tight text-zinc-900">
-                    Економіка культур
-                  </h3>
-                  <p className="mt-0.5 text-xs text-zinc-500">
-                    Витрати ₴/га
-                  </p>
-                </div>
-                <ul>
-                  {cropEconomics.map((row) => {
-                    const maxSpent = Math.max(
-                      ...cropEconomics.map((c) => c.spentUah),
-                      1
-                    );
-                    const barPct =
-                      row.spentUah > 0
-                        ? Math.min(100, (row.spentUah / maxSpent) * 100)
-                        : 0;
-                    const Icon = cropGlyph(row.crop);
-                    return (
-                      <li
-                        key={row.crop}
-                        className={cn(
-                          "mb-3 flex flex-col gap-3 rounded-2xl p-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:p-4",
-                          "bg-white/50 transition-transform sm:hover:scale-[1.01]",
-                          "active:scale-[0.99] dark:bg-black/40 last:mb-0"
-                        )}
-                      >
-                        <div className="flex min-w-0 flex-1 items-center gap-3">
-                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
-                            <Icon size={18} />
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-bold text-zinc-900">
-                              {row.crop}
-                            </p>
-                            <p className="text-xs text-zinc-400">
-                              {formatUah(row.areaHa)} га · {row.fields}{" "}
-                              {pluralFields(row.fields)}
-                            </p>
-                          </div>
-                          <p className="shrink-0 text-right font-mono text-base font-semibold tabular-nums text-zinc-900 sm:hidden">
-                            {formatUah(row.spentUah)} ₴
-                          </p>
-                        </div>
-
-                        <div className="w-full sm:w-32 sm:shrink-0">
-                          <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-zinc-700">
-                            <div
-                              className="h-full rounded-full bg-emerald-500 transition-all duration-700"
-                              style={{ width: `${barPct}%` }}
-                            />
-                          </div>
-                          <p className="mt-1 text-[10px] font-medium text-zinc-400">
-                            {row.costPerHa > 0
-                              ? `${formatUah(row.costPerHa)} ₴/га`
-                              : "0 ₴/га"}
-                          </p>
-                        </div>
-
-                        <p className="hidden shrink-0 text-right font-mono text-lg font-medium tabular-nums text-zinc-900 sm:block">
-                          {formatUah(row.spentUah)} ₴
-                        </p>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            ) : null}
-
             {ownerPulse ? (
               <div
                 className={cn(
@@ -1763,6 +1654,103 @@ export function FinanceView({
                 </div>
               </div>
             ) : null}
+
+            {cropEconomics.length > 0 ? (
+              <div
+                className={cn(
+                  "overflow-hidden rounded-2xl border border-white/50 bg-white/50 shadow-sm",
+                  "backdrop-blur-2xl dark:border-white/10 dark:bg-black/20"
+                )}
+              >
+                <button
+                  type="button"
+                  onClick={() => setShowCrops((v) => !v)}
+                  aria-expanded={showCrops}
+                  className="flex w-full items-center gap-3 px-3.5 py-3 text-left transition hover:bg-white/70 sm:px-4"
+                >
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/12 text-emerald-700">
+                    <Wheat className="h-4 w-4" strokeWidth={2.25} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-bold tracking-tight text-zinc-900">
+                      Економіка культур
+                    </span>
+                    <span className="mt-0.5 block text-[11px] leading-snug text-zinc-500">
+                      {cropEconomics.length} культур · витрати ₴/га
+                    </span>
+                  </span>
+                  <ChevronDown
+                    className={cn(
+                      "h-4 w-4 shrink-0 text-zinc-400 transition-transform duration-200",
+                      showCrops && "rotate-180"
+                    )}
+                  />
+                </button>
+                {showCrops ? (
+                  <div className="border-t border-[#E5DFD3]/80 px-3 pb-3.5 pt-3 sm:px-4">
+                    <ul>
+                      {cropEconomics.map((row) => {
+                        const maxSpent = Math.max(
+                          ...cropEconomics.map((c) => c.spentUah),
+                          1
+                        );
+                        const barPct =
+                          row.spentUah > 0
+                            ? Math.min(100, (row.spentUah / maxSpent) * 100)
+                            : 0;
+                        const Icon = cropGlyph(row.crop);
+                        return (
+                          <li
+                            key={row.crop}
+                            className={cn(
+                              "mb-2.5 flex flex-col gap-2.5 rounded-xl p-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:p-3.5",
+                              "bg-white/55 transition-transform sm:hover:scale-[1.01]",
+                              "active:scale-[0.99] dark:bg-black/40 last:mb-0"
+                            )}
+                          >
+                            <div className="flex min-w-0 flex-1 items-center gap-3">
+                              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+                                <Icon size={16} />
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-bold text-zinc-900">
+                                  {row.crop}
+                                </p>
+                                <p className="text-xs text-zinc-400">
+                                  {formatUah(row.areaHa)} га · {row.fields}{" "}
+                                  {pluralFields(row.fields)}
+                                </p>
+                              </div>
+                              <p className="shrink-0 text-right font-mono text-sm font-semibold tabular-nums text-zinc-900 sm:hidden">
+                                {formatUah(row.spentUah)} ₴
+                              </p>
+                            </div>
+
+                            <div className="w-full sm:w-32 sm:shrink-0">
+                              <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-zinc-700">
+                                <div
+                                  className="h-full rounded-full bg-emerald-500 transition-all duration-700"
+                                  style={{ width: `${barPct}%` }}
+                                />
+                              </div>
+                              <p className="mt-1 text-[10px] font-medium text-zinc-400">
+                                {row.costPerHa > 0
+                                  ? `${formatUah(row.costPerHa)} ₴/га`
+                                  : "0 ₴/га"}
+                              </p>
+                            </div>
+
+                            <p className="hidden shrink-0 text-right font-mono text-base font-medium tabular-nums text-zinc-900 sm:block">
+                              {formatUah(row.spentUah)} ₴
+                            </p>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
               </>
             )}
           </section>
@@ -1783,16 +1771,26 @@ export function FinanceView({
           </div>
         ) : null}
 
-        {overview &&
-        !overviewLoading &&
-        overview.fields.length > 0 &&
+        {(overviewLoading || (overview && overview.fields.length > 0)) &&
         (!isMobile || mobileTab === "fields") ? (
-          <section id="finance-field-budget" className="mt-2 sm:mt-8">
+          <section
+            id="finance-field-budget"
+            className="mt-2 sm:mt-8"
+          >
             <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-              <h3 className="text-sm font-bold tracking-tight text-zinc-900">
-                Бюджет полів
-              </h3>
-              <div className="flex flex-wrap gap-3 text-[10px] font-medium text-zinc-500">
+              <div className="min-w-0">
+                <h3 className="text-sm font-bold tracking-tight text-zinc-900">
+                  Бюджет полів
+                </h3>
+                <p className="mt-0.5 text-[11px] text-zinc-500">
+                  {fieldsPeriodLabel}
+                  {overviewLoading || !overviewInSync ? " · оновлення…" : null}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3 text-[10px] font-medium text-zinc-500">
+                {overviewLoading || !overviewInSync ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-zinc-400" />
+                ) : null}
                 <span className="inline-flex items-center gap-1.5">
                   <span className="h-2.5 w-2.5 rounded-sm bg-emerald-500/40" />
                   &lt;80%
@@ -1808,6 +1806,24 @@ export function FinanceView({
               </div>
             </div>
 
+            {!overview ? (
+              <div
+                className={cn(
+                  glassCardClass,
+                  "flex items-center justify-center gap-2 px-4 py-12 text-sm text-zinc-500"
+                )}
+              >
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Завантаження бюджету полів…
+              </div>
+            ) : (
+              <div
+                key={`fields-body-${isoRange.startIso}-${isoRange.endIso}`}
+                className={cn(
+                  (overviewLoading || !overviewInSync) &&
+                    "pointer-events-none opacity-55"
+                )}
+              >
             <div
               className={cn(
                 "mb-4 overflow-hidden rounded-2xl border border-[#E5DFD3]/80",
@@ -2019,12 +2035,8 @@ export function FinanceView({
                 </div>
               ) : null}
             </div>
-          </section>
-        ) : null}
-
-        {hasAnatomy && (!isMobile || mobileTab === "overview") ? (
-          <section>
-            <FinanceExpenseAnatomy slices={anatomySlices} />
+              </div>
+            )}
           </section>
         ) : null}
 
@@ -2075,40 +2087,76 @@ export function FinanceView({
           </section>
         ) : null}
 
-        {(!isMobile || mobileTab === "flow") && basDataError ? (
-          <div
-            className={cn(
-              glassCardClass,
-              "border-amber-300/60 bg-amber-50/70 p-5"
-            )}
-          >
-            <p className="text-sm font-semibold text-amber-950">
-              Не вдалося завантажити динаміку
-            </p>
-            <p className="mt-1 text-xs text-amber-900/80">{basDataError}</p>
-          </div>
-        ) : null}
+        {(!isMobile || mobileTab === "flow") ? (
+          <div className="space-y-4">
+            {hasAnatomy ? (
+              <section>
+                <FinanceExpenseAnatomy slices={anatomySlices} />
+              </section>
+            ) : null}
 
-        {(!isMobile || mobileTab === "flow") &&
-        !basDataError &&
-        basView &&
-        (basView.docs.length > 0 ||
-          basView.monthly.some((m) => m.sales > 0 || m.receipts > 0)) ? (
-          <FinanceCashflowChart
-            docs={basView.docs}
-            monthly={basView.monthly}
-            startIso={isoRange.startIso}
-            endIso={isoRange.endIso}
-            onPeriodClick={(point) =>
-              openDrill({
-                kind: "period",
-                title: point.label,
-                subtitle: "Документи за обраний період",
-                periodKey: point.key,
-                docType: "all",
-              })
-            }
-          />
+            {basDataError ? (
+              <div
+                className={cn(
+                  glassCardClass,
+                  "border-amber-300/60 bg-amber-50/70 p-5"
+                )}
+              >
+                <p className="text-sm font-semibold text-amber-950">
+                  Не вдалося завантажити динаміку
+                </p>
+                <p className="mt-1 text-xs text-amber-900/80">{basDataError}</p>
+              </div>
+            ) : null}
+
+            {!basDataError &&
+            basView &&
+            (basView.docs.length > 0 ||
+              basView.monthly.some((m) => m.sales > 0 || m.receipts > 0)) ? (
+              <FinanceCashflowChart
+                docs={basView.docs}
+                monthly={basView.monthly}
+                startIso={isoRange.startIso}
+                endIso={isoRange.endIso}
+                onPeriodClick={(point) =>
+                  openDrill({
+                    kind: "period",
+                    title: point.label,
+                    subtitle: "Документи за обраний період",
+                    periodKey: point.key,
+                    docType: "all",
+                  })
+                }
+              />
+            ) : null}
+
+            {!basDataError &&
+            !basLoading &&
+            !hasAnatomy &&
+            !(
+              basView &&
+              (basView.docs.length > 0 ||
+                basView.monthly.some((m) => m.sales > 0 || m.receipts > 0))
+            ) ? (
+              <div
+                className={cn(
+                  glassCardClass,
+                  "flex flex-col items-center px-5 py-12 text-center"
+                )}
+              >
+                <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#276749]/10 text-[#276749]">
+                  <TrendingUp className="h-5 w-5" strokeWidth={2} />
+                </span>
+                <p className="mt-4 text-sm font-bold text-zinc-900">
+                  Немає динаміки за період
+                </p>
+                <p className="mt-1.5 max-w-xs text-xs leading-relaxed text-zinc-500">
+                  Коли з’являться реалізації, надходження або розбивка витрат —
+                  тут буде графік і анатомія витрат.
+                </p>
+              </div>
+            ) : null}
+          </div>
         ) : null}
       </div>
 
@@ -2158,29 +2206,6 @@ export function FinanceView({
         canDeleteField={false}
       />
     </main>
-  );
-}
-
-function MidTierCropSkeleton() {
-  return (
-    <ul className="space-y-3" aria-hidden>
-      {Array.from({ length: 4 }).map((_, i) => (
-        <li
-          key={i}
-          className="flex items-center gap-4 rounded-2xl bg-white/50 p-4 dark:bg-black/40"
-        >
-          <span className="h-10 w-10 shrink-0 animate-pulse rounded-full bg-emerald-100/80" />
-          <div className="min-w-0 flex-1 space-y-2">
-            <div className="h-3.5 w-28 animate-pulse rounded bg-zinc-200/80" />
-            <div className="h-2.5 w-20 animate-pulse rounded bg-zinc-100" />
-          </div>
-          <div className="hidden w-32 sm:block">
-            <div className="h-1.5 w-full animate-pulse rounded-full bg-zinc-200/70" />
-          </div>
-          <div className="h-4 w-16 animate-pulse rounded bg-zinc-200/80" />
-        </li>
-      ))}
-    </ul>
   );
 }
 

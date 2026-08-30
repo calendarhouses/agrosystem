@@ -2720,7 +2720,7 @@ export function FieldDetailSheet({
           FIELDS_MOBILE_DRAWER_SIZE,
           "flex flex-col overflow-hidden border-[#E5DFD3]/90 bg-[#F4F1EA] pb-0"
         )}
-        overlayClassName="pointer-events-none bg-black/45"
+        overlayClassName="bg-black/55"
         showCloseButton
       >
         <DrawerHandle />

@@ -117,7 +117,7 @@ function PopoverContent({
       <PopoverPrimitive.Portal>
         <PopoverPrimitive.Backdrop
           className={cn(
-            "fixed top-0 right-0 bottom-[var(--app-bottom-inset)] left-0 bg-black/40 supports-backdrop-filter:backdrop-blur-[2px]",
+            "fixed top-0 right-0 bottom-[var(--app-bottom-inset)] left-0 bg-black/55 supports-backdrop-filter:backdrop-blur-[2px]",
             MOBILE_OVERLAY_Z
           )}
         />
@@ -132,7 +132,7 @@ function PopoverContent({
         <PopoverPrimitive.Backdrop
           className={cn(
             "fixed inset-x-0 top-0 bottom-[var(--app-bottom-inset)] z-[210]",
-            "bg-black/25 supports-backdrop-filter:backdrop-blur-[1px]"
+            "bg-black/40 supports-backdrop-filter:backdrop-blur-[1px]"
           )}
         />
       ) : null}

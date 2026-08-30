@@ -150,18 +150,21 @@ body {
     color: var(--foreground);
   }
 
-  /* PWA mobile: під час boot — zinc-950; після — колір меню (safe-area під nav) */
+  /* PWA mobile: чорний фон лише в app/boot — логін лишається світлим */
   @media (max-width: 767px) {
-    html,
-    body,
-    #app-root {
-      background-color: #09090b !important;
-    }
-
     html[data-app-nav="0"],
     html[data-app-nav="0"] body,
     html[data-app-nav="0"] #app-root {
       background-color: var(--background) !important;
+    }
+
+    html[data-booting="1"],
+    html[data-booting="1"] body,
+    html[data-booting="1"] #app-root,
+    html[data-app-nav="1"]:not([data-app-ready="1"]),
+    html[data-app-nav="1"]:not([data-app-ready="1"]) body,
+    html[data-app-nav="1"]:not([data-app-ready="1"]) #app-root {
+      background-color: #09090b !important;
     }
 
     html[data-app-nav="1"][data-app-ready="1"],

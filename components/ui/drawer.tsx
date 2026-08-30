@@ -59,7 +59,8 @@ function DrawerOverlay({
       data-slot="drawer-overlay"
       className={cn(
         // bottom inset — сіре меню завжди видно під шторкою
-        "fixed top-0 right-0 bottom-[var(--app-bottom-inset)] left-0 z-[150] bg-black/45",
+        "fixed top-0 right-0 bottom-[var(--app-bottom-inset)] left-0 z-[150] bg-black/55",
+        "supports-backdrop-filter:backdrop-blur-[2px]",
         "data-[state=closed]:pointer-events-none",
         // Peek/snap: оверлей часто opacity:0, але без цього краде всі тапи (пошук, мапа, шторка)
         "pointer-events-none data-[vaul-snap-points=true]:pointer-events-none",

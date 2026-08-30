@@ -11,6 +11,7 @@ import {
 
 import { BottomNav } from "@/components/layout/bottom-nav";
 import { AppDataWarmer } from "@/components/layout/app-data-warmer";
+import { PreventEdgeSwipeBack } from "@/components/layout/prevent-edge-swipe-back";
 import { Sidebar } from "@/components/layout/sidebar";
 import { TopBar } from "@/components/layout/top-bar";
 import { AppBootProvider, useAppBoot } from "@/lib/app-boot";
@@ -65,6 +66,7 @@ function AppShellChrome({
 
       <BottomNav />
       <AppDataWarmer />
+      <PreventEdgeSwipeBack />
     </div>
   );
 }
@@ -128,6 +130,12 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   useLayoutEffect(() => {
     document.documentElement.dataset.appNav = isAuthScreen ? "0" : "1";
+    if (isAuthScreen) {
+      // Логін/install: жодного LEVADA-boot — прибрати splash і booting
+      delete document.documentElement.dataset.booting;
+      delete document.documentElement.dataset.appReady;
+      document.getElementById("boot-splash")?.remove();
+    }
     return () => {
       document.documentElement.dataset.appNav = "0";
     };

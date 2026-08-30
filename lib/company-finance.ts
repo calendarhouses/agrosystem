@@ -892,9 +892,10 @@ async function fetchAllCompletedOps(
         .from("field_operations")
         .select(selectCols)
         .eq("status", "completed")
-        .order("id", { ascending: true })
+        .order("occurred_at", { ascending: true })
         .range(from, to);
       if (Number.isFinite(year)) q = q.eq("season_year", year);
+      if (range) q = applyDateRange(q, "occurred_at", range, "date");
       return q;
     });
     return { rows: page.rows };
