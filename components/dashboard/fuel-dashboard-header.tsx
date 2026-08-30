@@ -64,17 +64,18 @@ function fieldFuelPeriodCaption(period: FieldFuelPeriod): string {
   return "сьогодні";
 }
 
-/** Очікуваний час повного підтягування (для анімації, поки сервер мовчить). */
+/** Очікуваний час одного запиту KPI (шкала не має добігати до кінця раніше). */
 function expectedFuelLoadMs(period: FieldFuelPeriod): number {
-  if (period === "season") return 55_000;
-  if (period === "month") return 40_000;
-  if (period === "week") return 28_000;
-  return 10_000;
+  if (period === "season") return 22_000;
+  if (period === "month") return 20_000;
+  if (period === "week") return 18_000;
+  return 14_000;
 }
 
 /**
- * Живий % шкали: поки йде запит — час (не стоїть на 0);
- * коли є coverage з API — реальні дні; ніколи не стрибає назад.
+ * Живий % шкали.
+ * Поки HTTP ще йде (Спалено/Заправлено крутяться) — стеля ~86%, не 99%.
+ * 100% / зникнення шкали — лише коли loading = false.
  */
 function useFuelLoadProgress(opts: {
   loading: boolean;
@@ -104,18 +105,28 @@ function useFuelLoadProgress(opts: {
       return;
     }
     if (startedAtRef.current == null) startedAtRef.current = Date.now();
-    const id = window.setInterval(() => setTick((n) => n + 1), 250);
+    const id = window.setInterval(() => setTick((n) => n + 1), 200);
     return () => window.clearInterval(id);
   }, [active]);
+
+  // Новий HTTP-запит — скидаємо таймер і стелю, щоб не висіти на 86–99%
+  useEffect(() => {
+    if (!loading) return;
+    startedAtRef.current = Date.now();
+    peakRef.current = Math.min(peakRef.current, 35);
+    setTick((n) => n + 1);
+  }, [loading]);
 
   if (!active) return null;
 
   const started = startedAtRef.current ?? Date.now();
   const elapsed = Math.max(0, Date.now() - started);
-  const tau = expectedFuelLoadMs(period) * 0.5;
+  const expected = expectedFuelLoadMs(period);
+  // Лінійніше до ~80% за expected, далі дуже повільно до стелі
+  const linear = (elapsed / expected) * 80;
   const timePct = Math.min(
-    94,
-    Math.max(4, Math.round((1 - Math.exp(-elapsed / tau)) * 94))
+    86,
+    Math.max(5, Math.round(linear < 80 ? linear : 80 + (1 - Math.exp(-(elapsed - expected) / expected)) * 6))
   );
 
   const server =
@@ -124,17 +135,23 @@ function useFuelLoadProgress(opts: {
       : null;
 
   let next: number;
-  if (server != null && server > 0) {
-    // Реальне покриття днів — головне джерело правди після першої відповіді
-    next = loading ? Math.max(server, Math.min(timePct, server + 8)) : server;
-  } else if (loading) {
-    next = timePct;
+  if (loading) {
+    // Поки крутяться KPI — ніколи не показуємо «майже готово»
+    const fromServer =
+      server != null && server > 0 ? Math.round(server * 0.82) : 0;
+    next = Math.min(86, Math.max(timePct, fromServer));
+  } else if (incomplete) {
+    // Бекфіл між запитами: реальні дні, але без фейкових 99 при 0 з API
+    next = server != null && server > 0 ? Math.min(99, server) : timePct;
   } else {
-    next = Math.max(timePct, server ?? 0);
+    next = 100;
   }
 
-  peakRef.current = Math.max(peakRef.current, next);
-  return Math.min(99, peakRef.current);
+  peakRef.current = Math.max(
+    loading ? Math.min(peakRef.current, 86) : peakRef.current,
+    next
+  );
+  return loading ? Math.min(86, peakRef.current) : peakRef.current;
 }
 
 type RefuelBreakdownRow = {
