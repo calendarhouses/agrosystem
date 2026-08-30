@@ -681,66 +681,60 @@ export function InventoryView({ dashboard, error }: Props) {
             : "py-5 sm:py-6"
         )}
       >
-        <div
-          className={cn(
-            "mb-4 flex flex-col gap-3 sm:mb-5",
-            !isMobile && "sm:flex-row sm:items-center sm:justify-between"
-          )}
-        >
-          {!isMobile ? (
+        {!isMobile ? (
+          <div className="mb-4 flex flex-col gap-3 sm:mb-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <h1 className="text-2xl font-extrabold tracking-tight text-zinc-900 sm:text-3xl">
                 Склад
               </h1>
               <p className="mt-1 text-sm text-zinc-500">Оперативний облік ТМЦ</p>
             </div>
-          ) : null}
-
-          <div className="flex w-full shrink-0 items-center gap-1.5 sm:w-auto sm:justify-end">
-            <button
-              type="button"
-              onClick={() => setInboundOpen(true)}
-              className="inline-flex h-11 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl border border-sky-200/90 bg-sky-50 px-2.5 text-sm font-bold text-sky-950 shadow-sm transition hover:bg-sky-100 sm:flex-none sm:px-4"
-            >
-              <PackagePlus className="h-4 w-4 shrink-0" />
-              <span className="truncate">Прихід</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setQuickIssueOpen(true)}
-              className="inline-flex h-11 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl bg-zinc-900 px-2.5 text-sm font-bold text-white shadow-sm shadow-zinc-900/25 transition hover:bg-zinc-800 sm:flex-none sm:px-4"
-            >
-              <PackageMinus className="h-4 w-4 shrink-0" />
-              <span className="truncate">Списати</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setSaleOpen(true)}
-              className="inline-flex h-11 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl border border-amber-200/90 bg-amber-50 px-2.5 text-sm font-bold text-amber-950 shadow-sm transition hover:bg-amber-100 sm:flex-none sm:px-4"
-            >
-              <ShoppingCart className="h-4 w-4 shrink-0" />
-              <span className="truncate">Продаж</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setHistoryOpen(true)}
-              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#E5DFD3]/90 bg-white/90 text-zinc-600 shadow-sm transition hover:bg-[#F4F1EA] hover:text-zinc-900"
-              title="Історія"
-              aria-label="Історія"
-            >
-              <History className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setExportOpen(true)}
-              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#E5DFD3]/90 bg-white/90 text-zinc-600 shadow-sm transition hover:bg-[#F4F1EA] hover:text-zinc-900"
-              title="Експорт"
-              aria-label="Експорт"
-            >
-              <Download className="h-4 w-4" />
-            </button>
+            <div className="flex w-full shrink-0 items-center gap-1.5 sm:w-auto sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setInboundOpen(true)}
+                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border border-sky-200/90 bg-sky-50 px-4 text-sm font-bold text-sky-950 shadow-sm transition hover:bg-sky-100"
+              >
+                <PackagePlus className="h-4 w-4 shrink-0" />
+                Прихід
+              </button>
+              <button
+                type="button"
+                onClick={() => setQuickIssueOpen(true)}
+                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl bg-zinc-900 px-4 text-sm font-bold text-white shadow-sm shadow-zinc-900/25 transition hover:bg-zinc-800"
+              >
+                <PackageMinus className="h-4 w-4 shrink-0" />
+                Списати
+              </button>
+              <button
+                type="button"
+                onClick={() => setSaleOpen(true)}
+                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border border-amber-200/90 bg-amber-50 px-4 text-sm font-bold text-amber-950 shadow-sm transition hover:bg-amber-100"
+              >
+                <ShoppingCart className="h-4 w-4 shrink-0" />
+                Продаж
+              </button>
+              <button
+                type="button"
+                onClick={() => setHistoryOpen(true)}
+                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#E5DFD3]/90 bg-white/90 text-zinc-600 shadow-sm transition hover:bg-[#F4F1EA] hover:text-zinc-900"
+                title="Історія"
+                aria-label="Історія"
+              >
+                <History className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setExportOpen(true)}
+                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#E5DFD3]/90 bg-white/90 text-zinc-600 shadow-sm transition hover:bg-[#F4F1EA] hover:text-zinc-900"
+                title="Експорт"
+                aria-label="Експорт"
+              >
+                <Download className="h-4 w-4" />
+              </button>
+            </div>
           </div>
-        </div>
+        ) : null}
 
         <QuickIssueSheet
           open={quickIssueOpen}
@@ -810,6 +804,7 @@ export function InventoryView({ dashboard, error }: Props) {
         {view ? (
           <>
             <div className="mb-5 space-y-2.5">
+              {/* 1: сезон + діапазон */}
               <div className="flex items-center gap-2">
                 <Popover
                   open={seasonOpen}
@@ -998,24 +993,50 @@ export function InventoryView({ dashboard, error }: Props) {
                 </Popover>
               </div>
 
-              <div className="flex w-full items-center gap-0.5 rounded-xl bg-[#EDE8DF] p-0.5">
-                {PERIOD_OPTIONS.map((option) => (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={() => applyPeriod(option)}
-                    className={cn(
-                      "h-11 min-w-0 flex-1 rounded-[10px] px-1 text-[11px] font-semibold transition-all sm:px-2 sm:text-xs md:h-8",
-                      period === option
-                        ? "bg-[#276749] text-white shadow-[0_4px_12px_-4px_rgba(39,103,73,0.55)]"
-                        : "text-zinc-500 hover:bg-white/70 hover:text-zinc-800"
-                    )}
-                  >
-                    {option}
-                  </button>
-                ))}
+              {/* 2: періоди (+ історія/експорт на мобільному) */}
+              <div className="flex items-center gap-1.5">
+                <div className="flex min-w-0 flex-1 items-center gap-0.5 rounded-xl bg-[#EDE8DF] p-0.5">
+                  {PERIOD_OPTIONS.map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() => applyPeriod(option)}
+                      className={cn(
+                        "h-11 min-w-0 flex-1 rounded-[10px] px-1 text-[11px] font-semibold transition-all sm:px-2 sm:text-xs md:h-8",
+                        period === option
+                          ? "bg-[#276749] text-white shadow-[0_4px_12px_-4px_rgba(39,103,73,0.55)]"
+                          : "text-zinc-500 hover:bg-white/70 hover:text-zinc-800"
+                      )}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+                {isMobile ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setHistoryOpen(true)}
+                      className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#E5DFD3]/90 bg-white/90 text-zinc-600 shadow-sm transition hover:bg-[#F4F1EA] hover:text-zinc-900"
+                      title="Історія"
+                      aria-label="Історія"
+                    >
+                      <History className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setExportOpen(true)}
+                      className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#E5DFD3]/90 bg-white/90 text-zinc-600 shadow-sm transition hover:bg-[#F4F1EA] hover:text-zinc-900"
+                      title="Експорт"
+                      aria-label="Експорт"
+                    >
+                      <Download className="h-4 w-4" />
+                    </button>
+                  </>
+                ) : null}
               </div>
 
+              {/* 3: KPI */}
               <div className="grid grid-cols-3 gap-2 sm:gap-3">
                 {(
                   [
@@ -1090,6 +1111,36 @@ export function InventoryView({ dashboard, error }: Props) {
                   );
                 })}
               </div>
+
+              {/* 4: дії (мобільний) — повні підписи без обрізання */}
+              {isMobile ? (
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setInboundOpen(true)}
+                    className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border border-sky-200/90 bg-sky-50 px-2 text-[13px] font-bold text-sky-950 shadow-sm transition active:scale-[0.98] hover:bg-sky-100"
+                  >
+                    <PackagePlus className="h-4 w-4 shrink-0" />
+                    Прихід
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuickIssueOpen(true)}
+                    className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl bg-zinc-900 px-2 text-[13px] font-bold text-white shadow-sm shadow-zinc-900/25 transition active:scale-[0.98] hover:bg-zinc-800"
+                  >
+                    <PackageMinus className="h-4 w-4 shrink-0" />
+                    Списати
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSaleOpen(true)}
+                    className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border border-amber-200/90 bg-amber-50 px-2 text-[13px] font-bold text-amber-950 shadow-sm transition active:scale-[0.98] hover:bg-amber-100"
+                  >
+                    <ShoppingCart className="h-4 w-4 shrink-0" />
+                    Продаж
+                  </button>
+                </div>
+              ) : null}
             </div>
 
             {!showingItems ? (
