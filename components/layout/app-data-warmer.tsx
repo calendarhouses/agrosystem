@@ -19,7 +19,9 @@ function sleep(ms: number) {
 
 /**
  * Прогрів кешу API + prefetch маршрутів.
- * Під час LEVADA стартує одразу (паралельно з мапою), без довгої idle-паузи.
+ * Prefetch роутів — ОДИН раз за сесію, послідовно:
+ * паралельний prefetch на кожен тап у меню → abort RSC → React #412
+ * → «This page couldn’t load».
  */
 export function AppDataWarmer() {
   const pathname = usePathname();
@@ -28,6 +30,33 @@ export function AppDataWarmer() {
   const isAppLoadingRef = useRef(isAppLoading);
   isAppLoadingRef.current = isAppLoading;
   const runIdRef = useRef(0);
+
+  // Prefetch окремо — не скасовувати при зміні pathname
+  useEffect(() => {
+    if (pathname === "/login" || pathname === "/install") return;
+
+    let cancelled = false;
+    const start = window.setTimeout(() => {
+      void (async () => {
+        for (const href of APP_WARM_ROUTES) {
+          if (cancelled) return;
+          try {
+            router.prefetch(href);
+          } catch {
+            /* ignore */
+          }
+          await sleep(320);
+        }
+      })();
+    }, isAppLoadingRef.current ? 400 : 1200);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(start);
+    };
+    // лише mount (+ auth → app)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot prefetch
+  }, [router]);
 
   useEffect(() => {
     if (pathname === "/login" || pathname === "/install") return;
@@ -61,23 +90,6 @@ export function AppDataWarmer() {
       );
     };
 
-    const prefetchRoutes = () => {
-      for (const href of APP_WARM_ROUTES) {
-        if (href === pathname) continue;
-        try {
-          router.prefetch(href);
-        } catch {
-          /* ignore */
-        }
-      }
-    };
-
-    const kickoff = () => {
-      if (cancelled) return;
-      prefetchRoutes();
-      void warmApis();
-    };
-
     const schedule = () => {
       const ric = (
         window as Window & {
@@ -88,9 +100,11 @@ export function AppDataWarmer() {
         }
       ).requestIdleCallback;
       if (typeof ric === "function") {
-        idleId = ric(kickoff, { timeout: booting ? 800 : 5000 });
+        idleId = ric(() => void warmApis(), {
+          timeout: booting ? 800 : 5000,
+        });
       } else {
-        startTimer = window.setTimeout(kickoff, booting ? 0 : 1600);
+        startTimer = window.setTimeout(() => void warmApis(), booting ? 0 : 1600);
       }
     };
 
@@ -107,7 +121,6 @@ export function AppDataWarmer() {
       for (const endpoint of APP_WARM_ENDPOINTS) {
         void cachedFetchJson(endpoint.key, endpoint.url).catch(() => {});
       }
-      prefetchRoutes();
     }, 3 * 60 * 1000);
 
     return () => {
@@ -121,7 +134,7 @@ export function AppDataWarmer() {
       ).cancelIdleCallback;
       if (idleId && typeof cic === "function") cic(idleId);
     };
-  }, [pathname, router]);
+  }, [pathname]);
 
   return null;
 }

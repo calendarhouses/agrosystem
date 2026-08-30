@@ -398,11 +398,14 @@ export function FieldsMapChrome({ align = "end" }: FieldsMapChromeProps) {
               open={settingsOpen}
               onOpenChange={setSettingsOpen}
               dismissible
-              modal={false}
+              modal
               shouldScaleBackground={false}
               noBodyStyles
             >
-              <DrawerContent className="max-h-[calc(92dvh-var(--app-bottom-inset))] gap-0 border-[#E5DFD3]/90 bg-[#F4F1EA] pb-3">
+              <DrawerContent
+                overlayClassName="bg-black/70"
+                className="max-h-[calc(92dvh-var(--app-bottom-inset))] gap-0 border-[#E5DFD3]/90 bg-[#F4F1EA] pb-3"
+              >
                 <DrawerTitle className="sr-only">Локація погоди</DrawerTitle>
                 <DrawerHandle />
                 <DrawerHeader className="gap-1 border-b border-[#E5DFD3]/80 pb-3 pt-0">

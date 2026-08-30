@@ -542,7 +542,7 @@ export function FinanceView({
   const basSalesUah = basInSync && basView ? basView.totalSales : 0;
   const localSalesUah = overviewInSync ? (overview?.localSalesUah ?? 0) : 0;
   const revenueUah = basSalesUah + localSalesUah;
-  const opsCostUah = overviewInSync ? overview.globalFactUah : 0;
+  const opsCostUah = overviewInSync ? (overview?.globalFactUah ?? 0) : 0;
   const pnlUah = revenueUah - opsCostUah;
   const marginPctDisplay =
     marginReady && revenueUah > 0
@@ -2089,6 +2089,13 @@ export function FinanceView({
 
         {(!isMobile || mobileTab === "flow") ? (
           <div className="space-y-4">
+            {basLoading ||
+            overviewLoading ||
+            !overviewInSync ||
+            (!basReady && !basDataError) ? (
+              <DynamicsPremiumSkeleton periodLabel={fieldsPeriodLabel} />
+            ) : (
+              <>
             {hasAnatomy ? (
               <section>
                 <FinanceExpenseAnatomy slices={anatomySlices} />
@@ -2131,7 +2138,6 @@ export function FinanceView({
             ) : null}
 
             {!basDataError &&
-            !basLoading &&
             !hasAnatomy &&
             !(
               basView &&
@@ -2156,6 +2162,8 @@ export function FinanceView({
                 </p>
               </div>
             ) : null}
+              </>
+            )}
           </div>
         ) : null}
       </div>
@@ -2231,6 +2239,110 @@ function MidTierPulseSkeleton() {
         <div className="h-3 w-24 animate-pulse rounded bg-white/15" />
         <div className="h-12 animate-pulse rounded-xl bg-white/10" />
         <div className="h-12 animate-pulse rounded-xl bg-white/10" />
+      </div>
+    </div>
+  );
+}
+
+/** Преміальний лоадер вкладки «Динаміка» при зміні періоду */
+function DynamicsPremiumSkeleton({ periodLabel }: { periodLabel: string }) {
+  return (
+    <div className="space-y-4" aria-busy="true" aria-live="polite">
+      <div
+        className={cn(
+          glassCardClass,
+          "relative overflow-hidden p-5 sm:p-6"
+        )}
+      >
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 animate-[shimmer_1.8s_ease-in-out_infinite] bg-gradient-to-r from-transparent via-white/50 to-transparent"
+        />
+        <div className="relative flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-bold tracking-[0.14em] text-zinc-400 uppercase">
+              Динаміка
+            </p>
+            <h3 className="mt-1 text-sm font-bold tracking-tight text-zinc-900">
+              Оновлюємо зріз
+            </h3>
+            <p className="mt-1 text-xs text-zinc-500">{periodLabel}</p>
+          </div>
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#276749]/10 text-[#276749]">
+            <Loader2 className="h-4 w-4 animate-spin" strokeWidth={2.2} />
+          </span>
+        </div>
+
+        <div className="relative mt-5 grid grid-cols-3 gap-2">
+          {["Реалізації", "Надходження", "Кумулятив"].map((label) => (
+            <div
+              key={label}
+              className="rounded-2xl border border-[#E5DFD3]/70 bg-white/55 px-3 py-3"
+            >
+              <p className="text-[9px] font-bold tracking-wider text-zinc-400 uppercase">
+                {label}
+              </p>
+              <div className="mt-2 h-5 w-16 animate-pulse rounded-md bg-zinc-200/80" />
+            </div>
+          ))}
+        </div>
+
+        <div className="relative mt-5 flex h-[180px] items-end gap-1.5 rounded-2xl border border-[#E5DFD3]/60 bg-gradient-to-b from-white/40 to-[#EDE8DF]/50 px-3 pb-3 pt-6 sm:h-[220px]">
+          {[42, 68, 35, 82, 55, 74, 48, 90, 62, 78, 44, 70].map((h, i) => (
+            <div
+              key={i}
+              className="flex-1 rounded-t-md bg-[#276749]/15"
+              style={{
+                height: `${h}%`,
+                animation: `pulse 1.6s ease-in-out ${i * 0.07}s infinite`,
+              }}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div
+        className={cn(
+          glassCardClass,
+          "relative overflow-hidden p-5 sm:p-6"
+        )}
+      >
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 animate-[shimmer_1.8s_ease-in-out_infinite] bg-gradient-to-r from-transparent via-white/45 to-transparent [animation-delay:0.35s]"
+        />
+        <div className="relative mb-4 flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-bold tracking-tight text-zinc-900">
+              Анатомія витрат
+            </h3>
+            <p className="mt-0.5 text-[11px] text-zinc-500">
+              Збираємо розбивку за період…
+            </p>
+          </div>
+          <Loader2 className="h-4 w-4 animate-spin text-zinc-400" />
+        </div>
+        <div className="relative flex flex-col items-center gap-6 sm:flex-row sm:items-start">
+          <div className="relative h-[160px] w-[160px] shrink-0 sm:h-[200px] sm:w-[200px]">
+            <div className="absolute inset-0 animate-pulse rounded-full border-[18px] border-[#E5DFD3]/80" />
+            <div className="absolute inset-[28%] animate-pulse rounded-full bg-white/70" />
+          </div>
+          <div className="w-full flex-1 space-y-2.5">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div
+                key={i}
+                className="flex items-center gap-3 rounded-xl border border-[#E5DFD3]/70 bg-white/50 px-3 py-2.5"
+              >
+                <div
+                  className="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-zinc-300"
+                  style={{ animationDelay: `${i * 0.12}s` }}
+                />
+                <div className="h-3 flex-1 animate-pulse rounded bg-zinc-200/90" />
+                <div className="h-3 w-12 animate-pulse rounded bg-zinc-200/70" />
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );

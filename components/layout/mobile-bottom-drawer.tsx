@@ -51,7 +51,7 @@ export function MobileBottomDrawer({
           <motion.button
             type="button"
             aria-label="Закрити меню"
-            className="fixed inset-x-0 top-0 z-[190] bg-black/55 backdrop-blur-[2px]"
+            className="fixed inset-x-0 top-0 z-[190] bg-black/70 backdrop-blur-[3px]"
             style={{ bottom: navOffset }}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}

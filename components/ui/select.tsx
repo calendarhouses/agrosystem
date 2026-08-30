@@ -162,7 +162,7 @@ function SelectContent({
         <SelectPrimitive.Backdrop
           ref={backdropRef}
           className={cn(
-            "fixed top-0 right-0 bottom-[var(--app-bottom-inset)] left-0 bg-black/55 supports-backdrop-filter:backdrop-blur-[2px]",
+            "fixed top-0 right-0 bottom-[var(--app-bottom-inset)] left-0 bg-black/70 supports-backdrop-filter:backdrop-blur-[3px]",
             MOBILE_OVERLAY_Z
           )}
         />

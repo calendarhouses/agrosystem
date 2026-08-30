@@ -735,7 +735,7 @@ export function FieldsGlassPanel({
             onMobileDrawerVisibleChange?.(true);
           }}
           dismissible
-          modal={false}
+          modal
           shouldScaleBackground={false}
           noBodyStyles
         >
@@ -744,6 +744,7 @@ export function FieldsGlassPanel({
               FIELDS_MOBILE_DRAWER_SIZE,
               "flex flex-col border-[#E5DFD3]/90 bg-[#F4F1EA] pb-3"
             )}
+            overlayClassName="bg-black/70"
           >
             <DrawerTitle className="sr-only">
               {mobileDetailOpen ? "Деталі поля" : "Список полів"}

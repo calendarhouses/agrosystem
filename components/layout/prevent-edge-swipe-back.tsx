@@ -3,30 +3,41 @@
 import { useEffect } from "react";
 
 /**
- * Блокує iOS/Android edge-swipe «назад» (від лівого краю вправо),
- * щоб PWA не гортала історію браузера під час жестів у застосунку.
+ * Блокує iOS/Android edge-swipe «назад» (від лівого краю вправо).
+ * Не чіпаємо вертикальний скрол і жести всередині екрана.
  */
 export function PreventEdgeSwipeBack() {
   useEffect(() => {
-    const EDGE_PX = 28;
-    let edgeStart = false;
+    const EDGE_PX = 24;
+    const MIN_DX = 10;
+    let startX = -1;
+    let startY = -1;
+    let tracking = false;
 
     const onTouchStart = (event: TouchEvent) => {
-      const x = event.touches[0]?.clientX ?? -1;
-      edgeStart = x >= 0 && x < EDGE_PX;
+      const t = event.touches[0];
+      if (!t) return;
+      startX = t.clientX;
+      startY = t.clientY;
+      tracking = startX >= 0 && startX < EDGE_PX;
     };
 
     const onTouchMove = (event: TouchEvent) => {
-      if (!edgeStart) return;
-      const x = event.touches[0]?.clientX ?? 0;
-      // Свайп від лівого краю вправо — типовий «назад»
-      if (x > EDGE_PX) {
+      if (!tracking || startX < 0) return;
+      const t = event.touches[0];
+      if (!t) return;
+      const dx = t.clientX - startX;
+      const dy = Math.abs(t.clientY - startY);
+      // Лише явний горизонтальний «назад», не скрол і не діагональ
+      if (dx > MIN_DX && dx > dy * 1.5) {
         event.preventDefault();
       }
     };
 
     const onTouchEnd = () => {
-      edgeStart = false;
+      tracking = false;
+      startX = -1;
+      startY = -1;
     };
 
     document.addEventListener("touchstart", onTouchStart, {

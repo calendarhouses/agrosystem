@@ -1668,6 +1668,21 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       wialonGeofences,
     ]);
 
+    const showBootOverlay = !mapReady || !viewSettled || wialonLoading;
+    // Поки LEVADA на екрані — не показуємо другий (маповий) прелоадер
+    const showLocalBootOverlay = Boolean(token) && showBootOverlay && !isAppLoading;
+
+    // ВАЖЛИВО: до будь-якого early return — інакше React «Rendered fewer hooks» і вкладка вмирає
+    useEffect(() => {
+      if (!token) {
+        reportFieldsMapReady();
+        return;
+      }
+      if (!showBootOverlay) {
+        reportFieldsMapReady();
+      }
+    }, [token, showBootOverlay, reportFieldsMapReady]);
+
     if (!token) {
       return (
         <div
@@ -1680,16 +1695,6 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         </div>
       );
     }
-
-    const showBootOverlay = !mapReady || !viewSettled || wialonLoading;
-    // Поки LEVADA на екрані — не показуємо другий (маповий) прелоадер
-    const showLocalBootOverlay = showBootOverlay && !isAppLoading;
-
-    useEffect(() => {
-      if (!showBootOverlay) {
-        reportFieldsMapReady();
-      }
-    }, [showBootOverlay, reportFieldsMapReady]);
 
     const showTractor = zoom >= 7 && !focusMode;
     const tractorScale = tractorScaleFromZoom(zoom);

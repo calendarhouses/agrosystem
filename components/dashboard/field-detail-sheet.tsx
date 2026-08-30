@@ -2644,11 +2644,12 @@ export function FieldDetailSheet({
               if (!next) closePlanForm();
             }}
             dismissible
-            modal={false}
+            modal
             shouldScaleBackground={false}
             noBodyStyles
           >
             <DrawerContent
+              overlayClassName="bg-black/70"
               className={cn(
                 FIELDS_MOBILE_DRAWER_SIZE,
                 "z-[160] flex flex-col border-[#E5DFD3]/90 bg-[#F4F1EA] pb-3"
@@ -2674,11 +2675,12 @@ export function FieldDetailSheet({
               if (!next) closeQuickIssueForm();
             }}
             dismissible
-            modal={false}
+            modal
             shouldScaleBackground={false}
             noBodyStyles
           >
             <DrawerContent
+              overlayClassName="bg-black/70"
               className={cn(
                 FIELDS_MOBILE_DRAWER_SIZE,
                 "z-[160] flex flex-col border-[#E5DFD3]/90 bg-[#F4F1EA] pb-3"
@@ -2711,7 +2713,7 @@ export function FieldDetailSheet({
         else closeHub();
       }}
       dismissible
-      modal={false}
+      modal
       shouldScaleBackground={false}
       noBodyStyles
     >
@@ -2720,7 +2722,7 @@ export function FieldDetailSheet({
           FIELDS_MOBILE_DRAWER_SIZE,
           "flex flex-col overflow-hidden border-[#E5DFD3]/90 bg-[#F4F1EA] pb-0"
         )}
-        overlayClassName="bg-black/55"
+        overlayClassName="bg-black/70"
         showCloseButton
       >
         <DrawerHandle />
@@ -2742,6 +2744,7 @@ export function FieldDetailSheet({
     >
       <SheetContent
         side="right"
+        overlayClassName="bg-black/70"
         className={cn(
           "flex w-full flex-col gap-0 border-l border-[#E5DFD3] bg-[#F4F1EA] p-0 text-zinc-900 shadow-sm",
           "sm:max-w-2xl",

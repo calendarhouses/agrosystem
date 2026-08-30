@@ -631,12 +631,13 @@ export function EquipmentFleetGlassPanel({
               onMobileExpandedChange(false);
             }}
             dismissible
-            modal={false}
+            modal
             shouldScaleBackground={false}
             noBodyStyles
           >
             <DrawerContent
               showCloseButton={false}
+              overlayClassName="bg-black/70"
               className={cn(
                 EQUIPMENT_MOBILE_DRAWER_SIZE,
                 "flex flex-col border-[#E5DFD3]/90 bg-[#F4F1EA] pb-3"

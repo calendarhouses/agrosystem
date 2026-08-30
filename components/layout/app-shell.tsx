@@ -136,9 +136,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       delete document.documentElement.dataset.appReady;
       document.getElementById("boot-splash")?.remove();
     }
-    return () => {
-      document.documentElement.dataset.appNav = "0";
-    };
+    // Без cleanup appNav=0: Strict Mode / remount на мить вмикає «логін» CSS
+    // і html[data-app-nav=1]:not([data-app-ready]) лишає чорний екран.
   }, [isAuthScreen]);
 
   if (isAuthScreen) {

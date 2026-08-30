@@ -50,6 +50,12 @@ function DrawerClose({
   return <DrawerPrimitive.Close data-slot="drawer-close" {...props} />
 }
 
+/** Єдине затемнення шторок у всій системі */
+export const DRAWER_OVERLAY_CLASS = cn(
+  "fixed top-0 right-0 bottom-[var(--app-bottom-inset)] left-0 z-[150]",
+  "bg-black/70 supports-backdrop-filter:backdrop-blur-[3px]"
+)
+
 function DrawerOverlay({
   className,
   ...props
@@ -58,11 +64,9 @@ function DrawerOverlay({
     <DrawerPrimitive.Overlay
       data-slot="drawer-overlay"
       className={cn(
-        // bottom inset — сіре меню завжди видно під шторкою
-        "fixed top-0 right-0 bottom-[var(--app-bottom-inset)] left-0 z-[150] bg-black/55",
-        "supports-backdrop-filter:backdrop-blur-[2px]",
+        DRAWER_OVERLAY_CLASS,
         "data-[state=closed]:pointer-events-none",
-        // Peek/snap: оверлей часто opacity:0, але без цього краде всі тапи (пошук, мапа, шторка)
+        // Peek/snap: оверлей часто opacity:0, але без цього краде всі тапи
         "pointer-events-none data-[vaul-snap-points=true]:pointer-events-none",
         "data-[vaul-snap-points-overlay=true]:pointer-events-auto",
         "data-[vaul-snap-points=false][data-state=open]:pointer-events-auto",

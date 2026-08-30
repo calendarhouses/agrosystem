@@ -133,7 +133,7 @@ export function FuelPanelShell({
         open={open}
         onOpenChange={onOpenChange}
         dismissible
-        modal={false}
+        modal
         shouldScaleBackground={false}
         noBodyStyles
       >
@@ -143,7 +143,7 @@ export function FuelPanelShell({
             "flex flex-col overflow-hidden border-[#E5DFD3]/90 bg-[#F4F1EA] pb-0",
             className
           )}
-          overlayClassName="bg-black/55"
+          overlayClassName="bg-black/70"
           showCloseButton
         >
           <DrawerHandle />
@@ -157,10 +157,11 @@ export function FuelPanelShell({
   }
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} modal={false}>
+    <Sheet open={open} onOpenChange={onOpenChange} modal>
       <SheetContent
         side="right"
         showOverlay
+        overlayClassName="bg-black/70"
         className={cn(fuelSheetContentClass, className)}
       >
         {children}
