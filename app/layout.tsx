@@ -55,7 +55,7 @@ export const viewport: Viewport = {
   viewportFit: "cover",
   interactiveWidget: "overlays-content",
   themeColor: [
-    { media: "(max-width: 767px)", color: "#18181b" },
+    { media: "(max-width: 767px)", color: "#09090b" },
     { color: "#276749" },
   ],
 };
@@ -67,17 +67,27 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} antialiased`}
     >
       <head>
-        {/* Критично: до globals.css — фон під заокругленнями корпусу iPhone */}
+        {/* Критично: до JS — zinc-950 одразу, без чорного→сірого спалаху */}
         <style
           dangerouslySetInnerHTML={{
-            __html: `@media(max-width:767px){html,body{background-color:#18181b!important}}@media(max-width:767px){html[data-app-nav="0"],html[data-app-nav="0"] body{background-color:#f4f4f5!important}}`,
+            __html: `html,body{background-color:#09090b!important}@media(max-width:767px){html[data-app-nav="0"],html[data-app-nav="0"] body{background-color:#f4f4f5!important}}html[data-booting="1"] [data-bottom-nav],html[data-booting="1"] [data-fields-mobile-chrome]{visibility:hidden!important;opacity:0!important;pointer-events:none!important}#boot-splash{position:fixed;inset:0;z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#09090b;pointer-events:none}#boot-splash .boot-title{color:#fff;font-weight:200;font-size:1.65rem;letter-spacing:0.3em;font-family:system-ui,-apple-system,sans-serif}#boot-splash .boot-sub{margin-top:0.75rem;color:#71717a;font-size:0.75rem;letter-spacing:0.2em;font-family:system-ui,-apple-system,sans-serif}`,
           }}
         />
       </head>
       <body className="overflow-hidden font-sans text-zinc-900">
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){var p=location.pathname;document.documentElement.dataset.appNav=(p==='/login'||p==='/install')?'0':'1';})();`,
+            __html: `(function(){var p=location.pathname;var auth=p==='/login'||p==='/install';document.documentElement.dataset.appNav=auth?'0':'1';if(!auth)document.documentElement.dataset.booting='1';})();`,
+          }}
+        />
+        {/* Миттєвий splash до гідрації React — той самий zinc-950 що LEVADA */}
+        <div id="boot-splash" aria-hidden="true">
+          <div className="boot-title">L E V A D A</div>
+          <div className="boot-sub">AGRO OPERATING SYSTEM</div>
+        </div>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){if(document.documentElement.dataset.appNav==='0'){var s=document.getElementById('boot-splash');if(s)s.remove();}})();`,
           }}
         />
         <PwaBootstrap />

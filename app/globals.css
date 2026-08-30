@@ -150,11 +150,11 @@ body {
     color: var(--foreground);
   }
 
-  /* PWA mobile: html/body = колір меню, щоб у заокругленнях корпусу не було білої смуги */
+  /* PWA mobile: html/body = колір boot/меню, щоб у заокругленнях корпусу не було білої смуги */
   @media (max-width: 767px) {
     html,
     body {
-      background-color: var(--nav-bg);
+      background-color: #09090b;
     }
 
     html[data-app-nav="0"],
@@ -163,7 +163,7 @@ body {
     }
 
     #app-root {
-      background-color: var(--nav-bg);
+      background-color: #09090b;
     }
 
     html[data-app-nav="0"] #app-root {

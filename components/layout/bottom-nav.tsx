@@ -35,7 +35,12 @@ function BottomNavBar({
   onMoreOpen: (open: boolean) => void;
   moreActive: boolean;
 }) {
-  const { revealChrome } = useAppBoot();
+  const { revealChrome, isAppLoading } = useAppBoot();
+
+  // Під час LEVADA nav повністю ховаємо (інакше iOS тягне сіру смужку під home indicator)
+  if (isAppLoading) {
+    return null;
+  }
 
   return (
     <motion.nav

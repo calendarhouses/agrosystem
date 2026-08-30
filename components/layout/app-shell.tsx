@@ -1,23 +1,78 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useCallback, useLayoutEffect, useEffect, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useLayoutEffect,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 
 import { BottomNav } from "@/components/layout/bottom-nav";
 import { AppDataWarmer } from "@/components/layout/app-data-warmer";
 import { Sidebar } from "@/components/layout/sidebar";
 import { TopBar } from "@/components/layout/top-bar";
-import { AppBootProvider } from "@/lib/app-boot";
+import { AppBootProvider, useAppBoot } from "@/lib/app-boot";
 import { isCommandCenterPath } from "@/lib/equipment-command-center-layout";
 import { cn } from "@/lib/utils";
 
 const SIDEBAR_COLLAPSED_KEY = "agrosystem-sidebar-collapsed";
 
+function AppShellChrome({
+  children,
+  collapsed,
+  onToggleCollapsed,
+  isCommandCenter,
+}: {
+  children: ReactNode;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
+  isCommandCenter: boolean;
+}) {
+  const { isAppLoading } = useAppBoot();
+
+  return (
+    <div
+      className={cn(
+        "flex h-full min-h-0 flex-col overflow-hidden overscroll-none text-zinc-900",
+        // Під час LEVADA — zinc-950 (без сірого спалаху); далі — як було
+        isAppLoading
+          ? "bg-zinc-950"
+          : isCommandCenter
+            ? "bg-transparent md:bg-zinc-100"
+            : "bg-[#F4F1EA] md:bg-zinc-100"
+      )}
+    >
+      <Sidebar collapsed={collapsed} onToggleCollapsed={onToggleCollapsed} />
+
+      <div
+        className={cn(
+          "relative flex min-h-0 flex-1 flex-col overflow-hidden overscroll-none transition-[padding] duration-200 ease-out",
+          collapsed ? "md:pl-16" : "md:pl-[250px]"
+        )}
+      >
+        <TopBar />
+        <div
+          className={cn(
+            "relative min-h-0 flex-1 overflow-hidden overscroll-none",
+            isCommandCenter && "min-h-0 bg-zinc-950"
+          )}
+        >
+          {children}
+        </div>
+      </div>
+
+      <BottomNav />
+      <AppDataWarmer />
+    </div>
+  );
+}
+
 /** App Shell: фіксований viewport + згортання сайдбару */
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const isAuthScreen =
-    pathname === "/login" || pathname === "/install";
+  const isAuthScreen = pathname === "/login" || pathname === "/install";
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
@@ -84,37 +139,13 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <AppBootProvider>
-      <div
-        className={cn(
-          "flex h-full min-h-0 flex-col overflow-hidden overscroll-none text-zinc-900",
-          // Моб: світлий контент (не #18181b під прозорим main). Карти — окремо.
-          isCommandCenter
-            ? "bg-transparent md:bg-zinc-100"
-            : "bg-[#F4F1EA] md:bg-zinc-100"
-        )}
+      <AppShellChrome
+        collapsed={collapsed}
+        onToggleCollapsed={toggleCollapsed}
+        isCommandCenter={isCommandCenter}
       >
-        <Sidebar collapsed={collapsed} onToggleCollapsed={toggleCollapsed} />
-
-        <div
-          className={cn(
-            "relative flex min-h-0 flex-1 flex-col overflow-hidden overscroll-none transition-[padding] duration-200 ease-out",
-            collapsed ? "md:pl-16" : "md:pl-[250px]"
-          )}
-        >
-          <TopBar />
-          <div
-            className={cn(
-              "relative min-h-0 flex-1 overflow-hidden overscroll-none",
-              isCommandCenter && "min-h-0 bg-zinc-950"
-            )}
-          >
-            {children}
-          </div>
-        </div>
-
-        <BottomNav />
-        <AppDataWarmer />
-      </div>
+        {children}
+      </AppShellChrome>
     </AppBootProvider>
   );
 }
