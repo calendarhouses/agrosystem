@@ -80,8 +80,9 @@ function easeOutCubic(t: number): number {
 }
 
 /**
- * Шкала 1% → 100% з окремим темпом на кожен період.
- * Якщо запит довший за оцінку — темп розтягується, без зависання на 99%.
+ * Шкала 1% → 99% поки вантажиться, 100% коли готово.
+ * Темп від expectedMs періоду (сезон повільніше за «сьогодні»).
+ * Якщо запит довший за оцінку — розтягуємо темп, стеля лишається 99%.
  */
 export function useFuelLoadProgress(opts: {
   loading: boolean;
@@ -136,14 +137,14 @@ export function useFuelLoadProgress(opts: {
         const started = startedAtRef.current ?? Date.now();
         const elapsed = Date.now() - started;
         let expected = Math.max(2500, expectedRef.current);
-        // Якщо ще вантажимось довше оцінки — розтягуємо темп (~90% стеля)
+        // Довше оцінки — розтягуємо, щоб наближатися до 99%, не зависати раніше
         if (elapsed > expected) {
-          expected = Math.max(expected, elapsed / 0.9);
+          expected = Math.max(expected, elapsed / 0.99);
           expectedRef.current = expected;
         }
         const ratio = Math.min(1, elapsed / expected);
-        const next = 1 + easeOutCubic(ratio) * 94;
-        const rounded = Math.min(95, Math.max(1, Math.round(next)));
+        const next = 1 + easeOutCubic(ratio) * 98;
+        const rounded = Math.min(99, Math.max(1, Math.round(next)));
         finishFromRef.current = rounded;
         setPct(rounded);
       }, 80);
@@ -160,10 +161,9 @@ export function useFuelLoadProgress(opts: {
         rememberSharedFuelKpiLoadMs(period, elapsed);
       }
 
-      const from = finishFromRef.current;
+      const from = Math.min(99, finishFromRef.current);
       const finishStarted = Date.now();
       const finishMs = 420;
-      setPct(Math.max(from, 96));
 
       const id = window.setInterval(() => {
         const t = (Date.now() - finishStarted) / finishMs;

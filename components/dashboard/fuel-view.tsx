@@ -788,6 +788,8 @@ export function FuelView({
     }>
   >(seedRefueled?.breakdown ?? []);
   const [kpiRefreshToken, setKpiRefreshToken] = useState(0);
+  /** Фоновий догруз відсутніх днів — без повторного «Завантаження…» */
+  const kpiSilentRefreshRef = useRef(false);
   const [reverifyTxId, setReverifyTxId] = useState<string | null>(null);
   const [send1cTxId, setSend1cTxId] = useState<string | null>(null);
   const [deleteStorage, setDeleteStorage] = useState<FuelStorage | null>(null);
@@ -1163,6 +1165,9 @@ export function FuelView({
         if (burned.data.coverageIncomplete) {
           if (retryTimer) clearTimeout(retryTimer);
           retryTimer = setTimeout(() => {
+            // Уже є цифри на екрані — догруз у фоні без повторної смужки
+            kpiSilentRefreshRef.current =
+              burned.data.hasData || burned.data.liters > 0;
             setKpiRefreshToken((n) => n + 1);
           }, 2800);
         }
@@ -1193,21 +1198,28 @@ export function FuelView({
       }
     };
 
+    const silent = kpiSilentRefreshRef.current;
+    kpiSilentRefreshRef.current = false;
+
     if (seeded?.burned?.ok || seeded?.refueled?.ok) {
       applyPayload(seeded);
       setFieldFuelLoading(false);
       setRefuelLoading(false);
-    } else {
+    } else if (!silent) {
       setFieldFuelLoading(true);
       setRefuelLoading(true);
-      // Не обнуляємо шкалу в 0% — лишаємо попередній coverage або старт без фейкового 0
-      setFieldFuelCoverage((prev) =>
-        prev?.incomplete
-          ? prev
-          : prev
-            ? { ...prev, incomplete: true }
-            : null
-      );
+      // Не лишати літри попереднього періоду під новою назвою («Вчора · на полях…»)
+      setFieldFuelToday(null);
+      setFieldFuelTotal(null);
+      setFieldFuelHasData(false);
+      setFieldFuelBreakdown([]);
+      setFieldFuelCoverage(null);
+      setRefuelLiters(null);
+      setRefuelHasData(false);
+      setRefuelBreakdown([]);
+      setPeriodStorageLiters(null);
+      setPeriodStorageValue(null);
+      setPeriodStorageLive(fieldFuelPeriod === "today");
     }
 
     const force = kpiRefreshToken > 0;

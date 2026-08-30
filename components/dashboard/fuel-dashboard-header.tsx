@@ -433,7 +433,11 @@ export function FuelDashboardHeader({
 
   const displayProgressPct = useFuelLoadProgress({
     loading: fieldFuelLoading || refuelLoading,
-    incomplete: Boolean(fieldFuelCoverage?.incomplete),
+    // Довантаження відсутніх днів у фоні не тримає смужку, якщо KPI вже на екрані
+    incomplete:
+      Boolean(fieldFuelCoverage?.incomplete) &&
+      !fieldFuelHasData &&
+      fieldFuelLiters == null,
     period: fieldFuelPeriod,
     sharedExpectedMs: kpiExpectedLoadMs,
   });
@@ -441,7 +445,9 @@ export function FuelDashboardHeader({
   const showProgress =
     fieldFuelLoading ||
     refuelLoading ||
-    Boolean(fieldFuelCoverage?.incomplete) ||
+    (Boolean(fieldFuelCoverage?.incomplete) &&
+      !fieldFuelHasData &&
+      fieldFuelLiters == null) ||
     displayProgressPct != null;
 
   const isMobile = useIsMobile();
@@ -553,7 +559,9 @@ export function FuelDashboardHeader({
               />
               <p className="mt-1.5 text-[12px] font-medium text-zinc-400 sm:mt-2">
                 {periodLabel}
-                {fieldFuelLiters != null && burnedTotal != null ? (
+                {!fieldFuelLoading &&
+                fieldFuelLiters != null &&
+                burnedTotal != null ? (
                   <span className="ml-1.5 text-zinc-500">
                     · на полях {formatLiters(fieldFuelLiters)} л
                   </span>
