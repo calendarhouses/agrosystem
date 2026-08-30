@@ -74,18 +74,19 @@ export async function getFieldFuelConsumed(
       const coverage = await ensureFieldFuelPeriodCoverage(safe, {
         maxDays:
           safe === "season"
-            ? 18
+            ? 6
             : safe === "month"
-              ? 12
+              ? 5
               : safe === "week"
-                ? 7
+                ? 4
                 : 1,
+        // Короткі чанки — клієнт оновлює % і доганяє наступними запитами
         budgetMs:
           safe === "today" || safe === "yesterday"
-            ? 20_000
-            : safe === "season"
-              ? 55_000
-              : 50_000,
+            ? 12_000
+            : safe === "week"
+              ? 14_000
+              : 16_000,
       });
       liveSynced = coverage.daysSyncedNow > 0 || !coverage.truncated;
     } catch (syncErr) {

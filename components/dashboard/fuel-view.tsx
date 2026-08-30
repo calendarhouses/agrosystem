@@ -1186,15 +1186,13 @@ export function FuelView({
     } else {
       setFieldFuelLoading(true);
       setRefuelLoading(true);
+      // Не обнуляємо шкалу в 0% — лишаємо попередній coverage або старт без фейкового 0
       setFieldFuelCoverage((prev) =>
         prev?.incomplete
           ? prev
-          : {
-              daysCovered: 0,
-              daysExpected: fieldFuelPeriod === "today" ? 1 : 0,
-              incomplete: true,
-              progressPct: 0,
-            }
+          : prev
+            ? { ...prev, incomplete: true }
+            : null
       );
     }
 

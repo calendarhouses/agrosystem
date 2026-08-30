@@ -11,7 +11,7 @@ import {
   Warehouse,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type {
   FieldFuelBreakdownRow,
@@ -62,6 +62,79 @@ function fieldFuelPeriodCaption(period: FieldFuelPeriod): string {
   if (period === "month") return "за місяць";
   if (period === "season") return "за сезон";
   return "сьогодні";
+}
+
+/** Очікуваний час повного підтягування (для анімації, поки сервер мовчить). */
+function expectedFuelLoadMs(period: FieldFuelPeriod): number {
+  if (period === "season") return 55_000;
+  if (period === "month") return 40_000;
+  if (period === "week") return 28_000;
+  return 10_000;
+}
+
+/**
+ * Живий % шкали: поки йде запит — час (не стоїть на 0);
+ * коли є coverage з API — реальні дні; ніколи не стрибає назад.
+ */
+function useFuelLoadProgress(opts: {
+  loading: boolean;
+  incomplete: boolean;
+  serverPct: number | null;
+  period: FieldFuelPeriod;
+}): number | null {
+  const { loading, incomplete, serverPct, period } = opts;
+  const active = loading || incomplete;
+  const [, setTick] = useState(0);
+  const startedAtRef = useRef<number | null>(null);
+  const peakRef = useRef(0);
+  const periodRef = useRef(period);
+
+  useEffect(() => {
+    if (periodRef.current !== period) {
+      periodRef.current = period;
+      startedAtRef.current = Date.now();
+      peakRef.current = 0;
+    }
+  }, [period]);
+
+  useEffect(() => {
+    if (!active) {
+      startedAtRef.current = null;
+      peakRef.current = 0;
+      return;
+    }
+    if (startedAtRef.current == null) startedAtRef.current = Date.now();
+    const id = window.setInterval(() => setTick((n) => n + 1), 250);
+    return () => window.clearInterval(id);
+  }, [active]);
+
+  if (!active) return null;
+
+  const started = startedAtRef.current ?? Date.now();
+  const elapsed = Math.max(0, Date.now() - started);
+  const tau = expectedFuelLoadMs(period) * 0.5;
+  const timePct = Math.min(
+    94,
+    Math.max(4, Math.round((1 - Math.exp(-elapsed / tau)) * 94))
+  );
+
+  const server =
+    serverPct != null && Number.isFinite(serverPct)
+      ? Math.max(0, Math.min(100, Math.round(serverPct)))
+      : null;
+
+  let next: number;
+  if (server != null && server > 0) {
+    // Реальне покриття днів — головне джерело правди після першої відповіді
+    next = loading ? Math.max(server, Math.min(timePct, server + 8)) : server;
+  } else if (loading) {
+    next = timePct;
+  } else {
+    next = Math.max(timePct, server ?? 0);
+  }
+
+  peakRef.current = Math.max(peakRef.current, next);
+  return Math.min(99, peakRef.current);
 }
 
 type RefuelBreakdownRow = {
@@ -429,6 +502,13 @@ export function FuelDashboardHeader({
     refuelLoading ||
     Boolean(fieldFuelCoverage?.incomplete);
 
+  const displayProgressPct = useFuelLoadProgress({
+    loading: fieldFuelLoading || refuelLoading,
+    incomplete: Boolean(fieldFuelCoverage?.incomplete),
+    serverPct: progressPct,
+    period: fieldFuelPeriod,
+  });
+
   const coverageHint =
     fieldFuelCoverage &&
     fieldFuelCoverage.daysExpected > 1 &&
@@ -442,26 +522,22 @@ export function FuelDashboardHeader({
     showProgress ? (
       <div className="space-y-1.5 px-1">
         <div className="flex items-center justify-between gap-2 text-[11px] font-semibold text-zinc-500">
-          <span>
-            {fieldFuelLoading || refuelLoading
-              ? "Завантаження KPI…"
-              : "Підтягуємо історію з GPS…"}
-          </span>
+          <span>Завантаження…</span>
           <span className="tabular-nums text-zinc-700">
-            {progressPct != null ? `${progressPct}%` : "…"}
+            {displayProgressPct != null ? `${displayProgressPct}%` : "…"}
           </span>
         </div>
         <div className="h-1.5 overflow-hidden rounded-full bg-[#E5DFD3]/90">
           <div
             className={cn(
-              "h-full rounded-full bg-[#276749] transition-[width] duration-500",
-              progressPct == null && "animate-pulse"
+              "h-full rounded-full bg-[#276749] transition-[width] duration-300 ease-out",
+              displayProgressPct == null && "animate-pulse"
             )}
             style={{
               width:
-                progressPct != null
-                  ? `${Math.max(4, progressPct)}%`
-                  : "28%",
+                displayProgressPct != null
+                  ? `${Math.max(4, displayProgressPct)}%`
+                  : "12%",
             }}
           />
         </div>
