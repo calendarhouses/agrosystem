@@ -50,39 +50,57 @@ type KpisPayload = {
   expectedLoadMs: number;
 };
 
+function isUsefulKpiPayload(payload: KpisPayload): boolean {
+  const burnedOk =
+    payload.burned?.ok === true &&
+    (payload.burned.data.hasData ||
+      payload.burned.data.liters > 0 ||
+      (payload.burned.data.totalLiters ?? 0) > 0);
+  const refuelOk =
+    payload.refueled?.ok === true &&
+    (payload.refueled.data.hasData || payload.refueled.data.liters > 0);
+  return burnedOk || refuelOk;
+}
+
 /**
- * GET /api/fuel/kpis?period=today|week|month|season
- * Сезон/місяць/тиждень: спільний кеш у БД до кінця дня Києва (для всіх).
+ * GET /api/fuel/kpis?period=today|week|month|season&backfill=1
+ * Сезон на першому заході — лише БД (швидко, як місяць).
+ * backfill=1 — дотягнути ще кілька днів з Wialon у фоні.
  */
 export async function GET(request: Request) {
-  const period = parsePeriod(new URL(request.url).searchParams.get("period"));
+  const url = new URL(request.url);
+  const period = parsePeriod(url.searchParams.get("period"));
+  const backfill = url.searchParams.get("backfill") === "1";
   const dayYmd = todayKyivYmd();
   const cacheKey = `fuel:kpis:${period}:${dayYmd}`;
 
-  const mem = peekFuelKpisServerCache<KpisPayload>(cacheKey);
-  if (mem) {
-    const expectedLoadMs =
-      mem.expectedLoadMs ?? (await getSharedFuelKpiLoadMs(period));
-    return NextResponse.json(
-      { ...mem, expectedLoadMs },
-      { headers: JSON_UTF8 }
-    );
-  }
-
-  if (isFuelKpiDayCachePeriod(period)) {
-    const durable = await readFuelKpisDayCache<KpisPayload>(period, dayYmd);
-    if (durable?.ok) {
+  // Backfill завжди свіжий (не з кешу), щоб догрузити пропуски
+  if (!backfill) {
+    const mem = peekFuelKpisServerCache<KpisPayload>(cacheKey);
+    if (mem && isUsefulKpiPayload(mem)) {
       const expectedLoadMs =
-        durable.expectedLoadMs ?? (await getSharedFuelKpiLoadMs(period));
-      const payload = { ...durable, expectedLoadMs };
-      writeFuelKpisServerCache(cacheKey, payload, endOfKyivDayMs());
-      return NextResponse.json(payload, { headers: JSON_UTF8 });
+        mem.expectedLoadMs ?? (await getSharedFuelKpiLoadMs(period));
+      return NextResponse.json(
+        { ...mem, expectedLoadMs },
+        { headers: JSON_UTF8 }
+      );
+    }
+
+    if (isFuelKpiDayCachePeriod(period)) {
+      const durable = await readFuelKpisDayCache<KpisPayload>(period, dayYmd);
+      if (durable?.ok && isUsefulKpiPayload(durable)) {
+        const expectedLoadMs =
+          durable.expectedLoadMs ?? (await getSharedFuelKpiLoadMs(period));
+        const payload = { ...durable, expectedLoadMs };
+        writeFuelKpisServerCache(cacheKey, payload, endOfKyivDayMs());
+        return NextResponse.json(payload, { headers: JSON_UTF8 });
+      }
     }
   }
 
   try {
     const [burned, refueled, storages, expectedLoadMs] = await Promise.all([
-      getFieldFuelConsumed(period),
+      getFieldFuelConsumed(period, { backfill }),
       getFuelRefueledForPeriod(period),
       sumStorageVolumeForPeriod(period).catch((err) => {
         console.error(
@@ -106,9 +124,16 @@ export async function GET(request: Request) {
     const incomplete =
       burned.ok === true && burned.data.coverageIncomplete === true;
 
-    if (!incomplete && isFuelKpiDayCachePeriod(period)) {
+    if (
+      !incomplete &&
+      isUsefulKpiPayload(payload) &&
+      isFuelKpiDayCachePeriod(period)
+    ) {
       writeFuelKpisServerCache(cacheKey, payload, endOfKyivDayMs());
       void writeFuelKpisDayCache(period, payload, dayYmd);
+    } else if (isUsefulKpiPayload(payload) && !backfill) {
+      // Короткий mem-кеш навіть при incomplete — щоб повторний захід був швидкий
+      writeFuelKpisServerCache(cacheKey, payload, Date.now() + 2 * 60 * 1000);
     }
 
     return NextResponse.json(payload, { headers: JSON_UTF8 });

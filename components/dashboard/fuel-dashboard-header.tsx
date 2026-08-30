@@ -53,9 +53,9 @@ const FIELD_FUEL_PERIODS: Array<{ id: FieldFuelPeriod; label: string }> = [
 
 function fieldFuelPeriodCaption(period: FieldFuelPeriod): string {
   if (period === "yesterday") return "вчора";
-  if (period === "week") return "за 7 днів";
-  if (period === "month") return "за місяць";
-  if (period === "season") return "за сезон";
+  if (period === "week") return "7 днів";
+  if (period === "month") return "місяць";
+  if (period === "season") return "сезон";
   return "сьогодні";
 }
 

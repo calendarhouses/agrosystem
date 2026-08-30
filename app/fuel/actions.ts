@@ -46,7 +46,8 @@ function normalizePeriod(period: FieldFuelPeriod): FieldFuelPeriod {
 
 /** Сума спаленого на полях за період + розшифровка хто×поле. */
 export async function getFieldFuelConsumed(
-  period: FieldFuelPeriod = "today"
+  period: FieldFuelPeriod = "today",
+  options?: { backfill?: boolean }
 ): Promise<
   ActionResult<{
     liters: number;
@@ -70,17 +71,28 @@ export async function getFieldFuelConsumed(
   try {
     const safe = normalizePeriod(period);
     let liveSynced = false;
+    const allowBackfill = options?.backfill === true;
 
-    // week/month/season: якщо всі дні вже в БД — не чіпаємо Wialon.
     // today/yesterday — завжди свіжий sync.
+    // week/month — дотягуємо пропуски (діапазон малий).
+    // season — на першому показі лише БД (як уже прогріті 7д/місяць);
+    //   Wialon лише на явному backfill, інакше KPI висить хвилинами і падає в «немає даних».
     let shouldSync = safe === "today" || safe === "yesterday";
-    if (!shouldSync) {
+    if (!shouldSync && safe !== "season") {
       try {
         const { fromDate, toDate } = resolveFieldFuelPeriodBounds(safe);
         const missing = await listUnsyncedFieldFuelDates(fromDate, toDate);
         shouldSync = missing.length > 0;
       } catch {
         shouldSync = true;
+      }
+    } else if (safe === "season" && allowBackfill) {
+      try {
+        const { fromDate, toDate } = resolveFieldFuelPeriodBounds(safe);
+        const missing = await listUnsyncedFieldFuelDates(fromDate, toDate);
+        shouldSync = missing.length > 0;
+      } catch {
+        shouldSync = false;
       }
     }
 
@@ -89,7 +101,7 @@ export async function getFieldFuelConsumed(
         const coverage = await ensureFieldFuelPeriodCoverage(safe, {
           maxDays:
             safe === "season"
-              ? 6
+              ? 8
               : safe === "month"
                 ? 5
                 : safe === "week"
@@ -98,9 +110,11 @@ export async function getFieldFuelConsumed(
           budgetMs:
             safe === "today" || safe === "yesterday"
               ? 12_000
-              : safe === "week"
-                ? 14_000
-                : 16_000,
+              : safe === "season"
+                ? 20_000
+                : safe === "week"
+                  ? 14_000
+                  : 16_000,
         });
         liveSynced = coverage.daysSyncedNow > 0 || !coverage.truncated;
       } catch (syncErr) {

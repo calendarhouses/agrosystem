@@ -138,8 +138,13 @@ function fuelKpisCacheKey(period: FieldFuelPeriod) {
   return `api:fuel:kpis:${period}`;
 }
 
-function fuelKpisUrl(period: FieldFuelPeriod) {
-  return `/api/fuel/kpis?period=${period}`;
+function fuelKpisUrl(
+  period: FieldFuelPeriod,
+  options?: { backfill?: boolean }
+) {
+  const qs = new URLSearchParams({ period });
+  if (options?.backfill) qs.set("backfill", "1");
+  return `/api/fuel/kpis?${qs.toString()}`;
 }
 
 function shouldDayCacheFuelKpis(
@@ -1281,10 +1286,10 @@ export function FuelView({
 
     void cachedFetchJson<FuelKpisResponse>(
       cacheKey,
-      fuelKpisUrl(fieldFuelPeriod),
+      fuelKpisUrl(fieldFuelPeriod, { backfill: silent }),
       undefined,
       {
-        force,
+        force: force || silent,
         // Не ставимо day-expiry тут: інакше incomplete/порожнє кешується на день.
         // Повний день — лише через writeAppCache нижче після shouldDayCacheFuelKpis.
       }
