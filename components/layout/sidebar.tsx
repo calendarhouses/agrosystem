@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
+  ChevronRight,
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
@@ -11,6 +12,8 @@ import {
 
 import { getMyProfileAction } from "@/app/team/actions";
 import { logoutAction } from "@/app/login/actions";
+import { MobileBottomDrawer } from "@/components/layout/mobile-bottom-drawer";
+import { MobileProfilePanel } from "@/components/layout/mobile-profile-panel";
 import { SidebarNavTooltip } from "@/components/layout/sidebar-nav-tooltip";
 import { APP_NAV_ITEMS, isNavItemActive, type AppNavItem } from "@/lib/navigation";
 import { ROLE_LABEL_UK, type AppActor } from "@/lib/app-actor-shared";
@@ -26,6 +29,7 @@ export function Sidebar({ collapsed, onToggleCollapsed }: SidebarProps) {
   const pathname = usePathname();
   const expanded = !collapsed;
   const [me, setMe] = useState<AppActor | null>(null);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   useEffect(() => {
     void getMyProfileAction().then(setMe);
@@ -181,25 +185,33 @@ export function Sidebar({ collapsed, onToggleCollapsed }: SidebarProps) {
           collapsed ? (
             <SidebarNavTooltip
               title={me.fullName}
-              hint={ROLE_LABEL_UK[me.role]}
+              hint={`${ROLE_LABEL_UK[me.role]} · профіль`}
             >
               {(handlers) => (
                 <span className="mb-1.5 block w-full" {...handlers}>
-                  <div className="flex w-full items-center justify-center rounded-xl px-0 py-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setProfileOpen(true)}
+                    aria-label="Профіль"
+                    className="flex w-full items-center justify-center rounded-xl px-0 py-1.5"
+                  >
                     <span className="flex h-9 w-9 items-center justify-center rounded-full border border-[#C05621]/35 bg-gradient-to-br from-[#C05621]/30 to-[#9c4221]/20 text-xs font-bold text-[#E8A87C] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
                       {me.fullName.slice(0, 1).toUpperCase()}
                     </span>
-                  </div>
+                  </button>
                 </span>
               )}
             </SidebarNavTooltip>
           ) : (
             <div className="mb-1.5 hidden md:block">
-              <div
+              <button
+                type="button"
+                onClick={() => setProfileOpen(true)}
                 className={cn(
-                  "flex items-center gap-2.5 rounded-xl border border-white/[0.07]",
-                  "bg-gradient-to-br from-white/[0.07] to-white/[0.02] px-2.5 py-2.5",
-                  "shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+                  "flex w-full items-center gap-2.5 rounded-xl border border-white/[0.07]",
+                  "bg-gradient-to-br from-white/[0.07] to-white/[0.02] px-2.5 py-2.5 text-left",
+                  "shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]",
+                  "transition-colors hover:border-white/[0.12] hover:bg-white/[0.08]"
                 )}
               >
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#C05621]/35 bg-gradient-to-br from-[#C05621]/30 to-[#9c4221]/20 text-xs font-bold text-[#E8A87C]">
@@ -210,10 +222,11 @@ export function Sidebar({ collapsed, onToggleCollapsed }: SidebarProps) {
                     {me.fullName}
                   </p>
                   <p className="mt-0.5 truncate text-[11px] text-zinc-500">
-                    {ROLE_LABEL_UK[me.role]}
+                    {ROLE_LABEL_UK[me.role]} · профіль
                   </p>
                 </div>
-              </div>
+                <ChevronRight className="h-4 w-4 shrink-0 text-zinc-500" />
+              </button>
             </div>
           )
         ) : null}
@@ -249,6 +262,21 @@ export function Sidebar({ collapsed, onToggleCollapsed }: SidebarProps) {
           </form>
         )}
       </div>
+
+      {me ? (
+        <MobileBottomDrawer
+          open={profileOpen}
+          onOpenChange={setProfileOpen}
+          preserveNav={false}
+        >
+          <MobileProfilePanel
+            me={me}
+            onBack={() => setProfileOpen(false)}
+            onUpdated={setMe}
+            backLabel="Закрити"
+          />
+        </MobileBottomDrawer>
+      ) : null}
     </aside>
   );
 }

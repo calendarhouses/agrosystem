@@ -4,11 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { LogOut } from "lucide-react";
+import { ChevronRight, LogOut } from "lucide-react";
 
 import { logoutAction } from "@/app/login/actions";
 import { getMyProfileAction } from "@/app/team/actions";
 import { MobileBottomDrawer } from "@/components/layout/mobile-bottom-drawer";
+import { MobileProfilePanel } from "@/components/layout/mobile-profile-panel";
 import {
   BOTTOM_NAV_ITEMS,
   isNavItemActive,
@@ -102,6 +103,7 @@ function BottomNavBar({
 export function BottomNav() {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
+  const [drawerView, setDrawerView] = useState<"menu" | "profile">("menu");
   const [me, setMe] = useState<AppActor | null>(null);
 
   useEffect(() => {
@@ -112,84 +114,105 @@ export function BottomNav() {
     isNavItemActive(pathname, item.href)
   );
 
+  function handleMoreOpen(open: boolean) {
+    setMoreOpen(open);
+    if (!open) setDrawerView("menu");
+  }
+
   return (
     <>
       <BottomNavBar
         pathname={pathname}
         moreOpen={moreOpen}
-        onMoreOpen={setMoreOpen}
+        onMoreOpen={handleMoreOpen}
         moreActive={moreActive}
       />
 
-      <MobileBottomDrawer open={moreOpen} onOpenChange={setMoreOpen}>
-        <div className="border-b border-zinc-800 px-5 pb-4 pr-14 pt-1 text-left">
-          <h2 className="text-lg font-bold text-zinc-50">Інші розділи</h2>
-          <p className="mt-1 text-sm text-zinc-500">
-            Агро-Радар, фінанси, бухгалтерія та профіль
-          </p>
-        </div>
-
-        <div className="space-y-1 px-3 py-3">
-          {MORE_MENU_ITEMS.map((item) => {
-            const Icon = item.icon;
-            const active = isNavItemActive(pathname, item.href);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => setMoreOpen(false)}
-                className={cn(
-                  "flex items-center gap-3 rounded-2xl px-3 py-3 transition-colors",
-                  active
-                    ? "bg-[#C05621]/20 text-zinc-100"
-                    : "text-zinc-300 active:bg-zinc-800"
-                )}
-              >
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-zinc-800 text-[#C05621]">
-                  <Icon className="h-5 w-5" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-semibold">
-                    {item.label}
-                  </span>
-                  <span className="block truncate text-xs text-zinc-500">
-                    {item.hint}
-                  </span>
-                </span>
-              </Link>
-            );
-          })}
-        </div>
-
-        {me ? (
-          <div className="mx-3 mt-1 rounded-2xl border border-zinc-800 bg-zinc-900/80 px-3 py-3">
-            <div className="flex items-center gap-3">
-              <span className="flex h-10 w-10 items-center justify-center rounded-full border border-[#C05621]/35 bg-gradient-to-br from-[#C05621]/30 to-[#9c4221]/20 text-sm font-bold text-[#E8A87C]">
-                {me.fullName.slice(0, 1).toUpperCase()}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-zinc-100">
-                  {me.fullName}
-                </p>
-                <p className="truncate text-xs text-zinc-500">
-                  {ROLE_LABEL_UK[me.role]}
-                </p>
-              </div>
+      <MobileBottomDrawer open={moreOpen} onOpenChange={handleMoreOpen}>
+        {drawerView === "profile" && me ? (
+          <MobileProfilePanel
+            me={me}
+            onBack={() => setDrawerView("menu")}
+            onUpdated={setMe}
+          />
+        ) : (
+          <>
+            <div className="border-b border-zinc-800 px-5 pb-4 pr-14 pt-1 text-left">
+              <h2 className="text-lg font-bold text-zinc-50">Інші розділи</h2>
+              <p className="mt-1 text-sm text-zinc-500">
+                Агро-Радар, фінанси, бухгалтерія та профіль
+              </p>
             </div>
-          </div>
-        ) : null}
 
-        <form action={logoutAction} className="px-3 pb-[calc(1rem+var(--safe-bottom))] pt-2">
-          <button
-            type="submit"
-            className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-sm font-medium text-zinc-400 transition-colors active:bg-zinc-800 active:text-zinc-100"
-          >
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-zinc-800">
-              <LogOut className="h-5 w-5" />
-            </span>
-            Вийти
-          </button>
-        </form>
+            <div className="space-y-1 px-3 py-3">
+              {MORE_MENU_ITEMS.map((item) => {
+                const Icon = item.icon;
+                const active = isNavItemActive(pathname, item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => handleMoreOpen(false)}
+                    className={cn(
+                      "flex items-center gap-3 rounded-2xl px-3 py-3 transition-colors",
+                      active
+                        ? "bg-[#C05621]/20 text-zinc-100"
+                        : "text-zinc-300 active:bg-zinc-800"
+                    )}
+                  >
+                    <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-zinc-800 text-[#C05621]">
+                      <Icon className="h-5 w-5" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-semibold">
+                        {item.label}
+                      </span>
+                      <span className="block truncate text-xs text-zinc-500">
+                        {item.hint}
+                      </span>
+                    </span>
+                  </Link>
+                );
+              })}
+            </div>
+
+            {me ? (
+              <button
+                type="button"
+                onClick={() => setDrawerView("profile")}
+                className="mx-3 mt-1 flex w-[calc(100%-1.5rem)] items-center gap-3 rounded-2xl border border-zinc-800 bg-zinc-900/80 px-3 py-3 text-left active:bg-zinc-800"
+              >
+                <span className="flex h-10 w-10 items-center justify-center rounded-full border border-[#C05621]/35 bg-gradient-to-br from-[#C05621]/30 to-[#9c4221]/20 text-sm font-bold text-[#E8A87C]">
+                  {me.fullName.slice(0, 1).toUpperCase()}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-zinc-100">
+                    {me.fullName}
+                  </p>
+                  <p className="truncate text-xs text-zinc-500">
+                    {ROLE_LABEL_UK[me.role]} · профіль
+                  </p>
+                </div>
+                <ChevronRight className="h-4 w-4 shrink-0 text-zinc-500" />
+              </button>
+            ) : null}
+
+            <form
+              action={logoutAction}
+              className="px-3 pb-[calc(1rem+var(--safe-bottom))] pt-2"
+            >
+              <button
+                type="submit"
+                className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-sm font-medium text-zinc-400 transition-colors active:bg-zinc-800 active:text-zinc-100"
+              >
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-zinc-800">
+                  <LogOut className="h-5 w-5" />
+                </span>
+                Вийти
+              </button>
+            </form>
+          </>
+        )}
       </MobileBottomDrawer>
     </>
   );

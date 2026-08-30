@@ -1,11 +1,16 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useDragControls, type PanInfo } from "framer-motion";
 import { X } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useState,
+  type PointerEvent,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 
-import { SwipeableSheet } from "@/components/ui/swipe-sheet";
+import { SheetDragHandle } from "@/components/ui/swipe-sheet";
 import { cn } from "@/lib/utils";
 
 type MobileBottomDrawerProps = {
@@ -28,6 +33,7 @@ export function MobileBottomDrawer({
   showCloseButton = true,
 }: MobileBottomDrawerProps) {
   const [mounted, setMounted] = useState(false);
+  const dragControls = useDragControls();
 
   useEffect(() => setMounted(true), []);
 
@@ -39,6 +45,15 @@ export function MobileBottomDrawer({
       document.body.style.overflow = prev;
     };
   }, [open]);
+
+  function startDrag(event: PointerEvent<HTMLElement>) {
+    dragControls.start(event);
+  }
+
+  function handleDragEnd(_event: unknown, info: PanInfo) {
+    const close = info.offset.y > 72 || info.velocity.y > 450;
+    if (close) onOpenChange(false);
+  }
 
   if (!mounted) return null;
 
@@ -62,15 +77,22 @@ export function MobileBottomDrawer({
           <motion.div
             role="dialog"
             aria-modal="true"
-    className={cn(
-      "fixed inset-x-0 z-[200] flex max-h-[min(88dvh,calc(100dvh-var(--app-bottom-inset)))] flex-col overflow-hidden rounded-t-3xl border border-b-0 border-zinc-800 bg-zinc-950 shadow-[0_-24px_64px_-12px_rgba(0,0,0,0.65)]",
-      className
-    )}
+            className={cn(
+              "fixed inset-x-0 z-[200] flex max-h-[min(88dvh,calc(100dvh-var(--app-bottom-inset)))] flex-col overflow-hidden rounded-t-3xl border border-b-0 border-zinc-800 bg-zinc-950 shadow-[0_-24px_64px_-12px_rgba(0,0,0,0.65)]",
+              className
+            )}
             style={{ bottom: navOffset }}
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
             transition={{ type: "spring", stiffness: 440, damping: 40 }}
+            drag="y"
+            dragControls={dragControls}
+            dragListener={false}
+            dragConstraints={{ top: 0, bottom: 0 }}
+            dragElastic={{ top: 0.05, bottom: 0.55 }}
+            dragMomentum={false}
+            onDragEnd={handleDragEnd}
           >
             {showCloseButton ? (
               <button
@@ -82,15 +104,18 @@ export function MobileBottomDrawer({
                 <X className="h-4 w-4" />
               </button>
             ) : null}
-            <SwipeableSheet
-              className="min-h-0 flex-1"
-              handleClassName="pt-2.5 pb-1"
-              onSwipeDown={() => onOpenChange(false)}
-            >
-              <div className="min-h-0 flex-1 overflow-y-auto overscroll-none">
-                {children}
-              </div>
-            </SwipeableSheet>
+
+            {/* Велика зона свайпу: хендл + верхня смуга */}
+            <div className="relative z-10 shrink-0">
+              <SheetDragHandle
+                className="min-h-11 cursor-grab pt-3 pb-2 active:cursor-grabbing"
+                onPointerDown={startDrag}
+              />
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-none">
+              {children}
+            </div>
           </motion.div>
         </>
       ) : null}
