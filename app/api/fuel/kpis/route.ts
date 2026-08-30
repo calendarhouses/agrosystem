@@ -10,6 +10,7 @@ import {
   peekFuelKpisServerCache,
   writeFuelKpisServerCache,
 } from "@/lib/fuel-kpis-cache";
+import { getSharedFuelKpiLoadMs } from "@/lib/fuel-kpi-load-stats";
 import { sumStorageVolumeForPeriod } from "@/lib/fuel-storage-period";
 import { todayKyivYmd } from "@/lib/kyiv-date";
 
@@ -41,6 +42,8 @@ type KpisPayload = {
   burned: Awaited<ReturnType<typeof getFieldFuelConsumed>>;
   refueled: Awaited<ReturnType<typeof getFuelRefueledForPeriod>>;
   storages: Awaited<ReturnType<typeof sumStorageVolumeForPeriod>> | null;
+  /** Спільна оцінка часу повного циклу для шкали у всіх клієнтів */
+  expectedLoadMs: number;
 };
 
 /**
@@ -53,11 +56,16 @@ export async function GET(request: Request) {
 
   const cached = peekFuelKpisServerCache<KpisPayload>(cacheKey);
   if (cached) {
-    return NextResponse.json(cached, { headers: JSON_UTF8 });
+    const expectedLoadMs =
+      cached.expectedLoadMs ?? (await getSharedFuelKpiLoadMs(period));
+    return NextResponse.json(
+      { ...cached, expectedLoadMs },
+      { headers: JSON_UTF8 }
+    );
   }
 
   try {
-    const [burned, refueled, storages] = await Promise.all([
+    const [burned, refueled, storages, expectedLoadMs] = await Promise.all([
       getFieldFuelConsumed(period),
       getFuelRefueledForPeriod(period),
       sumStorageVolumeForPeriod(period).catch((err) => {
@@ -67,6 +75,7 @@ export async function GET(request: Request) {
         );
         return null;
       }),
+      getSharedFuelKpiLoadMs(period),
     ]);
 
     const payload: KpisPayload = {
@@ -75,12 +84,15 @@ export async function GET(request: Request) {
       burned,
       refueled,
       storages,
+      expectedLoadMs,
     };
 
     const incomplete =
       burned.ok === true && burned.data.coverageIncomplete === true;
-    // Повний сезон/місяць/тиждень — до кінця дня; незавершений бекфіл не кешуємо довго
-    if (!incomplete && (period === "season" || period === "month" || period === "week")) {
+    if (
+      !incomplete &&
+      (period === "season" || period === "month" || period === "week")
+    ) {
       writeFuelKpisServerCache(cacheKey, payload, endOfKyivDayMs());
     } else if (!incomplete && period === "yesterday") {
       writeFuelKpisServerCache(cacheKey, payload, endOfKyivDayMs());
@@ -99,6 +111,7 @@ export async function GET(request: Request) {
         burned: null,
         refueled: null,
         storages: null,
+        expectedLoadMs: await getSharedFuelKpiLoadMs(period).catch(() => 9000),
       },
       { status: 502, headers: JSON_UTF8 }
     );

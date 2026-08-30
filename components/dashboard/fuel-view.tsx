@@ -129,6 +129,8 @@ type FuelKpisResponse = {
   burned?: FuelKpisBurned | null;
   refueled?: FuelKpisRefueled | null;
   storages?: FuelKpisStorages | null;
+  /** Спільна оцінка часу циклу KPI (мс) для шкали у всіх */
+  expectedLoadMs?: number;
   error?: string;
 };
 
@@ -758,6 +760,9 @@ export function FuelView({
         }
       : null
   );
+  const [kpiExpectedLoadMs, setKpiExpectedLoadMs] = useState<number | null>(
+    seedKpis?.expectedLoadMs ?? null
+  );
   const [periodStorageLiters, setPeriodStorageLiters] = useState<number | null>(
     seedKpis?.storages?.liters ?? null
   );
@@ -1125,6 +1130,12 @@ export function FuelView({
     const applyPayload = (payload: FuelKpisResponse) => {
       const burned = payload.burned;
       const refueled = payload.refueled;
+      if (
+        payload.expectedLoadMs != null &&
+        Number.isFinite(payload.expectedLoadMs)
+      ) {
+        setKpiExpectedLoadMs(Math.round(payload.expectedLoadMs));
+      }
       if (burned?.ok) {
         setFieldFuelToday(burned.data.liters);
         setFieldFuelTotal(burned.data.totalLiters);
@@ -1357,6 +1368,7 @@ export function FuelView({
         fieldFuelPeriod={fieldFuelPeriod}
         fieldFuelBreakdown={fieldFuelBreakdown}
         fieldFuelCoverage={fieldFuelCoverage}
+        kpiExpectedLoadMs={kpiExpectedLoadMs}
         refuelLiters={refuelLiters}
         refuelHasData={refuelHasData}
         refuelLoading={refuelLoading}

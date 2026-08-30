@@ -94,6 +94,8 @@ type FuelDashboardHeaderProps = {
     incomplete: boolean;
     progressPct?: number;
   } | null;
+  /** Спільна оцінка часу KPI з сервера (для шкали у всіх) */
+  kpiExpectedLoadMs?: number | null;
   refuelLiters: number | null;
   refuelHasData: boolean;
   refuelLoading: boolean;
@@ -357,6 +359,7 @@ export function FuelDashboardHeader({
   fieldFuelPeriod,
   fieldFuelBreakdown,
   fieldFuelCoverage,
+  kpiExpectedLoadMs = null,
   refuelLiters,
   refuelHasData,
   refuelLoading,
@@ -417,6 +420,7 @@ export function FuelDashboardHeader({
     loading: fieldFuelLoading || refuelLoading,
     incomplete: Boolean(fieldFuelCoverage?.incomplete),
     period: fieldFuelPeriod,
+    sharedExpectedMs: kpiExpectedLoadMs,
   });
 
   const showProgress =
