@@ -68,9 +68,11 @@ export function AccountingHub() {
       >
         {isMobile ? (
           <div className="sticky top-0 z-50 border-b border-[#E5DFD3]/80 bg-[#F4F1EA]/92 px-3 pt-[max(0.5rem,var(--safe-top))] pb-2 backdrop-blur-xl">
-            <div
-              className="inline-flex w-full rounded-2xl border border-[#E5DFD3]/90 bg-white/85 p-1 shadow-sm"
-              role="tablist"
+            <TabsList
+              className={cn(
+                "inline-flex h-auto w-full rounded-2xl border border-[#E5DFD3]/90 bg-white/85 p-1 shadow-sm",
+                "group-data-horizontal/tabs:h-auto"
+              )}
               aria-label="Розділ бухгалтерії"
             >
               {HUB_TABS.map((item) => {
@@ -84,7 +86,8 @@ export function AccountingHub() {
                       "relative min-h-10 flex-1 gap-0 rounded-xl px-1 text-[11px] font-bold transition-all",
                       "data-active:bg-[#276749] data-active:text-white",
                       "data-active:shadow-[0_4px_12px_-4px_rgba(39,103,73,0.55)]",
-                      "data-[state=inactive]:text-zinc-500"
+                      "data-[state=inactive]:text-zinc-500",
+                      "hover:text-inherit"
                     )}
                   >
                     <span className="flex flex-col items-center gap-0.5">
@@ -106,7 +109,7 @@ export function AccountingHub() {
                   </TabsTrigger>
                 );
               })}
-            </div>
+            </TabsList>
           </div>
         ) : (
           <div

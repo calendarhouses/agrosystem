@@ -127,27 +127,27 @@ const CATEGORY_CARD_STYLE: Record<
   { card: string; icon: string; chip: string }
 > = {
   zzr: {
-    card: "border-emerald-200/70 bg-gradient-to-br from-emerald-50 to-white hover:border-emerald-300/80",
+    card: "border-emerald-200/70 bg-gradient-to-br from-emerald-50 to-white",
     icon: "bg-emerald-600 text-white shadow-emerald-600/25",
     chip: "bg-emerald-100 text-emerald-800",
   },
   fertilizer: {
-    card: "border-orange-200/70 bg-gradient-to-br from-orange-50 to-white hover:border-orange-300/80",
+    card: "border-orange-200/70 bg-gradient-to-br from-orange-50 to-white",
     icon: "bg-orange-500 text-white shadow-orange-500/25",
     chip: "bg-orange-100 text-orange-800",
   },
   harvest: {
-    card: "border-amber-200/70 bg-gradient-to-br from-amber-50 to-white hover:border-amber-300/80",
+    card: "border-amber-200/70 bg-gradient-to-br from-amber-50 to-white",
     icon: "bg-amber-500 text-white shadow-amber-500/25",
     chip: "bg-amber-100 text-amber-900",
   },
   seed: {
-    card: "border-lime-200/70 bg-gradient-to-br from-lime-50 to-white hover:border-lime-300/80",
+    card: "border-lime-200/70 bg-gradient-to-br from-lime-50 to-white",
     icon: "bg-lime-600 text-white shadow-lime-600/25",
     chip: "bg-lime-100 text-lime-800",
   },
   parts: {
-    card: "border-zinc-200/80 bg-gradient-to-br from-zinc-50 to-white hover:border-zinc-300",
+    card: "border-zinc-200/80 bg-gradient-to-br from-zinc-50 to-white",
     icon: "bg-zinc-800 text-white shadow-zinc-800/20",
     chip: "bg-zinc-100 text-zinc-700",
   },
@@ -1080,8 +1080,7 @@ export function InventoryView({ dashboard, error }: Props) {
                       onClick={() => toggleFlowFilter(kpi.id)}
                       className={cn(
                         "min-h-[5.25rem] rounded-2xl border bg-gradient-to-br p-3 text-left shadow-[0_8px_24px_rgb(39,33,24,0.05)] transition sm:min-h-[5.5rem] sm:p-4",
-                        "hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgb(39,33,24,0.08)]",
-                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#276749]/30",
+                        "active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#276749]/30",
                         kpi.tone,
                         active
                           ? kpi.activeTone
@@ -1192,9 +1191,9 @@ export function InventoryView({ dashboard, error }: Props) {
                             setQuery("");
                           }}
                           className={cn(
-                            "group relative overflow-hidden rounded-2xl border text-left shadow-[0_8px_30px_rgb(39,33,24,0.05)] transition-all",
+                            "group relative overflow-hidden rounded-2xl border text-left shadow-[0_8px_30px_rgb(39,33,24,0.05)] transition-colors",
                             "p-3 sm:min-h-[168px] sm:rounded-3xl sm:p-6",
-                            "hover:-translate-y-0.5 hover:shadow-[0_12px_32px_rgb(39,33,24,0.08)]",
+                            "active:scale-[0.99]",
                             style.card
                           )}
                         >
@@ -1236,7 +1235,7 @@ export function InventoryView({ dashboard, error }: Props) {
                                 {formatCompactUah(periodCost)}
                               </p>
                             </div>
-                            <span className="hidden items-center gap-1 text-xs font-semibold text-zinc-400 transition group-hover:text-zinc-700 sm:inline-flex">
+                            <span className="hidden items-center gap-1 text-xs font-semibold text-zinc-400 sm:inline-flex">
                               Відкрити
                               <ChevronDown className="h-3.5 w-3.5 -rotate-90" />
                             </span>
@@ -1779,7 +1778,6 @@ function InventoryItemCard({
     <div
       className={cn(
         "group relative overflow-hidden rounded-2xl border border-[#E5DFD3]/90 bg-[#F4F1EA]/95 p-3 shadow-[0_8px_30px_rgb(39,33,24,0.05)]",
-        "transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_12px_32px_rgb(39,33,24,0.08)]",
         selected && "border-emerald-300/80 ring-1 ring-emerald-500/20",
         isHidden && "opacity-50"
       )}
