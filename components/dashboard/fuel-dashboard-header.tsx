@@ -11,7 +11,7 @@ import {
   Warehouse,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 
 import type {
   FieldFuelBreakdownRow,
@@ -37,6 +37,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import type { FuelStorage } from "@/lib/fuel-storages";
+import { useFuelLoadProgress } from "@/lib/fuel-kpi-load-progress";
 import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
 
@@ -62,87 +63,6 @@ function fieldFuelPeriodCaption(period: FieldFuelPeriod): string {
   if (period === "month") return "за місяць";
   if (period === "season") return "за сезон";
   return "сьогодні";
-}
-
-/**
- * Очікуваний час повного циклу KPI (бекенд: budgetMs × чанки + пауза retry 2.8с).
- * today/yesterday: 1× ~12с синк
- * week: до 2 чанків × 14с
- * month: ~3–4 чанки × 16с
- * season: ~5 чанків × 16с
- */
-const FUEL_KPI_LOAD_MS: Record<FieldFuelPeriod, number> = {
-  today: 14_000,
-  yesterday: 14_000,
-  week: 28_000,
-  month: 55_000,
-  season: 85_000,
-};
-
-/**
- * Інтерактивна шкала 1% → 100% лише від часу.
- * Без стрибків від server coverage. До 100% — коли loading/incomplete закінчились.
- */
-function useFuelLoadProgress(opts: {
-  loading: boolean;
-  incomplete: boolean;
-  period: FieldFuelPeriod;
-}): number | null {
-  const { loading, incomplete, period } = opts;
-  const active = loading || incomplete;
-  const [pct, setPct] = useState<number | null>(null);
-  const startedAtRef = useRef<number | null>(null);
-  const sessionActiveRef = useRef(false);
-
-  // Зміна періоду — новий цикл
-  useEffect(() => {
-    startedAtRef.current = null;
-    sessionActiveRef.current = false;
-    setPct(null);
-  }, [period]);
-
-  useEffect(() => {
-    if (active) {
-      if (!sessionActiveRef.current) {
-        sessionActiveRef.current = true;
-        startedAtRef.current = Date.now();
-        setPct(1);
-      }
-
-      const expected = FUEL_KPI_LOAD_MS[period];
-      const id = window.setInterval(() => {
-        const started = startedAtRef.current ?? Date.now();
-        const elapsed = Date.now() - started;
-        let next: number;
-        if (elapsed <= expected) {
-          // 1% → 95% рівномірно за очікуваний час
-          next = 1 + (elapsed / expected) * 94;
-        } else {
-          // Затягнулось — повільно 95% → 99%
-          const over = elapsed - expected;
-          next = 95 + (1 - Math.exp(-over / 12_000)) * 4;
-        }
-        setPct(Math.min(99, Math.max(1, Math.round(next))));
-      }, 100);
-
-      return () => window.clearInterval(id);
-    }
-
-    // Сесія завершена — коротка вспышка 100%, потім ховаємо
-    if (sessionActiveRef.current) {
-      sessionActiveRef.current = false;
-      setPct(100);
-      const t = window.setTimeout(() => {
-        setPct(null);
-        startedAtRef.current = null;
-      }, 500);
-      return () => window.clearTimeout(t);
-    }
-
-    return;
-  }, [active, period]);
-
-  return pct;
 }
 
 type RefuelBreakdownRow = {
@@ -526,14 +446,14 @@ export function FuelDashboardHeader({
         <div className="h-1.5 overflow-hidden rounded-full bg-[#E5DFD3]/90">
           <div
             className={cn(
-              "h-full rounded-full bg-[#276749] transition-[width] duration-300 ease-out",
+              "h-full rounded-full bg-[#276749] transition-[width] duration-100 ease-linear",
               displayProgressPct == null && "animate-pulse"
             )}
             style={{
               width:
                 displayProgressPct != null
-                  ? `${Math.max(4, displayProgressPct)}%`
-                  : "12%",
+                  ? `${Math.max(2, displayProgressPct)}%`
+                  : "8%",
             }}
           />
         </div>
