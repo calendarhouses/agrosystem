@@ -135,6 +135,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     if (isAuthScreen) {
       // Логін/install: жодного LEVADA-boot — splash ховається CSS (data-booting)
       delete document.documentElement.dataset.booting;
+      delete document.documentElement.dataset.bootUi;
       delete document.documentElement.dataset.appReady;
     }
     // Без cleanup appNav=0: Strict Mode / remount на мить вмикає «логін» CSS

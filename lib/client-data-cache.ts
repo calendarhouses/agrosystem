@@ -178,13 +178,13 @@ export const APP_WARM_ENDPOINTS: readonly WarmEndpoint[] = [
     url: "/api/fuel/kpis?period=today",
     delayMs: 500,
   },
-  { key: "api:agro-radar:stock", url: "/api/agro-radar/stock", delayMs: 900 },
+  { key: "api:agro-radar:stock", url: "/api/agro-radar/stock", delayMs: 700 },
   {
     key: "api:inventory:dashboard",
     url: "/api/inventory/dashboard",
-    delayMs: 1100,
+    delayMs: 550,
   },
-  { key: "api:finance:boot", url: "/api/finance/boot", delayMs: 1400 },
+  { key: "api:finance:boot", url: "/api/finance/boot", delayMs: 1200 },
   {
     key: "api:accounting:queue",
     url: "/api/accounting/queue",

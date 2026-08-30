@@ -8,7 +8,6 @@ import {
   cachedFetchJson,
   peekAppCache,
 } from "@/lib/client-data-cache";
-import { useAppBoot } from "@/lib/app-boot";
 
 function sleep(ms: number) {
   return new Promise<void>((resolve) => {
@@ -18,18 +17,15 @@ function sleep(ms: number) {
 
 /**
  * Прогрів API-кешу. БЕЗ router.prefetch:
- * паралельні RSC-prefetch під час soft-nav → React #412 («Connection closed»)
- * → global-error / «помилка навігації».
- * Старт лише після LEVADA-boot.
+ * паралельні RSC-prefetch під час soft-nav → React #412 («Connection closed»).
+ * API-warm стартує одразу (навіть під LEVADA), щоб Склад/Паливо не показували «Завантаження…».
  */
 export function AppDataWarmer() {
   const pathname = usePathname();
-  const { isAppLoading } = useAppBoot();
   const runIdRef = useRef(0);
 
   useEffect(() => {
     if (pathname === "/login" || pathname === "/install") return;
-    if (isAppLoading) return;
 
     const runId = ++runIdRef.current;
     let cancelled = false;
@@ -65,13 +61,13 @@ export function AppDataWarmer() {
         }
       ).requestIdleCallback;
       if (typeof ric === "function") {
-        idleId = ric(() => void warmApis(), { timeout: 4000 });
+        idleId = ric(() => void warmApis(), { timeout: 2500 });
       } else {
-        startTimer = window.setTimeout(() => void warmApis(), 900);
+        startTimer = window.setTimeout(() => void warmApis(), 400);
       }
     };
 
-    startTimer = window.setTimeout(schedule, 400);
+    startTimer = window.setTimeout(schedule, 200);
 
     const refreshTimer = window.setInterval(() => {
       if (document.hidden) return;
@@ -91,7 +87,7 @@ export function AppDataWarmer() {
       ).cancelIdleCallback;
       if (idleId && typeof cic === "function") cic(idleId);
     };
-  }, [pathname, isAppLoading]);
+  }, [pathname]);
 
   return null;
 }

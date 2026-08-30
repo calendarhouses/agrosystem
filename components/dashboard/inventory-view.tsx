@@ -1416,10 +1416,37 @@ export function InventoryView({ dashboard, error }: Props) {
             )}
           </>
         ) : !error ? (
-          <div className="mt-6 text-sm text-zinc-500">Завантаження…</div>
+          <InventoryBootSkeleton />
         ) : null}
       </div>
     </main>
+  );
+}
+
+function InventoryBootSkeleton() {
+  return (
+    <div className="mt-1 space-y-4" aria-busy="true" aria-label="Склад">
+      <div className="flex gap-2">
+        <div className="h-11 flex-1 animate-pulse rounded-xl bg-white/70" />
+        <div className="h-11 w-28 animate-pulse rounded-xl bg-white/70" />
+      </div>
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div
+            key={i}
+            className="h-24 animate-pulse rounded-2xl border border-[#E5DFD3]/80 bg-white/60"
+          />
+        ))}
+      </div>
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div
+            key={i}
+            className="h-28 animate-pulse rounded-2xl border border-[#E5DFD3]/80 bg-white/55"
+          />
+        ))}
+      </div>
+    </div>
   );
 }
 

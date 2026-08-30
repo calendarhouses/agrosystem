@@ -72,8 +72,12 @@ const BOOT_CRITICAL_CSS = [
   "html[data-booting='1'],html[data-booting='1'] body,html[data-booting='1'] #app-root{background-color:#09090b!important}",
   "html[data-app-nav='1'][data-app-ready='1'],html[data-app-nav='1'][data-app-ready='1'] body,html[data-app-nav='1'][data-app-ready='1'] #app-root{background-color:#18181b!important;transition:background-color .7s ease-out .5s}",
   "html[data-booting='1'] [data-bottom-nav],html[data-booting='1'] [data-fields-mobile-chrome]{opacity:0;pointer-events:none;transform:translateY(12px)}",
-  "#boot-splash{display:none;position:fixed;inset:0;z-index:10000;background:#09090b;pointer-events:none}",
-  "html[data-booting='1'] #boot-splash{display:block}",
+  /* Під React Preloader (z-9999). Не .remove() — інакше NotFoundError. */
+  "#boot-splash{display:none;position:fixed;inset:0;z-index:9990;background:#09090b;pointer-events:none;align-items:center;justify-content:center;flex-direction:column}",
+  "html[data-booting='1'] #boot-splash{display:flex}",
+  "html[data-boot-ui='1'] #boot-splash{visibility:hidden}",
+  "#boot-splash .boot-title{margin:0;color:#fff;font-size:1.65rem;font-weight:200;letter-spacing:.3em;font-family:ui-sans-serif,system-ui,-apple-system,sans-serif}",
+  "#boot-splash .boot-sub{margin:.75rem 0 0;color:#71717a;font-size:.75rem;letter-spacing:.2em;font-family:ui-sans-serif,system-ui,-apple-system,sans-serif}",
 ].join("");
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -87,8 +91,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <style dangerouslySetInnerHTML={{ __html: BOOT_CRITICAL_CSS }} />
       </head>
       <body className="overflow-hidden font-sans text-zinc-900">
-        {/* Видимий лише при data-booting=1 — ніколи не накриває /login */}
-        <div id="boot-splash" aria-hidden="true" />
+        {/* Видимий лише при data-booting=1 — ніколи не накриває /login.
+            Бренд тут, щоб до гідрації не було «тупо чорного» екрана. */}
+        <div id="boot-splash" aria-hidden="true">
+          <p className="boot-title">L E V A D A</p>
+          <p className="boot-sub">AGRO OPERATING SYSTEM</p>
+        </div>
         <PwaBootstrap />
         <div id="app-root" className="h-dvh min-h-0 overflow-hidden">
           <AppShell>{children}</AppShell>

@@ -8,23 +8,25 @@ type PreloaderProps = {
 
 /**
  * Boot-екран LEVADA.
- * Без AnimatePresence/exit: Framer exit під час soft-nav рве дерево і валить global-error.
- * #boot-splash лишаємо в DOM — лише CSS (data-booting). `.remove()` на React-вузлі
- * → NotFoundError «The object can not be found here» на кожному оновленні Toaster/body.
+ * #boot-splash лишаємо в DOM (CSS visibility), інакше React → NotFoundError.
+ * data-boot-ui ховає статичний splash під цим шаром (з shimmer).
  */
 export function Preloader({ isLoading }: PreloaderProps) {
   useLayoutEffect(() => {
     if (isLoading) {
       document.documentElement.dataset.booting = "1";
+      document.documentElement.dataset.bootUi = "1";
     }
   }, [isLoading]);
 
   useEffect(() => {
     if (isLoading) {
       document.documentElement.dataset.booting = "1";
+      document.documentElement.dataset.bootUi = "1";
       return;
     }
     delete document.documentElement.dataset.booting;
+    delete document.documentElement.dataset.bootUi;
     document.documentElement.dataset.appReady = "1";
   }, [isLoading]);
 

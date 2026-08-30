@@ -92,6 +92,7 @@ export function AppBootProvider({ children }: { children: ReactNode }) {
       setRevealChrome(true);
       // Safe-area / body → колір меню одночасно з появою chrome
       delete document.documentElement.dataset.booting;
+      delete document.documentElement.dataset.bootUi;
       document.documentElement.dataset.appReady = "1";
       try {
         sessionStorage.removeItem("levada-softnav-reload");
