@@ -64,94 +64,85 @@ function fieldFuelPeriodCaption(period: FieldFuelPeriod): string {
   return "сьогодні";
 }
 
-/** Очікуваний час одного запиту KPI (шкала не має добігати до кінця раніше). */
-function expectedFuelLoadMs(period: FieldFuelPeriod): number {
-  if (period === "season") return 22_000;
-  if (period === "month") return 20_000;
-  if (period === "week") return 18_000;
-  return 14_000;
-}
+/**
+ * Очікуваний час повного циклу KPI (бекенд: budgetMs × чанки + пауза retry 2.8с).
+ * today/yesterday: 1× ~12с синк
+ * week: до 2 чанків × 14с
+ * month: ~3–4 чанки × 16с
+ * season: ~5 чанків × 16с
+ */
+const FUEL_KPI_LOAD_MS: Record<FieldFuelPeriod, number> = {
+  today: 14_000,
+  yesterday: 14_000,
+  week: 28_000,
+  month: 55_000,
+  season: 85_000,
+};
 
 /**
- * Живий % шкали.
- * Поки HTTP ще йде (Спалено/Заправлено крутяться) — стеля ~86%, не 99%.
- * 100% / зникнення шкали — лише коли loading = false.
+ * Інтерактивна шкала 1% → 100% лише від часу.
+ * Без стрибків від server coverage. До 100% — коли loading/incomplete закінчились.
  */
 function useFuelLoadProgress(opts: {
   loading: boolean;
   incomplete: boolean;
-  serverPct: number | null;
   period: FieldFuelPeriod;
 }): number | null {
-  const { loading, incomplete, serverPct, period } = opts;
+  const { loading, incomplete, period } = opts;
   const active = loading || incomplete;
-  const [, setTick] = useState(0);
+  const [pct, setPct] = useState<number | null>(null);
   const startedAtRef = useRef<number | null>(null);
-  const peakRef = useRef(0);
-  const periodRef = useRef(period);
+  const sessionActiveRef = useRef(false);
 
+  // Зміна періоду — новий цикл
   useEffect(() => {
-    if (periodRef.current !== period) {
-      periodRef.current = period;
-      startedAtRef.current = Date.now();
-      peakRef.current = 0;
-    }
+    startedAtRef.current = null;
+    sessionActiveRef.current = false;
+    setPct(null);
   }, [period]);
 
   useEffect(() => {
-    if (!active) {
-      startedAtRef.current = null;
-      peakRef.current = 0;
-      return;
+    if (active) {
+      if (!sessionActiveRef.current) {
+        sessionActiveRef.current = true;
+        startedAtRef.current = Date.now();
+        setPct(1);
+      }
+
+      const expected = FUEL_KPI_LOAD_MS[period];
+      const id = window.setInterval(() => {
+        const started = startedAtRef.current ?? Date.now();
+        const elapsed = Date.now() - started;
+        let next: number;
+        if (elapsed <= expected) {
+          // 1% → 95% рівномірно за очікуваний час
+          next = 1 + (elapsed / expected) * 94;
+        } else {
+          // Затягнулось — повільно 95% → 99%
+          const over = elapsed - expected;
+          next = 95 + (1 - Math.exp(-over / 12_000)) * 4;
+        }
+        setPct(Math.min(99, Math.max(1, Math.round(next))));
+      }, 100);
+
+      return () => window.clearInterval(id);
     }
-    if (startedAtRef.current == null) startedAtRef.current = Date.now();
-    const id = window.setInterval(() => setTick((n) => n + 1), 200);
-    return () => window.clearInterval(id);
-  }, [active]);
 
-  // Новий HTTP-запит — скидаємо таймер і стелю, щоб не висіти на 86–99%
-  useEffect(() => {
-    if (!loading) return;
-    startedAtRef.current = Date.now();
-    peakRef.current = Math.min(peakRef.current, 35);
-    setTick((n) => n + 1);
-  }, [loading]);
+    // Сесія завершена — коротка вспышка 100%, потім ховаємо
+    if (sessionActiveRef.current) {
+      sessionActiveRef.current = false;
+      setPct(100);
+      const t = window.setTimeout(() => {
+        setPct(null);
+        startedAtRef.current = null;
+      }, 500);
+      return () => window.clearTimeout(t);
+    }
 
-  if (!active) return null;
+    return;
+  }, [active, period]);
 
-  const started = startedAtRef.current ?? Date.now();
-  const elapsed = Math.max(0, Date.now() - started);
-  const expected = expectedFuelLoadMs(period);
-  // Лінійніше до ~80% за expected, далі дуже повільно до стелі
-  const linear = (elapsed / expected) * 80;
-  const timePct = Math.min(
-    86,
-    Math.max(5, Math.round(linear < 80 ? linear : 80 + (1 - Math.exp(-(elapsed - expected) / expected)) * 6))
-  );
-
-  const server =
-    serverPct != null && Number.isFinite(serverPct)
-      ? Math.max(0, Math.min(100, Math.round(serverPct)))
-      : null;
-
-  let next: number;
-  if (loading) {
-    // Поки крутяться KPI — ніколи не показуємо «майже готово»
-    const fromServer =
-      server != null && server > 0 ? Math.round(server * 0.82) : 0;
-    next = Math.min(86, Math.max(timePct, fromServer));
-  } else if (incomplete) {
-    // Бекфіл між запитами: реальні дні, але без фейкових 99 при 0 з API
-    next = server != null && server > 0 ? Math.min(99, server) : timePct;
-  } else {
-    next = 100;
-  }
-
-  peakRef.current = Math.max(
-    loading ? Math.min(peakRef.current, 86) : peakRef.current,
-    next
-  );
-  return loading ? Math.min(86, peakRef.current) : peakRef.current;
+  return pct;
 }
 
 type RefuelBreakdownRow = {
@@ -502,29 +493,17 @@ export function FuelDashboardHeader({
     liters: row.liters,
   }));
 
-  const progressPct =
-    fieldFuelCoverage?.progressPct ??
-    (fieldFuelCoverage && fieldFuelCoverage.daysExpected > 0
-      ? Math.min(
-          100,
-          Math.round(
-            (fieldFuelCoverage.daysCovered / fieldFuelCoverage.daysExpected) *
-              100
-          )
-        )
-      : null);
+  const displayProgressPct = useFuelLoadProgress({
+    loading: fieldFuelLoading || refuelLoading,
+    incomplete: Boolean(fieldFuelCoverage?.incomplete),
+    period: fieldFuelPeriod,
+  });
 
   const showProgress =
     fieldFuelLoading ||
     refuelLoading ||
-    Boolean(fieldFuelCoverage?.incomplete);
-
-  const displayProgressPct = useFuelLoadProgress({
-    loading: fieldFuelLoading || refuelLoading,
-    incomplete: Boolean(fieldFuelCoverage?.incomplete),
-    serverPct: progressPct,
-    period: fieldFuelPeriod,
-  });
+    Boolean(fieldFuelCoverage?.incomplete) ||
+    displayProgressPct != null;
 
   const coverageHint =
     fieldFuelCoverage &&
