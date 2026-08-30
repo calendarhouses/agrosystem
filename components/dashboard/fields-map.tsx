@@ -56,6 +56,7 @@ import {
   mapCameraPadding,
 } from "@/lib/equipment-command-center-layout";
 import { cn } from "@/lib/utils";
+import { useAppBoot } from "@/lib/app-boot";
 import { useIsMobile } from "@/lib/use-mobile";
 
 export type MapViewMode = "standard" | "economics";
@@ -594,6 +595,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
     ref
   ) {
     const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+    const { isAppLoading, reportFieldsMapReady } = useAppBoot();
     const mapRef = useRef<MapRef | null>(null);
     const mapContainerRef = useRef<HTMLDivElement | null>(null);
     const drawRef = useRef<MapboxDraw | null>(null);
@@ -1680,6 +1682,15 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
     }
 
     const showBootOverlay = !mapReady || !viewSettled || wialonLoading;
+    // Поки LEVADA на екрані — не показуємо другий (маповий) прелоадер
+    const showLocalBootOverlay = showBootOverlay && !isAppLoading;
+
+    useEffect(() => {
+      if (!showBootOverlay) {
+        reportFieldsMapReady();
+      }
+    }, [showBootOverlay, reportFieldsMapReady]);
+
     const showTractor = zoom >= 7 && !focusMode;
     const tractorScale = tractorScaleFromZoom(zoom);
 
@@ -2220,7 +2231,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         ) : null}
 
         <CommandCenterMapBootOverlay
-          visible={showBootOverlay}
+          visible={showLocalBootOverlay}
           icon={MapIcon}
         />
       </div>

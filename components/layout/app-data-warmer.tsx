@@ -9,6 +9,7 @@ import {
   cachedFetchJson,
   peekAppCache,
 } from "@/lib/client-data-cache";
+import { useAppBoot } from "@/lib/app-boot";
 
 function sleep(ms: number) {
   return new Promise<void>((resolve) => {
@@ -17,12 +18,15 @@ function sleep(ms: number) {
 }
 
 /**
- * Поки користувач на карті — прогріває кеш усієї системи + prefetch маршрутів.
- * Не блокує UI: idle, черги з delay, без toast при помилках.
+ * Прогрів кешу API + prefetch маршрутів.
+ * Під час LEVADA стартує одразу (паралельно з мапою), без довгої idle-паузи.
  */
 export function AppDataWarmer() {
   const pathname = usePathname();
   const router = useRouter();
+  const { isAppLoading } = useAppBoot();
+  const isAppLoadingRef = useRef(isAppLoading);
+  isAppLoadingRef.current = isAppLoading;
   const runIdRef = useRef(0);
 
   useEffect(() => {
@@ -32,14 +36,17 @@ export function AppDataWarmer() {
     let cancelled = false;
     let idleId = 0;
     let startTimer = 0;
+    const booting = isAppLoadingRef.current;
 
     const warmApis = async () => {
-      // Паралельно з власним delayMs від старту — не чекаємо попередній важкий BAS
       await Promise.all(
         APP_WARM_ENDPOINTS.map(async (endpoint) => {
           if (cancelled || runId !== runIdRef.current) return;
           if (peekAppCache(endpoint.key)) return;
-          if (endpoint.delayMs) await sleep(endpoint.delayMs);
+          const delay = booting
+            ? Math.min(endpoint.delayMs ?? 0, 200)
+            : (endpoint.delayMs ?? 0);
+          if (delay) await sleep(delay);
           if (cancelled || runId !== runIdRef.current) return;
           if (document.hidden) {
             await sleep(800);
@@ -81,15 +88,18 @@ export function AppDataWarmer() {
         }
       ).requestIdleCallback;
       if (typeof ric === "function") {
-        idleId = ric(kickoff, { timeout: 5000 });
+        idleId = ric(kickoff, { timeout: booting ? 800 : 5000 });
       } else {
-        startTimer = window.setTimeout(kickoff, 1600);
+        startTimer = window.setTimeout(kickoff, booting ? 0 : 1600);
       }
     };
 
-    // На карті полів — трохи довша пауза, щоб map/boot не конкурували
-    const bootDelay =
-      pathname === "/" || pathname === "/equipment" ? 1100 : 500;
+    const bootDelay = booting
+      ? 0
+      : pathname === "/" || pathname === "/equipment"
+        ? 1100
+        : 500;
+
     startTimer = window.setTimeout(schedule, bootDelay);
 
     const refreshTimer = window.setInterval(() => {
