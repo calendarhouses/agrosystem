@@ -356,20 +356,20 @@ async function loadMappings(): Promise<{
   const fields: FieldRow[] = [];
   for (const row of fieldRes.data ?? []) {
     const geometry = row.geometry as FieldGeometry | null;
-    if (
-      !geometry ||
-      (geometry.type !== "Polygon" && geometry.type !== "MultiPolygon")
-    ) {
-      continue;
-    }
+    const wialonZoneId =
+      row.wialon_zone_id != null && String(row.wialon_zone_id).trim()
+        ? String(row.wialon_zone_id)
+        : null;
+    const hasValidGeometry =
+      geometry != null &&
+      (geometry.type === "Polygon" || geometry.type === "MultiPolygon");
+    // Поле без geometry в БД, але з wialon_zone_id — полігон підтягнемо з Wialon при sync
+    if (!hasValidGeometry && !wialonZoneId) continue;
     fields.push({
       id: String(row.id),
       name: String(row.name ?? ""),
-      wialon_zone_id:
-        row.wialon_zone_id != null && String(row.wialon_zone_id).trim()
-          ? String(row.wialon_zone_id)
-          : null,
-      geometry,
+      wialon_zone_id: wialonZoneId,
+      geometry: hasValidGeometry ? geometry : null,
     });
   }
 

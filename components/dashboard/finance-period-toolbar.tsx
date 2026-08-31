@@ -107,7 +107,7 @@ export function FinancePeriodToolbar({
             sheetOnMobile={false}
             className={cn(
               "rounded-2xl border border-zinc-200 bg-white p-2 shadow-xl",
-              desktop ? "z-[100] w-56" : "w-[min(100vw-2rem,22rem)]"
+              desktop ? "z-[260] w-56" : "w-[min(100vw-2rem,22rem)]"
             )}
           >
             {!desktop ? (
@@ -189,7 +189,7 @@ export function FinancePeriodToolbar({
             className={cn(
               "rounded-2xl border border-zinc-200 bg-white p-3 shadow-xl",
               desktop
-                ? "z-[100] w-auto"
+                ? "z-[260] w-auto"
                 : "w-[min(100vw-1.5rem,22.5rem)]"
             )}
           >

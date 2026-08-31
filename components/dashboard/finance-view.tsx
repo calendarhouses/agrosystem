@@ -808,7 +808,7 @@ export function FinanceView({
                   </PopoverTrigger>
                   <PopoverContent
                     align="start"
-                    className="z-[100] w-56 rounded-2xl border border-zinc-200 bg-white p-2 shadow-xl"
+                    className="z-[260] w-56 rounded-2xl border border-zinc-200 bg-white p-2 shadow-xl"
                   >
                     {SEASON_OPTIONS.map((year) => (
                       <button
@@ -875,7 +875,7 @@ export function FinanceView({
                   </PopoverTrigger>
                   <PopoverContent
                     align="end"
-                    className="z-[100] w-auto rounded-2xl border border-zinc-200 bg-white p-3 shadow-xl"
+                    className="z-[260] w-auto rounded-2xl border border-zinc-200 bg-white p-3 shadow-xl"
                   >
                     <p className="mb-2 px-1 text-[11px] text-zinc-500">
                       {customRange?.from && customRange?.to
@@ -1009,7 +1009,7 @@ export function FinanceView({
                   align="start"
                   sideOffset={6}
                   sheetOnMobile={false}
-                  className="z-[100] w-[min(100vw-2rem,22rem)] rounded-2xl border border-zinc-200 bg-white p-2 shadow-xl"
+                  className="z-[260] w-[min(100vw-2rem,22rem)] rounded-2xl border border-zinc-200 bg-white p-2 shadow-xl"
                 >
                   <p className="px-2.5 pt-1.5 pb-2 text-[11px] leading-snug text-zinc-500">
                     Фільтр фінансів за агросезоном (березень–лютий).
@@ -1083,7 +1083,7 @@ export function FinanceView({
                   align="end"
                   sideOffset={6}
                   sheetOnMobile={false}
-                  className="z-[100] w-[min(100vw-1.5rem,22.5rem)] rounded-2xl border border-zinc-200 bg-white p-3 shadow-xl"
+                  className="z-[260] w-[min(100vw-1.5rem,22.5rem)] rounded-2xl border border-zinc-200 bg-white p-3 shadow-xl"
                 >
                   <p className="mb-2 px-1 text-[11px] text-zinc-500">
                     {customRange?.from && customRange?.to

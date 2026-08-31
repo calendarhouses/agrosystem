@@ -1,11 +1,6 @@
-import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 
-import { ReportsView } from "@/components/dashboard/reports-view";
-
-export const metadata: Metadata = {
-  title: "Операції / Звіти",
-};
-
+/** Mock-звіти v1 — перенаправляємо на головну до реалізації. */
 export default function ReportsPage() {
-  return <ReportsView />;
+  redirect("/");
 }
