@@ -12,8 +12,7 @@ import {
 
 import { getMyProfileAction } from "@/app/team/actions";
 import { logoutAction } from "@/app/login/actions";
-import { MobileBottomDrawer } from "@/components/layout/mobile-bottom-drawer";
-import { MobileProfilePanel } from "@/components/layout/mobile-profile-panel";
+import { ProfileSheet } from "@/components/layout/mobile-profile-panel";
 import { SidebarNavTooltip } from "@/components/layout/sidebar-nav-tooltip";
 import { APP_NAV_ITEMS, isNavItemActive, type AppNavItem } from "@/lib/navigation";
 import { ROLE_LABEL_UK, type AppActor } from "@/lib/app-actor-shared";
@@ -264,18 +263,12 @@ export function Sidebar({ collapsed, onToggleCollapsed }: SidebarProps) {
       </div>
 
       {me ? (
-        <MobileBottomDrawer
+        <ProfileSheet
           open={profileOpen}
           onOpenChange={setProfileOpen}
-          preserveNav={false}
-        >
-          <MobileProfilePanel
-            me={me}
-            onBack={() => setProfileOpen(false)}
-            onUpdated={setMe}
-            backLabel="Закрити"
-          />
-        </MobileBottomDrawer>
+          me={me}
+          onUpdated={setMe}
+        />
       ) : null}
     </aside>
   );
