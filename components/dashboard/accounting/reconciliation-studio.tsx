@@ -319,19 +319,31 @@ export function ReconciliationStudio({
       <header
         className={cn(
           "sticky top-0 z-40 border-b border-[#E5DFD3]/80 bg-[#F4F1EA]/90 backdrop-blur-xl",
-          isMobile ? "px-3 py-2.5" : "px-4 py-3 sm:px-6"
+          isMobile ? "px-2 py-2.5" : "px-4 py-3 sm:px-6"
         )}
       >
-        <div className="mx-auto flex w-full max-w-7xl flex-nowrap items-center gap-1.5 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] sm:gap-2 [&::-webkit-scrollbar]:hidden">
+        <div
+          className={cn(
+            "mx-auto flex w-full max-w-7xl items-center",
+            isMobile
+              ? "gap-1"
+              : "flex-nowrap gap-1.5 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] sm:gap-2 [&::-webkit-scrollbar]:hidden"
+          )}
+        >
           <Button
             type="button"
             variant="outline"
             size="sm"
             onClick={() => void handleCopy()}
             aria-label="Скопіювати"
-            className="h-9 shrink-0 gap-1.5 rounded-xl border-[#E5DFD3] bg-white/90"
+            className={cn(
+              "h-9 rounded-xl border-[#E5DFD3] bg-white/90",
+              isMobile
+                ? "min-w-0 flex-1 gap-1 px-1.5 text-[11px] font-semibold"
+                : "shrink-0 gap-1.5"
+            )}
           >
-            <ClipboardCopy className="h-3.5 w-3.5" />
+            <ClipboardCopy className="h-3.5 w-3.5 shrink-0" />
             {isMobile ? null : "Скопіювати"}
           </Button>
           <Button
@@ -339,9 +351,14 @@ export function ReconciliationStudio({
             variant="outline"
             size="sm"
             onClick={handleCsv}
-            className="h-9 shrink-0 gap-1.5 rounded-xl border-[#E5DFD3] bg-white/90"
+            className={cn(
+              "h-9 rounded-xl border-[#E5DFD3] bg-white/90",
+              isMobile
+                ? "min-w-0 flex-1 gap-1 px-1.5 text-[11px] font-semibold"
+                : "shrink-0 gap-1.5"
+            )}
           >
-            <Download className="h-3.5 w-3.5" />
+            <Download className="h-3.5 w-3.5 shrink-0" />
             CSV
           </Button>
           <Button
@@ -350,12 +367,17 @@ export function ReconciliationStudio({
             size="sm"
             disabled={pending && busyKey === "workbook"}
             onClick={handleWorkbook}
-            className="h-9 shrink-0 gap-1.5 rounded-xl border-[#E5DFD3] bg-white/90"
+            className={cn(
+              "h-9 rounded-xl border-[#E5DFD3] bg-white/90",
+              isMobile
+                ? "min-w-0 flex-1 gap-1 px-1.5 text-[11px] font-semibold"
+                : "shrink-0 gap-1.5"
+            )}
           >
             {pending && busyKey === "workbook" ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
             ) : (
-              <FileSpreadsheet className="h-3.5 w-3.5" />
+              <FileSpreadsheet className="h-3.5 w-3.5 shrink-0" />
             )}
             Excel
           </Button>
@@ -366,14 +388,20 @@ export function ReconciliationStudio({
             disabled={pending && busyKey === "relink"}
             onClick={handleRelink}
             title="Після того, як поля вже заведені або розділені в BAS AGRO"
-            className="h-9 shrink-0 gap-1.5 rounded-xl border-[#E5DFD3] bg-white/90"
+            aria-label="Підтягнути"
+            className={cn(
+              "h-9 rounded-xl border-[#E5DFD3] bg-white/90",
+              isMobile
+                ? "min-w-0 flex-1 gap-1 px-1.5 text-[11px] font-semibold"
+                : "shrink-0 gap-1.5"
+            )}
           >
             {pending && busyKey === "relink" ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
             ) : (
-              <Link2 className="h-3.5 w-3.5" />
+              <Link2 className="h-3.5 w-3.5 shrink-0" />
             )}
-            Підтягнути
+            {isMobile ? null : "Підтягнути"}
           </Button>
           <Button
             type="button"
@@ -381,10 +409,18 @@ export function ReconciliationStudio({
             size="sm"
             disabled={refreshing || pending}
             onClick={() => void handleRefresh()}
-            className="h-9 shrink-0 gap-1.5 rounded-xl border-[#E5DFD3] bg-white/90"
+            className={cn(
+              "h-9 rounded-xl border-[#E5DFD3] bg-white/90",
+              isMobile
+                ? "min-w-0 flex-1 gap-1 px-1.5 text-[11px] font-semibold"
+                : "shrink-0 gap-1.5"
+            )}
           >
             <RefreshCw
-              className={cn("h-3.5 w-3.5", refreshing && "animate-spin")}
+              className={cn(
+                "h-3.5 w-3.5 shrink-0",
+                refreshing && "animate-spin"
+              )}
             />
             Оновити
           </Button>
