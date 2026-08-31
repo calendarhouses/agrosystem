@@ -480,12 +480,6 @@ export async function POST(request: Request) {
       {
         ok: true,
         transaction: mapFuelTransactionRow(savedRow),
-        message:
-          transactionType === "inbound"
-            ? "Партію збережено локально. Чернетка BAS AGRO — після узгодження з бухгалтером"
-            : transactionType === "transfer"
-              ? "Переміщення збережено локально. Чернетка BAS AGRO — після узгодження з бухгалтером"
-              : undefined,
       },
       { headers: JSON_UTF8 }
     );

@@ -47,14 +47,7 @@ import { FinancePeriodToolbar } from "@/components/dashboard/finance-period-tool
 import { EditLocalMoveInline } from "@/components/dashboard/local-moves-history-sheet";
 import { Button } from "@/components/ui/button";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { ConfirmTransferDialog } from "@/components/ui/confirm-transfer-dialog";
 import { Input } from "@/components/ui/input";
 import {
   cachedCall,
@@ -130,7 +123,7 @@ function labelSelected(n: number) {
   return `Обрано ${n}`;
 }
 function labelNewSku(n: number) {
-  return `${n} ${ukPlural(n, "новий SKU", "нові SKU", "нових SKU")}`;
+  return `${n} ${ukPlural(n, "новий", "нові", "нових")}`;
 }
 function labelFuelNoPrice(n: number) {
   return `${n} ${ukPlural(n, "паливо", "палива", "палива")} без ціни`;
@@ -1668,44 +1661,18 @@ export function AccountantHubView({
         ) : null}
       </div>
 
-      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent
-          presentation="center"
-          className="max-w-md rounded-3xl border-[#E5DFD3] bg-[#FDFBF7]"
-        >
-          <DialogHeader>
-            <DialogTitle>Позначити як передані?</DialogTitle>
-            <DialogDescription>
-              {labelOps(packageSummary.count)} зникнуть з черги. Спочатку
-              завантажте Excel, якщо ще не зробили.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2 sm:justify-stretch">
-            <Button
-              type="button"
-              variant="outline"
-              disabled={pending}
-              onClick={() => setConfirmOpen(false)}
-              className="flex-1 rounded-2xl"
-            >
-              Скасувати
-            </Button>
-            <Button
-              type="button"
-              disabled={pending}
-              onClick={confirmMark}
-              className="flex-1 rounded-2xl bg-[#276749] font-bold text-white hover:bg-[#1f5239]"
-            >
-              {pending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Package className="h-4 w-4" />
-              )}
-              Так, позначити
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmTransferDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        pending={pending}
+        description={
+          <>
+            {labelOps(packageSummary.count)} зникнуть з черги. Спочатку
+            завантажте Excel, якщо ще не зробили.
+          </>
+        }
+        onConfirm={confirmMark}
+      />
 
       <ConfirmDeleteDialog
         open={Boolean(deleteTarget)}

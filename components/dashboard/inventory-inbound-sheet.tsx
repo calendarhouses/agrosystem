@@ -42,7 +42,6 @@ import {
   fuelHeroAmountClass,
   fuelInputClass,
   fuelPrimaryBtnClass,
-  fuelSelectItemClass,
   fuelSelectTriggerClass,
   fuelSheetBodyClass,
   fuelSheetStickyFooterClass,
@@ -61,13 +60,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useSeasonStore } from "@/lib/season-store";
 import { cn } from "@/lib/utils";
 
@@ -114,7 +106,11 @@ export function InventoryInboundSheet({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   presetCategory?: Cat | null;
-  onSuccess?: () => void;
+  onSuccess?: (meta: {
+    category: Cat;
+    itemRefKey: string;
+    flowFilter: "purchase" | "harvest";
+  }) => void;
 }) {
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -131,7 +127,9 @@ export function InventoryInboundSheet({
   const [note, setNote] = useState("");
   const [pendingFiles, setPendingFiles] = useState<PendingAttachment[]>([]);
   const [itemOpen, setItemOpen] = useState(false);
+  const [itemSearch, setItemSearch] = useState("");
   const [fieldOpen, setFieldOpen] = useState(false);
+  const [fieldSearch, setFieldSearch] = useState("");
   const [creatingItem, setCreatingItem] = useState(false);
   const [newName, setNewName] = useState("");
   const [newUnit, setNewUnit] = useState("л");
@@ -151,6 +149,26 @@ export function InventoryInboundSheet({
     if (!category) return [];
     return items.filter((i) => i.category === category);
   }, [items, category]);
+
+  const filteredCategoryItems = useMemo(() => {
+    const q = itemSearch.trim().toLowerCase();
+    if (!q) return categoryItems;
+    return categoryItems.filter(
+      (item) =>
+        item.name.toLowerCase().includes(q) ||
+        item.unit.toLowerCase().includes(q)
+    );
+  }, [categoryItems, itemSearch]);
+
+  const filteredFields = useMemo(() => {
+    const q = fieldSearch.trim().toLowerCase();
+    if (!q) return fields;
+    return fields.filter(
+      (field) =>
+        field.name.toLowerCase().includes(q) ||
+        field.crop.toLowerCase().includes(q)
+    );
+  }, [fields, fieldSearch]);
 
   const categoryCounts = useMemo(() => {
     const counts: Partial<Record<Cat, number>> = {};
@@ -282,6 +300,10 @@ export function InventoryInboundSheet({
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setFormError(null);
+    if (!category) {
+      setFormError("Оберіть категорію");
+      return;
+    }
     if (!itemKey) {
       setFormError("Оберіть товар");
       return;
@@ -299,12 +321,13 @@ export function InventoryInboundSheet({
         "@/lib/realtime-toast-guard"
       );
       suppressLocalInventoryMovesRealtimeToast();
+      const cat = category;
       const res = await createLocalInboundMove({
         itemRefKey: itemKey,
         qty: qtyNum,
         unitPriceUah: priceNum,
-        buyerName: category === "harvest" ? null : supplier.trim() || null,
-        fieldId: category === "harvest" ? fieldId : null,
+        buyerName: cat === "harvest" ? null : supplier.trim() || null,
+        fieldId: cat === "harvest" ? fieldId : null,
         note: note.trim() || null,
         season: activeSeason,
       });
@@ -320,18 +343,20 @@ export function InventoryInboundSheet({
         );
       }
       toast.success(
-        category === "harvest"
+        cat === "harvest"
           ? `Врожай ${qtyNum}${selectedItem?.unit ? ` ${selectedItem.unit}` : ""} на склад`
           : `Прихід ${qtyNum}${selectedItem?.unit ? ` ${selectedItem.unit}` : ""} · ${partyTotal?.toLocaleString("uk-UA")} ₴`
       );
       resetForm();
-      onSuccess?.();
+      onSuccess?.({
+        category: cat,
+        itemRefKey: itemKey,
+        flowFilter: cat === "harvest" ? "harvest" : "purchase",
+      });
       onOpenChange(false);
     });
   }
 
-  const categoryLabel =
-    CATEGORIES.find((c) => c.id === category)?.label ?? null;
   const isHarvest = category === "harvest";
 
   return (
@@ -369,48 +394,66 @@ export function InventoryInboundSheet({
               </div>
             ) : (
               <>
-                <section className="space-y-2">
-                  <p className={fuelFieldLabelClass}>Категорія</p>
-                  <Select
-                    items={CATEGORIES.map((c) => ({
-                      value: c.id,
-                      label: c.label,
-                    }))}
-                    value={category}
-                    onValueChange={(v) => {
-                      if (typeof v !== "string" || !v) return;
-                      setCategory(v as Cat);
-                      setItemKey(null);
-                      setSupplier("");
-                      setFormError(null);
-                      if (v === "harvest") {
-                        setNewUnit((u) => (u === "л" || !u ? "т" : u));
-                      }
-                    }}
-                  >
-                    <SelectTrigger className={fuelSelectTriggerClass}>
-                      <SelectValue placeholder="Оберіть категорію…">
-                        {categoryLabel}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent sheetOnMobile={false}
-                      align="start"
-                      className="z-[230] rounded-2xl border border-zinc-200 bg-white p-1.5 text-zinc-900 shadow-xl"
-                    >
-                      {CATEGORIES.map((cat) => (
-                        <SelectItem
+                <section className="space-y-2.5">
+                  <div>
+                    <p className={fuelFieldLabelClass}>Категорія</p>
+                    <p className="mt-0.5 text-xs text-zinc-400">
+                      Оберіть тип матеріалу
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    {CATEGORIES.map((cat) => {
+                      const count = categoryCounts[cat.id] ?? 0;
+                      const Icon = cat.icon;
+                      const active = category === cat.id;
+                      return (
+                        <button
                           key={cat.id}
-                          value={cat.id}
-                          className={fuelSelectItemClass}
+                          type="button"
+                          onClick={() => {
+                            setCategory(cat.id);
+                            setItemKey(null);
+                            setSupplier("");
+                            setFormError(null);
+                            if (cat.id === "harvest") {
+                              setNewUnit((u) => (u === "л" || !u ? "т" : u));
+                            }
+                          }}
+                          className={cn(
+                            "flex items-center gap-3 rounded-2xl px-3 py-3.5 text-left transition-all",
+                            active
+                              ? "bg-[#276749] text-white shadow-[0_12px_28px_-14px_rgba(39,103,73,0.65)]"
+                              : "bg-white text-zinc-800 shadow-sm ring-1 ring-[#E5DFD3]/90 hover:ring-[#276749]/30",
+                            cat.id === "harvest" && "col-span-2"
+                          )}
                         >
-                          {cat.label}
-                          <span className="ml-2 text-xs text-zinc-400">
-                            {categoryCounts[cat.id] ?? 0}
+                          <span
+                            className={cn(
+                              "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
+                              active
+                                ? "bg-white/15"
+                                : "bg-[#276749]/10 text-[#276749]"
+                            )}
+                          >
+                            <Icon className="h-4 w-4" />
                           </span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                          <span className="min-w-0">
+                            <span className="block text-sm font-bold leading-tight">
+                              {cat.label}
+                            </span>
+                            <span
+                              className={cn(
+                                "mt-0.5 block text-[11px] font-medium tabular-nums",
+                                active ? "text-white/70" : "text-zinc-400"
+                              )}
+                            >
+                              {count} поз.
+                            </span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </section>
 
                 <section className="space-y-2">
@@ -457,7 +500,13 @@ export function InventoryInboundSheet({
                       </div>
                     </div>
                   ) : (
-                    <Popover open={itemOpen} onOpenChange={setItemOpen}>
+                    <Popover
+                      open={itemOpen}
+                      onOpenChange={(open) => {
+                        setItemOpen(open);
+                        if (!open) setItemSearch("");
+                      }}
+                    >
                       <PopoverTrigger
                         disabled={!category}
                         className={comboboxTriggerClass}
@@ -480,15 +529,17 @@ export function InventoryInboundSheet({
                         sideOffset={6}
                         className="w-[min(calc(100vw-2.5rem),22rem)] rounded-2xl border border-zinc-200 bg-white p-0 text-zinc-900 shadow-xl"
                       >
-                        <Command className="rounded-2xl bg-white">
+                        <Command className="rounded-2xl bg-white" shouldFilter={false}>
                           <CommandInput
                             placeholder="Пошук товару…"
+                            value={itemSearch}
+                            onValueChange={setItemSearch}
                             className="h-11 text-sm"
                           />
                           <CommandList className="max-h-64 bg-white">
                             <CommandEmpty>Нічого не знайдено</CommandEmpty>
                             <CommandGroup>
-                              {categoryItems.map((item) => (
+                              {filteredCategoryItems.map((item) => (
                                 <CommandItem
                                   key={item.basRefKey}
                                   value={`${item.name} ${item.unit}`}
@@ -542,7 +593,13 @@ export function InventoryInboundSheet({
                 {isHarvest ? (
                   <section className="space-y-2">
                     <p className={fuelFieldLabelClass}>Поле (звідки зібрано)</p>
-                    <Popover open={fieldOpen} onOpenChange={setFieldOpen}>
+                    <Popover
+                      open={fieldOpen}
+                      onOpenChange={(open) => {
+                        setFieldOpen(open);
+                        if (!open) setFieldSearch("");
+                      }}
+                    >
                       <PopoverTrigger className={comboboxTriggerClass}>
                         <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900">
                           {selectedField ? (
@@ -560,18 +617,24 @@ export function InventoryInboundSheet({
                         sideOffset={6}
                         className="w-[min(calc(100vw-2.5rem),22rem)] rounded-2xl border border-zinc-200 bg-white p-0 shadow-xl"
                       >
-                        <Command className="rounded-2xl bg-white">
-                          <CommandInput placeholder="Пошук поля…" />
+                        <Command className="rounded-2xl bg-white" shouldFilter={false}>
+                          <CommandInput
+                            placeholder="Пошук поля…"
+                            value={fieldSearch}
+                            onValueChange={setFieldSearch}
+                            className="h-11 text-sm"
+                          />
                           <CommandList className="max-h-64 bg-white">
                             <CommandEmpty>Немає полів</CommandEmpty>
                             <CommandGroup>
-                              {fields.map((field) => (
+                              {filteredFields.map((field) => (
                                 <CommandItem
                                   key={field.id}
-                                  value={`${field.name} ${field.crop}`}
+                                  value={field.id}
                                   onSelect={() => {
                                     setFieldId(field.id);
                                     setFieldOpen(false);
+                                    setFieldSearch("");
                                   }}
                                   className="cursor-pointer rounded-xl px-3 py-2.5 data-[selected=true]:bg-zinc-100 data-[selected=true]:text-zinc-900"
                                 >
@@ -653,7 +716,7 @@ export function InventoryInboundSheet({
                       <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900">
                         {supplier || (
                           <span className="font-normal text-zinc-400">
-                            Оберіть або впишіть…
+                            Оберіть…
                           </span>
                         )}
                       </span>

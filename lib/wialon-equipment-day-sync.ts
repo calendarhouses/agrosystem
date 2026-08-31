@@ -485,13 +485,24 @@ export async function sumFleetFuelFilledForPeriod(
 
   const deliveryWialonIds = new Set<number>();
   const deliveryEquipmentIds = new Set<string>();
+  const eqNameByWid = new Map<number, string>();
   for (const row of eqRes.data ?? []) {
     const wid = Number(row.wialon_id);
     const nm = String(row.name ?? "").trim();
+    if (Number.isFinite(wid) && wid > 0 && nm) eqNameByWid.set(wid, nm);
     if (!isFuelDeliveryUnit(nm)) continue;
     if (Number.isFinite(wid) && wid > 0) deliveryWialonIds.add(wid);
     if (row.id) deliveryEquipmentIds.add(String(row.id));
   }
+
+  const dataWialonIds = [
+    ...new Set(
+      (data ?? [])
+        .map((row) => Number(row.wialon_unit_id))
+        .filter((id) => Number.isFinite(id) && id > 0)
+    ),
+  ];
+  const displayNames = await resolveWialonUnitDisplayNames(dataWialonIds);
 
   const byUnit = new Map<number, number>();
   const dutUnitIds = new Set<number>();
@@ -502,19 +513,30 @@ export async function sumFleetFuelFilledForPeriod(
     const eid = row.equipment_id != null ? String(row.equipment_id) : null;
     if (deliveryWialonIds.has(wid)) continue;
     if (eid && deliveryEquipmentIds.has(eid)) continue;
+
+    const name = displayNames.get(wid) ?? eqNameByWid.get(wid) ?? "";
+    if (isFuelDeliveryUnit(name)) continue;
+
+    const tankVol = resolveFuelTankVolumeLiters(name);
+    const maxFill = tankVol != null ? tankVol * 1.15 : 1_200;
+    if (filled > maxFill) continue;
+
     byUnit.set(wid, (byUnit.get(wid) ?? 0) + filled);
     if (row.has_fuel_sensor === true) dutUnitIds.add(wid);
   }
 
-  const displayNames = await resolveWialonUnitDisplayNames([...byUnit.keys()]);
+  const rowDisplayNames = await resolveWialonUnitDisplayNames([...byUnit.keys()]);
 
   const rows: FleetFuelFilledBreakdownRow[] = [...byUnit.entries()]
     .map(([wialonUnitId, liters]) => ({
       wialonUnitId,
       equipmentName:
-        displayNames.get(wialonUnitId) ?? `Wialon #${wialonUnitId}`,
+        rowDisplayNames.get(wialonUnitId) ??
+        eqNameByWid.get(wialonUnitId) ??
+        `Wialon #${wialonUnitId}`,
       liters: Math.round(liters * 10) / 10,
     }))
+    .filter((row) => !isFuelDeliveryUnit(row.equipmentName))
     .sort((a, b) => b.liters - a.liters);
 
   const liters = Math.round(

@@ -11,6 +11,7 @@ import {
 import { resolveWialonUnitDisplayNames } from "@/lib/wialon-unit-names";
 import { sumFleetFuelFilledForPeriod } from "@/lib/wialon-equipment-day-sync";
 import { kyivDayBoundsUnix } from "@/lib/kyiv-date";
+import { isFuelDeliveryUnit } from "@/lib/equipment-fuel-tanks";
 
 export type RefuelBreakdownRow = {
   equipmentName: string;
@@ -176,10 +177,14 @@ export async function sumOutboundRefueledForPeriod(
   ) {
     try {
       const live = await getWialonRefuelings(fromUnix, toUnix);
-      wialonLiters = live.reduce((acc, e) => acc + (e.volume > 0 ? e.volume : 0), 0);
+      wialonLiters = live.reduce((acc, e) => {
+        if (e.volume <= 0 || isFuelDeliveryUnit(e.equipmentName)) return acc;
+        return acc + e.volume;
+      }, 0);
       wialonLiters = Math.round(wialonLiters * 10) / 10;
       for (const event of live) {
         if (event.volume <= 0) continue;
+        if (isFuelDeliveryUnit(event.equipmentName)) continue;
         bump(
           `w:${event.unitId}`,
           event.equipmentName,
@@ -196,6 +201,7 @@ export async function sumOutboundRefueledForPeriod(
     }
   } else {
     for (const row of dbFilled.rows) {
+      if (isFuelDeliveryUnit(row.equipmentName)) continue;
       bump(`w:${row.wialonUnitId}`, row.equipmentName, row.wialonUnitId, row.liters, "wialon");
     }
   }
@@ -215,17 +221,20 @@ export async function sumOutboundRefueledForPeriod(
     if (tx.wialonUnitId != null && dbFilled.dutUnitIds.has(tx.wialonUnitId)) {
       continue;
     }
-    manualOnlyLiters += tx.amountLiters;
     const name =
       (tx.wialonUnitId != null ? displayNames.get(tx.wialonUnitId) : null) ||
       tx.operatorName ||
       (tx.wialonUnitId != null ? `Wialon #${tx.wialonUnitId}` : "Техніка");
+    if (isFuelDeliveryUnit(name)) continue;
+    manualOnlyLiters += tx.amountLiters;
     const key =
       tx.wialonUnitId != null ? `m:${tx.wialonUnitId}` : `m:${name}:${i}`;
     bump(key, name, tx.wialonUnitId, tx.amountLiters, "manual");
   }
 
-  const liters = Math.round((wialonLiters + manualOnlyLiters) * 10) / 10;
+  const liters = Math.round(
+    [...byKey.values()].reduce((acc, row) => acc + row.liters, 0) * 10
+  ) / 10;
   const rows = [...byKey.values()].sort((a, b) => b.liters - a.liters);
 
   return {

@@ -87,6 +87,10 @@ import { FieldPassportQuickFix } from "@/components/dashboard/field-passport-qui
 import { FieldTechHistoryPanel } from "@/components/dashboard/field-tech-history-panel";
 import { SmartWeatherAlert } from "@/components/dashboard/smart-weather-alert";
 import { FIELDS_MOBILE_DRAWER_SIZE } from "@/components/dashboard/fields-glass-panel";
+
+/** Вкладені шторки в мобільних деталях поля — вище за батьківську (z-[260]). */
+const FIELD_NESTED_DRAWER_BACKDROP_Z = "z-[269]";
+const FIELD_NESTED_DRAWER_CONTENT_Z = "z-[270]";
 import { OperationClosePanel } from "@/components/dashboard/operation-close-modal";
 import type { CloseableOperation } from "@/components/dashboard/operation-close-modal";
 import {
@@ -1489,8 +1493,18 @@ export function FieldDetailSheet({
   useEffect(() => {
     if (!open) return;
     setHistorySeasonYear(operationSeasonYear);
-    setPeriod("Сезон");
-  }, [open, fieldKey, farmFieldId]); // eslint-disable-line react-hooks/exhaustive-deps -- лише при відкритті поля
+    if (embeddedInMobileDrawer && initialTab === "tech") {
+      applyHistoryPeriod("Сьогодні");
+    } else {
+      setPeriod("Сезон");
+    }
+  }, [open, fieldKey, farmFieldId, embeddedInMobileDrawer, initialTab]); // eslint-disable-line react-hooks/exhaustive-deps -- лише при відкритті поля
+
+  useEffect(() => {
+    if (embeddedInMobileDrawer && activeTab === "tech") {
+      applyHistoryPeriod("Сьогодні");
+    }
+  }, [activeTab, embeddedInMobileDrawer]);
 
   const resolvedFieldKey =
     fieldKey?.trim() || (field ? `map:${field.id}` : null);
@@ -2642,7 +2656,7 @@ export function FieldDetailSheet({
           <NonModalDrawerBackdrop
             open={planOpen}
             onClose={closePlanForm}
-            className="z-[159]"
+            className={FIELD_NESTED_DRAWER_BACKDROP_Z}
           />
           <Drawer
             open={planOpen}
@@ -2658,7 +2672,8 @@ export function FieldDetailSheet({
               showOverlay={false}
               className={cn(
                 FIELDS_MOBILE_DRAWER_SIZE,
-                "z-[160] flex flex-col border-[#E5DFD3]/90 bg-[#F4F1EA] pb-3"
+                FIELD_NESTED_DRAWER_CONTENT_Z,
+                "flex flex-col border-[#E5DFD3]/90 bg-[#F4F1EA] pb-3"
               )}
             >
               <DrawerTitle className="sr-only">
@@ -2678,7 +2693,7 @@ export function FieldDetailSheet({
           <NonModalDrawerBackdrop
             open={quickIssueOpen}
             onClose={closeQuickIssueForm}
-            className="z-[159]"
+            className={FIELD_NESTED_DRAWER_BACKDROP_Z}
           />
           <Drawer
             open={quickIssueOpen}
@@ -2694,7 +2709,8 @@ export function FieldDetailSheet({
               showOverlay={false}
               className={cn(
                 FIELDS_MOBILE_DRAWER_SIZE,
-                "z-[160] flex flex-col border-[#E5DFD3]/90 bg-[#F4F1EA] pb-3"
+                FIELD_NESTED_DRAWER_CONTENT_Z,
+                "flex flex-col border-[#E5DFD3]/90 bg-[#F4F1EA] pb-3"
               )}
             >
               <DrawerTitle className="sr-only">Списати ТМЦ</DrawerTitle>

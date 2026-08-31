@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   ArrowRightLeft,
@@ -165,6 +165,48 @@ function formatPartyCost(liters: number, price: number): string {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   });
+}
+
+type FuelSuccessKind = "purchase" | "transfer" | "refuel";
+
+function FuelOperationSuccess({
+  title,
+  accent,
+  onDone,
+}: {
+  title: string;
+  accent: "emerald" | "sky";
+  onDone: () => void;
+}) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 py-10 text-center">
+        <div
+          className={cn(
+            "flex h-16 w-16 items-center justify-center rounded-full ring-1",
+            accent === "sky"
+              ? "bg-sky-500/10 text-sky-600 ring-sky-500/20"
+              : "bg-emerald-500/10 text-emerald-600 ring-emerald-500/20"
+          )}
+        >
+          <CheckCircle2 className="h-8 w-8" strokeWidth={1.8} />
+        </div>
+        <p className="text-base font-semibold text-zinc-900">{title}</p>
+      </div>
+      <FuelSheetFooter>
+        <Button
+          type="button"
+          onClick={onDone}
+          className={cn(
+            fuelPrimaryBtnClass,
+            accent === "sky" && "bg-sky-700 hover:bg-sky-800 shadow-sky-700/30"
+          )}
+        >
+          Готово
+        </Button>
+      </FuelSheetFooter>
+    </div>
+  );
 }
 
 const MAX_TRACTOR_TANK_LITERS = 1500;
@@ -425,8 +467,9 @@ export function FuelActionDialogs({
   const [unitId, setUnitId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  /** Успіх закупівлі: локально + черга BAS AGRO (без POST у BAS) */
-  const [purchaseSuccess, setPurchaseSuccess] = useState<string | null>(null);
+  const [successScreen, setSuccessScreen] = useState<FuelSuccessKind | null>(
+    null
+  );
   const [pendingFiles, setPendingFiles] = useState<PendingAttachment[]>([]);
   const [transferPendingFiles, setTransferPendingFiles] = useState<
     PendingAttachment[]
@@ -527,7 +570,6 @@ export function FuelActionDialogs({
   useEffect(() => {
     if (!isReceiveOpen) return;
     setError(null);
-    setPurchaseSuccess(null);
     setPendingFiles([]);
     if (editTransaction?.type === "inbound") {
       setAmount(String(editTransaction.amountLiters));
@@ -626,7 +668,7 @@ export function FuelActionDialogs({
   function closeReceive(open: boolean) {
     onReceiveOpenChange(open);
     if (!open) {
-      setPurchaseSuccess(null);
+      setSuccessScreen(null);
       setPendingFiles([]);
       onEditTransactionChange?.(null);
     }
@@ -634,34 +676,16 @@ export function FuelActionDialogs({
   function closeTransfer(open: boolean) {
     onTransferOpenChange(open);
     if (!open) {
+      setSuccessScreen(null);
       setTransferPendingFiles([]);
       onEditTransactionChange?.(null);
     }
   }
   function closeRefuel(open: boolean) {
     onRefuelOpenChange(open);
-    if (!open) onEditTransactionChange?.(null);
-  }
-
-  async function runSubmit(
-    event: FormEvent,
-    action: () => Promise<void>,
-    close: () => void
-  ) {
-    event.preventDefault();
-    setSubmitting(true);
-    setError(null);
-    try {
-      await action();
-      close();
-      setAmount("");
-      setPricePerLiter("");
+    if (!open) {
+      setSuccessScreen(null);
       onEditTransactionChange?.(null);
-      await onSuccess();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Помилка збереження");
-    } finally {
-      setSubmitting(false);
     }
   }
 
@@ -684,31 +708,12 @@ export function FuelActionDialogs({
             description="Прихід на базу · видно залишки складів"
           />
 
-          {purchaseSuccess ? (
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-              <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 py-10 text-center">
-                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 ring-1 ring-emerald-500/20">
-                  <CheckCircle2 className="h-8 w-8" strokeWidth={1.8} />
-                </div>
-                <div className="space-y-1.5">
-                  <p className="text-base font-semibold text-zinc-900">
-                    Партію збережено
-                  </p>
-                  <p className="max-w-xs text-sm leading-relaxed text-zinc-500">
-                    {purchaseSuccess}
-                  </p>
-                </div>
-              </div>
-              <FuelSheetFooter>
-                <Button
-                  type="button"
-                  onClick={() => closeReceive(false)}
-                  className={fuelPrimaryBtnClass}
-                >
-                  Готово
-                </Button>
-              </FuelSheetFooter>
-            </div>
+          {successScreen === "purchase" ? (
+            <FuelOperationSuccess
+              title="Партію збережено"
+              accent="emerald"
+              onDone={() => closeReceive(false)}
+            />
           ) : (
           <form
             className="flex min-h-0 flex-1 flex-col overflow-hidden"
@@ -754,10 +759,7 @@ export function FuelActionDialogs({
                   setPricePerLiter("");
                   onEditTransactionChange?.(null);
                   await onSuccess();
-                  setPurchaseSuccess(
-                    result.message ??
-                      "Партію збережено"
-                    );
+                  setSuccessScreen("purchase");
                 } catch (err) {
                   setError(
                     err instanceof Error ? err.message : "Помилка збереження"
@@ -874,12 +876,21 @@ export function FuelActionDialogs({
             description="Цистерни → бензовоз · видно залишки"
           />
 
+          {successScreen === "transfer" ? (
+            <FuelOperationSuccess
+              title="Переміщення збережено"
+              accent="sky"
+              onDone={() => closeTransfer(false)}
+            />
+          ) : (
           <form
             className="flex min-h-0 flex-1 flex-col overflow-hidden"
-            onSubmit={(event) =>
-              void runSubmit(
-                event,
-                async () => {
+            onSubmit={(event) => {
+              event.preventDefault();
+              void (async () => {
+                setSubmitting(true);
+                setError(null);
+                try {
                   const liters = parseAmount(amount);
                   if (liters == null) throw new Error("Вкажіть кількість літрів");
                   if (!fromStorage || !toStorage) {
@@ -915,10 +926,19 @@ export function FuelActionDialogs({
                     );
                     setTransferPendingFiles([]);
                   }
-                },
-                () => closeTransfer(false)
-              )
-            }
+                  setAmount("");
+                  onEditTransactionChange?.(null);
+                  await onSuccess();
+                  setSuccessScreen("transfer");
+                } catch (err) {
+                  setError(
+                    err instanceof Error ? err.message : "Помилка збереження"
+                  );
+                } finally {
+                  setSubmitting(false);
+                }
+              })();
+            }}
           >
             <div className={cn(fuelSheetBodyClass, "space-y-6")} data-vaul-no-drag="" data-allow-pan="true">
               <StorageSelect
@@ -989,6 +1009,7 @@ export function FuelActionDialogs({
               </Button>
             </FuelSheetFooter>
           </form>
+          )}
       </FuelPanelShell>
 
       {/* Заправка техніки */}
@@ -1008,12 +1029,21 @@ export function FuelActionDialogs({
             description="Списання з бензовоза · видно залишки"
           />
 
+          {successScreen === "refuel" ? (
+            <FuelOperationSuccess
+              title="Заправку збережено"
+              accent="emerald"
+              onDone={() => closeRefuel(false)}
+            />
+          ) : (
           <form
             className="flex min-h-0 flex-1 flex-col overflow-hidden"
-            onSubmit={(event) =>
-              void runSubmit(
-                event,
-                async () => {
+            onSubmit={(event) => {
+              event.preventDefault();
+              void (async () => {
+                setSubmitting(true);
+                setError(null);
+                try {
                   const liters = parseAmount(amount);
                   if (liters == null) throw new Error("Вкажіть кількість літрів");
                   if (!fromStorage) throw new Error("Оберіть ємність-донор");
@@ -1060,10 +1090,19 @@ export function FuelActionDialogs({
                           : null,
                     });
                   }
-                },
-                () => closeRefuel(false)
-              )
-            }
+                  setAmount("");
+                  onEditTransactionChange?.(null);
+                  await onSuccess();
+                  setSuccessScreen("refuel");
+                } catch (err) {
+                  setError(
+                    err instanceof Error ? err.message : "Помилка збереження"
+                  );
+                } finally {
+                  setSubmitting(false);
+                }
+              })();
+            }}
           >
             <div className={cn(fuelSheetBodyClass, "space-y-6")} data-vaul-no-drag="" data-allow-pan="true">
               <StorageSelect
@@ -1246,6 +1285,7 @@ export function FuelActionDialogs({
               </Button>
             </FuelSheetFooter>
           </form>
+          )}
       </FuelPanelShell>
     </>
   );

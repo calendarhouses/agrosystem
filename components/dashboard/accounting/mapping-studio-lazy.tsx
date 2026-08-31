@@ -166,6 +166,8 @@ export function MappingStudioLazy({
   );
   const [values, setValues] = useState<Record<string, string>>({});
   const [saved, setSaved] = useState<Record<string, string | null>>({});
+  const [rowsForCatalog, setRowsForCatalog] =
+    useState<MappingCatalogKind | null>(null);
   const autoAppliedFor = useRef<string | null>(null);
   const [catalogStats, setCatalogStats] = useState<
     Partial<Record<MappingCatalogKind, CatalogStat>>
@@ -207,6 +209,7 @@ export function MappingStudioLazy({
   useEffect(() => {
     let cancelled = false;
     const gen = ++loadGen.current;
+    setRowsForCatalog(null);
     setRowsLoading(true);
     setBasLoading(false);
     setLoadError(null);
@@ -222,6 +225,7 @@ export function MappingStudioLazy({
       if (!res.ok) {
         setLoadError(res.error);
         setRows([]);
+        setRowsForCatalog(null);
         return;
       }
       setRows(res.data.rows);
@@ -229,6 +233,7 @@ export function MappingStudioLazy({
       setSaved(
         Object.fromEntries(res.data.rows.map((r) => [r.id, r.basRefKey]))
       );
+      setRowsForCatalog(catalog);
     });
 
     return () => {
@@ -237,7 +242,7 @@ export function MappingStudioLazy({
   }, [catalog]);
 
   useEffect(() => {
-    if (rowsLoading) return;
+    if (rowsLoading || rowsForCatalog !== catalog) return;
     const linked = rows.filter((row) => {
       const v = values[row.id] ?? row.basRefKey ?? UNMAPPED_VALUE;
       return v !== UNMAPPED_VALUE;
@@ -246,7 +251,7 @@ export function MappingStudioLazy({
       ...prev,
       [catalog]: { linked, total: rows.length },
     }));
-  }, [catalog, rows, rowsLoading, values]);
+  }, [catalog, rows, rowsLoading, values, rowsForCatalog]);
 
   // 2) BAS — лише після debounce (швидке клікання не бʼє OData кілька разів)
   useEffect(() => {
@@ -412,16 +417,21 @@ export function MappingStudioLazy({
           const active = catalog === c.id;
           const stat = catalogStats[c.id];
           const countLabel =
-            stat != null
-              ? `${stat.linked}/${stat.total}`
-              : statsLoading
-                ? "…"
-                : "—";
+            active && rowsLoading
+              ? "…"
+              : stat != null
+                ? `${stat.linked}/${stat.total}`
+                : statsLoading
+                  ? "…"
+                  : "—";
           return (
             <button
               key={c.id}
               type="button"
-              onClick={() => setCatalog(c.id)}
+              onClick={() => {
+                if (c.id === catalog || pending) return;
+                setCatalog(c.id);
+              }}
               disabled={pending}
               className={cn(
                 "rounded-2xl border px-3 py-3 text-left transition sm:px-4 sm:py-3.5",

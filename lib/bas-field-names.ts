@@ -53,12 +53,17 @@ const TRAILING_NUMBER_RE = /\s+(?<!№\s)\d+(?:[.,]\d+)?\s*$/u;
 export function cleanFieldName(raw: string): string {
   if (!raw) return "";
 
+  // «Поле 14», «Поле №3» — номер поля, не площа в кінці назви.
+  const FIELD_INDEX_ONLY_RE =
+    /^поле(?:\s*№?\s*\d+(?:[.,]\d+)?)?\s*$/iu;
+
   let value = raw.replace(CADASTRAL_RE, " ").replace(AREA_TOKEN_RE, " ");
 
-  // Хвостове число зрізаємо тільки якщо в назві лишається щось змістовне.
-  const withoutTail = value.replace(TRAILING_NUMBER_RE, "");
-  if (/[\p{L}]/u.test(withoutTail)) {
-    value = withoutTail;
+  if (!FIELD_INDEX_ONLY_RE.test(value.replace(/\s+/gu, " ").trim())) {
+    const withoutTail = value.replace(TRAILING_NUMBER_RE, "");
+    if (/[\p{L}]/u.test(withoutTail)) {
+      value = withoutTail;
+    }
   }
 
   return value

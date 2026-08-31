@@ -847,6 +847,8 @@ export function FieldsView() {
     }
 
     setSheetOpen(false);
+    setMobileListExpanded(false);
+    setMobileDrawerVisible(false);
     setEditingFieldId(item.farmField?.id ?? item.id);
     setSelectedId(item.id);
 
@@ -1107,12 +1109,18 @@ export function FieldsView() {
         visible: true as const,
         label: editingFieldId ? "Зберегти контур" : "Зберегти поле",
         disabled: busy,
-        cancelVisible: Boolean(editingFieldId),
+        cancelVisible: true,
         onSave: handleOpenCreatePassport,
         onCancel: () => {
+          const wasEditing = Boolean(editingFieldId);
           fieldsMapRef.current?.clearDraw();
           setEditingFieldId(null);
-          flashStatus("Редагування скасовано");
+          if (!wasEditing) {
+            setDrawnContours(EMPTY_DRAWN);
+          }
+          flashStatus(
+            wasEditing ? "Редагування скасовано" : "Малювання скасовано"
+          );
         },
       }
     : undefined;
@@ -1151,7 +1159,12 @@ export function FieldsView() {
           geometryEditMode={Boolean(editingFieldId)}
           drawSave={drawSaveActions}
           overlayActive={
-            sheetOpen || (mobileListExpanded && mobileDrawerVisible)
+            (sheetOpen && !canSaveContour) ||
+            (isMobile &&
+              mobileListExpanded &&
+              mobileDrawerVisible &&
+              !canSaveContour &&
+              !mapToolActive)
           }
           onRequestDeleteSelection={requestDeleteFromToolbar}
           onEscape={handleEscape}

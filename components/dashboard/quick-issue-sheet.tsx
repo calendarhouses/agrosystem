@@ -95,6 +95,7 @@ const CATEGORIES: {
 
 type QuickIssueSuccessPayload = {
   moveId: string;
+  itemRefKey: string;
   fieldId: string;
   fieldName: string;
   itemTitle: string;
@@ -134,7 +135,9 @@ export function QuickIssueSheet({
   const [fieldId, setFieldId] = useState<string | null>(null);
   const [qty, setQty] = useState("");
   const [itemOpen, setItemOpen] = useState(false);
+  const [itemSearch, setItemSearch] = useState("");
   const [fieldOpen, setFieldOpen] = useState(false);
+  const [fieldSearch, setFieldSearch] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [pendingFiles, setPendingFiles] = useState<PendingAttachment[]>([]);
   const [pending, startTransition] = useTransition();
@@ -185,6 +188,26 @@ export function QuickIssueSheet({
     if (!category) return [];
     return items.filter((i) => i.category === category);
   }, [items, category]);
+
+  const filteredItems = useMemo(() => {
+    const q = itemSearch.trim().toLowerCase();
+    if (!q) return categoryItems;
+    return categoryItems.filter(
+      (item) =>
+        item.name.toLowerCase().includes(q) ||
+        item.unit.toLowerCase().includes(q)
+    );
+  }, [categoryItems, itemSearch]);
+
+  const filteredFields = useMemo(() => {
+    const q = fieldSearch.trim().toLowerCase();
+    if (!q) return fields;
+    return fields.filter(
+      (field) =>
+        field.name.toLowerCase().includes(q) ||
+        (field.crop ?? "").toLowerCase().includes(q)
+    );
+  }, [fields, fieldSearch]);
 
   useEffect(() => {
     if (!open) return;
@@ -327,6 +350,7 @@ export function QuickIssueSheet({
       );
       onSuccess?.({
         moveId: res.id,
+        itemRefKey: itemKey,
         fieldId: fieldId ?? "",
         fieldName: selectedField?.name ?? (needsField ? "поле" : "склад"),
         itemTitle: selectedItem?.name ?? "ТМЦ",
@@ -474,7 +498,13 @@ export function QuickIssueSheet({
                   Позиція зі складського залишку
                 </p>
               </div>
-              <Popover open={itemOpen} onOpenChange={setItemOpen}>
+              <Popover
+                open={itemOpen}
+                onOpenChange={(open) => {
+                  setItemOpen(open);
+                  if (!open) setItemSearch("");
+                }}
+              >
                 <PopoverTrigger
                   disabled={!category}
                   className={cn(
@@ -498,20 +528,22 @@ export function QuickIssueSheet({
                   sideOffset={6}
                   className="w-[min(calc(100vw-2.5rem),22rem)] rounded-2xl border border-zinc-200 bg-white p-0 text-zinc-900 shadow-xl"
                 >
-                  <Command className="rounded-2xl bg-white">
+                  <Command className="rounded-2xl bg-white" shouldFilter={false}>
                     <CommandInput
                       placeholder="Пошук товару…"
+                      value={itemSearch}
+                      onValueChange={setItemSearch}
                       className="h-11 text-sm"
                     />
                     <CommandList className="max-h-64 bg-white">
                       <CommandEmpty>Нічого не знайдено</CommandEmpty>
                       <CommandGroup>
-                        {categoryItems.map((item) => {
+                        {filteredItems.map((item) => {
                           const outOfStock = item.virtualBalance <= 0;
                           return (
                             <CommandItem
                               key={item.basRefKey}
-                              value={`${item.name} ${item.unit}`}
+                              value={item.basRefKey}
                               disabled={outOfStock}
                               data-checked={
                                 itemKey === item.basRefKey || undefined
@@ -519,6 +551,7 @@ export function QuickIssueSheet({
                               onSelect={() => {
                                 setItemKey(item.basRefKey);
                                 setItemOpen(false);
+                                setItemSearch("");
                                 setFormError(null);
                               }}
                               className="cursor-pointer gap-3 rounded-xl px-3 py-2.5 data-[selected=true]:bg-zinc-100 data-[selected=true]:text-zinc-900"
@@ -581,7 +614,13 @@ export function QuickIssueSheet({
                     Куди віднести списання
                   </p>
                 </div>
-                <Popover open={fieldOpen} onOpenChange={setFieldOpen}>
+                <Popover
+                  open={fieldOpen}
+                  onOpenChange={(open) => {
+                    setFieldOpen(open);
+                    if (!open) setFieldSearch("");
+                  }}
+                >
                   <PopoverTrigger
                     className={cn(
                       comboboxTriggerClass,
@@ -604,22 +643,25 @@ export function QuickIssueSheet({
                     sideOffset={6}
                     className="w-[min(calc(100vw-2.5rem),22rem)] rounded-2xl border border-zinc-200 bg-white p-0 text-zinc-900 shadow-xl"
                   >
-                    <Command className="rounded-2xl bg-white">
+                    <Command className="rounded-2xl bg-white" shouldFilter={false}>
                       <CommandInput
                         placeholder="Пошук поля…"
+                        value={fieldSearch}
+                        onValueChange={setFieldSearch}
                         className="h-11 text-sm"
                       />
                       <CommandList className="max-h-64 bg-white">
                         <CommandEmpty>Полів не знайдено</CommandEmpty>
                         <CommandGroup>
-                          {fields.map((field) => (
+                          {filteredFields.map((field) => (
                             <CommandItem
                               key={field.id}
-                              value={`${field.name} ${field.crop}`}
+                              value={field.id}
                               data-checked={fieldId === field.id || undefined}
                               onSelect={() => {
                                 setFieldId(field.id);
                                 setFieldOpen(false);
+                                setFieldSearch("");
                                 setFormError(null);
                               }}
                               className="cursor-pointer gap-3 rounded-xl px-3 py-2.5 data-[selected=true]:bg-zinc-100 data-[selected=true]:text-zinc-900"

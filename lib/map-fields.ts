@@ -72,7 +72,7 @@ export function demoToMapItem(field: Field): MapFieldItem {
 export function farmToMapItem(field: FarmField): MapFieldItem {
   return {
     id: field.id,
-    name: cleanFieldName(field.name) || field.name,
+    name: field.name,
     crop: field.crop,
     areaHa: field.areaHa,
     color: field.color,
@@ -177,7 +177,7 @@ export function buildMapFieldList(
       if (!passport) return base;
       return {
         ...base,
-        name: cleanFieldName(passport.name) || passport.name,
+        name: passport.name,
         crop: passport.crop,
         areaHa: passport.areaHa,
         color: passport.color,
@@ -212,15 +212,14 @@ function compareMapFields(a: MapFieldItem, b: MapFieldItem): number {
 }
 
 function fieldSortKey(name: string): { alpha: string; num: number } {
-  const cleaned = cleanFieldName(name) || name;
-  const num = fieldNumber(cleaned);
-  const alpha = cleaned
+  const num = fieldNumber(name);
+  const alpha = name
     .replace(/№/g, " ")
     .replace(/\d+(?:[.,]\d+)?/g, " ")
     .replace(/\s+/g, " ")
     .trim()
     .toLocaleLowerCase("uk");
-  return { alpha: alpha || cleaned.toLocaleLowerCase("uk"), num };
+  return { alpha: alpha || name.toLocaleLowerCase("uk"), num };
 }
 
 /** Номер з назви «Поле 12» → 12; без номера — в кінець */

@@ -476,6 +476,28 @@ export function InventoryView({
     setQuery("");
   }
 
+  async function handleInventorySuccess(meta?: {
+    category?: InventoryCategory | null;
+    itemRefKey?: string;
+    flowFilter?: FlowFilter | null;
+  }) {
+    await refreshOperational();
+    setMovesRefreshToken((token) => token + 1);
+    router.refresh();
+    if (meta?.flowFilter) {
+      setFlowFilter(meta.flowFilter);
+      setCategory(meta.category ?? null);
+      setQuery("");
+    } else if (meta?.category) {
+      setCategory(meta.category);
+      setFlowFilter(null);
+      setQuery("");
+    }
+    if (meta?.itemRefKey) {
+      setOpenItemId(meta.itemRefKey);
+    }
+  }
+
   const categorySummaries = view?.categories ?? [];
 
   /** Id позицій, що потрапляють у поточний KPI-фільтр (з урахуванням hidden). */
@@ -709,10 +731,11 @@ export function InventoryView({
             if (!open) setPresetIssueKey(null);
           }}
           presetItemRefKey={presetIssueKey}
-          onSuccess={() => {
-            void refreshOperational();
-            setMovesRefreshToken((token) => token + 1);
-            router.refresh();
+          onSuccess={(payload) => {
+            void handleInventorySuccess({
+              category: payload.category,
+              itemRefKey: payload.itemRefKey,
+            });
           }}
         />
 
@@ -720,10 +743,8 @@ export function InventoryView({
           open={inboundOpen}
           onOpenChange={setInboundOpen}
           presetCategory={category}
-          onSuccess={() => {
-            void refreshOperational();
-            setMovesRefreshToken((token) => token + 1);
-            router.refresh();
+          onSuccess={(meta) => {
+            void handleInventorySuccess(meta);
           }}
         />
 
@@ -734,10 +755,8 @@ export function InventoryView({
             if (!open) setPresetSaleKey(null);
           }}
           presetItemRefKey={presetSaleKey}
-          onSuccess={() => {
-            void refreshOperational();
-            setMovesRefreshToken((token) => token + 1);
-            router.refresh();
+          onSuccess={(meta) => {
+            void handleInventorySuccess(meta);
           }}
         />
 
@@ -1866,7 +1885,7 @@ function InventoryItemCard({
               className="h-10 rounded-xl border-zinc-200 bg-zinc-50"
             />
             <p className="text-[11px] text-zinc-400">
-              Якщо порожньо — назва з BAS AGRO
+              Якщо порожньо — показується основна назва
             </p>
           </div>
           <div className="space-y-1.5">
@@ -2049,7 +2068,7 @@ function ItemDocumentsSheet({
   onDeletedLocal: () => void;
   editMove: LocalMoveRow | null;
 }) {
-  const [kindFilter, setKindFilter] = useState<"all" | "in" | "sale">("all");
+  const [kindFilter, setKindFilter] = useState<"all" | "in" | "out">("all");
 
   useEffect(() => {
     setKindFilter("all");
@@ -2154,7 +2173,11 @@ function ItemDocumentsSheet({
   ].sort((a, b) => b.date.localeCompare(a.date));
 
   const filtered = docs.filter((d) => {
-    if (kindFilter === "sale") return d.bucket === "sale";
+    if (kindFilter === "out") {
+      return item.category === "harvest"
+        ? d.bucket === "sale"
+        : d.bucket === "other";
+    }
     if (kindFilter === "in") return d.bucket === "in";
     return true;
   });
@@ -2176,6 +2199,7 @@ function ItemDocumentsSheet({
     .reduce((s, r) => s + r.qty, 0);
 
   const inLabel = item.category === "harvest" ? "Випуск" : "Надходження";
+  const outTabLabel = item.category === "harvest" ? "Продажі" : "Списання";
 
   return (
     <FuelPanelShell open={open} onOpenChange={onOpenChange} title={titleName}>
@@ -2225,7 +2249,7 @@ function ItemDocumentsSheet({
             [
               ["all", "Усі"],
               ["in", inLabel],
-              ["sale", "Продажі"],
+              ["out", outTabLabel],
             ] as const
           ).map(([id, label]) => (
             <button

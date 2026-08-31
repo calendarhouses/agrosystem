@@ -60,6 +60,8 @@ export type DayAnalyticsPayload = {
 const SAMPLE_STEP_SEC = 40;
 const IDLE_MIN_SEC = 2 * 60;
 const IDLE_MAX_SPEED = 2;
+/** Справжня стоянка — майже без зміщення; GPS-дрейф при русі відсікаємо */
+const IDLE_MAX_DISPLACEMENT_KM = 0.15;
 
 /**
  * Детекція зливу (анти-шум Wialon/LLS):
@@ -190,6 +192,63 @@ function sumConditionHours(
   }
   const last = samples[samples.length - 1];
   flush(last.t);
+
+  return Math.round((totalSec / 3600) * 100) / 100;
+}
+
+/**
+ * Холостий хід: запалення + низька швидкість, але лише якщо координати
+ * майже не змінились (інакше повільна робота з «нулями» швидкості GPS = фейк idle).
+ */
+function sumIdleHours(samples: DayAnalyticsSample[]): number {
+  if (samples.length < 2) return 0;
+
+  let totalSec = 0;
+  let runStart: number | null = null;
+  let runStartIdx: number | null = null;
+
+  const flush = (endIdx: number) => {
+    if (runStart == null || runStartIdx == null) return;
+    const endT = samples[endIdx]?.t ?? samples[samples.length - 1]!.t;
+    const dur = endT - runStart;
+    if (dur < IDLE_MIN_SEC) {
+      runStart = null;
+      runStartIdx = null;
+      return;
+    }
+
+    let km = 0;
+    for (let j = runStartIdx + 1; j <= endIdx; j++) {
+      const a = samples[j - 1]!;
+      const b = samples[j]!;
+      km += haversineKm([a.lng, a.lat], [b.lng, b.lat]);
+    }
+    if (km <= IDLE_MAX_DISPLACEMENT_KM) {
+      const hours = dur / 3600;
+      const avgKmh = hours > 0 ? km / hours : 0;
+      // Повільна робота з «нулями» швидкості, але зі зміщенням — не холостий хід.
+      if (avgKmh <= 0.35) totalSec += dur;
+    }
+
+    runStart = null;
+    runStartIdx = null;
+  };
+
+  for (let i = 0; i < samples.length; i++) {
+    const s = samples[i]!;
+    const idle =
+      s.speed <= IDLE_MAX_SPEED &&
+      s.ignition === true;
+    if (idle) {
+      if (runStart == null) {
+        runStart = s.t;
+        runStartIdx = i;
+      }
+    } else {
+      flush(Math.max(0, i - 1));
+    }
+  }
+  flush(samples.length - 1);
 
   return Math.round((totalSec / 3600) * 100) / 100;
 }
@@ -452,17 +511,7 @@ export function buildDayAnalyticsFromSamples(
   );
   const fuelFilled = fuelSeries.filled;
 
-  const hoursIdling = sumConditionHours(
-    samples,
-    (s) => {
-      if (s.speed > IDLE_MAX_SPEED) return false;
-      if (s.ignition === true) return true;
-      if (s.ignition === false) return false;
-      // без ignition: не рахуємо idle (уникаємо фейку)
-      return false;
-    },
-    IDLE_MIN_SEC
-  );
+  const hoursIdling = sumIdleHours(samples);
 
   const workHours = hasIgnitionSensor
     ? sumConditionHours(samples, (s) => s.ignition === true, 60)

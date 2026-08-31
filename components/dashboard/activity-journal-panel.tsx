@@ -310,7 +310,27 @@ export function ActivityJournalPanel({
   const [action, setAction] = useState<string>("all");
   const [entity, setEntity] = useState<string>("all");
   const [actor, setActor] = useState<string>("all");
+  const [draftPeriod, setDraftPeriod] = useState<PeriodFilter>("all");
+  const [draftAction, setDraftAction] = useState<string>("all");
+  const [draftEntity, setDraftEntity] = useState<string>("all");
+  const [draftActor, setDraftActor] = useState<string>("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
+
+  function openFilters() {
+    setDraftPeriod(period);
+    setDraftAction(action);
+    setDraftEntity(entity);
+    setDraftActor(actor);
+    setFiltersOpen(true);
+  }
+
+  function applyFilters() {
+    setPeriod(draftPeriod);
+    setAction(draftAction);
+    setEntity(draftEntity);
+    setActor(draftActor);
+    setFiltersOpen(false);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -489,7 +509,7 @@ export function ActivityJournalPanel({
           <div className="overflow-hidden rounded-2xl border border-[#E5DFD3]/90 bg-white/80 shadow-sm">
             <button
               type="button"
-              onClick={() => setFiltersOpen((v) => !v)}
+              onClick={() => (filtersOpen ? setFiltersOpen(false) : openFilters())}
               aria-expanded={filtersOpen}
               className="flex w-full items-center gap-2.5 px-3.5 py-3 text-left transition hover:bg-[#F4F1EA]/70"
             >
@@ -538,8 +558,8 @@ export function ActivityJournalPanel({
                         {PERIOD_FILTERS.map((p) => (
                           <FilterCard
                             key={p.id}
-                            active={period === p.id}
-                            onClick={() => setPeriod(p.id)}
+                            active={draftPeriod === p.id}
+                            onClick={() => setDraftPeriod(p.id)}
                             label={p.label}
                           />
                         ))}
@@ -552,8 +572,8 @@ export function ActivityJournalPanel({
                       </p>
                       <div className="grid grid-cols-4 gap-1.5">
                         <FilterCard
-                          active={action === "all"}
-                          onClick={() => setAction("all")}
+                          active={draftAction === "all"}
+                          onClick={() => setDraftAction("all")}
                           label="Усі"
                           icon={History}
                           count={rows.length}
@@ -563,8 +583,8 @@ export function ActivityJournalPanel({
                           return (
                             <FilterCard
                               key={key}
-                              active={action === key}
-                              onClick={() => setAction(key)}
+                              active={draftAction === key}
+                              onClick={() => setDraftAction(key)}
                               label={meta.label}
                               icon={meta.icon}
                               count={actionCounts.get(key) ?? 0}
@@ -580,8 +600,8 @@ export function ActivityJournalPanel({
                       </p>
                       <div className="grid grid-cols-4 gap-1.5">
                         <FilterCard
-                          active={entity === "all"}
-                          onClick={() => setEntity("all")}
+                          active={draftEntity === "all"}
+                          onClick={() => setDraftEntity("all")}
                           label="Усі"
                           icon={History}
                         />
@@ -590,8 +610,8 @@ export function ActivityJournalPanel({
                           return (
                             <FilterCard
                               key={key}
-                              active={entity === key}
-                              onClick={() => setEntity(key)}
+                              active={draftEntity === key}
+                              onClick={() => setDraftEntity(key)}
                               label={entityLabel(key)}
                               icon={meta?.icon}
                               count={entityCounts.get(key) ?? 0}
@@ -608,16 +628,16 @@ export function ActivityJournalPanel({
                         </p>
                         <div className="grid grid-cols-4 gap-1.5">
                           <FilterCard
-                            active={actor === "all"}
-                            onClick={() => setActor("all")}
+                            active={draftActor === "all"}
+                            onClick={() => setDraftActor("all")}
                             label="Усі"
                             icon={UserRound}
                           />
                           {actors.map((a) => (
                             <FilterCard
                               key={a.key}
-                              active={actor === a.key}
-                              onClick={() => setActor(a.key)}
+                              active={draftActor === a.key}
+                              onClick={() => setDraftActor(a.key)}
                               label={a.name}
                               icon={UserRound}
                             />
@@ -631,6 +651,10 @@ export function ActivityJournalPanel({
                         type="button"
                         onClick={() => {
                           setQuery("");
+                          setDraftPeriod("all");
+                          setDraftAction("all");
+                          setDraftEntity("all");
+                          setDraftActor("all");
                           setPeriod("all");
                           setAction("all");
                           setEntity("all");
@@ -641,6 +665,14 @@ export function ActivityJournalPanel({
                         Скинути фільтри
                       </button>
                     ) : null}
+
+                    <button
+                      type="button"
+                      onClick={applyFilters}
+                      className="flex h-11 w-full items-center justify-center rounded-xl bg-zinc-900 text-sm font-bold text-white shadow-[0_6px_16px_-10px_rgba(24,24,27,0.55)] transition hover:bg-zinc-800 active:scale-[0.99]"
+                    >
+                      Застосувати
+                    </button>
                   </div>
                 </motion.div>
               ) : null}

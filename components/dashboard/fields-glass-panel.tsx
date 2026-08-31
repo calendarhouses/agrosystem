@@ -650,7 +650,7 @@ export function FieldsGlassPanel({
       {/* Мобільна шторка: mount лише на <768px — інакше vaul portal лізе на ПК */}
       {isMobile ? (
       <div data-fields-mobile-chrome="">
-        {!mobileDetailOpen && !mobileExpanded ? (
+        {!mobileDetailOpen && !mobileExpanded && !editingFieldId ? (
           mobileDrawerVisible ? (
             <motion.button
               type="button"

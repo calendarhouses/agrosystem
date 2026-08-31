@@ -22,14 +22,7 @@ import {
   fuelSheetBodyClass,
 } from "@/components/dashboard/fuel-sheet-chrome";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { ConfirmTransferDialog } from "@/components/ui/confirm-transfer-dialog";
 import { getSeasonRange, toIsoRange } from "@/lib/finance-period";
 import { downloadAccountantPackageExcel } from "@/lib/inventory-excel-export";
 import { useSeasonStore } from "@/lib/season-store";
@@ -300,42 +293,18 @@ export function AccountantExportSheet({
         </div>
       </FuelPanelShell>
 
-      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent
-          presentation="center"
-          className="rounded-2xl border border-[#E5DFD3] bg-white sm:max-w-md"
-        >          <DialogHeader>
-            <DialogTitle>Позначити як передані?</DialogTitle>
-            <DialogDescription>
-              {selectedCount} обраних операцій зникнуть з черги. Редагувати їх
-              уже не можна.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2 sm:justify-end">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setConfirmOpen(false)}
-              className="rounded-xl"
-            >
-              Скасувати
-            </Button>
-            <Button
-              type="button"
-              disabled={pending}
-              onClick={confirmMark}
-              className="rounded-xl bg-[#276749] text-white hover:bg-[#1f5239]"
-            >
-              {pending ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <FileSpreadsheet className="mr-2 h-4 w-4" />
-              )}
-              Так, позначити
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmTransferDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        pending={pending}
+        description={
+          <>
+            {selectedCount} обраних операцій зникнуть з черги. Редагувати їх
+            уже не можна.
+          </>
+        }
+        onConfirm={confirmMark}
+      />
     </>
   );
 }

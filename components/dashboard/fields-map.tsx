@@ -2031,7 +2031,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
               </MapToolButton>
             ) : null}
             {drawSave?.visible ? (
-              <>
+              <div className="contents md:hidden">
                 <MapBarDivider />
                 {drawSave.cancelVisible ? (
                   <MapToolButton
@@ -2055,7 +2055,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
                   <Save className="h-4 w-4 shrink-0" />
                   <span className="max-sm:sr-only sm:inline">{drawSave.label}</span>
                 </button>
-              </>
+              </div>
             ) : null}
             {!focusMode ? (
               <>
@@ -2074,6 +2074,83 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
             ) : null}
           </div>
         </div>
+        ) : null}
+
+        {geometryEditMode && drawSave?.visible ? (
+          <div
+            className={cn(
+              "pointer-events-auto absolute inset-x-0 z-[145] flex justify-center px-4 md:hidden",
+              "bottom-[calc(var(--app-bottom-inset)+0.75rem)]"
+            )}
+          >
+            <div className="flex w-full max-w-lg items-center gap-2 rounded-2xl border border-[#E5DFD3]/90 bg-[#F4F1EA]/95 p-2 shadow-lg backdrop-blur-xl">
+              <p className="hidden min-w-0 flex-1 pl-1 text-xs leading-snug text-zinc-600 sm:block">
+                Редагуйте вершини на карті
+              </p>
+              {drawSave.cancelVisible && drawSave.onCancel ? (
+                <button
+                  type="button"
+                  onClick={drawSave.onCancel}
+                  className="inline-flex h-11 shrink-0 items-center justify-center rounded-xl border border-[#E5DFD3] bg-white px-4 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50 active:scale-[0.98]"
+                >
+                  Скасувати
+                </button>
+              ) : null}
+              <button
+                type="button"
+                disabled={drawSave.disabled}
+                onClick={drawSave.onSave}
+                className={cn(
+                  "inline-flex h-11 min-w-0 flex-1 items-center justify-center gap-2 rounded-xl bg-[#276749] px-4 text-sm font-bold text-white shadow-sm transition sm:flex-none sm:min-w-[10.5rem]",
+                  "hover:bg-[#22543d] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+                )}
+              >
+                <Save className="h-4 w-4 shrink-0" />
+                {drawSave.label}
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {drawSave?.visible && (geometryEditMode || isDrawing) ? (
+          <div
+            className={cn(
+              "pointer-events-auto absolute inset-x-0 z-[145] hidden justify-center px-4 md:flex",
+              "bottom-6",
+              chrome === "detail"
+                ? "md:right-[calc(0.75rem+min(580px,calc(100%-1.5rem)))]"
+                : "md:left-[calc(0.75rem+min(400px,calc(100%-1.5rem)))]"
+            )}
+          >
+            <div className="flex w-full max-w-lg items-center gap-2 rounded-2xl border border-[#E5DFD3]/90 bg-[#F4F1EA]/95 p-2 shadow-lg backdrop-blur-xl">
+              <p className="min-w-0 flex-1 pl-1 text-xs leading-snug text-zinc-600">
+                {geometryEditMode
+                  ? "Редагуйте вершини на карті"
+                  : "Замкніть контур і збережіть поле"}
+              </p>
+              {drawSave.cancelVisible && drawSave.onCancel ? (
+                <button
+                  type="button"
+                  onClick={drawSave.onCancel}
+                  className="inline-flex h-11 shrink-0 items-center justify-center rounded-xl border border-[#E5DFD3] bg-white px-4 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50 active:scale-[0.98]"
+                >
+                  Скасувати
+                </button>
+              ) : null}
+              <button
+                type="button"
+                disabled={drawSave.disabled}
+                onClick={drawSave.onSave}
+                className={cn(
+                  "inline-flex h-11 min-w-[10.5rem] shrink-0 items-center justify-center gap-2 rounded-xl bg-[#276749] px-4 text-sm font-bold text-white shadow-sm transition",
+                  "hover:bg-[#22543d] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+                )}
+              >
+                <Save className="h-4 w-4 shrink-0" />
+                {drawSave.label}
+              </button>
+            </div>
+          </div>
         ) : null}
 
         {isDrawing ? (

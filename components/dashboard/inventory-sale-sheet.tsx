@@ -57,6 +57,7 @@ import {
 import { suppressLocalInventoryMovesRealtimeToast } from "@/lib/realtime-toast-guard";
 import { useSeasonStore } from "@/lib/season-store";
 import { cn } from "@/lib/utils";
+import { DatePicker } from "@/components/ui/date-picker";
 
 const comboboxTriggerClass = cn(
   fuelSelectTriggerClass,
@@ -84,6 +85,25 @@ function todayInputValue(): string {
   return `${y}-${m}-${day}`;
 }
 
+function parseYmd(ymd: string): Date | undefined {
+  const [y, m, d] = ymd.split("-").map(Number);
+  if (!y || !m || !d) return undefined;
+  return new Date(y, m - 1, d);
+}
+
+function toYmd(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+export type InventorySaleSuccessMeta = {
+  category: "harvest";
+  itemRefKey: string;
+  flowFilter: "sale";
+};
+
 export function InventorySaleSheet({
   open,
   onOpenChange,
@@ -93,7 +113,7 @@ export function InventorySaleSheet({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   presetItemRefKey?: string | null;
-  onSuccess?: () => void;
+  onSuccess?: (meta: InventorySaleSuccessMeta) => void;
 }) {
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -105,6 +125,7 @@ export function InventorySaleSheet({
   const [buyerSearch, setBuyerSearch] = useState("");
   const [buyerOpen, setBuyerOpen] = useState(false);
   const [itemOpen, setItemOpen] = useState(false);
+  const [itemSearch, setItemSearch] = useState("");
   const [qty, setQty] = useState("");
   const [price, setPrice] = useState("");
   const [date, setDate] = useState(todayInputValue());
@@ -118,6 +139,16 @@ export function InventorySaleSheet({
     () => items.filter((i) => i.category === "harvest"),
     [items]
   );
+
+  const filteredHarvestItems = useMemo(() => {
+    const q = itemSearch.trim().toLowerCase();
+    if (!q) return harvestItems;
+    return harvestItems.filter(
+      (item) =>
+        item.name.toLowerCase().includes(q) ||
+        item.unit.toLowerCase().includes(q)
+    );
+  }, [harvestItems, itemSearch]);
 
   const selectedItem = useMemo(
     () => harvestItems.find((i) => i.basRefKey === itemKey) ?? null,
@@ -252,7 +283,11 @@ export function InventorySaleSheet({
         `Продаж ${formatQtyLabel(qtyNum, selectedItem?.unit ?? "")} → ${buyer.trim()}`
       );
       resetForm();
-      onSuccess?.();
+      onSuccess?.({
+        category: "harvest",
+        itemRefKey: itemKey,
+        flowFilter: "sale",
+      });
       onOpenChange(false);
     });
   }
@@ -286,7 +321,13 @@ export function InventorySaleSheet({
               <>
                 <section className="space-y-2">
                   <p className={fuelFieldLabelClass}>Товар</p>
-                  <Popover open={itemOpen} onOpenChange={setItemOpen}>
+                  <Popover
+                    open={itemOpen}
+                    onOpenChange={(open) => {
+                      setItemOpen(open);
+                      if (!open) setItemSearch("");
+                    }}
+                  >
                     <PopoverTrigger className={comboboxTriggerClass}>
                       <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900">
                         {selectedItem ? (
@@ -304,21 +345,27 @@ export function InventorySaleSheet({
                       sideOffset={6}
                       className="w-[min(calc(100vw-2.5rem),22rem)] rounded-2xl border border-zinc-200 bg-white p-0 text-zinc-900 shadow-xl"
                     >
-                      <Command className="rounded-2xl bg-white">
-                        <CommandInput placeholder="Пошук…" className="h-11" />
+                      <Command className="rounded-2xl bg-white" shouldFilter={false}>
+                        <CommandInput
+                          placeholder="Пошук…"
+                          value={itemSearch}
+                          onValueChange={setItemSearch}
+                          className="h-11"
+                        />
                         <CommandList className="max-h-64 bg-white">
                           <CommandEmpty>Немає врожаю в довіднику</CommandEmpty>
                           <CommandGroup>
-                            {harvestItems.map((item) => {
+                            {filteredHarvestItems.map((item) => {
                               const out = item.virtualBalance <= 0;
                               return (
                                 <CommandItem
                                   key={item.basRefKey}
-                                  value={`${item.name} ${item.unit}`}
+                                  value={item.basRefKey}
                                   disabled={out}
                                   onSelect={() => {
                                     setItemKey(item.basRefKey);
                                     setItemOpen(false);
+                                    setItemSearch("");
                                   }}
                                   className="cursor-pointer gap-3 rounded-xl px-3 py-2.5 data-[selected=true]:bg-zinc-100"
                                 >
@@ -374,7 +421,7 @@ export function InventorySaleSheet({
                       <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900">
                         {buyer || (
                           <span className="font-normal text-zinc-400">
-                            Оберіть або додайте нового…
+                            Оберіть…
                           </span>
                         )}
                       </span>
@@ -445,17 +492,18 @@ export function InventorySaleSheet({
                   />
                 </section>
 
-                <section className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
+                <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="min-w-0 space-y-2">
                     <p className={fuelFieldLabelClass}>Дата</p>
-                    <input
-                      type="date"
-                      value={date}
-                      onChange={(e) => setDate(e.target.value)}
+                    <DatePicker
+                      date={parseYmd(date)}
+                      onChange={(next) => {
+                        if (next) setDate(toYmd(next));
+                      }}
                       className={fuelInputClass}
                     />
                   </div>
-                  <div className="space-y-2">
+                  <div className="min-w-0 space-y-2">
                     <p className={fuelFieldLabelClass}>Ціна ₴ / од.</p>
                     <input
                       type="number"
