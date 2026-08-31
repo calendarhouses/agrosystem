@@ -1,6 +1,7 @@
 /**
  * Очищення локальних тестових операцій AgroSystem.
- * НЕ чіпає: Wialon sync, BAS cache (крім is_local SKU), farm_fields, equipment, мапінг.
+ * НЕ чіпає: farm_fields, equipment, мапінг, BAS cache (крім is_local SKU),
+ * Wialon units / day stats техніки.
  *
  * Usage:
  *   npx tsx scripts/purge-local-test-data.ts           # dry-run (counts)
@@ -45,16 +46,29 @@ async function deleteAll(
   }
   const { count, error } = await q;
   if (error) {
-    // Fallback for tables without uuid id
-    const retry = await supabase
-      .from(table)
-      .delete({ count: "exact" })
-      .gte("created_at", "1970-01-01");
-    if (retry.error) {
-      console.error(`  ✗ ${table}: ${error.message} / ${retry.error.message}`);
-      return -1;
+    // Fallback for tables without uuid id (date PK, created_at, …)
+    for (const attempt of [
+      () =>
+        supabase
+          .from(table)
+          .delete({ count: "exact" })
+          .gte("created_at", "1970-01-01"),
+      () =>
+        supabase
+          .from(table)
+          .delete({ count: "exact" })
+          .gte("date", "1970-01-01"),
+      () =>
+        supabase
+          .from(table)
+          .delete({ count: "exact" })
+          .gte("synced_at", "1970-01-01T00:00:00Z"),
+    ]) {
+      const retry = await attempt();
+      if (!retry.error) return retry.count ?? 0;
     }
-    return retry.count ?? 0;
+    console.error(`  ✗ ${table}: ${error.message}`);
+    return -1;
   }
   return count ?? 0;
 }
@@ -67,7 +81,7 @@ async function main() {
       : "=== DRY-RUN: що буде видалено (нічого не чіпаємо) ==="
   );
   console.log(
-    "Залишаємо: farm_fields, equipment, fuel_storages (рядки), wialon_*, inventory BAS cache, мапінг.\n"
+    "Залишаємо: farm_fields, equipment, fuel_storages (рядки), inventory BAS cache, мапінг, Wialon units/day stats.\n"
   );
 
   const plan: CountRow[] = [];
@@ -88,6 +102,14 @@ async function main() {
     { table: "accountant_operation_archive", note: "архів бухгалтерії" },
     { table: "activity_log", note: "журнал дій" },
     { table: "field_operations", note: "наряди / роботи на полях" },
+    {
+      table: "wialon_field_fuel_logs",
+      note: "паливо на полях (ДРП) — інакше «Економіка культур» лишає ₴",
+    },
+    {
+      table: "wialon_field_fuel_day_sync",
+      note: "маркери sync палива по днях",
+    },
   ];
 
   // optional tables that may not exist
@@ -138,6 +160,8 @@ async function main() {
     "field_operations",
     "fuel_transactions",
     "fuel_radar_dismissed",
+    "wialon_field_fuel_logs",
+    "wialon_field_fuel_day_sync",
   ]) {
     const deleted = await deleteAll(supabase, t);
     console.log(`  ${t}: deleted ${deleted}`);

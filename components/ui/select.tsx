@@ -63,6 +63,9 @@ function SelectTrigger({
 }
 
 const MOBILE_OVERLAY_Z = "z-[260]"
+/** Над вкладеними шторками (поля z-269/270) і звичайним drawer z-260 */
+const INSIDE_DRAWER_PORTAL_Z = "z-[280]"
+const INSIDE_DRAWER_BACKDROP_Z = "z-[279]"
 
 function SelectContent({
   className,
@@ -90,6 +93,7 @@ function SelectContent({
   const backdropRef = React.useRef<HTMLDivElement>(null)
   const useSheet = isMobile && sheetOnMobile && !insideDrawer
   const alignWithTrigger = !useSheet && !insideDrawer && alignItemWithTrigger
+  const portalZ = insideDrawer ? INSIDE_DRAWER_PORTAL_Z : "z-[260]"
 
   const popup = (
     <SelectPrimitive.Popup
@@ -105,7 +109,7 @@ function SelectContent({
         className,
         useSheet &&
           "fixed inset-x-0 bottom-[var(--app-bottom-inset)] top-auto max-h-[var(--app-sheet-max)] w-full min-w-0 origin-bottom overflow-hidden rounded-t-3xl rounded-b-none pb-[max(0.5rem,var(--safe-bottom))] shadow-2xl ring-0 data-open:zoom-in-100",
-        useSheet ? MOBILE_OVERLAY_Z : "z-[260]"
+        useSheet ? MOBILE_OVERLAY_Z : portalZ
       )}
       {...props}
     >
@@ -173,7 +177,7 @@ function SelectContent({
         alignOffset={alignOffset}
         alignItemWithTrigger={alignWithTrigger}
         collisionPadding={12}
-        className="pointer-events-auto isolate z-[260]"
+        className={cn("pointer-events-auto isolate", portalZ)}
       >
         {popup}
       </SelectPrimitive.Positioner>

@@ -87,10 +87,6 @@ import { FieldPassportQuickFix } from "@/components/dashboard/field-passport-qui
 import { FieldTechHistoryPanel } from "@/components/dashboard/field-tech-history-panel";
 import { SmartWeatherAlert } from "@/components/dashboard/smart-weather-alert";
 import { FIELDS_MOBILE_DRAWER_SIZE } from "@/components/dashboard/fields-glass-panel";
-
-/** Вкладені шторки в мобільних деталях поля — вище за батьківську (z-[260]). */
-const FIELD_NESTED_DRAWER_BACKDROP_Z = "z-[269]";
-const FIELD_NESTED_DRAWER_CONTENT_Z = "z-[270]";
 import { OperationClosePanel } from "@/components/dashboard/operation-close-modal";
 import type { CloseableOperation } from "@/components/dashboard/operation-close-modal";
 import {
@@ -1926,9 +1922,9 @@ export function FieldDetailSheet({
                   });
                 }}
               />
-            ) : !embeddedInMobileDrawer && planOpen ? (
+            ) : planOpen ? (
               planPanel
-            ) : !embeddedInMobileDrawer && quickIssueOpen ? (
+            ) : quickIssueOpen ? (
               quickIssuePanel
             ) : (
               <>
@@ -2645,82 +2641,14 @@ export function FieldDetailSheet({
   if (variant === "panel") {
     if (!open || !field) return null;
     if (embeddedInMobileDrawer) {
+      // Як на ПК: «Додати роботу» / «Списати» замінюють контент шторки,
+      // без другої вкладеної Drawer (ламали Select/Popover по z-index).
       return (
-        <>
-          <div className="flex h-full min-h-0 flex-col overflow-hidden bg-transparent">
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-              {hubInner}
-            </div>
+        <div className="flex h-full min-h-0 flex-col overflow-hidden bg-transparent">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            {hubInner}
           </div>
-
-          <NonModalDrawerBackdrop
-            open={planOpen}
-            onClose={closePlanForm}
-            className={FIELD_NESTED_DRAWER_BACKDROP_Z}
-          />
-          <Drawer
-            open={planOpen}
-            onOpenChange={(next) => {
-              if (!next) closePlanForm();
-            }}
-            dismissible
-            modal={false}
-            shouldScaleBackground={false}
-            noBodyStyles
-          >
-            <DrawerContent
-              showOverlay={false}
-              className={cn(
-                FIELDS_MOBILE_DRAWER_SIZE,
-                FIELD_NESTED_DRAWER_CONTENT_Z,
-                "flex flex-col border-[#E5DFD3]/90 bg-[#F4F1EA] pb-3"
-              )}
-            >
-              <DrawerTitle className="sr-only">
-                {editingOp
-                  ? "Редагувати наряд"
-                  : planPastWork
-                    ? "Внести роботу"
-                    : "Новий наряд"}
-              </DrawerTitle>
-              <DrawerHandle />
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                {planPanel}
-              </div>
-            </DrawerContent>
-          </Drawer>
-
-          <NonModalDrawerBackdrop
-            open={quickIssueOpen}
-            onClose={closeQuickIssueForm}
-            className={FIELD_NESTED_DRAWER_BACKDROP_Z}
-          />
-          <Drawer
-            open={quickIssueOpen}
-            onOpenChange={(next) => {
-              if (!next) closeQuickIssueForm();
-            }}
-            dismissible
-            modal={false}
-            shouldScaleBackground={false}
-            noBodyStyles
-          >
-            <DrawerContent
-              showOverlay={false}
-              className={cn(
-                FIELDS_MOBILE_DRAWER_SIZE,
-                FIELD_NESTED_DRAWER_CONTENT_Z,
-                "flex flex-col border-[#E5DFD3]/90 bg-[#F4F1EA] pb-3"
-              )}
-            >
-              <DrawerTitle className="sr-only">Списати ТМЦ</DrawerTitle>
-              <DrawerHandle />
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                {quickIssuePanel}
-              </div>
-            </DrawerContent>
-          </Drawer>
-        </>
+        </div>
       );
     }
     // ПК: простий контейнер у FieldsDetailGlassFrame (як до мобільної шторки).

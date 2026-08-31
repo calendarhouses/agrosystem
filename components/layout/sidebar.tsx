@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
@@ -71,32 +70,26 @@ export function Sidebar({ collapsed, onToggleCollapsed }: SidebarProps) {
       </>
     );
 
+    // button + router.push — без status-bar URL при hover (на відміну від <Link>)
+    const navButton = (
+      <button
+        type="button"
+        onClick={() => router.push(item.href)}
+        aria-label={item.label}
+        aria-current={active ? "page" : undefined}
+        className={itemClassName}
+      >
+        {iconBlock}
+      </button>
+    );
+
     if (!collapsed) {
-      return (
-        <div key={item.href}>
-          <Link
-            href={item.href}
-            aria-label={item.label}
-            aria-current={active ? "page" : undefined}
-            className={itemClassName}
-          >
-            {iconBlock}
-          </Link>
-        </div>
-      );
+      return <div key={item.href}>{navButton}</div>;
     }
 
     return (
       <SidebarNavTooltip key={item.href} title={item.label} hint={item.hint}>
-        <button
-          type="button"
-          onClick={() => router.push(item.href)}
-          aria-label={item.label}
-          aria-current={active ? "page" : undefined}
-          className={itemClassName}
-        >
-          {iconBlock}
-        </button>
+        {navButton}
       </SidebarNavTooltip>
     );
   }

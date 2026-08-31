@@ -581,6 +581,8 @@ export function FinanceView({
       { crop: string; areaHa: number; spentUah: number; fields: number }
     >();
     for (const f of fields) {
+      // Без фактичних витрат — не показуємо (після purge лише паспорта полів).
+      if (!(f.spentUah > 0)) continue;
       const crop =
         f.crop && f.crop !== "—" ? f.crop : "Без культури";
       const prev = map.get(crop) ?? {
@@ -599,6 +601,7 @@ export function FinanceView({
         ...r,
         costPerHa: r.areaHa > 0 ? r.spentUah / r.areaHa : 0,
       }))
+      .filter((r) => r.spentUah > 0)
       .sort((a, b) => b.spentUah - a.spentUah || b.areaHa - a.areaHa)
       .slice(0, 6);
   }, [overview?.fields]);
