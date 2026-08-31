@@ -498,8 +498,6 @@ export function InventoryView({
     }
   }
 
-  const categorySummaries = view?.categories ?? [];
-
   /** Id позицій, що потрапляють у поточний KPI-фільтр (з урахуванням hidden). */
   const flowItemIdsForFilter = useMemo(() => {
     if (!flowFilter) return null;
@@ -532,75 +530,145 @@ export function InventoryView({
     localPeriodByRef,
   ]);
 
-  /** Локальні ₴ за період → KPI Закупки / Продажі (+ оборот категорій). */
-  const localPeriodFinance = useMemo(() => {
+  /**
+   * Єдине джерело грошей для KPI і карток категорій:
+   * сума рухів BAS (+ локальні) за типом — без costIn+costOut на позиції.
+   */
+  const flowMoney = useMemo(() => {
+    const emptyCat = (): Record<InventoryCategory, number> => ({
+      zzr: 0,
+      fertilizer: 0,
+      seed: 0,
+      parts: 0,
+      harvest: 0,
+    });
+    const byKind: Record<
+      FlowFilter,
+      { total: number; docs: Set<string>; byCategory: Record<InventoryCategory, number> }
+    > = {
+      purchase: { total: 0, docs: new Set(), byCategory: emptyCat() },
+      sale: { total: 0, docs: new Set(), byCategory: emptyCat() },
+      harvest: { total: 0, docs: new Set(), byCategory: emptyCat() },
+    };
+
+    const catById = new Map<string, InventoryCategory>();
+    for (const item of periodScopedItems) {
+      catById.set(item.id.toLowerCase(), item.category);
+    }
+
+    const hidden = (id: string) => {
+      const meta = cacheMetaByRef[id] ?? cacheMetaByRef[id.toLowerCase()];
+      return Boolean(meta?.isHidden) && !showHidden;
+    };
+
+    for (const m of view.moves) {
+      const id = m.itemId.toLowerCase();
+      if (hidden(id)) continue;
+      const cat = catById.get(id);
+      if (!cat) continue;
+      const kind =
+        m.kind === "purchase" || m.kind === "sale" || m.kind === "harvest"
+          ? m.kind
+          : null;
+      if (!kind) continue;
+      const bucket = byKind[kind];
+      const amount = Number(m.cost) || 0;
+      bucket.total += amount;
+      bucket.byCategory[cat] += amount;
+      bucket.docs.add(
+        (m.docRefKey || `${m.date}:${m.qty}:${m.cost}`).toLowerCase()
+      );
+    }
+
     const startIso = isoRange.startIso;
     const endIso = isoRange.endIso;
-    const categoryByRef: Record<string, InventoryCategory> = {};
-    for (const item of periodScopedItems) {
-      categoryByRef[item.id.toLowerCase()] = item.category;
-    }
-    for (const [key, meta] of Object.entries(cacheMetaByRef)) {
-      if (meta.category) {
-        categoryByRef[key.toLowerCase()] =
-          meta.category as InventoryCategory;
-      }
-    }
-
-    let receiptsUah = 0;
-    let receiptDocs = 0;
-    let salesUah = 0;
-    let saleDocs = 0;
-    let harvestUah = 0;
-    const costByCategory: Partial<Record<InventoryCategory, number>> = {};
-
     for (const row of localMoveRows) {
-      // sent_to_1c уже в BAS KPI після синку — не дублюємо
       if (row.status === "sent_to_1c") continue;
       if (!row.dateYmd || row.dateYmd < startIso || row.dateYmd > endIso) {
         continue;
       }
+      const id = row.ref.toLowerCase();
+      if (hidden(id)) continue;
+      const cat = catById.get(id) ?? refCategoryById.get(id);
+      if (!cat) continue;
       const price = row.unitPriceUah;
       const amount =
         price != null && Number.isFinite(price)
           ? Math.round(row.qty * price * 100) / 100
           : 0;
-      const cat = categoryByRef[row.ref];
+      if (!(amount > 0)) continue;
 
-      if (row.type === "inbound") {
-        if (cat === "harvest") {
-          harvestUah += amount;
-        } else {
-          receiptDocs += 1;
-          receiptsUah += amount;
-        }
-        if (cat && amount > 0 && cat !== "harvest") {
-          costByCategory[cat] = (costByCategory[cat] ?? 0) + amount;
-        } else if (cat === "harvest" && amount > 0) {
-          costByCategory.harvest = (costByCategory.harvest ?? 0) + amount;
-        }
-      } else if (row.type === "sale") {
-        saleDocs += 1;
-        salesUah += amount;
+      let kind: FlowFilter | null = null;
+      if (row.type === "sale") kind = "sale";
+      else if (row.type === "inbound") {
+        kind = cat === "harvest" ? "harvest" : "purchase";
       }
+      if (!kind) continue;
+      const bucket = byKind[kind];
+      bucket.total += amount;
+      bucket.byCategory[cat] += amount;
+      bucket.docs.add(row.id || `${row.dateYmd}:${row.type}:${row.qty}`);
     }
 
+    const roundCat = (src: Record<InventoryCategory, number>) => {
+      const out = emptyCat();
+      for (const cat of CATEGORY_ORDER) {
+        out[cat] = Math.round(src[cat]);
+      }
+      return out;
+    };
+
     return {
-      receiptsUah: Math.round(receiptsUah),
-      receiptDocs,
-      salesUah: Math.round(salesUah),
-      saleDocs,
-      harvestUah: Math.round(harvestUah),
-      costByCategory,
+      purchase: {
+        total: Math.round(byKind.purchase.total),
+        docs: byKind.purchase.docs.size,
+        byCategory: roundCat(byKind.purchase.byCategory),
+      },
+      sale: {
+        total: Math.round(byKind.sale.total),
+        docs: byKind.sale.docs.size,
+        byCategory: roundCat(byKind.sale.byCategory),
+      },
+      harvest: {
+        total: Math.round(byKind.harvest.total),
+        docs: byKind.harvest.docs.size,
+        byCategory: roundCat(byKind.harvest.byCategory),
+      },
+      /** Без фільтра: оборот = in+out по категорії (закупки/випуск + продажі). */
+      turnoverByCategory: (() => {
+        const out = emptyCat();
+        for (const cat of CATEGORY_ORDER) {
+          out[cat] = Math.round(
+            byKind.purchase.byCategory[cat] +
+              byKind.harvest.byCategory[cat] +
+              byKind.sale.byCategory[cat]
+          );
+        }
+        return out;
+      })(),
     };
   }, [
-    localMoveRows,
-    isoRange,
+    view.moves,
     periodScopedItems,
     cacheMetaByRef,
+    showHidden,
+    localMoveRows,
+    isoRange,
+    refCategoryById,
   ]);
 
-  /** Категорійні лічильники з урахуванням локальних рухів за період (+ KPI-фільтр). */
+  const warehouseKpi = useMemo(
+    () => ({
+      purchasesUah: flowMoney.purchase.total,
+      purchaseDocs: flowMoney.purchase.docs,
+      salesUah: flowMoney.sale.total,
+      saleDocs: flowMoney.sale.docs,
+      harvestUah: flowMoney.harvest.total,
+    }),
+    [flowMoney]
+  );
+
+  /** Категорійні лічильники; сума ₴ — з flowMoney (той самий розріз, що KPI). */
   const categoryCounts = useMemo(() => {
     const counts: Record<
       string,
@@ -623,15 +691,13 @@ export function InventoryView({
         item.moveCount > 0 ||
         (localPeriod?.inbound ?? 0) > 0 ||
         (localPeriod?.outbound ?? 0) > 0;
-      if (hasPeriod) {
-        bucket.active += 1;
-        bucket.cost += item.cost;
-      }
+      if (hasPeriod) bucket.active += 1;
     }
-    if (!flowFilter) {
-      for (const cat of CATEGORY_ORDER) {
-        counts[cat].cost += localPeriodFinance.costByCategory[cat] ?? 0;
-      }
+    for (const cat of CATEGORY_ORDER) {
+      const money = flowFilter
+        ? flowMoney[flowFilter].byCategory[cat]
+        : flowMoney.turnoverByCategory[cat];
+      counts[cat].cost = money;
     }
     return counts;
   }, [
@@ -639,9 +705,9 @@ export function InventoryView({
     cacheMetaByRef,
     localPeriodByRef,
     showHidden,
-    localPeriodFinance,
     flowItemIdsForFilter,
     flowFilter,
+    flowMoney,
   ]);
 
   const visibleCategories = useMemo(() => {
@@ -1000,13 +1066,8 @@ export function InventoryView({
                       label: "Закупки",
                       icon: ShoppingBag,
                       iconTone: "bg-emerald-100 text-emerald-700",
-                      value: formatCompactUah(
-                        view.totalReceipts + localPeriodFinance.receiptsUah
-                      ),
-                      hint: `${
-                        view.docs.filter((d) => d.type === "receipt").length +
-                        localPeriodFinance.receiptDocs
-                      } док.`,
+                      value: formatCompactUah(warehouseKpi.purchasesUah),
+                      hint: `${warehouseKpi.purchaseDocs} док.`,
                       tone: "from-white via-zinc-50/80 to-emerald-50/40",
                       activeTone:
                         "border-emerald-400/70 ring-2 ring-emerald-500/20",
@@ -1016,13 +1077,8 @@ export function InventoryView({
                       label: "Продажі",
                       icon: ShoppingCart,
                       iconTone: "bg-sky-100 text-sky-700",
-                      value: formatCompactUah(
-                        view.totalSales + localPeriodFinance.salesUah
-                      ),
-                      hint: `${
-                        view.docs.filter((d) => d.type === "sale").length +
-                        localPeriodFinance.saleDocs
-                      } док.`,
+                      value: formatCompactUah(warehouseKpi.salesUah),
+                      hint: `${warehouseKpi.saleDocs} док.`,
                       tone: "from-white via-zinc-50/80 to-sky-50/40",
                       activeTone: "border-sky-400/70 ring-2 ring-sky-500/20",
                     },
@@ -1031,9 +1087,7 @@ export function InventoryView({
                       label: "Випуск",
                       icon: Wheat,
                       iconTone: "bg-amber-100 text-amber-800",
-                      value: formatCompactUah(
-                        view.totalHarvest + localPeriodFinance.harvestUah
-                      ),
+                      value: formatCompactUah(warehouseKpi.harvestUah),
                       hint: "собівартість",
                       tone: "from-white via-zinc-50/80 to-amber-50/40",
                       activeTone:
@@ -1152,9 +1206,6 @@ export function InventoryView({
                 ) : (
                   <section className="grid grid-cols-2 gap-2 sm:grid-cols-2 sm:gap-3 xl:grid-cols-3">
                     {visibleCategories.map((cat) => {
-                      const card =
-                        categorySummaries.find((c) => c.category === cat) ??
-                        view.categories.find((c) => c.category === cat);
                       const counts = categoryCounts[cat] ?? {
                         active: 0,
                         total: 0,
@@ -1164,7 +1215,7 @@ export function InventoryView({
                       const style = CATEGORY_CARD_STYLE[cat];
                       const Icon = CATEGORY_ICONS[cat];
                       const count = onlyActive ? counts.active : counts.total;
-                      const periodCost = counts.cost || (card?.totalCost ?? 0);
+                      const periodCost = counts.cost;
                       return (
                         <button
                           key={cat}
@@ -1212,10 +1263,16 @@ export function InventoryView({
                           </p>
                           <div className="mt-2 flex items-end justify-between gap-2 sm:mt-4">
                             <div className="min-w-0">
-                              <p className="hidden text-[10px] font-semibold tracking-wider text-zinc-400 uppercase sm:block">
-                                Оборот за період
+                              <p className="text-[10px] font-semibold tracking-wider text-zinc-400 uppercase">
+                                {flowFilter === "harvest"
+                                  ? "Випуск за період"
+                                  : flowFilter === "sale"
+                                    ? "Продажі за період"
+                                    : flowFilter === "purchase"
+                                      ? "Закупки за період"
+                                      : "Оборот за період"}
                               </p>
-                              <p className="truncate text-sm font-bold tabular-nums text-zinc-900 sm:mt-0.5 sm:text-base">
+                              <p className="mt-0.5 truncate text-sm font-bold tabular-nums text-zinc-900 sm:text-base">
                                 {formatCompactUah(periodCost)}
                               </p>
                             </div>
