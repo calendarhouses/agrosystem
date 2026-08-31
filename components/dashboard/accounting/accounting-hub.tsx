@@ -1,6 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 import { FileSpreadsheet, Link2, Loader2, Scale } from "lucide-react";
 
 import {
@@ -33,6 +38,8 @@ export function AccountingHub() {
   const [reconLoading, setReconLoading] = useState(false);
   const [mappingCatalog, setMappingCatalog] =
     useState<MappingCatalogKind>("storages");
+  const [exportPeriodActions, setExportPeriodActions] =
+    useState<ReactNode>(null);
 
   const refreshRecon = useCallback(async () => {
     setReconLoading(true);
@@ -52,6 +59,10 @@ export function AccountingHub() {
     if (recon || reconLoading || reconError) return;
     void refreshRecon();
   }, [tab, recon, reconLoading, reconError, refreshRecon]);
+
+  useEffect(() => {
+    if (tab !== "export") setExportPeriodActions(null);
+  }, [tab]);
 
   function openMapping(catalog: MappingCatalogKind) {
     setMappingCatalog(catalog);
@@ -116,13 +127,26 @@ export function AccountingHub() {
           <div
             className={cn(
               "sticky top-0 z-50 border-b border-[#E5DFD3]/80 bg-[#F4F1EA]/90",
-              "px-4 py-3 backdrop-blur-2xl sm:px-6"
+              "px-4 py-4 backdrop-blur-2xl sm:px-6"
             )}
           >
             <div className="mx-auto w-full max-w-7xl space-y-3">
-              <h1 className="truncate text-xl font-extrabold tracking-tight text-zinc-900 sm:text-2xl">
-                Бухгалтерія
-              </h1>
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4">
+                <div className="min-w-0">
+                  <h1 className="truncate text-2xl font-extrabold tracking-tight text-zinc-900 sm:text-3xl">
+                    Бухгалтерія
+                  </h1>
+                </div>
+                {tab === "export" ? (
+                  <FinancePeriodToolbar
+                    {...periodFilter}
+                    variant="desktop"
+                    seasonHint="Фільтр черги за агросезоном (березень–лютий)."
+                    trailing={exportPeriodActions}
+                    className="w-full max-w-none shrink-0 lg:w-auto"
+                  />
+                ) : null}
+              </div>
               <TabsList
                 className={cn(
                   "h-auto w-full flex-wrap justify-start gap-1 rounded-2xl bg-white/70 p-1",
@@ -171,6 +195,9 @@ export function AccountingHub() {
               embedded
               periodFilter={periodFilter}
               hidePeriodHeader={!isMobile}
+              onPeriodActionsChange={
+                isMobile ? undefined : setExportPeriodActions
+              }
             />
           ) : null}
         </TabsContent>

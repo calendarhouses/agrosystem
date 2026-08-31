@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import { format } from "date-fns";
 import { uk } from "date-fns/locale";
 import {
@@ -397,12 +397,15 @@ export function AccountantHubView({
   embedded = false,
   periodFilter: externalPeriodFilter,
   hidePeriodHeader = false,
+  onPeriodActionsChange,
 }: {
   /** Вкладений у Accounting Hub — без другого full-page chrome */
   embedded?: boolean;
   periodFilter?: FinancePeriodFilter;
   /** На ПК період у шапці hub — тут лише дії */
   hidePeriodHeader?: boolean;
+  /** ПК: передати «Оновити / Скачати» у шапку AccountingHub */
+  onPeriodActionsChange?: (actions: ReactNode | null) => void;
 }) {
   const isMobile = useIsMobile();
   const internalPeriodFilter = useFinancePeriodFilter();
@@ -782,6 +785,20 @@ export function AccountantHubView({
     </>
   );
 
+  useEffect(() => {
+    if (!onPeriodActionsChange) return;
+    onPeriodActionsChange(periodActions);
+    return () => onPeriodActionsChange(null);
+    // periodActions depends on loading/pending/count — re-register when they change
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: sync trailing actions to parent header
+  }, [
+    onPeriodActionsChange,
+    loading,
+    pending,
+    packageSummary.count,
+    packageSummary.rows,
+  ]);
+
   const showDock = packageSummary.count > 0;
   const showPeriodHeader = !hidePeriodHeader;
 
@@ -828,18 +845,6 @@ export function AccountantHubView({
       </header>
       )}
 
-        {hidePeriodHeader && embedded ? (
-          <div className="mx-auto w-full max-w-7xl space-y-3 border-b border-[#E5DFD3]/80 px-4 py-4 sm:px-6 lg:px-8">
-            <FinancePeriodToolbar
-              {...periodFilter}
-              variant="desktop"
-              seasonHint="Фільтр черги за агросезоном (березень–лютий)."
-              loading={loading}
-              trailing={periodActions}
-            />
-          </div>
-        ) : null}
-
         <div
           className={cn(
             "mx-auto w-full max-w-7xl",
@@ -852,12 +857,11 @@ export function AccountantHubView({
                 )
               : cn(
                   "space-y-5 px-4 py-6 sm:px-6 lg:px-8",
-                  showDock ? "pb-24" : "pb-8",
-                  hidePeriodHeader && embedded ? "pt-0" : undefined
+                  showDock ? "pb-24" : "pb-8"
                 )
           )}
         >
-        {hidePeriodHeader && embedded ? null : hidePeriodHeader ? (
+        {hidePeriodHeader && !onPeriodActionsChange ? (
           <div className="flex justify-end gap-2">{periodActions}</div>
         ) : null}
 
