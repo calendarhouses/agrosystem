@@ -70,3 +70,24 @@ export async function writeFuelKpisDayCache(
     );
   }
 }
+
+/** Видалити durable KPI за поточний календарний день Києва. */
+export async function invalidateFuelKpisDayCache(
+  dayYmd = todayKyivYmd()
+): Promise<void> {
+  try {
+    const sb = createServiceSupabase();
+    const { error } = await sb
+      .from("fuel_kpis_day_cache")
+      .delete()
+      .eq("day_ymd", dayYmd);
+    if (error) {
+      console.error("[fuel-kpis-day-cache] invalidate", error.message);
+    }
+  } catch (err) {
+    console.error(
+      "[fuel-kpis-day-cache] invalidate",
+      err instanceof Error ? err.message : err
+    );
+  }
+}

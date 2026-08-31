@@ -31,3 +31,14 @@ export function writeFuelKpisServerCache(
 ): void {
   store.set(key, { data, expiresAt });
 }
+
+/** Скинути in-memory KPI (після intraday sync). */
+export function clearFuelKpisServerCache(prefix?: string): void {
+  if (!prefix) {
+    store.clear();
+    return;
+  }
+  for (const key of [...store.keys()]) {
+    if (key.startsWith(prefix)) store.delete(key);
+  }
+}

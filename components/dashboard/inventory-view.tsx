@@ -218,6 +218,7 @@ export function InventoryView({
   >({});
   const [localMoveRows, setLocalMoveRows] = useState<LocalOutboundRow[]>([]);
   const [movesRefreshToken, setMovesRefreshToken] = useState(0);
+  const [operationalLoading, setOperationalLoading] = useState(true);
 
   const [period, setPeriod] = useState<FinancePeriod>("Сезон");
   const activeSeason = useSeasonStore((s) => s.activeSeason);
@@ -229,16 +230,21 @@ export function InventoryView({
   const [customRange, setCustomRange] = useState<DateRange | undefined>();
 
   async function refreshOperational() {
-    const [movesRes, metaRes] = await Promise.all([
-      getLocalMoveQtyByItem(),
-      getInventoryCacheMetaMap(),
-    ]);
-    if (movesRes.ok) {
-      setLocalOutboundByRef(movesRes.outboundByRef);
-      setLocalInboundByRef(movesRes.inboundByRef);
-      setLocalMoveRows(movesRes.rows);
+    setOperationalLoading(true);
+    try {
+      const [movesRes, metaRes] = await Promise.all([
+        getLocalMoveQtyByItem(),
+        getInventoryCacheMetaMap(),
+      ]);
+      if (movesRes.ok) {
+        setLocalOutboundByRef(movesRes.outboundByRef);
+        setLocalInboundByRef(movesRes.inboundByRef);
+        setLocalMoveRows(movesRes.rows);
+      }
+      if (metaRes.ok) setCacheMetaByRef(metaRes.byRef);
+    } finally {
+      setOperationalLoading(false);
     }
-    if (metaRes.ok) setCacheMetaByRef(metaRes.byRef);
   }
 
   useEffect(() => {
@@ -1118,7 +1124,9 @@ export function InventoryView({
                     </span>
                   </div>
                 ) : null}
-                {visibleCategories.length === 0 ? (
+                {operationalLoading ? (
+                  <InventoryBootSkeleton />
+                ) : visibleCategories.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-zinc-200 bg-white/60 px-6 py-12 text-center text-sm text-zinc-500">
                     Немає категорій з такими рухами за період.
                   </div>
@@ -1299,7 +1307,9 @@ export function InventoryView({
                   </button>
                 </div>
 
-                {items.length === 0 ? (
+                {operationalLoading ? (
+                  <InventoryBootSkeleton />
+                ) : items.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-zinc-200 bg-white/60 px-6 py-12 text-center text-sm text-zinc-500">
                     Нічого не знайдено.
                   </div>

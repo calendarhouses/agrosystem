@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { authorizeCron } from "@/lib/cron-auth";
 import {
   syncWialonFieldFuelForToday,
   syncWialonFieldFuelForYesterday,
@@ -13,26 +14,6 @@ const JSON_UTF8 = {
   "Content-Type": "application/json; charset=utf-8",
 } as const;
 
-function authorizeCron(request: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET?.trim();
-  if (!secret) {
-    console.error("[cron/sync-wialon-fuel] CRON_SECRET не задано");
-    return false;
-  }
-
-  const header = request.headers.get("authorization") ?? "";
-  // Vercel Cron (з CRON_SECRET) і ручний виклик: Bearer <secret>
-  return header === `Bearer ${secret}`;
-}
-
-/**
- * GET/POST /api/cron/sync-wialon-fuel
- *
- * Нічний CRON: закритий вчорашній день + часткове «сьогодні»
- * → upsert у wialon_field_fuel_logs.
- *
- * Auth: Authorization: Bearer $CRON_SECRET
- */
 async function handle(request: NextRequest) {
   if (!authorizeCron(request)) {
     return NextResponse.json(

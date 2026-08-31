@@ -98,6 +98,7 @@ export function FieldsView() {
   const [drawnContours, setDrawnContours] =
     useState<FeatureCollection>(EMPTY_DRAWN);
   const [savedFields, setSavedFields] = useState<FarmField[]>([]);
+  const [farmFieldsLoading, setFarmFieldsLoading] = useState(true);
   const [wialonSeedUnits, setWialonSeedUnits] = useState<WialonUnit[] | null>(
     null
   );
@@ -117,6 +118,7 @@ export function FieldsView() {
 
   /** Повний boot (геозони + seed) ще йде — скелетони в списку */
   const wialonLoading = wialonBootLoading && wialonSeedUnits == null;
+  const fieldsListLoading = wialonLoading || farmFieldsLoading;
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoveredFieldId, setHoveredFieldId] = useState<string | null>(null);
@@ -148,7 +150,10 @@ export function FieldsView() {
   const [realtimeVersion, setRealtimeVersion] = useState(0);
 
   const reloadFarmFields = useCallback(() => {
-    void listFarmFields().then(setSavedFields);
+    void listFarmFields().then((fields) => {
+      setSavedFields(fields);
+      setFarmFieldsLoading(false);
+    });
   }, []);
 
   const reloadFinanceOverview = useCallback(() => {
@@ -387,9 +392,13 @@ export function FieldsView() {
 
   useEffect(() => {
     let cancelled = false;
-    listFarmFields().then((fields) => {
-      if (!cancelled) setSavedFields(fields);
-    });
+    listFarmFields()
+      .then((fields) => {
+        if (!cancelled) setSavedFields(fields);
+      })
+      .finally(() => {
+        if (!cancelled) setFarmFieldsLoading(false);
+      });
     return () => {
       cancelled = true;
     };
@@ -1172,7 +1181,7 @@ export function FieldsView() {
       {isMobile || !sheetOpen ? (
       <FieldsGlassPanel
         fields={mapFields}
-        loading={wialonLoading}
+        loading={fieldsListLoading}
         selectedId={selectedId}
         hoveredId={hoveredFieldId}
         editingFieldId={editingFieldId}

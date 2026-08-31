@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { authorizeCron } from "@/lib/cron-auth";
+import { invalidateFuelKpisAfterTelemetrySync } from "@/lib/fuel-kpis-invalidate";
 import { shiftKyivYmd, todayKyivYmd } from "@/lib/kyiv-date";
 import { syncWialonEquipmentDayStats } from "@/lib/wialon-equipment-day-sync";
 import {
@@ -16,16 +18,6 @@ const JSON_UTF8 = {
   "Content-Type": "application/json; charset=utf-8",
 } as const;
 
-function authorizeCron(request: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET?.trim();
-  if (!secret) {
-    console.error("[cron/sync-telemetry] CRON_SECRET не задано");
-    return false;
-  }
-  const header = request.headers.get("authorization") ?? "";
-  return header === `Bearer ${secret}`;
-}
-
 /**
  * GET/POST /api/cron/sync-telemetry
  *
@@ -33,7 +25,9 @@ function authorizeCron(request: NextRequest): boolean {
  * 1) field fuel → wialon_field_fuel_logs
  * 2) equipment day stats → wialon_equipment_day_stats (вкл. fuel_start/end)
  *
- * Auth: Authorization: Bearer $CRON_SECRET
+ * Auth:
+ *   Authorization: Bearer $CRON_SECRET
+ *   ?secret=$CRON_SECRET
  *
  * Query:
  *   ?mode=tick      — сьогодні (за замовчуванням)
@@ -60,6 +54,7 @@ async function handle(request: NextRequest) {
         maxDays: 12,
         budgetMs: 50_000,
       });
+      await invalidateFuelKpisAfterTelemetrySync();
       const payload = {
         ok: true as const,
         mode,
@@ -98,6 +93,8 @@ async function handle(request: NextRequest) {
             budgetMs: Math.max(8_000, 55_000 - (Date.now() - started)),
           })
         : null;
+
+    await invalidateFuelKpisAfterTelemetrySync();
 
     const payload = {
       ok: true as const,

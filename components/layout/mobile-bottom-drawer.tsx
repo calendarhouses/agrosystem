@@ -66,7 +66,7 @@ export function MobileBottomDrawer({
           <motion.button
             type="button"
             aria-label="Закрити меню"
-            className="fixed inset-x-0 top-0 z-[190] bg-black/70 backdrop-blur-[3px]"
+            className="fixed inset-x-0 top-0 z-[259] bg-black/70 backdrop-blur-[3px]"
             style={{ bottom: navOffset }}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -78,7 +78,7 @@ export function MobileBottomDrawer({
             role="dialog"
             aria-modal="true"
             className={cn(
-              "fixed inset-x-0 z-[200] flex max-h-[min(88dvh,calc(100dvh-var(--app-bottom-inset)))] flex-col overflow-hidden rounded-t-3xl border border-b-0 border-zinc-800 bg-zinc-950 shadow-[0_-24px_64px_-12px_rgba(0,0,0,0.65)]",
+              "fixed inset-x-0 z-[260] flex max-h-[min(88dvh,calc(100dvh-var(--app-bottom-inset)))] flex-col overflow-hidden rounded-t-3xl border border-b-0 border-zinc-800 bg-zinc-950 shadow-[0_-24px_64px_-12px_rgba(0,0,0,0.65)]",
               className
             )}
             style={{ bottom: navOffset }}

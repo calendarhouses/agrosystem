@@ -177,7 +177,7 @@ export function BottomNav() {
       <motion.nav
         data-bottom-nav
         aria-label="Головна навігація"
-        className="fixed inset-x-0 bottom-0 z-[250] h-[var(--bottom-nav-height)] overflow-hidden bg-[var(--nav-bg)] md:hidden"
+        className="fixed inset-x-0 bottom-0 z-[100] h-[var(--bottom-nav-height)] overflow-hidden bg-[var(--nav-bg)] md:hidden"
         initial={{ y: 20, opacity: 0 }}
         animate={
           revealChrome ? { y: 0, opacity: 1 } : { y: 20, opacity: 0 }

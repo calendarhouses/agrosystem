@@ -35,6 +35,11 @@ export function isKyivToday(ymd: string, now = new Date()): boolean {
   return ymd === todayKyivYmd(now);
 }
 
+/** Календарний день Києва уже завершився (не «сьогодні»). */
+export function isKyivDayComplete(ymd: string, now = new Date()): boolean {
+  return ymd < todayKyivYmd(now);
+}
+
 function zonedWallTimeMs(
   timeZone: string,
   year: number,

@@ -9,7 +9,7 @@ import { useInsideDrawer, useDrawerOpenInDom } from "@/components/ui/drawer"
 import { useIsMobile } from "@/lib/use-mobile"
 import { cn } from "@/lib/utils"
 
-const MOBILE_OVERLAY_Z = "z-[200]"
+const MOBILE_OVERLAY_Z = "z-[260]"
 
 function Popover({
   modal,
@@ -65,7 +65,7 @@ function PopoverContent({
         className,
         useSheet &&
           "fixed inset-x-0 top-auto max-h-[var(--app-sheet-max)] w-full max-w-none origin-bottom gap-0 overflow-hidden rounded-t-3xl rounded-b-none p-0 pb-[max(0.75rem,var(--safe-bottom))] shadow-2xl ring-0 data-[side=bottom]:slide-in-from-bottom-4 data-open:zoom-in-100 bottom-[var(--app-bottom-inset)]",
-        useSheet ? MOBILE_OVERLAY_Z : "z-[220]"
+        useSheet ? MOBILE_OVERLAY_Z : "z-[260]"
       )}
       {...props}
     >
@@ -124,7 +124,7 @@ function PopoverContent({
       {insideDrawer ? (
         <PopoverPrimitive.Backdrop
           className={cn(
-            "fixed inset-x-0 top-0 bottom-[var(--app-bottom-inset)] z-[210]",
+            "fixed inset-x-0 top-0 bottom-[var(--app-bottom-inset)] z-[259]",
             "bg-black/55 supports-backdrop-filter:backdrop-blur-[2px]"
           )}
         />
@@ -134,7 +134,7 @@ function PopoverContent({
         alignOffset={alignOffset}
         side={side}
         sideOffset={sideOffset}
-        className="pointer-events-auto isolate z-[220]"
+        className="pointer-events-auto isolate z-[260]"
       >
         {popup}
       </PopoverPrimitive.Positioner>

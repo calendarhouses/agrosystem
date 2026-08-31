@@ -53,7 +53,7 @@ export function NonModalDrawerBackdrop({
     <div
       aria-hidden
       className={cn(
-        "fixed top-0 right-0 bottom-[var(--app-bottom-inset)] left-0 z-[149]",
+        "fixed top-0 right-0 bottom-[var(--app-bottom-inset)] left-0 z-[259]",
         "bg-black/70 supports-backdrop-filter:backdrop-blur-[3px]",
         className
       )}
@@ -100,7 +100,7 @@ function DrawerClose({
 
 /** Єдине затемнення шторок у всій системі */
 export const DRAWER_OVERLAY_CLASS = cn(
-  "fixed top-0 right-0 bottom-[var(--app-bottom-inset)] left-0 z-[150]",
+  "fixed top-0 right-0 bottom-[var(--app-bottom-inset)] left-0 z-[260]",
   "bg-black/70 supports-backdrop-filter:backdrop-blur-[3px]"
 )
 
@@ -149,7 +149,7 @@ function DrawerContent({
         <DrawerPrimitive.Content
           data-slot="drawer-content"
           className={cn(
-            "fixed inset-x-0 bottom-[var(--app-bottom-inset)] z-[150] flex max-h-[calc(94dvh-var(--app-bottom-inset))] flex-col overflow-hidden rounded-t-[1.75rem] border border-[#E5DFD3]/80 bg-[#F4F1EA] outline-none",
+            "fixed inset-x-0 bottom-[var(--app-bottom-inset)] z-[260] flex max-h-[calc(94dvh-var(--app-bottom-inset))] flex-col overflow-hidden rounded-t-[1.75rem] border border-[#E5DFD3]/80 bg-[#F4F1EA] outline-none",
             "pb-3",
             "data-[state=closed]:pointer-events-none data-[state=open]:pointer-events-auto",
             className

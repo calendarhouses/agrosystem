@@ -35,11 +35,13 @@ export function FuelRoute() {
   const seedStorages =
     storagesFresh?.storages ?? storagesStale?.storages ?? null;
   const seedTx = txFresh?.transactions ?? txStale?.transactions ?? null;
+  const hasSeed = seedStorages != null && seedTx != null;
 
   const [storages, setStorages] = useState<FuelStorage[]>(seedStorages ?? []);
   const [transactions, setTransactions] = useState<FuelTransaction[]>(
     seedTx ?? []
   );
+  const [bootLoading, setBootLoading] = useState(!hasSeed);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -75,6 +77,9 @@ export function FuelRoute() {
       })
       .catch(() => {
         /* seed вже на екрані */
+      })
+      .finally(() => {
+        setBootLoading(false);
       });
 
     return () => controller.abort();
@@ -85,6 +90,7 @@ export function FuelRoute() {
     <FuelView
       initialStorages={storages}
       initialTransactions={transactions}
+      bootLoading={bootLoading}
     />
   );
 }

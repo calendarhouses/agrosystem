@@ -552,8 +552,12 @@ export async function listUnsyncedEquipmentDayDates(
   if (error) return all;
 
   const synced = new Set<string>();
+  const today = todayKyivYmd();
   for (const row of data ?? []) {
-    if (row.date) synced.add(String(row.date).slice(0, 10));
+    if (!row.date) continue;
+    const d = String(row.date).slice(0, 10);
+    // Поточний день не вважаємо повністю синхронізованим — intraday tick оновлює дані.
+    if (d !== today) synced.add(d);
   }
   return all.filter((d) => !synced.has(d));
 }

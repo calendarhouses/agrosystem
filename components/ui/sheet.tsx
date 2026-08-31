@@ -9,7 +9,7 @@ import { XIcon } from "lucide-react"
 import { SwipeableSheet } from "@/components/ui/swipe-sheet"
 import { useIsMobile } from "@/lib/use-mobile"
 
-const OVERLAY_Z = "z-[200]"
+const OVERLAY_Z = "z-[260]"
 
 function Sheet({ ...props }: SheetPrimitive.Root.Props) {
   return <SheetPrimitive.Root data-slot="sheet" {...props} />

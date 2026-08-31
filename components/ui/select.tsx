@@ -62,7 +62,7 @@ function SelectTrigger({
   )
 }
 
-const MOBILE_OVERLAY_Z = "z-[200]"
+const MOBILE_OVERLAY_Z = "z-[260]"
 
 function SelectContent({
   className,
@@ -105,7 +105,7 @@ function SelectContent({
         className,
         useSheet &&
           "fixed inset-x-0 bottom-[var(--app-bottom-inset)] top-auto max-h-[var(--app-sheet-max)] w-full min-w-0 origin-bottom overflow-hidden rounded-t-3xl rounded-b-none pb-[max(0.5rem,var(--safe-bottom))] shadow-2xl ring-0 data-open:zoom-in-100",
-        useSheet ? MOBILE_OVERLAY_Z : "z-[220]"
+        useSheet ? MOBILE_OVERLAY_Z : "z-[260]"
       )}
       {...props}
     >
@@ -173,7 +173,7 @@ function SelectContent({
         alignOffset={alignOffset}
         alignItemWithTrigger={alignWithTrigger}
         collisionPadding={12}
-        className="pointer-events-auto isolate z-[220]"
+        className="pointer-events-auto isolate z-[260]"
       >
         {popup}
       </SelectPrimitive.Positioner>

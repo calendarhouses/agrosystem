@@ -3,11 +3,11 @@
  * Ціну дизеля — lib/fuel-price.ts
  */
 
-import type { Feature, MultiPolygon, Polygon, Position } from "geojson";
+import type { Feature, FeatureCollection, MultiPolygon, Polygon, Position } from "geojson";
 import { booleanPointInPolygon, point } from "@turf/turf";
 
 import type { FieldGeometry } from "@/lib/farm-fields";
-import { kyivDayBoundsUnix, shiftKyivYmd, todayKyivYmd } from "@/lib/kyiv-date";
+import { isKyivDayComplete, kyivDayBoundsUnix, shiftKyivYmd, todayKyivYmd } from "@/lib/kyiv-date";
 import { currentAgroSeason } from "@/lib/season";
 import { createServiceSupabase } from "@/lib/supabase/server";
 import {
@@ -18,12 +18,15 @@ import {
   fuelConsumedFromSamples,
 } from "@/lib/wialon-fuel-decode";
 import {
+  getWialonGeofences,
   getWialonUnitSensors,
   listUnitSensors,
   listWialonUnitBasics,
   loadWialonUnitMessages,
+  type WialonGeofenceProperties,
   type WialonTrackMessage,
   wialonLogin,
+  wialonResourcesToGeofenceGeoJSON,
 } from "@/lib/wialon";
 import { isFuelDeliveryUnit, resolveFuelTankVolumeLiters } from "@/lib/equipment-fuel-tanks";
 import { resolvePlausibleDayFuelConsumed } from "@/lib/equipment-fuel-consumed";
@@ -135,6 +138,31 @@ function toPolygonFeature(
     return null;
   }
   return { type: "Feature", properties: {}, geometry };
+}
+
+/** Wialon geofences → полігони за wialon_zone_id (як у equipment day sync). */
+function buildWialonGeofenceGeometryByZoneId(
+  geofences: FeatureCollection<Polygon, WialonGeofenceProperties>
+): Map<string, FieldGeometry> {
+  const map = new Map<string, FieldGeometry>();
+  for (const feature of geofences.features) {
+    const zoneId = feature.properties?.id?.trim();
+    if (!zoneId || feature.geometry?.type !== "Polygon") continue;
+    map.set(zoneId, feature.geometry);
+  }
+  return map;
+}
+
+function resolveFieldVisitGeometry(
+  field: FieldRow,
+  wialonGeometries: Map<string, FieldGeometry>
+): FieldGeometry | null {
+  const zoneId = field.wialon_zone_id?.trim();
+  if (zoneId) {
+    const wialonGeom = wialonGeometries.get(zoneId);
+    if (wialonGeom) return wialonGeom;
+  }
+  return field.geometry;
 }
 
 function readMsgTime(msg: WialonTrackMessage): number | null {
@@ -291,7 +319,7 @@ async function loadMappings(): Promise<{
     supabase
       .from("farm_fields")
       .select("id, name, wialon_zone_id, geometry")
-      .not("geometry", "is", null),
+      .or("geometry.not.is.null,wialon_zone_id.not.is.null"),
   ]);
 
   if (eqRes.error) throw new Error(`equipment: ${eqRes.error.message}`);
@@ -382,12 +410,35 @@ export async function syncWialonFieldFuelForDate(
       errors: [
         units.length === 0
           ? "Немає юнітів Wialon"
-          : "Немає полів з geometry",
+          : "Немає полів з Wialon-геозоною або geometry",
       ],
     };
   }
 
   const eid = await wialonLogin();
+  let wialonGeometries = new Map<string, FieldGeometry>();
+  try {
+    const resources = await getWialonGeofences(eid);
+    wialonGeometries = buildWialonGeofenceGeometryByZoneId(
+      wialonResourcesToGeofenceGeoJSON(resources)
+    );
+  } catch (err) {
+    const msg =
+      err instanceof Error ? err.message : "не вдалося завантажити геозони Wialon";
+    errors.push(`Геозони Wialon: ${msg}`);
+    console.warn("[sync-wialon-fuel] geofences fallback to DB geometry", msg);
+  }
+
+  const syncFields = fields
+    .map((field) => ({
+      field,
+      geometry: resolveFieldVisitGeometry(field, wialonGeometries),
+    }))
+    .filter(
+      (row): row is { field: FieldRow; geometry: FieldGeometry } =>
+        row.geometry != null
+    );
+
   const syncTime = new Date().toISOString();
   const season = currentAgroSeason(now);
   const upserts: WialonFieldFuelLogUpsert[] = [];
@@ -434,10 +485,9 @@ export async function syncWialonFieldFuelForDate(
         workHours: dayActiveSec / 3600,
       });
 
-      const visited = fields
-        .filter((field) => field.geometry != null)
-        .map((field) => {
-          const visits = detectGeofenceVisits(messages, field.geometry!);
+      const visited = syncFields
+        .map(({ field, geometry }) => {
+          const visits = detectGeofenceVisits(messages, geometry);
           return {
             field,
             visits,
@@ -491,12 +541,15 @@ export async function syncWialonFieldFuelForDate(
     upserted = await persistFieldFuelLogs(upserts);
   }
 
-  await markFieldFuelDaySynced({
-    date,
-    upserted,
-    unitsProcessed: units.length,
-    skipped,
-  });
+  await markFieldFuelDaySynced(
+    {
+      date,
+      upserted,
+      unitsProcessed: units.length,
+      skipped,
+    },
+    now
+  );
 
   return {
     ok: true,
@@ -511,12 +564,18 @@ export async function syncWialonFieldFuelForDate(
 }
 
 /** Позначити день як синхронізований (таблиця 035; fallback — sentinel-лог). */
-async function markFieldFuelDaySynced(input: {
-  date: string;
-  upserted: number;
-  unitsProcessed: number;
-  skipped: number;
-}): Promise<void> {
+async function markFieldFuelDaySynced(
+  input: {
+    date: string;
+    upserted: number;
+    unitsProcessed: number;
+    skipped: number;
+  },
+  now = new Date()
+): Promise<void> {
+  // Поточний день ще триває — не позначаємо як повністю синхронізований.
+  if (!isKyivDayComplete(input.date, now)) return;
+
   const supabase = createServiceSupabase();
   try {
     const { error } = await supabase.from("wialon_field_fuel_day_sync").upsert(
@@ -586,6 +645,7 @@ export async function listUnsyncedFieldFuelDates(
 
   const supabase = createServiceSupabase();
   const synced = new Set<string>();
+  const today = todayKyivYmd();
 
   const { data: markers, error: markerErr } = await supabase
     .from("wialon_field_fuel_day_sync")
@@ -595,18 +655,22 @@ export async function listUnsyncedFieldFuelDates(
 
   if (!markerErr) {
     for (const row of markers ?? []) {
-      if (row.date) synced.add(String(row.date).slice(0, 10));
+      if (!row.date) continue;
+      const d = String(row.date).slice(0, 10);
+      if (d !== today) synced.add(d);
     }
   }
 
-  // Логи (вкл. sentinel unit=0) також рахуємо як «день відомий»
+  // Логи (вкл. sentinel unit=0) також рахуємо як «день відомий», крім поточного дня
   const { data: logs } = await supabase
     .from("wialon_field_fuel_logs")
     .select("date")
     .gte("date", fromDate)
     .lte("date", toDate);
   for (const row of logs ?? []) {
-    if (row.date) synced.add(String(row.date).slice(0, 10));
+    if (!row.date) continue;
+    const d = String(row.date).slice(0, 10);
+    if (d !== today) synced.add(d);
   }
 
   return all.filter((d) => !synced.has(d));

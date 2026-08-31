@@ -706,17 +706,20 @@ function TankCard({
 type FuelViewProps = {
   initialStorages: FuelStorage[];
   initialTransactions: FuelTransaction[];
+  /** Перше завантаження без кешу — не показувати «порожньо» до завершення fetch */
+  bootLoading?: boolean;
 };
 
 /** Облік палива — склади з Supabase */
 export function FuelView({
   initialStorages,
   initialTransactions,
+  bootLoading = false,
 }: FuelViewProps) {
   const [storages, setStorages] = useState<FuelStorage[]>(initialStorages);
   const [transactions, setTransactions] =
     useState<FuelTransaction[]>(initialTransactions);
-  const [txLoading, setTxLoading] = useState(false);
+  const [txLoading, setTxLoading] = useState(bootLoading);
   const [fuelSheetOpen, setFuelSheetOpen] = useState(false);
   const [selectedStorage, setSelectedStorage] = useState<FuelStorage | null>(
     null
@@ -867,6 +870,13 @@ export function FuelView({
   useEffect(() => {
     setStorages(initialStorages);
   }, [initialStorages]);
+
+  useEffect(() => {
+    setTransactions(initialTransactions);
+  }, [initialTransactions]);
+
+  const journalLoading = txLoading || bootLoading;
+  const storagesLoading = bootLoading;
 
   /** Тримати обраний резервуар у синхроні з live-даними */
   useEffect(() => {
@@ -1517,7 +1527,9 @@ export function FuelView({
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2">
-          {storages.length === 0 ? (
+          {storagesLoading ? (
+            <FuelStoragesSkeleton />
+          ) : storages.length === 0 ? (
             <div className="col-span-full rounded-3xl border border-dashed border-[#E5DFD3] bg-[#F4F1EA]/90 px-6 py-16 text-center shadow-sm">
               <p className="text-sm font-semibold text-zinc-900">
                 Склади палива ще не налаштовані
@@ -1605,7 +1617,9 @@ export function FuelView({
             })}
           </div>
 
-          {transactions.length === 0 ? (
+          {journalLoading ? (
+            <FuelJournalSkeleton />
+          ) : transactions.length === 0 ? (
             <div className="rounded-3xl border border-dashed border-[#E5DFD3] bg-white/70 px-5 py-14 text-center text-sm text-zinc-500">
               Немає операцій за обраний період
             </div>
@@ -1853,7 +1867,13 @@ export function FuelView({
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100 bg-white">
-                {transactions.length === 0 ? (
+                {journalLoading ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-8">
+                      <FuelJournalSkeleton rows={4} compact />
+                    </td>
+                  </tr>
+                ) : transactions.length === 0 ? (
                   <tr>
                     <td
                       colSpan={6}
@@ -2082,5 +2102,54 @@ export function FuelView({
         transactions={transactions}
       />
     </main>
+  );
+}
+
+function FuelStoragesSkeleton() {
+  return (
+    <div
+      className="col-span-full grid grid-cols-1 gap-4 sm:grid-cols-2"
+      aria-busy="true"
+      aria-label="Завантаження складів палива"
+    >
+      {Array.from({ length: 2 }).map((_, i) => (
+        <div
+          key={i}
+          className="h-44 animate-pulse rounded-3xl border border-[#E5DFD3]/80 bg-white/60"
+        />
+      ))}
+    </div>
+  );
+}
+
+function FuelJournalSkeleton({
+  rows = 5,
+  compact = false,
+}: {
+  rows?: number;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className={cn("space-y-2.5", compact && "space-y-2")}
+      aria-busy="true"
+      aria-label="Завантаження журналу"
+    >
+      {Array.from({ length: rows }).map((_, i) => (
+        <div
+          key={i}
+          className={cn(
+            "animate-pulse rounded-2xl border border-[#E5DFD3]/80 bg-white/70",
+            compact ? "h-12" : "h-[4.5rem]"
+          )}
+        />
+      ))}
+      {!compact ? (
+        <p className="flex items-center justify-center gap-2 pt-1 text-xs text-zinc-500">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          Завантаження…
+        </p>
+      ) : null}
+    </div>
   );
 }
