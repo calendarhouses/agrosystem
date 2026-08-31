@@ -205,6 +205,40 @@ export function findCropOperationById(
   return null;
 }
 
+function normalizeOpName(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Пошук операції словника за назвою наряду / work_type */
+export function findCropOperationByWorkType(
+  workType: string
+): CropOperation | null {
+  const target = normalizeOpName(workType);
+  if (!target) return null;
+
+  for (const entry of CROP_DICTIONARY_ENTRIES) {
+    for (const op of entry.operations) {
+      const name = normalizeOpName(op.name);
+      const mapped = normalizeOpName(mapDictionaryOpToWorkType(op.name));
+      if (
+        name === target ||
+        mapped === target ||
+        name.includes(target) ||
+        target.includes(name) ||
+        mapped.includes(target) ||
+        target.includes(mapped)
+      ) {
+        return op;
+      }
+    }
+  }
+  return null;
+}
+
 /**
  * Відображувана назва операції словника → тип наряду в системі.
  */

@@ -1,11 +1,11 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  CalendarRange,
   FileSpreadsheet,
   Fuel,
   Map as MapIcon,
   MoreHorizontal,
   PieChart,
-  Radar,
   Tractor,
   Warehouse,
 } from "lucide-react";
@@ -32,9 +32,9 @@ export const APP_NAV_ITEMS: AppNavItem[] = [
   },
   {
     href: "/calendar",
-    label: "Агро-Радар",
-    hint: "Вікна можливостей і план робіт",
-    icon: Radar,
+    label: "Агроплан",
+    hint: "Сезонний таймлайн і план робіт",
+    icon: CalendarRange,
     moreMenu: true,
   },
   {

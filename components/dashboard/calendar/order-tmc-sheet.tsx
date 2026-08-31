@@ -100,7 +100,7 @@ export function OrderTmcSheet({
             Заявка на закупівлю
           </SheetTitle>
           <SheetDescription>
-            Автозаповнено з дефіциту Агро-Радара → черга бухгалтера
+            Автозаповнено з дефіциту Агроплану → черга бухгалтера
           </SheetDescription>
         </SheetHeader>
 

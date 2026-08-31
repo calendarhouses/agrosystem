@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 
-import { AgroRadarView } from "@/components/dashboard/agro-radar-view";
+import { AgroplanView } from "@/components/dashboard/agroplan/agroplan-view";
 
 export const metadata: Metadata = {
-  title: "Агро-Радар",
+  title: "Агроплан",
 };
 
 export default function CalendarPage() {
-  return <AgroRadarView />;
+  return <AgroplanView />;
 }

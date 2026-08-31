@@ -180,8 +180,8 @@ export function PlanInsightSheet({
         const wagePlan = estimatePlanWageUah(area || 1);
         const commentParts = [
           isScout
-            ? "Агро-Радар: скаутинг NDVI"
-            : "Агро-Радар: автозаповнення",
+            ? "Агроплан: скаутинг NDVI"
+            : "Агроплан: автозаповнення",
           isScout && insight.ndviDropPercent != null
             ? `падіння ${Math.round(insight.ndviDropPercent)}%`
             : null,
@@ -264,7 +264,7 @@ export function PlanInsightSheet({
           <SheetDescription>
             {isScout
               ? "NDVI-аномалія · автозаповнення огляду поля"
-              : "Zero-Data Entry · параметри з Агро-Радара"}
+              : "Zero-Data Entry · параметри з Агроплану"}
           </SheetDescription>
         </SheetHeader>
 

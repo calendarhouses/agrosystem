@@ -140,7 +140,7 @@ export function BottomNav() {
             <div className="border-b border-zinc-800 px-5 pb-4 pr-14 pt-1 text-left">
               <h2 className="text-lg font-bold text-zinc-50">Інші розділи</h2>
               <p className="mt-1 text-sm text-zinc-500">
-                Агро-Радар, фінанси, бухгалтерія та профіль
+                Агроплан, фінанси, бухгалтерія та профіль
               </p>
             </div>
 
