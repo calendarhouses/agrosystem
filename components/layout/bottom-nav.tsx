@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import type { LucideIcon } from "lucide-react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
@@ -88,6 +88,33 @@ function DockToggleIcon({
   );
 }
 
+function DockPage({
+  page,
+  activePage,
+  children,
+}: {
+  page: 0 | 1;
+  activePage: 0 | 1;
+  children: React.ReactNode;
+}) {
+  const isActive = activePage === page;
+  return (
+    <motion.div
+      variants={slideVariants}
+      initial={false}
+      animate={isActive ? "center" : page === 0 ? "offLeft" : "offRight"}
+      transition={DOCK_SPRING}
+      className={cn(
+        "absolute inset-0 flex items-stretch justify-around px-1",
+        !isActive && "pointer-events-none"
+      )}
+      aria-hidden={!isActive}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
 export function BottomNav() {
   const pathname = usePathname();
   const { revealChrome } = useAppBoot();
@@ -126,10 +153,7 @@ export function BottomNav() {
       <motion.nav
         data-bottom-nav
         aria-label="Головна навігація"
-        className={cn(
-          "fixed inset-x-0 bottom-0 z-[250] overflow-hidden bg-[var(--nav-bg)] md:hidden",
-          "relative h-[var(--bottom-nav-height)]"
-        )}
+        className="fixed inset-x-0 bottom-0 z-[250] h-[var(--bottom-nav-height)] overflow-hidden bg-[var(--nav-bg)] md:hidden"
         initial={{ y: 20, opacity: 0 }}
         animate={
           revealChrome ? { y: 0, opacity: 1 } : { y: 20, opacity: 0 }
@@ -141,102 +165,75 @@ export function BottomNav() {
         }}
         style={{ pointerEvents: revealChrome ? "auto" : "none" }}
       >
-        <AnimatePresence initial={false} custom={activePage}>
-          <motion.div
-            key="dock-page-0"
-            variants={slideVariants}
-            initial={false}
-            animate={activePage === 0 ? "center" : "offLeft"}
-            transition={DOCK_SPRING}
+        <DockPage page={0} activePage={activePage}>
+          {BOTTOM_NAV_ITEMS.map((item) => (
+            <NavLinkItem
+              key={item.href}
+              href={item.href}
+              label={item.label}
+              icon={item.icon}
+              active={isNavItemActive(pathname, item.href)}
+              onNavigate={handleOperationalNavigate}
+            />
+          ))}
+
+          <button
+            type="button"
+            aria-label="Ще"
+            onClick={() => goToPage(1)}
             className={cn(
-              "absolute inset-0 flex items-stretch justify-around px-1",
-              activePage !== 0 && "pointer-events-none"
+              DOCK_TOGGLE_CLASS,
+              (activePage === 1 || businessActive) && "text-[#E8A87C]"
             )}
-            aria-hidden={activePage !== 0}
           >
-            {BOTTOM_NAV_ITEMS.map((item) => (
-              <NavLinkItem
-                key={item.href}
-                href={item.href}
-                label={item.label}
-                icon={item.icon}
-                active={isNavItemActive(pathname, item.href)}
-                onNavigate={handleOperationalNavigate}
-              />
-            ))}
+            <DockToggleIcon active={activePage === 1 || businessActive}>
+              <ChevronRight className="h-5 w-5" strokeWidth={2} />
+            </DockToggleIcon>
+            <span className={NAV_TEXT_CLASS}>Ще</span>
+          </button>
+        </DockPage>
 
-            <button
-              type="button"
-              aria-label="Ще"
-              onClick={() => goToPage(1)}
-              className={cn(
-                DOCK_TOGGLE_CLASS,
-                (activePage === 1 || businessActive) && "text-[#E8A87C]"
-              )}
-            >
-              <DockToggleIcon active={activePage === 1 || businessActive}>
-                <ChevronRight
-                  className="h-5 w-5"
-                  strokeWidth={2}
-                />
-              </DockToggleIcon>
-              <span className={NAV_TEXT_CLASS}>Ще</span>
-            </button>
-          </motion.div>
+        <DockPage page={1} activePage={activePage}>
+          <button
+            type="button"
+            aria-label="Назад"
+            onClick={() => goToPage(0)}
+            className={DOCK_TOGGLE_CLASS}
+          >
+            <DockToggleIcon>
+              <ChevronLeft className="h-5 w-5" strokeWidth={2} />
+            </DockToggleIcon>
+            <span className={NAV_TEXT_CLASS}>Назад</span>
+          </button>
 
-          <motion.div
-            key="dock-page-1"
-            variants={slideVariants}
-            initial={false}
-            animate={activePage === 1 ? "center" : "offRight"}
-            transition={DOCK_SPRING}
+          {DOCK_BUSINESS_ITEMS.map((item) => (
+            <NavLinkItem
+              key={item.href}
+              href={item.href}
+              label={item.label}
+              icon={item.icon}
+              active={isNavItemActive(pathname, item.href)}
+            />
+          ))}
+
+          <button
+            type="button"
+            aria-label={PROFILE_DOCK_ITEM.label}
+            onClick={() => setProfileOpen(true)}
             className={cn(
-              "absolute inset-0 flex items-stretch justify-around px-1",
-              activePage !== 1 && "pointer-events-none"
+              NAV_ITEM_CLASS,
+              profileActive
+                ? "text-[#E8A87C]"
+                : "text-zinc-500 active:text-zinc-300"
             )}
-            aria-hidden={activePage !== 1}
           >
-            <button
-              type="button"
-              aria-label="Назад"
-              onClick={() => goToPage(0)}
-              className={DOCK_TOGGLE_CLASS}
-            >
-              <DockToggleIcon>
-                <ChevronLeft className="h-5 w-5" strokeWidth={2} />
-              </DockToggleIcon>
-              <span className={NAV_TEXT_CLASS}>Назад</span>
-            </button>
-
-            {DOCK_BUSINESS_ITEMS.map((item) => (
-              <NavLinkItem
-                key={item.href}
-                href={item.href}
-                label={item.label}
-                icon={item.icon}
-                active={isNavItemActive(pathname, item.href)}
-              />
-            ))}
-
-            <button
-              type="button"
-              aria-label={PROFILE_DOCK_ITEM.label}
-              onClick={() => setProfileOpen(true)}
-              className={cn(
-                NAV_ITEM_CLASS,
-                profileActive
-                  ? "text-[#E8A87C]"
-                  : "text-zinc-500 active:text-zinc-300"
-              )}
-            >
-              <PROFILE_DOCK_ITEM.icon
-                className="h-6 w-6"
-                strokeWidth={profileActive ? 2.1 : 1.85}
-              />
-              <span className={NAV_TEXT_CLASS}>{PROFILE_DOCK_ITEM.label}</span>
-            </button>
-          </motion.div>
-        </AnimatePresence>
+            <PROFILE_DOCK_ITEM.icon
+              className="h-6 w-6"
+              strokeWidth={profileActive ? 2.1 : 1.85}
+            />
+            <span className={NAV_TEXT_CLASS}>{PROFILE_DOCK_ITEM.label}</span>
+          </button>
+        </DockPage>
       </motion.nav>
 
       {me ? (

@@ -72,6 +72,10 @@ export function AppBootProvider({ children }: { children: ReactNode }) {
     const maxTimer = window.setTimeout(() => {
       setMinElapsed(true);
       setFieldsMapReady(true);
+      setRevealChrome(true);
+      delete document.documentElement.dataset.booting;
+      delete document.documentElement.dataset.bootUi;
+      document.documentElement.dataset.appReady = "1";
     }, MAX_BOOT_MS);
     return () => {
       window.clearTimeout(minTimer);
@@ -88,17 +92,16 @@ export function AppBootProvider({ children }: { children: ReactNode }) {
   const isAppLoading = !(minElapsed && fieldsMapReady);
 
   useEffect(() => {
-    if (!isAppLoading) {
-      setRevealChrome(true);
-      // Safe-area / body → колір меню одночасно з появою chrome
-      delete document.documentElement.dataset.booting;
-      delete document.documentElement.dataset.bootUi;
-      document.documentElement.dataset.appReady = "1";
-      try {
-        sessionStorage.removeItem("levada-softnav-reload");
-      } catch {
-        /* ignore */
-      }
+    if (isAppLoading) return;
+    setRevealChrome(true);
+    // Safe-area / body → колір меню одночасно з появою chrome
+    delete document.documentElement.dataset.booting;
+    delete document.documentElement.dataset.bootUi;
+    document.documentElement.dataset.appReady = "1";
+    try {
+      sessionStorage.removeItem("levada-softnav-reload");
+    } catch {
+      /* ignore */
     }
   }, [isAppLoading]);
 

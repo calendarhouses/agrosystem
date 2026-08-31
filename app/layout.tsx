@@ -85,6 +85,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="uk"
       className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+      suppressHydrationWarning
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: BOOT_PATH_SCRIPT }} />
