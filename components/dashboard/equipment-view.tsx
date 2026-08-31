@@ -75,6 +75,7 @@ import {
   type DriverShiftSpan,
   type FuelDrainEvent,
 } from "@/lib/equipment-day-analytics";
+import { hoursOnFieldFromGpsSamples } from "@/lib/equipment-field-hours";
 import {
   isFuelCritical,
   patchFleetGps,
@@ -1949,10 +1950,35 @@ export function EquipmentView() {
     return buildLocationSessions(trackGeoJSON, geofences);
   }, [dayAnalytics.samples, geofences, trackGeoJSON, trackLoading]);
 
-  const sessionTimeHours = useMemo(
-    () => hoursFromSessionSpans(locationSessions),
-    [locationSessions]
-  );
+  /**
+   * «На полях» у картці = та сама формула, що в зведенні парку
+   * (`hoursOnFieldFromGpsSamples` + стеля по мотогодинах).
+   * Журнал локацій лишає повну присутність у геозоні (вкл. стоянку).
+   */
+  const sessionTimeHours = useMemo(() => {
+    const fromSessions = hoursFromSessionSpans(locationSessions);
+    const samples = dayAnalytics.samples;
+    const workHours = dayAnalytics.summary.workHours;
+    const maxHours = workHours > 0 ? workHours : undefined;
+
+    let hoursOnField = fromSessions.hoursOnField;
+    if (samples.length >= 2 && geofences.features.length > 0) {
+      hoursOnField = hoursOnFieldFromGpsSamples(
+        samples.map((s) => ({ lng: s.lng, lat: s.lat, t: s.t })),
+        geofences,
+        maxHours
+      );
+    } else if (maxHours != null) {
+      hoursOnField = Math.min(hoursOnField, maxHours);
+    }
+
+    return { ...fromSessions, hoursOnField };
+  }, [
+    locationSessions,
+    dayAnalytics.samples,
+    dayAnalytics.summary.workHours,
+    geofences,
+  ]);
 
   const summaryHighlightIds = useMemo(() => {
     if (!summaryMetric || !fleetSummary) return null;
