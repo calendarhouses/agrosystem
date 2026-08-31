@@ -41,6 +41,10 @@ export type MapCameraPadding = {
   right: number;
 };
 
+/** Додатковий bottom/right padding на ПК, коли легенда бюджету над FAB карти */
+const MAP_DESKTOP_ECONOMICS_LEGEND_EXTRA_BOTTOM = 96;
+const MAP_DESKTOP_ECONOMICS_LEGEND_EXTRA_RIGHT = 280;
+
 /** Padding fitBounds з урахуванням мобільного chrome (меню, peek, кнопки). */
 export function mapCameraPadding(
   isDesktop: boolean,
@@ -53,7 +57,13 @@ export function mapCameraPadding(
       : MAP_MOBILE_CAMERA_PADDING.top;
     return { ...MAP_MOBILE_CAMERA_PADDING, top };
   }
-  return commandCenterFitPadding(isDesktop, panel);
+  const base = commandCenterFitPadding(isDesktop, panel);
+  if (!options?.economicsLegend) return base;
+  return {
+    ...base,
+    bottom: base.bottom + MAP_DESKTOP_ECONOMICS_LEGEND_EXTRA_BOTTOM,
+    right: Math.max(base.right, MAP_DESKTOP_ECONOMICS_LEGEND_EXTRA_RIGHT),
+  };
 }
 
 export function commandCenterFitPadding(

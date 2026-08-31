@@ -367,6 +367,7 @@ export function ProfilePopover({
         {children}
       </PopoverTrigger>
       <PopoverContent
+        initialFocus={false}
         side="right"
         align={collapsed ? "center" : "end"}
         sideOffset={10}

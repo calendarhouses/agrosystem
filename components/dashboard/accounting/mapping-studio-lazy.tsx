@@ -495,8 +495,7 @@ export function MappingStudioLazy({
               className="h-9 gap-1.5 rounded-xl border-[#E5DFD3] bg-white text-[11px] sm:text-xs"
             >
               <Wand2 className="h-3.5 w-3.5" />
-              Авто
-              <span className="hidden sm:inline">-зіставлення</span>
+              Авто - зіставлення
             </Button>
             {pendingAuto ? (
               <Button

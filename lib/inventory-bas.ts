@@ -795,11 +795,8 @@ export function filterDashboardByRange(
     }
   }
 
-  const harvestIds = new Set(
-    full.items.filter((i) => i.category === "harvest").map((i) => i.id)
-  );
   for (const m of moves) {
-    if (!harvestIds.has(m.itemId)) continue;
+    if (m.kind !== "harvest") continue;
     const ym = m.date.slice(0, 7);
     const b = getBucket(ym);
     b.harvest += m.cost;
@@ -825,7 +822,7 @@ export function filterDashboardByRange(
 
   const totalHarvest = Math.round(
     moves
-      .filter((m) => harvestIds.has(m.itemId))
+      .filter((m) => m.kind === "harvest")
       .reduce((s, m) => s + m.cost, 0)
   );
 

@@ -3,10 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
-  endOfDay,
   format,
-  startOfDay,
-  subDays,
 } from "date-fns";
 import { uk } from "date-fns/locale";
 import type { DateRange } from "react-day-picker";
@@ -16,7 +13,6 @@ import {
   Calendar as CalendarIcon,
   ChevronDown,
   ChevronLeft,
-  Download,
   Eye,
   EyeOff,
   ExternalLink,
@@ -50,7 +46,6 @@ import {
   type LocalMoveRow,
   type LocalOutboundRow,
 } from "@/app/admin/inventory/actions";
-import { AccountantExportSheet } from "@/components/dashboard/accountant-export-sheet";
 import { AttachmentViewerButton } from "@/components/dashboard/attachment-viewer";
 import { QuickIssueSheet } from "@/components/dashboard/quick-issue-sheet";
 import { InventoryInboundSheet } from "@/components/dashboard/inventory-inbound-sheet";
@@ -99,6 +94,11 @@ import {
   type InventoryItem,
   type ItemMove,
 } from "@/lib/inventory-bas";
+import {
+  FINANCE_QUICK_PERIODS,
+  getFinancePeriodRange,
+  type FinancePeriod,
+} from "@/lib/finance-period";
 import { useSeasonStore } from "@/lib/season-store";
 import { localMoveFromOutboundRow } from "@/lib/local-move-edit";
 import { nextDateRangeSelection } from "@/lib/date-range-select";
@@ -162,67 +162,7 @@ const CATEGORY_SHEET_ACCENT: Record<InventoryCategory, FuelSheetAccent> = {
   parts: "zinc",
 };
 
-type HistoryPeriod =
-  | "Сьогодні"
-  | "Вчора"
-  | "Тиждень"
-  | "Місяць"
-  | "Сезон"
-  | "custom";
-
 const SEASON_OPTIONS = [2026, 2025, 2024] as const;
-const PERIOD_OPTIONS: Exclude<HistoryPeriod, "custom" | "Сезон">[] = [
-  "Сьогодні",
-  "Вчора",
-  "Тиждень",
-  "Місяць",
-];
-
-/** Агросезон: 1 березня → кінець лютого наступного року */
-function getSeasonRange(seasonYear: number, now = new Date()): {
-  start: Date;
-  end: Date;
-} {
-  const start = startOfDay(new Date(seasonYear, 2, 1));
-  const endRaw = endOfDay(new Date(seasonYear + 1, 2, 0));
-  return {
-    start,
-    end: endRaw.getTime() > now.getTime() ? endOfDay(now) : endRaw,
-  };
-}
-
-function getPeriodRange(
-  period: HistoryPeriod,
-  seasonYear: number,
-  customRange?: DateRange
-): { start: Date; end: Date } {
-  const now = new Date();
-  if (period === "Сезон") {
-    return getSeasonRange(seasonYear, now);
-  }
-  if (period === "custom" && customRange?.from) {
-    return {
-      start: startOfDay(customRange.from),
-      end: endOfDay(customRange.to ?? customRange.from),
-    };
-  }
-  if (period === "Вчора") {
-    const day = subDays(now, 1);
-    return { start: startOfDay(day), end: endOfDay(day) };
-  }
-  if (period === "Тиждень") {
-    return { start: startOfDay(subDays(now, 6)), end: endOfDay(now) };
-  }
-  if (period === "Місяць") {
-    return { start: startOfDay(subDays(now, 29)), end: endOfDay(now) };
-  }
-  return { start: startOfDay(now), end: endOfDay(now) };
-}
-
-function toIsoDay(d: Date): string {
-  return format(d, "yyyy-MM-dd");
-}
-
 
 function formatCompactUah(amount: number): string {
   if (!Number.isFinite(amount) || amount === 0) return "—";
@@ -266,7 +206,6 @@ export function InventoryView({
   const [presetIssueKey, setPresetIssueKey] = useState<string | null>(null);
   const [presetSaleKey, setPresetSaleKey] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [exportOpen, setExportOpen] = useState(false);
   const [showHidden, setShowHidden] = useState(false);
   const [cacheMetaByRef, setCacheMetaByRef] = useState<
     Record<string, InventoryCacheMeta>
@@ -280,7 +219,7 @@ export function InventoryView({
   const [localMoveRows, setLocalMoveRows] = useState<LocalOutboundRow[]>([]);
   const [movesRefreshToken, setMovesRefreshToken] = useState(0);
 
-  const [period, setPeriod] = useState<HistoryPeriod>("Сезон");
+  const [period, setPeriod] = useState<FinancePeriod>("Сезон");
   const activeSeason = useSeasonStore((s) => s.activeSeason);
   const setActiveSeason = useSeasonStore((s) => s.setActiveSeason);
   const seasonYear = Number(activeSeason) || 2026;
@@ -313,8 +252,8 @@ export function InventoryView({
     },
   });
 
-  const dateRange = useMemo(
-    () => getPeriodRange(period, seasonYear, customRange),
+  const isoRange = useMemo(
+    () => getFinancePeriodRange(period, seasonYear, customRange),
     [period, seasonYear, customRange]
   );
 
@@ -322,10 +261,10 @@ export function InventoryView({
     () =>
       filterDashboardByRange(
         dashboard,
-        toIsoDay(dateRange.start),
-        toIsoDay(dateRange.end)
+        isoRange.startIso,
+        isoRange.endIso
       ),
-    [dashboard, dateRange]
+    [dashboard, isoRange]
   );
 
   /** Lifetime BAS qtyIn/qtyOut (не зрізане періодом) — для «На складі». */
@@ -346,8 +285,8 @@ export function InventoryView({
   }, [dashboard]);
 
   const localPeriodByRef = useMemo(() => {
-    const startIso = toIsoDay(dateRange.start);
-    const endIso = toIsoDay(dateRange.end);
+    const startIso = isoRange.startIso;
+    const endIso = isoRange.endIso;
     const byRef: Record<
       string,
       { inbound: number; outbound: number; sale: number }
@@ -366,7 +305,7 @@ export function InventoryView({
       byRef[row.ref] = cur;
     }
     return byRef;
-  }, [localMoveRows, dateRange]);
+  }, [localMoveRows, isoRange]);
 
   const localOutboundPeriodByRef = useMemo(() => {
     const byRef: Record<string, number> = {};
@@ -383,6 +322,19 @@ export function InventoryView({
     return map;
   }, [view]);
 
+  const refCategoryById = useMemo(() => {
+    const map = new Map<string, InventoryCategory>();
+    for (const item of dashboard.items) {
+      map.set(item.id.toLowerCase(), item.category);
+    }
+    for (const [key, meta] of Object.entries(cacheMetaByRef)) {
+      if (meta.category) {
+        map.set(key.toLowerCase(), meta.category as InventoryCategory);
+      }
+    }
+    return map;
+  }, [dashboard.items, cacheMetaByRef]);
+
   /** Позиції з відповідним типом руху за період (BAS + локальні). */
   const flowMatchedIds = useMemo(() => {
     const purchase = new Set<string>();
@@ -396,19 +348,24 @@ export function InventoryView({
         else if (m.kind === "harvest") harvest.add(id);
       }
     }
-    const startIso = toIsoDay(dateRange.start);
-    const endIso = toIsoDay(dateRange.end);
+    const startIso = isoRange.startIso;
+    const endIso = isoRange.endIso;
     for (const row of localMoveRows) {
       if (row.status === "sent_to_1c") continue;
       if (!row.dateYmd || row.dateYmd < startIso || row.dateYmd > endIso) {
         continue;
       }
       const id = row.ref.toLowerCase();
-      if (row.type === "inbound") purchase.add(id);
-      else if (row.type === "sale") sale.add(id);
+      if (row.type === "inbound") {
+        const cat = refCategoryById.get(id);
+        if (cat === "harvest") harvest.add(id);
+        else purchase.add(id);
+      } else if (row.type === "sale") {
+        sale.add(id);
+      }
     }
     return { purchase, sale, harvest } as const;
-  }, [view, localMoveRows, dateRange]);
+  }, [view, localMoveRows, isoRange, refCategoryById]);
 
   /** Позиції з рухами BAS/локальними за вибраний період (+ локальні SKU без BAS). */
   const periodScopedItems = useMemo(() => {
@@ -500,9 +457,9 @@ export function InventoryView({
 
   const showingItems = category != null;
 
-  function applyPeriod(next: HistoryPeriod) {
+  function applyPeriod(next: FinancePeriod) {
     setSeasonOpen(false);
-    if (next !== "custom") setRangeOpen(false);
+    if (next !== "Діапазон") setRangeOpen(false);
     setPeriod(next);
   }
 
@@ -549,8 +506,8 @@ export function InventoryView({
 
   /** Локальні ₴ за період → KPI Закупки / Продажі (+ оборот категорій). */
   const localPeriodFinance = useMemo(() => {
-    const startIso = toIsoDay(dateRange.start);
-    const endIso = toIsoDay(dateRange.end);
+    const startIso = isoRange.startIso;
+    const endIso = isoRange.endIso;
     const categoryByRef: Record<string, InventoryCategory> = {};
     for (const item of periodScopedItems) {
       categoryByRef[item.id.toLowerCase()] = item.category;
@@ -583,11 +540,16 @@ export function InventoryView({
       const cat = categoryByRef[row.ref];
 
       if (row.type === "inbound") {
-        receiptDocs += 1;
-        receiptsUah += amount;
-        if (cat === "harvest") harvestUah += amount;
-        if (cat && amount > 0) {
+        if (cat === "harvest") {
+          harvestUah += amount;
+        } else {
+          receiptDocs += 1;
+          receiptsUah += amount;
+        }
+        if (cat && amount > 0 && cat !== "harvest") {
           costByCategory[cat] = (costByCategory[cat] ?? 0) + amount;
+        } else if (cat === "harvest" && amount > 0) {
+          costByCategory.harvest = (costByCategory.harvest ?? 0) + amount;
         }
       } else if (row.type === "sale") {
         saleDocs += 1;
@@ -605,7 +567,7 @@ export function InventoryView({
     };
   }, [
     localMoveRows,
-    dateRange,
+    isoRange,
     periodScopedItems,
     cacheMetaByRef,
   ]);
@@ -730,15 +692,6 @@ export function InventoryView({
               >
                 <History className="h-4 w-4" />
               </button>
-              <button
-                type="button"
-                onClick={() => setExportOpen(true)}
-                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#E5DFD3]/90 bg-white/90 text-zinc-600 shadow-sm transition"
-                title="Експорт"
-                aria-label="Експорт"
-              >
-                <Download className="h-4 w-4" />
-              </button>
             </div>
           </div>
         ) : null}
@@ -787,15 +740,6 @@ export function InventoryView({
           onOpenChange={setHistoryOpen}
           refreshToken={movesRefreshToken}
           season={activeSeason}
-          onChanged={() => {
-            void refreshOperational();
-            setMovesRefreshToken((token) => token + 1);
-          }}
-        />
-
-        <AccountantExportSheet
-          open={exportOpen}
-          onOpenChange={setExportOpen}
           onChanged={() => {
             void refreshOperational();
             setMovesRefreshToken((token) => token + 1);
@@ -902,14 +846,14 @@ export function InventoryView({
                     setRangeOpen(next);
                     if (next) {
                       setSeasonOpen(false);
-                      applyPeriod("custom");
+                      applyPeriod("Діапазон");
                     }
                   }}
                 >
                   <PopoverTrigger
                     className={cn(
                       "inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl border px-3 text-sm font-semibold transition-all md:h-9 md:text-xs",
-                      period === "custom"
+                      period === "Діапазон"
                         ? "border-[#276749] bg-[#276749] text-white shadow-[0_6px_16px_-6px_rgba(39,103,73,0.55)]"
                         : "border-[#E0DBD0] bg-white text-zinc-700"
                     )}
@@ -917,10 +861,10 @@ export function InventoryView({
                     <CalendarIcon
                       className={cn(
                         "h-3.5 w-3.5 shrink-0",
-                        period === "custom" ? "text-white/90" : "opacity-70"
+                        period === "Діапазон" ? "text-white/90" : "opacity-70"
                       )}
                     />
-                    {period === "custom" && customRange?.from
+                    {period === "Діапазон" && customRange?.from
                       ? `${format(customRange.from, "d MMM", { locale: uk })}${
                           customRange.to
                             ? ` – ${format(customRange.to, "d MMM", { locale: uk })}`
@@ -947,7 +891,7 @@ export function InventoryView({
                       selected={customRange}
                       defaultMonth={customRange?.from ?? new Date()}
                       onSelect={(range, triggerDate) => {
-                        applyPeriod("custom");
+                        applyPeriod("Діапазон");
                         setCustomRange(
                           nextDateRangeSelection(customRange, range, triggerDate)
                         );
@@ -978,7 +922,7 @@ export function InventoryView({
                               to: customRange.from,
                             });
                           }
-                          setPeriod("custom");
+                          setPeriod("Діапазон");
                           setRangeOpen(false);
                         }}
                         className="h-11 flex-[1.4] rounded-xl bg-[#276749] text-sm font-bold text-white disabled:opacity-50"
@@ -990,10 +934,10 @@ export function InventoryView({
                 </Popover>
               </div>
 
-              {/* 2: періоди (+ історія/експорт на мобільному) */}
+              {/* 2: швидкі періоди (+ історія на мобільному) */}
               <div className="flex items-center gap-1.5">
                 <div className="flex min-w-0 flex-1 items-center gap-0.5 rounded-xl bg-[#EDE8DF] p-0.5">
-                  {PERIOD_OPTIONS.map((option) => (
+                  {FINANCE_QUICK_PERIODS.map((option) => (
                     <button
                       key={option}
                       type="button"
@@ -1010,26 +954,15 @@ export function InventoryView({
                   ))}
                 </div>
                 {isMobile ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => setHistoryOpen(true)}
-                      className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#E5DFD3]/90 bg-white/90 text-zinc-600 shadow-sm transition"
-                      title="Історія"
-                      aria-label="Історія"
-                    >
-                      <History className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setExportOpen(true)}
-                      className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#E5DFD3]/90 bg-white/90 text-zinc-600 shadow-sm transition"
-                      title="Експорт"
-                      aria-label="Експорт"
-                    >
-                      <Download className="h-4 w-4" />
-                    </button>
-                  </>
+                  <button
+                    type="button"
+                    onClick={() => setHistoryOpen(true)}
+                    className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#E5DFD3]/90 bg-white/90 text-zinc-600 shadow-sm transition"
+                    title="Історія"
+                    aria-label="Історія"
+                  >
+                    <History className="h-4 w-4" />
+                  </button>
                 ) : null}
               </div>
 
@@ -1378,8 +1311,8 @@ export function InventoryView({
                     lifetimeQtyInByRef={lifetimeQtyInByRef}
                     lifetimeQtyOutByRef={lifetimeQtyOutByRef}
                     localMoveRows={localMoveRows}
-                    periodStartIso={toIsoDay(dateRange.start)}
-                    periodEndIso={toIsoDay(dateRange.end)}
+                    periodStartIso={isoRange.startIso}
+                    periodEndIso={isoRange.endIso}
                     localOutboundByRef={localOutboundByRef}
                     localInboundByRef={localInboundByRef}
                     localOutboundPeriodByRef={localOutboundPeriodByRef}

@@ -1200,9 +1200,9 @@ export function FinanceView({
           </div>
         ) : null}
 
-        {/* 1. Hero KPI — виручка+витрати в ряд, результат під ними */}
+        {/* 1. Hero KPI — на ПК три картки в ряд; на моб. виручка+витрати, результат під ними */}
         {(!isMobile || mobileTab === "overview") && (
-        <section className="grid grid-cols-2 gap-2 sm:gap-2.5 md:gap-3">
+        <section className="grid grid-cols-2 gap-2 sm:gap-2.5 md:grid-cols-3 md:gap-3">
           <button
             type="button"
             disabled={Boolean(basDataError && !localSalesUah) || (!basReady && overviewLoading)}
@@ -1328,7 +1328,7 @@ export function FinanceView({
             }
             className={cn(
               kpiGlassClass,
-              "col-span-2",
+              "col-span-2 md:col-span-1",
               pnlUah >= 0
                 ? "bg-gradient-to-br from-teal-50/95 via-white/80 to-emerald-50/70 hover:border-teal-300/50"
                 : "bg-gradient-to-br from-rose-50/95 via-white/80 to-orange-50/60 hover:border-rose-300/50"
@@ -1343,7 +1343,7 @@ export function FinanceView({
               )}
               aria-hidden
             />
-            <div className="relative flex flex-wrap items-end justify-between gap-3">
+            <div className="relative flex flex-wrap items-end justify-between gap-3 md:flex-col md:items-stretch">
               <div className="min-w-0">
                 <p className={kpiLabelClass}>Результат</p>
                 {overviewLoading || !overview || (!basReady && !basDataError) ? (
@@ -1361,7 +1361,7 @@ export function FinanceView({
                 )}
               </div>
               {!overviewLoading && overview && (basReady || basDataError) ? (
-                <div className="min-w-[40%] flex-1 sm:min-w-[12rem]">
+                <div className="min-w-[40%] flex-1 sm:min-w-[12rem] md:min-w-0 md:flex-none">
                   <BreakEvenBar revenue={revenueUah} expense={opsCostUah} />
                 </div>
               ) : null}
@@ -1471,9 +1471,27 @@ export function FinanceView({
 
         {(overviewLoading || overview) &&
         (!isMobile || mobileTab === "overview") ? (
-          <section className="mb-2 space-y-3 sm:mb-8 sm:space-y-4">
+          <section className="mb-2 grid grid-cols-1 gap-4 sm:mb-8 sm:gap-6 md:grid-cols-2 md:items-start">
             {overviewLoading && !overviewInSync ? (
               <>
+                <div
+                  className={cn(
+                    "overflow-hidden rounded-2xl border border-white/50 bg-white/40 shadow-sm",
+                    "backdrop-blur-2xl md:rounded-3xl md:p-6"
+                  )}
+                >
+                  <div className="flex items-center gap-3 px-3.5 py-3 sm:px-4 md:mb-5 md:px-0 md:py-0">
+                    <Loader2 className="h-4 w-4 shrink-0 animate-spin text-zinc-400" />
+                    <div>
+                      <p className="text-sm font-bold text-zinc-900 md:text-base">
+                        Економіка культур
+                      </p>
+                      <p className="text-[11px] text-zinc-500 md:text-xs">
+                        Витрати ₴/га
+                      </p>
+                    </div>
+                  </div>
+                </div>
                 <div
                   className={cn(
                     "flex min-h-[280px] flex-col rounded-3xl border border-white/10 bg-slate-900 p-5 text-white shadow-lg",
@@ -1488,25 +1506,125 @@ export function FinanceView({
                   </div>
                   <MidTierPulseSkeleton />
                 </div>
-                <div
-                  className={cn(
-                    "overflow-hidden rounded-2xl border border-white/50 bg-white/40 shadow-sm",
-                    "backdrop-blur-2xl"
-                  )}
-                >
-                  <div className="flex items-center gap-3 px-3.5 py-3 sm:px-4">
-                    <Loader2 className="h-4 w-4 shrink-0 animate-spin text-zinc-400" />
-                    <div>
-                      <p className="text-sm font-bold text-zinc-900">
-                        Економіка культур
-                      </p>
-                      <p className="text-[11px] text-zinc-500">Витрати ₴/га</p>
-                    </div>
-                  </div>
-                </div>
               </>
             ) : (
               <>
+            {cropEconomics.length > 0 ? (
+              <div
+                className={cn(
+                  "overflow-hidden rounded-2xl border border-white/50 bg-white/50 shadow-sm",
+                  "backdrop-blur-2xl dark:border-white/10 dark:bg-black/20",
+                  "md:rounded-3xl md:border-white/50 md:bg-white/40 md:p-6"
+                )}
+              >
+                {isMobile ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowCrops((v) => !v)}
+                    aria-expanded={showCrops}
+                    className="flex w-full items-center gap-3 px-3.5 py-3 text-left transition hover:bg-white/70 sm:px-4"
+                  >
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/12 text-emerald-700">
+                      <Wheat className="h-4 w-4" strokeWidth={2.25} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-bold tracking-tight text-zinc-900">
+                        Економіка культур
+                      </span>
+                      <span className="mt-0.5 block text-[11px] leading-snug text-zinc-500">
+                        {cropEconomics.length} культур · витрати ₴/га
+                      </span>
+                    </span>
+                    <ChevronDown
+                      className={cn(
+                        "h-4 w-4 shrink-0 text-zinc-400 transition-transform duration-200",
+                        showCrops && "rotate-180"
+                      )}
+                    />
+                  </button>
+                ) : (
+                  <div className="mb-5">
+                    <h3 className="text-base font-bold tracking-tight text-zinc-900">
+                      Економіка культур
+                    </h3>
+                    <p className="mt-0.5 text-xs text-zinc-500">
+                      {cropEconomics.length} культур · витрати ₴/га
+                    </p>
+                  </div>
+                )}
+                {(isMobile ? showCrops : true) ? (
+                  <div
+                    className={cn(
+                      isMobile
+                        ? "border-t border-[#E5DFD3]/80 px-3 pb-3.5 pt-3 sm:px-4"
+                        : undefined
+                    )}
+                  >
+                    <ul>
+                      {cropEconomics.map((row) => {
+                        const maxSpent = Math.max(
+                          ...cropEconomics.map((c) => c.spentUah),
+                          1
+                        );
+                        const barPct =
+                          row.spentUah > 0
+                            ? Math.min(100, (row.spentUah / maxSpent) * 100)
+                            : 0;
+                        const Icon = cropGlyph(row.crop);
+                        return (
+                          <li
+                            key={row.crop}
+                            className={cn(
+                              "mb-2.5 flex flex-col gap-2.5 rounded-xl p-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:p-3.5",
+                              "bg-white/55 transition-transform sm:hover:scale-[1.01]",
+                              "active:scale-[0.99] dark:bg-black/40 last:mb-0",
+                              !isMobile && "md:mb-3 md:rounded-2xl md:p-4"
+                            )}
+                          >
+                            <div className="flex min-w-0 flex-1 items-center gap-3">
+                              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 md:h-10 md:w-10">
+                                <Icon size={16} />
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-bold text-zinc-900">
+                                  {row.crop}
+                                </p>
+                                <p className="text-xs text-zinc-400">
+                                  {formatUah(row.areaHa)} га · {row.fields}{" "}
+                                  {pluralFields(row.fields)}
+                                </p>
+                              </div>
+                              <p className="shrink-0 text-right font-mono text-sm font-semibold tabular-nums text-zinc-900 sm:hidden">
+                                {formatUah(row.spentUah)} ₴
+                              </p>
+                            </div>
+
+                            <div className="w-full sm:w-32 sm:shrink-0">
+                              <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-zinc-700">
+                                <div
+                                  className="h-full rounded-full bg-emerald-500 transition-all duration-700"
+                                  style={{ width: `${barPct}%` }}
+                                />
+                              </div>
+                              <p className="mt-1 text-[10px] font-medium text-zinc-400">
+                                {row.costPerHa > 0
+                                  ? `${formatUah(row.costPerHa)} ₴/га`
+                                  : "0 ₴/га"}
+                              </p>
+                            </div>
+
+                            <p className="hidden shrink-0 text-right font-mono text-base font-medium tabular-nums text-zinc-900 sm:block md:text-lg">
+                              {formatUah(row.spentUah)} ₴
+                            </p>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
             {ownerPulse ? (
               <div
                 className={cn(
@@ -1663,103 +1781,6 @@ export function FinanceView({
                     </ul>
                   )}
                 </div>
-              </div>
-            ) : null}
-
-            {cropEconomics.length > 0 ? (
-              <div
-                className={cn(
-                  "overflow-hidden rounded-2xl border border-white/50 bg-white/50 shadow-sm",
-                  "backdrop-blur-2xl dark:border-white/10 dark:bg-black/20"
-                )}
-              >
-                <button
-                  type="button"
-                  onClick={() => setShowCrops((v) => !v)}
-                  aria-expanded={showCrops}
-                  className="flex w-full items-center gap-3 px-3.5 py-3 text-left transition hover:bg-white/70 sm:px-4"
-                >
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/12 text-emerald-700">
-                    <Wheat className="h-4 w-4" strokeWidth={2.25} />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-bold tracking-tight text-zinc-900">
-                      Економіка культур
-                    </span>
-                    <span className="mt-0.5 block text-[11px] leading-snug text-zinc-500">
-                      {cropEconomics.length} культур · витрати ₴/га
-                    </span>
-                  </span>
-                  <ChevronDown
-                    className={cn(
-                      "h-4 w-4 shrink-0 text-zinc-400 transition-transform duration-200",
-                      showCrops && "rotate-180"
-                    )}
-                  />
-                </button>
-                {showCrops ? (
-                  <div className="border-t border-[#E5DFD3]/80 px-3 pb-3.5 pt-3 sm:px-4">
-                    <ul>
-                      {cropEconomics.map((row) => {
-                        const maxSpent = Math.max(
-                          ...cropEconomics.map((c) => c.spentUah),
-                          1
-                        );
-                        const barPct =
-                          row.spentUah > 0
-                            ? Math.min(100, (row.spentUah / maxSpent) * 100)
-                            : 0;
-                        const Icon = cropGlyph(row.crop);
-                        return (
-                          <li
-                            key={row.crop}
-                            className={cn(
-                              "mb-2.5 flex flex-col gap-2.5 rounded-xl p-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:p-3.5",
-                              "bg-white/55 transition-transform sm:hover:scale-[1.01]",
-                              "active:scale-[0.99] dark:bg-black/40 last:mb-0"
-                            )}
-                          >
-                            <div className="flex min-w-0 flex-1 items-center gap-3">
-                              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
-                                <Icon size={16} />
-                              </span>
-                              <div className="min-w-0 flex-1">
-                                <p className="truncate text-sm font-bold text-zinc-900">
-                                  {row.crop}
-                                </p>
-                                <p className="text-xs text-zinc-400">
-                                  {formatUah(row.areaHa)} га · {row.fields}{" "}
-                                  {pluralFields(row.fields)}
-                                </p>
-                              </div>
-                              <p className="shrink-0 text-right font-mono text-sm font-semibold tabular-nums text-zinc-900 sm:hidden">
-                                {formatUah(row.spentUah)} ₴
-                              </p>
-                            </div>
-
-                            <div className="w-full sm:w-32 sm:shrink-0">
-                              <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-zinc-700">
-                                <div
-                                  className="h-full rounded-full bg-emerald-500 transition-all duration-700"
-                                  style={{ width: `${barPct}%` }}
-                                />
-                              </div>
-                              <p className="mt-1 text-[10px] font-medium text-zinc-400">
-                                {row.costPerHa > 0
-                                  ? `${formatUah(row.costPerHa)} ₴/га`
-                                  : "0 ₴/га"}
-                              </p>
-                            </div>
-
-                            <p className="hidden shrink-0 text-right font-mono text-base font-medium tabular-nums text-zinc-900 sm:block">
-                              {formatUah(row.spentUah)} ₴
-                            </p>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                ) : null}
               </div>
             ) : null}
               </>

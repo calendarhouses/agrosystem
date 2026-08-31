@@ -52,7 +52,6 @@ import {
   COMMAND_CENTER_MAP_CANVAS_BG,
 } from "@/components/dashboard/command-center-map-boot";
 import {
-  COMMAND_CENTER_DETAIL_FLOAT_INSET_CLASS,
   mapCameraPadding,
 } from "@/lib/equipment-command-center-layout";
 import { cn } from "@/lib/utils";
@@ -940,25 +939,19 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
 
     const fitAllFields = useCallback(() => {
       userMapNavigationRef.current = false;
-      const wialonBounds = wialonGeofences.features.map((feature) =>
-        boundsFromGeometry(feature.geometry)
+      const merged = collectFieldBounds(
+        wialonGeofences,
+        savedFieldsGeoJson,
+        showDemoFields
       );
-      const demoBounds = showDemoFields
-        ? FIELDS_GEOJSON.features.map((feature) =>
-            boundsFromGeometry(feature.geometry)
-          )
-        : [];
-      const savedBounds = (savedFieldsGeoJson?.features ?? []).map((feature) =>
-        boundsFromGeometry(feature.geometry)
-      );
-      const merged = mergeBounds([
-        ...wialonBounds,
-        ...demoBounds,
-        ...savedBounds,
-      ]);
       if (!merged) return;
 
-      const padding = chromePadding(chrome);
+      const isDesktop =
+        typeof window !== "undefined" ? window.innerWidth >= 768 : true;
+      const padding = mapCameraPadding(
+        isDesktop,
+        chrome === "detail" ? "right" : "left"
+      );
       const map = mapRef.current?.getMap();
 
       if (map) {
@@ -973,11 +966,10 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       focusBounds(merged, { padding });
     }, [
       chrome,
-      chromePadding,
       focusBounds,
       showDemoFields,
-      savedFieldsGeoJson?.features,
-      wialonGeofences.features,
+      savedFieldsGeoJson,
+      wialonGeofences,
       waitForCameraSettle,
     ]);
 
@@ -1005,6 +997,10 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
 
     useEffect(() => {
       if (!mapReady || wialonLoading || userMapNavigationRef.current) return;
+      const isDesktop =
+        typeof window !== "undefined" ? window.innerWidth >= 768 : false;
+      // На ПК перемикання шару бюджету не має рухати камеру — лише мобільна легенда зверху.
+      if (isDesktop) return;
       const timer = window.setTimeout(() => fitAllFieldsRef.current(), 80);
       return () => window.clearTimeout(timer);
       // лише зміна шару економіки — НЕ chrome/padding (інакше бійка з фокусом поля)
@@ -1751,7 +1747,10 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
                     typeof window !== "undefined"
                       ? window.innerWidth >= 768
                       : true;
-                  const padding = mapCameraPadding(isDesktop, "left");
+                  const padding = mapCameraPadding(
+                    isDesktop,
+                    chrome === "detail" ? "right" : "left"
+                  );
                   try {
                     focusFieldsAroundAnchor(map, merged, {
                       padding,
@@ -2110,10 +2109,9 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
             className={cn(
               "pointer-events-auto absolute z-40",
               "top-[env(safe-area-inset-top,0px)] mt-4 left-4 right-4",
-              "md:top-auto md:bottom-[5.25rem] md:left-3 md:right-auto md:max-w-sm",
-              chrome === "detail"
-                ? COMMAND_CENTER_DETAIL_FLOAT_INSET_CLASS
-                : "md:left-[calc(0.75rem+min(400px,calc(100%-1.5rem))+12px)]"
+              "md:top-auto md:right-3 md:left-auto md:max-w-sm",
+              "md:bottom-[calc(0.75rem+3.25rem+0.5rem)]",
+              chrome === "detail" && "md:right-[calc(0.75rem+min(580px,calc(100%-1.5rem))+12px)]"
             )}
           >
             <div

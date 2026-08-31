@@ -11,8 +11,10 @@ import {
 import { AccountantHubView } from "@/components/dashboard/accountant-hub-view";
 import { MappingStudioLazy } from "@/components/dashboard/accounting/mapping-studio-lazy";
 import { ReconciliationStudio } from "@/components/dashboard/accounting/reconciliation-studio";
+import { FinancePeriodToolbar } from "@/components/dashboard/finance-period-toolbar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { MappingCatalogKind } from "@/lib/bas-mapping";
+import { useFinancePeriodFilter } from "@/lib/use-finance-period-filter";
 import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
 
@@ -24,6 +26,7 @@ const HUB_TABS = [
 
 export function AccountingHub() {
   const isMobile = useIsMobile();
+  const periodFilter = useFinancePeriodFilter();
   const [tab, setTab] = useState("export");
   const [recon, setRecon] = useState<AccountingReconciliationData | null>(null);
   const [reconError, setReconError] = useState<string | null>(null);
@@ -116,47 +119,57 @@ export function AccountingHub() {
               "px-4 py-3 backdrop-blur-2xl sm:px-6"
             )}
           >
-            <div className="mx-auto flex w-full max-w-7xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <h1 className="truncate text-xl font-extrabold tracking-tight text-zinc-900 sm:text-2xl">
-                  Бухгалтерія
-                </h1>
+            <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="min-w-0 space-y-3">
+                <div>
+                  <h1 className="truncate text-xl font-extrabold tracking-tight text-zinc-900 sm:text-2xl">
+                    Бухгалтерія
+                  </h1>
+                </div>
+                <TabsList
+                  className={cn(
+                    "h-auto w-full flex-wrap justify-start gap-1 rounded-2xl bg-white/70 p-1",
+                    "group-data-horizontal/tabs:h-auto lg:w-auto"
+                  )}
+                >
+                  {HUB_TABS.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <TabsTrigger
+                        key={item.id}
+                        value={item.id}
+                        className={cn(
+                          "gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold",
+                          "data-active:bg-[#276749] data-active:text-white data-active:shadow-sm"
+                        )}
+                      >
+                        <Icon className="h-3.5 w-3.5" />
+                        {item.label}
+                        {item.id === "reconcile" && badgeCount > 0 ? (
+                          <span
+                            className={cn(
+                              "ml-0.5 inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums",
+                              tab === "reconcile"
+                                ? "bg-white text-[#276749]"
+                                : "bg-amber-500 text-white"
+                            )}
+                          >
+                            {badgeCount > 99 ? "99+" : badgeCount}
+                          </span>
+                        ) : null}
+                      </TabsTrigger>
+                    );
+                  })}
+                </TabsList>
               </div>
-              <TabsList
-                className={cn(
-                  "h-auto w-full flex-wrap justify-start gap-1 rounded-2xl bg-white/70 p-1",
-                  "group-data-horizontal/tabs:h-auto sm:w-auto"
-                )}
-              >
-                {HUB_TABS.map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <TabsTrigger
-                      key={item.id}
-                      value={item.id}
-                      className={cn(
-                        "gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold",
-                        "data-active:bg-[#276749] data-active:text-white data-active:shadow-sm"
-                      )}
-                    >
-                      <Icon className="h-3.5 w-3.5" />
-                      {item.label}
-                      {item.id === "reconcile" && badgeCount > 0 ? (
-                        <span
-                          className={cn(
-                            "ml-0.5 inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums",
-                            tab === "reconcile"
-                              ? "bg-white text-[#276749]"
-                              : "bg-amber-500 text-white"
-                          )}
-                        >
-                          {badgeCount > 99 ? "99+" : badgeCount}
-                        </span>
-                      ) : null}
-                    </TabsTrigger>
-                  );
-                })}
-              </TabsList>
+
+              {tab === "export" ? (
+                <FinancePeriodToolbar
+                  {...periodFilter}
+                  variant="desktop"
+                  seasonHint="Фільтр черги за агросезоном (березень–лютий)."
+                />
+              ) : null}
             </div>
           </div>
         )}
@@ -165,7 +178,13 @@ export function AccountingHub() {
           value="export"
           className="mt-0 min-h-0 flex-1 overflow-hidden outline-none data-[hidden]:hidden"
         >
-          {tab === "export" ? <AccountantHubView embedded /> : null}
+          {tab === "export" ? (
+            <AccountantHubView
+              embedded
+              periodFilter={periodFilter}
+              hidePeriodHeader={!isMobile}
+            />
+          ) : null}
         </TabsContent>
 
         <TabsContent

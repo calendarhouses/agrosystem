@@ -99,9 +99,8 @@ export async function GET(request: Request) {
   }
 
   try {
-    const [burned, refueled, storages, expectedLoadMs] = await Promise.all([
+    const [burned, storages, expectedLoadMs] = await Promise.all([
       getFieldFuelConsumed(period, { backfill }),
-      getFuelRefueledForPeriod(period),
       sumStorageVolumeForPeriod(period).catch((err) => {
         console.error(
           "[fuel/kpis] storages",
@@ -111,6 +110,7 @@ export async function GET(request: Request) {
       }),
       getSharedFuelKpiLoadMs(period),
     ]);
+    const refueled = await getFuelRefueledForPeriod(period, { backfill });
 
     const payload: KpisPayload = {
       ok: true,

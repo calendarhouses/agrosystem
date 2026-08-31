@@ -1,5 +1,5 @@
 /**
- * KPI «Заправлено»: стрибки ДУТ з Wialon + ручні outbound без дубля.
+ * KPI «Заправлено»: fuel_filled з денного кешу + ручні outbound без ДУТ.
  */
 
 import { createServiceSupabase } from "@/lib/supabase/server";
@@ -8,12 +8,8 @@ import {
   resolveFieldFuelPeriodBounds,
   type FieldFuelPeriod,
 } from "@/lib/wialon-field-fuel-sync";
+import { sumFleetFuelFilledForPeriod } from "@/lib/wialon-equipment-day-sync";
 import { kyivDayBoundsUnix } from "@/lib/kyiv-date";
-
-/** Вікно зіставлення з ручним outbound */
-const REFUEL_MATCH_WINDOW_SEC = 45 * 60;
-/** Допуск обʼєму (±10%) */
-const REFUEL_MATCH_VOLUME_TOLERANCE = 0.1;
 
 export type RefuelBreakdownRow = {
   equipmentName: string;
@@ -30,15 +26,11 @@ type ManualRow = {
   operatorName: string | null;
 };
 
-function volumesMatch(a: number, b: number): boolean {
-  const base = Math.max(a, b, 1);
-  return Math.abs(a - b) / base <= REFUEL_MATCH_VOLUME_TOLERANCE;
-}
-
 /**
  * Заправлено за період =
- *   усі заправки ДУТ (стрибок бака ≥15 л)
- * + ручні outbound, які не збігаються з ДУТ (без датчика / не знайдено пару).
+ *   Σ fuel_filled з wialon_equipment_day_stats (після sync)
+ * + ручні outbound для техніки без ДУТ або без wialon_unit_id
+ * Live Wialon — лише fallback для today/yesterday, якщо БД порожня.
  */
 export async function sumOutboundRefueledForPeriod(
   period: FieldFuelPeriod,
@@ -58,6 +50,7 @@ export async function sumOutboundRefueledForPeriod(
   const { toUnix } = kyivDayBoundsUnix(toDate);
   const fromIso = new Date(fromUnix * 1000).toISOString();
   const toIso = new Date(toUnix * 1000).toISOString();
+  const spanSec = toUnix - fromUnix;
 
   const supabase = createServiceSupabase();
   const { data, error } = await supabase
@@ -109,15 +102,18 @@ export async function sumOutboundRefueledForPeriod(
     ),
   ];
   const wialonByEquipment = new Map<string, number>();
+  const nameByWialon = new Map<number, string>();
   if (eqIds.length > 0) {
     const { data: eqRows } = await supabase
       .from("equipment")
-      .select("id, wialon_id")
+      .select("id, wialon_id, name")
       .in("id", eqIds);
     for (const row of eqRows ?? []) {
       const wid = Number(row.wialon_id);
       if (Number.isFinite(wid) && wid > 0) {
         wialonByEquipment.set(String(row.id), wid);
+        const nm = String(row.name ?? "").trim();
+        if (nm) nameByWialon.set(wid, nm);
       }
     }
   }
@@ -146,39 +142,7 @@ export async function sumOutboundRefueledForPeriod(
     });
   }
 
-  let wialonEvents: Awaited<ReturnType<typeof getWialonRefuelings>> = [];
-  try {
-    const spanSec = toUnix - fromUnix;
-    // Сезон (~пів року) — не б'ємо Wialon чанками в KPI: зависає/таймаутить.
-    // Беремо outbound з БД; тиждень/місяць лишають live ДУТ.
-    const skipLiveWialon = spanSec > 40 * 86_400;
-    if (!skipLiveWialon) {
-      const CHUNK = 30 * 86_400;
-      if (spanSec > CHUNK) {
-        for (let t = fromUnix; t <= toUnix; t += CHUNK + 1) {
-          const end = Math.min(t + CHUNK, toUnix);
-          try {
-            const chunk = await getWialonRefuelings(t, end);
-            wialonEvents.push(...chunk);
-          } catch (chunkErr) {
-            console.error(
-              "[fuel-refuel-period] Wialon chunk",
-              chunkErr instanceof Error ? chunkErr.message : chunkErr
-            );
-          }
-        }
-      } else {
-        wialonEvents = await getWialonRefuelings(fromUnix, toUnix);
-      }
-    }
-  } catch (err) {
-    console.error(
-      "[fuel-refuel-period] Wialon fillings",
-      err instanceof Error ? err.message : err
-    );
-  }
-
-  const manualUsed = new Set<number>();
+  const dbFilled = await sumFleetFuelFilledForPeriod(fromDate, toDate);
   const byKey = new Map<string, RefuelBreakdownRow>();
 
   const bump = (
@@ -202,91 +166,60 @@ export async function sumOutboundRefueledForPeriod(
     }
   };
 
-  let wialonLiters = 0;
-  for (const event of wialonEvents) {
-    const volume = event.volume;
-    if (volume <= 0) continue;
-    wialonLiters += volume;
+  let wialonLiters = dbFilled.liters;
 
-    // Позначити збіг з ручним — щоб не додати вдруге
-    for (let i = 0; i < manual.length; i++) {
-      if (manualUsed.has(i)) continue;
-      const tx = manual[i]!;
-      if (tx.wialonUnitId == null || tx.wialonUnitId !== event.unitId) continue;
-      if (Math.abs(tx.timeUnix - event.time) > REFUEL_MATCH_WINDOW_SEC) continue;
-      if (!volumesMatch(tx.amountLiters, volume)) continue;
-      manualUsed.add(i);
-      break;
+  // Fallback: today/yesterday без даних у БД — live ДУТ
+  if (
+    wialonLiters <= 0 &&
+    spanSec <= 2 * 86_400 &&
+    period !== "week" &&
+    period !== "month" &&
+    period !== "season"
+  ) {
+    try {
+      const live = await getWialonRefuelings(fromUnix, toUnix);
+      wialonLiters = live.reduce((acc, e) => acc + (e.volume > 0 ? e.volume : 0), 0);
+      wialonLiters = Math.round(wialonLiters * 10) / 10;
+      for (const event of live) {
+        if (event.volume <= 0) continue;
+        bump(
+          `w:${event.unitId}`,
+          event.equipmentName,
+          event.unitId,
+          event.volume,
+          "wialon"
+        );
+      }
+    } catch (err) {
+      console.error(
+        "[fuel-refuel-period] Wialon fallback",
+        err instanceof Error ? err.message : err
+      );
     }
-
-    bump(
-      `w:${event.unitId}`,
-      event.equipmentName,
-      event.unitId,
-      volume,
-      "wialon"
-    );
+  } else {
+    for (const row of dbFilled.rows) {
+      bump(`w:${row.wialonUnitId}`, row.equipmentName, row.wialonUnitId, row.liters, "wialon");
+    }
   }
 
+  // Ручні outbound: лише без ДУТ (щоб не дублювати journal ↔ fuel_filled)
   let manualOnlyLiters = 0;
   for (let i = 0; i < manual.length; i++) {
-    if (manualUsed.has(i)) continue;
     const tx = manual[i]!;
+    if (tx.wialonUnitId != null && dbFilled.dutUnitIds.has(tx.wialonUnitId)) {
+      continue;
+    }
     manualOnlyLiters += tx.amountLiters;
     const name =
-      (tx.wialonUnitId != null
-        ? wialonEvents.find((e) => e.unitId === tx.wialonUnitId)?.equipmentName
-        : null) ||
+      (tx.wialonUnitId != null ? nameByWialon.get(tx.wialonUnitId) : null) ||
       tx.operatorName ||
       (tx.wialonUnitId != null ? `Wialon #${tx.wialonUnitId}` : "Техніка");
     const key =
-      tx.wialonUnitId != null ? `w:${tx.wialonUnitId}` : `m:${name}:${i}`;
+      tx.wialonUnitId != null ? `m:${tx.wialonUnitId}` : `m:${name}:${i}`;
     bump(key, name, tx.wialonUnitId, tx.amountLiters, "manual");
   }
 
-  // Імена: equipment → Wialon nm
-  const needNames = [...byKey.values()]
-    .filter((r) => r.wialonUnitId != null && /^Wialon #/.test(r.equipmentName))
-    .map((r) => r.wialonUnitId!);
-  if (needNames.length > 0) {
-    const unique = [...new Set(needNames)];
-    const nameBy = new Map<number, string>();
-    const { data: eqRows } = await supabase
-      .from("equipment")
-      .select("name, wialon_id")
-      .in("wialon_id", unique);
-    for (const row of eqRows ?? []) {
-      const wid = Number(row.wialon_id);
-      const nm = String(row.name ?? "").trim();
-      if (Number.isFinite(wid) && nm) nameBy.set(wid, nm);
-    }
-    const still = unique.filter((id) => !nameBy.has(id));
-    if (still.length > 0) {
-      try {
-        const { listWialonUnitBasics, wialonLogin } = await import(
-          "@/lib/wialon"
-        );
-        const eid = await wialonLogin();
-        const basics = await listWialonUnitBasics(eid);
-        const want = new Set(still);
-        for (const u of basics) {
-          if (!want.has(u.id)) continue;
-          const nm = String(u.nm ?? "").trim();
-          if (nm) nameBy.set(u.id, nm);
-        }
-      } catch {
-        /* імена не критичні */
-      }
-    }
-    for (const row of byKey.values()) {
-      if (row.wialonUnitId == null) continue;
-      const nm = nameBy.get(row.wialonUnitId);
-      if (nm) row.equipmentName = nm;
-    }
-  }
-
-  const liters =
-    Math.round((wialonLiters + manualOnlyLiters) * 10) / 10;
+  const liters = Math.round((wialonLiters + manualOnlyLiters) * 10) / 10;
   const rows = [...byKey.values()].sort((a, b) => b.liters - a.liters);
 
   return {
@@ -294,9 +227,9 @@ export async function sumOutboundRefueledForPeriod(
     fromDate,
     toDate,
     liters,
-    hasData: wialonEvents.length > 0 || manual.length > 0,
+    hasData: liters > 0 || manual.length > 0 || dbFilled.hasData,
     rows,
-    wialonLiters: Math.round(wialonLiters * 10) / 10,
+    wialonLiters,
     manualOnlyLiters: Math.round(manualOnlyLiters * 10) / 10,
   };
 }

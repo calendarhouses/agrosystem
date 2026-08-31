@@ -15,12 +15,7 @@ type SidebarNavTooltipProps = {
   title: string;
   hint?: string;
   disabled?: boolean;
-  children: (handlers: {
-    onMouseEnter: () => void;
-    onMouseLeave: () => void;
-    onFocus: () => void;
-    onBlur: () => void;
-  }) => ReactNode;
+  children: ReactNode;
 };
 
 /** Тултип сайдбару (портал, як у azhunebi-platform) */
@@ -57,13 +52,15 @@ export function SidebarNavTooltip({
 
   return (
     <>
-      <span ref={anchorRef} className="block w-full">
-        {children({
-          onMouseEnter: showTip,
-          onMouseLeave: hideTip,
-          onFocus: showTip,
-          onBlur: hideTip,
-        })}
+      <span
+        ref={anchorRef}
+        className="block w-full"
+        onMouseEnter={showTip}
+        onMouseLeave={hideTip}
+        onFocus={showTip}
+        onBlur={hideTip}
+      >
+        {children}
       </span>
       {tip
         ? createPortal(

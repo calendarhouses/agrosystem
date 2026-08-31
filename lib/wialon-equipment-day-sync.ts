@@ -12,10 +12,15 @@ import { isFuelDeliveryUnit, isPlausibleTractorDayBurn } from "@/lib/equipment-f
 import type { FieldGeometry } from "@/lib/farm-fields";
 import {
   kyivDayBoundsUnix,
+  shiftKyivYmd,
   todayKyivYmd,
 } from "@/lib/kyiv-date";
 import { currentAgroSeason } from "@/lib/season";
 import { createServiceSupabase } from "@/lib/supabase/server";
+import {
+  resolveFieldFuelPeriodBounds,
+  type FieldFuelPeriod,
+} from "@/lib/wialon-field-fuel-sync";
 import {
   getWialonUnitTrackBundle,
   listWialonUnitBasics,
@@ -75,6 +80,9 @@ export function isFleetDayStatsStale(
 
 const inflightSync = new Map<string, Promise<SyncEquipmentDayResult>>();
 
+/** Прогалини GPS довші за це не рахуємо як «на полі» (≈3× крок даунсемплу). */
+const MAX_FIELD_SAMPLE_GAP_SEC = 120;
+
 function toPolygonFeature(
   geometry: FieldGeometry
 ): Feature<Polygon | MultiPolygon> | null {
@@ -82,6 +90,20 @@ function toPolygonFeature(
     return null;
   }
   return { type: "Feature", properties: {}, geometry };
+}
+
+function sampleInsideFarmFields(
+  lng: number,
+  lat: number,
+  polygons: Feature<Polygon | MultiPolygon>[]
+): boolean {
+  if (!Number.isFinite(lng) || !Number.isFinite(lat)) return false;
+  try {
+    const pt = point([lng, lat]);
+    return polygons.some((poly) => booleanPointInPolygon(pt, poly));
+  } catch {
+    return false;
+  }
 }
 
 function hoursOnFarmFieldsFromSamples(
@@ -95,15 +117,14 @@ function hoursOnFarmFieldsFromSamples(
     const prev = samples[i - 1];
     const cur = samples[i];
     if (!prev || !cur || cur.t <= prev.t) continue;
-    if (!Number.isFinite(cur.lng) || !Number.isFinite(cur.lat)) continue;
-    let inside = false;
-    try {
-      const pt = point([cur.lng, cur.lat]);
-      inside = polygons.some((poly) => booleanPointInPolygon(pt, poly));
-    } catch {
-      inside = false;
-    }
-    if (inside) insideSec += cur.t - prev.t;
+    const dt = cur.t - prev.t;
+    if (dt > MAX_FIELD_SAMPLE_GAP_SEC) continue;
+
+    const prevInside = sampleInsideFarmFields(prev.lng, prev.lat, polygons);
+    const curInside = sampleInsideFarmFields(cur.lng, cur.lat, polygons);
+    if (!prevInside && !curInside) continue;
+    if (prevInside && curInside) insideSec += dt;
+    else insideSec += dt / 2;
   }
   return Math.round((insideSec / 3600) * 100) / 100;
 }
@@ -451,6 +472,186 @@ export async function sumFleetFuelConsumedForPeriod(
     liters: Math.round(liters * 10) / 10,
     hasData: (data?.length ?? 0) > 0,
   };
+}
+
+export type FleetFuelFilledBreakdownRow = {
+  wialonUnitId: number;
+  equipmentName: string;
+  liters: number;
+};
+
+/**
+ * Заправлено за період — сума fuel_filled з денного кешу (після syncWialonEquipmentDayStats).
+ * Бензовози / цистерни не входять.
+ */
+export async function sumFleetFuelFilledForPeriod(
+  fromDate: string,
+  toDate: string
+): Promise<{
+  liters: number;
+  hasData: boolean;
+  rows: FleetFuelFilledBreakdownRow[];
+  dutUnitIds: Set<number>;
+}> {
+  const supabase = createServiceSupabase();
+
+  const [{ data, error }, eqRes] = await Promise.all([
+    supabase
+      .from("wialon_equipment_day_stats")
+      .select(
+        "fuel_filled, wialon_unit_id, equipment_id, has_fuel_sensor"
+      )
+      .gte("date", fromDate)
+      .lte("date", toDate)
+      .gt("fuel_filled", 0),
+    supabase.from("equipment").select("id, wialon_id, name"),
+  ]);
+
+  if (error) {
+    return { liters: 0, hasData: false, rows: [], dutUnitIds: new Set() };
+  }
+
+  const nameByWialon = new Map<number, string>();
+  const deliveryWialonIds = new Set<number>();
+  const deliveryEquipmentIds = new Set<string>();
+  for (const row of eqRes.data ?? []) {
+    const wid = Number(row.wialon_id);
+    const nm = String(row.name ?? "").trim();
+    if (Number.isFinite(wid) && wid > 0) {
+      nameByWialon.set(wid, nm || `Wialon #${wid}`);
+    }
+    if (!isFuelDeliveryUnit(nm)) continue;
+    if (Number.isFinite(wid) && wid > 0) deliveryWialonIds.add(wid);
+    if (row.id) deliveryEquipmentIds.add(String(row.id));
+  }
+
+  const byUnit = new Map<number, number>();
+  const dutUnitIds = new Set<number>();
+  for (const row of data ?? []) {
+    const wid = Number(row.wialon_unit_id);
+    const filled = Number(row.fuel_filled) || 0;
+    if (!Number.isFinite(wid) || wid <= 0 || filled <= 0) continue;
+    const eid = row.equipment_id != null ? String(row.equipment_id) : null;
+    if (deliveryWialonIds.has(wid)) continue;
+    if (eid && deliveryEquipmentIds.has(eid)) continue;
+    byUnit.set(wid, (byUnit.get(wid) ?? 0) + filled);
+    if (row.has_fuel_sensor === true) dutUnitIds.add(wid);
+  }
+
+  const rows: FleetFuelFilledBreakdownRow[] = [...byUnit.entries()]
+    .map(([wialonUnitId, liters]) => ({
+      wialonUnitId,
+      equipmentName: nameByWialon.get(wialonUnitId) ?? `Wialon #${wialonUnitId}`,
+      liters: Math.round(liters * 10) / 10,
+    }))
+    .sort((a, b) => b.liters - a.liters);
+
+  const liters = Math.round(
+    rows.reduce((acc, row) => acc + row.liters, 0) * 10
+  ) / 10;
+
+  return {
+    liters,
+    hasData: rows.length > 0,
+    rows,
+    dutUnitIds,
+  };
+}
+
+/** Дати в діапазоні без жодного рядка wialon_equipment_day_stats. */
+export async function listUnsyncedEquipmentDayDates(
+  fromDate: string,
+  toDate: string
+): Promise<string[]> {
+  const all: string[] = [];
+  let cursor = fromDate;
+  while (cursor <= toDate) {
+    all.push(cursor);
+    cursor = shiftKyivYmd(cursor, 1);
+  }
+  if (all.length === 0) return [];
+
+  const supabase = createServiceSupabase();
+  const { data, error } = await supabase
+    .from("wialon_equipment_day_stats")
+    .select("date")
+    .gte("date", fromDate)
+    .lte("date", toDate);
+
+  if (error) return all;
+
+  const synced = new Set<string>();
+  for (const row of data ?? []) {
+    if (row.date) synced.add(String(row.date).slice(0, 10));
+  }
+  return all.filter((d) => !synced.has(d));
+}
+
+async function equipmentDayStatsStale(
+  dateYmd: string,
+  maxAgeMs: number,
+  now = new Date()
+): Promise<boolean> {
+  const supabase = createServiceSupabase();
+  const { data } = await supabase
+    .from("wialon_equipment_day_stats")
+    .select("sync_time")
+    .eq("date", dateYmd)
+    .order("sync_time", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!data?.sync_time) return true;
+  const t = Date.parse(String(data.sync_time));
+  if (!Number.isFinite(t)) return true;
+  return now.getTime() - t > maxAgeMs;
+}
+
+/**
+ * Перед KPI палива: дотягнути wialon_equipment_day_stats (fuel_consumed + fuel_filled).
+ */
+export async function ensureEquipmentDayStatsCoverage(
+  period: FieldFuelPeriod,
+  options?: { maxDays?: number; budgetMs?: number; now?: Date }
+): Promise<{ daysSyncedNow: number; truncated: boolean }> {
+  const now = options?.now ?? new Date();
+  const { fromDate, toDate } = resolveFieldFuelPeriodBounds(period, now);
+  const budgetMs = Math.max(5_000, options?.budgetMs ?? 50_000);
+  const started = Date.now();
+  let daysSyncedNow = 0;
+  let truncated = false;
+
+  if (period === "today" || period === "yesterday") {
+    const date = period === "today" ? toDate : fromDate;
+    const maxAgeMs = period === "today" ? 5 * 60 * 1000 : 30 * 60 * 1000;
+    const stale = await equipmentDayStatsStale(date, maxAgeMs, now);
+    if (stale) {
+      await syncWialonEquipmentDayStats(date, {
+        budgetMs: Math.min(budgetMs, 12_000),
+      });
+      daysSyncedNow = 1;
+    }
+    return { daysSyncedNow, truncated: false };
+  }
+
+  const missing = await listUnsyncedEquipmentDayDates(fromDate, toDate);
+  const maxDays =
+    options?.maxDays ??
+    (period === "season" ? 6 : period === "month" ? 4 : 3);
+  const toSync = missing.slice(0, maxDays);
+
+  for (const date of toSync) {
+    if (Date.now() - started > budgetMs) {
+      truncated = true;
+      break;
+    }
+    const remaining = Math.max(5_000, budgetMs - (Date.now() - started));
+    await syncWialonEquipmentDayStats(date, { budgetMs: remaining });
+    daysSyncedNow += 1;
+  }
+
+  if (missing.length > toSync.length) truncated = true;
+  return { daysSyncedNow, truncated };
 }
 
 export async function loadFleetDaySummaryFromDb(

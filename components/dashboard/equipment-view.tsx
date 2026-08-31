@@ -175,6 +175,8 @@ function isBaseGeofenceName(name: string): boolean {
 const ROAD_LOCATION_NAME = "У дорозі / Поза межами полів";
 /** Ігноруємо мікро-заїзди коротші за 5 хв */
 const MIN_LOCATION_SESSION_SEC = 5 * 60;
+/** Прогалина між GPS-точками: далі — нова сесія, не «безперервне» перебування */
+const MAX_LOCATION_SESSION_GAP_SEC = 20 * 60;
 /** Семплінг точок треку — не частіше ніж раз на N секунд */
 const LOCATION_SAMPLE_STEP_SEC = 45;
 
@@ -387,6 +389,19 @@ function buildLocationSessions(
   for (let i = 1; i < samples.length; i++) {
     const sample = samples[i];
     if (sample.key === current.key) {
+      const gapSec = sample.unix - current.endUnix;
+      if (gapSec > MAX_LOCATION_SESSION_GAP_SEC) {
+        raw.push({ ...current });
+        current = {
+          key: sample.key,
+          zone: sample.zone,
+          startUnix: sample.unix,
+          endUnix: sample.unix,
+          startIndex: sample.index,
+          endIndex: sample.index,
+        };
+        continue;
+      }
       current.endUnix = sample.unix;
       current.endIndex = sample.index;
       continue;
@@ -1999,13 +2014,13 @@ export function EquipmentView() {
     }
   };
 
-  const backToFleetList = () => {
+  const backToFleetList = useCallback(() => {
     playback.setIsPlaying(false);
     playback.setProgress(0);
     setSelectedUnit(null);
     setSelectedSessionId(null);
-    commandMapRef.current?.fitAllUnits();
-  };
+    window.setTimeout(() => commandMapRef.current?.fitAllUnits(), 40);
+  }, [playback]);
 
   const focusMainMap = (
     center: [number, number],
@@ -2264,10 +2279,7 @@ export function EquipmentView() {
           setAlertFilter(null);
           setSummaryMetric(metric);
           if (metric != null && selectedUnitId != null) {
-            playback.setIsPlaying(false);
-            playback.setProgress(0);
-            setSelectedUnit(null);
-            setSelectedSessionId(null);
+            backToFleetList();
           }
         }}
         onSummaryRefresh={() => {

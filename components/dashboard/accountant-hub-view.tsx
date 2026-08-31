@@ -3,10 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { format } from "date-fns";
 import { uk } from "date-fns/locale";
-import type { DateRange } from "react-day-picker";
 import {
   AlertTriangle,
-  Calendar as CalendarIcon,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -24,7 +22,6 @@ import {
   RefreshCw,
   ShoppingCart,
   Sparkles,
-  Sprout,
   Trash2,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -46,9 +43,9 @@ import {
 } from "@/app/admin/inventory/actions";
 import { AttachmentDropzone } from "@/components/dashboard/attachment-dropzone";
 import { AttachmentViewerButton } from "@/components/dashboard/attachment-viewer";
+import { FinancePeriodToolbar } from "@/components/dashboard/finance-period-toolbar";
 import { EditLocalMoveInline } from "@/components/dashboard/local-moves-history-sheet";
 import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import {
   Dialog,
@@ -60,32 +57,24 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
   cachedCall,
   invalidateAppCache,
   peekAppCache,
 } from "@/lib/client-data-cache";
-import { nextDateRangeSelection } from "@/lib/date-range-select";
 import {
   defaultFinanceSeasonYear,
-  FINANCE_QUICK_PERIODS,
-  getFinancePeriodRange,
   getSeasonRange,
-  toIsoRange,
-  type FinancePeriod,
 } from "@/lib/finance-period";
 import { downloadAccountantPackageExcel } from "@/lib/inventory-excel-export";
 import { localMoveFromQueueItem } from "@/lib/local-move-edit";
-import { useSeasonStore } from "@/lib/season-store";
+import {
+  useFinancePeriodFilter,
+  type FinancePeriodFilter,
+} from "@/lib/use-finance-period-filter";
 import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
 
 const SIDEBAR_COLLAPSED_KEY = "agrosystem-sidebar-collapsed";
-const SEASON_OPTIONS = [2024, 2025, 2026, 2027];
 
 type QueueCachePayload = {
   ok: boolean;
@@ -413,28 +402,22 @@ function QueueInvoicePanel({
 
 export function AccountantHubView({
   embedded = false,
+  periodFilter: externalPeriodFilter,
+  hidePeriodHeader = false,
 }: {
   /** Вкладений у Accounting Hub — без другого full-page chrome */
   embedded?: boolean;
+  periodFilter?: FinancePeriodFilter;
+  /** На ПК період у шапці hub — тут лише дії */
+  hidePeriodHeader?: boolean;
 }) {
   const isMobile = useIsMobile();
-  const activeSeason = useSeasonStore((s) => s.activeSeason);
-  const setActiveSeason = useSeasonStore((s) => s.setActiveSeason);
-  const availableSeasons = useSeasonStore((s) => s.availableSeasons);
-  const seasonYear = Number(activeSeason) || 2026;
+  const internalPeriodFilter = useFinancePeriodFilter();
+  const periodFilter = externalPeriodFilter ?? internalPeriodFilter;
+  const { period, seasonYear, isoRange } = periodFilter;
   const sidebarCollapsed = useSidebarCollapsed();
 
-  const [period, setPeriod] = useState<FinancePeriod>("Сезон");
-  const [customRange, setCustomRange] = useState<DateRange | undefined>();
-  const [seasonOpen, setSeasonOpen] = useState(false);
-  const [rangeOpen, setRangeOpen] = useState(false);
   const [tab, setTab] = useState<AccountantQueueTab>("all");
-
-  const dateRange = useMemo(
-    () => getFinancePeriodRange(period, seasonYear, customRange),
-    [period, seasonYear, customRange]
-  );
-  const isoRange = useMemo(() => toIsoRange(dateRange), [dateRange]);
 
   const warmSeason = defaultFinanceSeasonYear();
   const warmRange = getSeasonRange(warmSeason);
@@ -673,18 +656,6 @@ export function AccountantHubView({
     });
   }
 
-  function selectSeason(year: number) {
-    setActiveSeason(String(year));
-    setPeriod("Сезон");
-    setSeasonOpen(false);
-    setRangeOpen(false);
-  }
-
-  function applyPeriod(next: FinancePeriod) {
-    setPeriod(next);
-    if (next !== "Діапазон") setRangeOpen(false);
-  }
-
   function bumpSyncedCaches() {
     invalidateAppCache("api:inventory");
     invalidateAppCache("api:fuel");
@@ -790,7 +761,36 @@ export function AccountantHubView({
   const allVisibleSelected =
     visible.length > 0 && visible.every((v) => selected.has(v.id));
 
+  const periodActions = (
+    <>
+      <button
+        type="button"
+        onClick={() => void load({ force: true })}
+        disabled={loading || pending}
+        className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#E0DBD0] bg-white text-zinc-600 shadow-sm disabled:opacity-50 md:h-8 md:w-8"
+        aria-label="Оновити"
+      >
+        <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+      </button>
+      <Button
+        type="button"
+        size="sm"
+        disabled={loading || pending || packageSummary.count === 0}
+        onClick={() => handleDownload(packageSummary.rows)}
+        className={cn(
+          "h-11 shrink-0 rounded-xl px-3 font-bold text-white md:h-8",
+          "bg-gradient-to-r from-[#1f5239] via-[#276749] to-[#2f7a52]"
+        )}
+      >
+        <Download className="h-3.5 w-3.5" />
+        <span className="hidden sm:inline">Скачати</span>
+        <span className="sm:hidden">{packageSummary.count || "—"}</span>
+      </Button>
+    </>
+  );
+
   const showDock = packageSummary.count > 0;
+  const showPeriodHeader = !hidePeriodHeader;
 
   return (
     <div
@@ -806,6 +806,7 @@ export function AccountantHubView({
         aria-hidden
       />
 
+      {(!embedded || showPeriodHeader) && (
       <header
         className={cn(
           "sticky z-40 w-full border-b border-[#E5DFD3]/80 bg-[#F4F1EA]/90 backdrop-blur-xl",
@@ -819,232 +820,20 @@ export function AccountantHubView({
             </h1>
           ) : null}
 
-          {/* Ряд 1: сезон + діапазон (як у Складі) */}
-          <div className="flex items-center gap-2">
-            <Popover
-              open={seasonOpen}
-              onOpenChange={(next) => {
-                setSeasonOpen(next);
-                if (next) {
-                  setRangeOpen(false);
-                  setPeriod("Сезон");
-                }
-              }}
-            >
-              <PopoverTrigger
-                className={cn(
-                  "inline-flex h-11 min-w-0 flex-1 items-center gap-2 rounded-xl border px-2.5 text-left text-sm font-semibold transition-all md:h-9 md:flex-none md:text-xs",
-                  period === "Сезон"
-                    ? "border-[#276749] bg-[#276749] text-white shadow-[0_6px_16px_-6px_rgba(39,103,73,0.55)]"
-                    : "border-[#E0DBD0] bg-white text-zinc-700"
-                )}
-                aria-label="Обрати агросезон"
-              >
-                <span
-                  className={cn(
-                    "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg",
-                    period === "Сезон"
-                      ? "bg-white/15 text-white"
-                      : "bg-[#276749]/12 text-[#276749]"
-                  )}
-                >
-                  <Sprout className="h-3.5 w-3.5" />
-                </span>
-                <span className="truncate tabular-nums">
-                  Сезон {seasonYear}
-                </span>
-                <ChevronDown
-                  className={cn(
-                    "ml-auto h-3.5 w-3.5 shrink-0",
-                    period === "Сезон" ? "text-white/80" : "text-zinc-400"
-                  )}
-                />
-              </PopoverTrigger>
-              <PopoverContent
-                align="start"
-                sideOffset={6}
-                sheetOnMobile={false}
-                className="w-[min(100vw-2rem,22rem)] rounded-2xl border border-zinc-200 bg-white p-2 shadow-xl"
-              >
-                <p className="px-2.5 pt-1.5 pb-2 text-[11px] leading-snug text-zinc-500">
-                  Фільтр черги за агросезоном (березень–лютий).
-                </p>
-                <div className="space-y-1">
-                  {(availableSeasons.length > 0
-                    ? availableSeasons.map(Number)
-                    : SEASON_OPTIONS
-                  ).map((year) => (
-                    <button
-                      key={year}
-                      type="button"
-                      onClick={() => selectSeason(year)}
-                      className={cn(
-                        "flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left transition-colors",
-                        seasonYear === year
-                          ? "bg-[#276749] text-white"
-                          : "text-zinc-800"
-                      )}
-                    >
-                      <span className="text-sm font-semibold">
-                        Сезон {year}
-                      </span>
-                      <span
-                        className={cn(
-                          "text-[11px] font-medium",
-                          seasonYear === year
-                            ? "text-white/75"
-                            : "text-zinc-400"
-                        )}
-                      >
-                        бер {year} – лют {year + 1}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </PopoverContent>
-            </Popover>
-
-            <Popover
-              open={rangeOpen}
-              onOpenChange={(next) => {
-                setRangeOpen(next);
-                if (next) {
-                  setSeasonOpen(false);
-                  applyPeriod("Діапазон");
-                }
-              }}
-            >
-              <PopoverTrigger
-                className={cn(
-                  "inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl border px-3 text-sm font-semibold transition-all md:h-9 md:text-xs",
-                  period === "Діапазон"
-                    ? "border-[#276749] bg-[#276749] text-white shadow-[0_6px_16px_-6px_rgba(39,103,73,0.55)]"
-                    : "border-[#E0DBD0] bg-white text-zinc-700"
-                )}
-              >
-                <CalendarIcon
-                  className={cn(
-                    "h-3.5 w-3.5 shrink-0",
-                    period === "Діапазон" ? "text-white/90" : "opacity-70"
-                  )}
-                />
-                {period === "Діапазон" && customRange?.from
-                  ? `${format(customRange.from, "d MMM", { locale: uk })}${
-                      customRange.to
-                        ? ` – ${format(customRange.to, "d MMM", { locale: uk })}`
-                        : " → …"
-                    }`
-                  : "Діапазон"}
-              </PopoverTrigger>
-              <PopoverContent
-                align="end"
-                sideOffset={6}
-                sheetOnMobile={false}
-                className="w-[min(100vw-1.5rem,22.5rem)] rounded-2xl border border-zinc-200 bg-white p-3 shadow-xl"
-              >
-                <p className="mb-2 px-1 text-[11px] text-zinc-500">
-                  {customRange?.from && customRange?.to
-                    ? "Натисніть дату, щоб обрати новий початок"
-                    : customRange?.from
-                      ? "Тепер оберіть кінець періоду"
-                      : "Оберіть початок, потім кінець періоду"}
-                </p>
-                <Calendar
-                  mode="range"
-                  numberOfMonths={1}
-                  selected={customRange}
-                  defaultMonth={customRange?.from ?? new Date()}
-                  onSelect={(range, triggerDate) => {
-                    applyPeriod("Діапазон");
-                    setCustomRange(
-                      nextDateRangeSelection(customRange, range, triggerDate)
-                    );
-                  }}
-                  locale={uk}
-                  className="w-full rounded-xl [--cell-size:2.5rem]"
-                />
-                <div className="mt-3 flex items-center gap-2 border-t border-zinc-100 pt-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCustomRange(undefined);
-                      applyPeriod("Сезон");
-                      setRangeOpen(false);
-                    }}
-                    className="h-11 flex-1 rounded-xl border border-zinc-200 bg-white text-sm font-semibold text-zinc-600"
-                  >
-                    Скинути
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!customRange?.from}
-                    onClick={() => {
-                      if (!customRange?.from) return;
-                      if (!customRange.to) {
-                        setCustomRange({
-                          from: customRange.from,
-                          to: customRange.from,
-                        });
-                      }
-                      setPeriod("Діапазон");
-                      setRangeOpen(false);
-                    }}
-                    className="h-11 flex-[1.4] rounded-xl bg-[#276749] text-sm font-bold text-white disabled:opacity-50"
-                  >
-                    Застосувати
-                  </button>
-                </div>
-              </PopoverContent>
-            </Popover>
-          </div>
-
-          {/* Ряд 2: швидкі періоди + дії */}
-          <div className="flex items-center gap-2">
-            <div className="flex min-w-0 flex-1 items-center gap-0.5 rounded-xl bg-[#EDE8DF] p-0.5">
-              {FINANCE_QUICK_PERIODS.map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  onClick={() => applyPeriod(option)}
-                  className={cn(
-                    "h-11 min-w-0 flex-1 rounded-[10px] px-1 text-[11px] font-semibold transition-all sm:px-2 sm:text-xs md:h-8",
-                    period === option
-                      ? "bg-[#276749] text-white shadow-[0_4px_12px_-4px_rgba(39,103,73,0.55)]"
-                      : "text-zinc-500"
-                  )}
-                >
-                  {option}
-                </button>
-              ))}
-            </div>
-            <button
-              type="button"
-              onClick={() => void load({ force: true })}
-              disabled={loading || pending}
-              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#E0DBD0] bg-white text-zinc-600 shadow-sm disabled:opacity-50 md:h-8 md:w-8"
-              aria-label="Оновити"
-            >
-              <RefreshCw
-                className={cn("h-4 w-4", loading && "animate-spin")}
-              />
-            </button>
-            <Button
-              type="button"
-              size="sm"
-              disabled={loading || pending || packageSummary.count === 0}
-              onClick={() => handleDownload(packageSummary.rows)}
-              className={cn(
-                "h-11 shrink-0 rounded-xl px-3 font-bold text-white md:h-8",
-                "bg-gradient-to-r from-[#1f5239] via-[#276749] to-[#2f7a52]"
-              )}
-            >
-              <Download className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Скачати</span>
-              <span className="sm:hidden">{packageSummary.count || "—"}</span>
-            </Button>
-          </div>
+          {showPeriodHeader ? (
+            <FinancePeriodToolbar
+              {...periodFilter}
+              variant={isMobile ? "mobile" : "desktop"}
+              seasonHint="Фільтр черги за агросезоном (березень–лютий)."
+              loading={loading}
+              trailing={periodActions}
+            />
+          ) : (
+            <div className="flex justify-end gap-2">{periodActions}</div>
+          )}
         </div>
       </header>
+      )}
 
       <div
         className={cn(
@@ -1062,6 +851,10 @@ export function AccountantHubView({
               )
         )}
       >
+        {hidePeriodHeader && embedded ? (
+          <div className="flex justify-end gap-2">{periodActions}</div>
+        ) : null}
+
         {error ? (
           <div
             className={cn(

@@ -603,7 +603,7 @@ export function FuelDashboardHeader({
                 empty={!refuelHasData}
                 interactive={refuelHasData && !refuelLoading}
                 popoverTitle="Кому заправили"
-                popoverDescription={`ДУТ + ручні · ${periodLabel.toLowerCase()}`}
+                popoverDescription={`ДУТ з БД + журнал без датчика · ${periodLabel.toLowerCase()}`}
                 breakdownEmpty={`Немає заправок за ${fieldFuelPeriodCaption(fieldFuelPeriod)}`}
                 breakdownRows={refuelRows}
                 accentClass="text-sky-950"

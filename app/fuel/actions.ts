@@ -15,7 +15,11 @@ import {
   type DieselPriceResult,
 } from "@/lib/fuel-price";
 import { sumOutboundRefueledForPeriod } from "@/lib/fuel-refuel-period";
-import { sumFleetFuelConsumedForPeriod } from "@/lib/wialon-equipment-day-sync";
+import {
+  ensureEquipmentDayStatsCoverage,
+  listUnsyncedEquipmentDayDates,
+  sumFleetFuelConsumedForPeriod,
+} from "@/lib/wialon-equipment-day-sync";
 import {
   ensureFieldFuelPeriodCoverage,
   listFieldFuelBreakdownForPeriod,
@@ -77,28 +81,45 @@ export async function getFieldFuelConsumed(
     // week/month — дотягуємо пропуски (діапазон малий).
     // season — на першому показі лише БД (як уже прогріті 7д/місяць);
     //   Wialon лише на явному backfill, інакше KPI висить хвилинами і падає в «немає даних».
-    let shouldSync = safe === "today" || safe === "yesterday";
-    if (!shouldSync && safe !== "season") {
+    let shouldSyncField = safe === "today" || safe === "yesterday";
+    let shouldSyncEquipment = safe === "today" || safe === "yesterday";
+    const { fromDate, toDate } = resolveFieldFuelPeriodBounds(safe);
+
+    if (!shouldSyncField && safe !== "season") {
       try {
-        const { fromDate, toDate } = resolveFieldFuelPeriodBounds(safe);
         const missing = await listUnsyncedFieldFuelDates(fromDate, toDate);
-        shouldSync = missing.length > 0;
+        shouldSyncField = missing.length > 0;
       } catch {
-        shouldSync = true;
+        shouldSyncField = true;
       }
     } else if (safe === "season" && allowBackfill) {
       try {
-        const { fromDate, toDate } = resolveFieldFuelPeriodBounds(safe);
         const missing = await listUnsyncedFieldFuelDates(fromDate, toDate);
-        shouldSync = missing.length > 0;
+        shouldSyncField = missing.length > 0;
       } catch {
-        shouldSync = false;
+        shouldSyncField = false;
       }
     }
 
-    if (shouldSync) {
+    if (!shouldSyncEquipment && safe !== "season") {
       try {
-        const coverage = await ensureFieldFuelPeriodCoverage(safe, {
+        const missingEq = await listUnsyncedEquipmentDayDates(fromDate, toDate);
+        shouldSyncEquipment = missingEq.length > 0;
+      } catch {
+        shouldSyncEquipment = safe === "today" || safe === "yesterday";
+      }
+    } else if (safe === "season" && allowBackfill) {
+      try {
+        const missingEq = await listUnsyncedEquipmentDayDates(fromDate, toDate);
+        shouldSyncEquipment = missingEq.length > 0;
+      } catch {
+        shouldSyncEquipment = false;
+      }
+    }
+
+    if (shouldSyncField || shouldSyncEquipment) {
+      try {
+        const fieldOpts = {
           maxDays:
             safe === "season"
               ? 8
@@ -115,8 +136,37 @@ export async function getFieldFuelConsumed(
                 : safe === "week"
                   ? 14_000
                   : 16_000,
-        });
-        liveSynced = coverage.daysSyncedNow > 0 || !coverage.truncated;
+        };
+        const equipmentOpts = {
+          maxDays:
+            safe === "season"
+              ? 6
+              : safe === "month"
+                ? 4
+                : safe === "week"
+                  ? 3
+                  : 1,
+          budgetMs:
+            safe === "today" || safe === "yesterday"
+              ? 14_000
+              : safe === "season"
+                ? 22_000
+                : safe === "week"
+                  ? 16_000
+                  : 18_000,
+        };
+        const [fieldCoverage, equipmentCoverage] = await Promise.all([
+          shouldSyncField
+            ? ensureFieldFuelPeriodCoverage(safe, fieldOpts)
+            : Promise.resolve({ daysSyncedNow: 0, truncated: false }),
+          shouldSyncEquipment
+            ? ensureEquipmentDayStatsCoverage(safe, equipmentOpts)
+            : Promise.resolve({ daysSyncedNow: 0, truncated: false }),
+        ]);
+        liveSynced =
+          fieldCoverage.daysSyncedNow > 0 ||
+          equipmentCoverage.daysSyncedNow > 0 ||
+          (!fieldCoverage.truncated && !equipmentCoverage.truncated);
       } catch (syncErr) {
         console.error(
           "[field-fuel] period coverage",
@@ -187,9 +237,10 @@ export async function getTodayFieldFuelConsumed() {
   return getFieldFuelConsumed("today");
 }
 
-/** Заправлено: ДУТ (стрибки бака) + ручні outbound без дубля. */
+/** Заправлено: ДУТ (fuel_filled з БД) + ручні outbound без ДУТ. */
 export async function getFuelRefueledForPeriod(
-  period: FieldFuelPeriod = "today"
+  period: FieldFuelPeriod = "today",
+  options?: { backfill?: boolean }
 ): Promise<
   ActionResult<{
     liters: number;
@@ -208,7 +259,54 @@ export async function getFuelRefueledForPeriod(
   }>
 > {
   try {
-    const data = await sumOutboundRefueledForPeriod(normalizePeriod(period));
+    const safe = normalizePeriod(period);
+    const allowBackfill = options?.backfill === true;
+    const { fromDate, toDate } = resolveFieldFuelPeriodBounds(safe);
+    let shouldSyncEquipment = safe === "today" || safe === "yesterday";
+    if (!shouldSyncEquipment && safe !== "season") {
+      try {
+        const missingEq = await listUnsyncedEquipmentDayDates(fromDate, toDate);
+        shouldSyncEquipment = missingEq.length > 0;
+      } catch {
+        shouldSyncEquipment = safe === "today" || safe === "yesterday";
+      }
+    } else if (safe === "season" && allowBackfill) {
+      try {
+        const missingEq = await listUnsyncedEquipmentDayDates(fromDate, toDate);
+        shouldSyncEquipment = missingEq.length > 0;
+      } catch {
+        shouldSyncEquipment = false;
+      }
+    }
+    if (shouldSyncEquipment) {
+      try {
+        await ensureEquipmentDayStatsCoverage(safe, {
+          maxDays:
+            safe === "season"
+              ? 6
+              : safe === "month"
+                ? 4
+                : safe === "week"
+                  ? 3
+                  : 1,
+          budgetMs:
+            safe === "today" || safe === "yesterday"
+              ? 14_000
+              : safe === "season"
+                ? 22_000
+                : safe === "week"
+                  ? 16_000
+                  : 18_000,
+        });
+      } catch (syncErr) {
+        console.error(
+          "[fuel-refuel] equipment day sync",
+          syncErr instanceof Error ? syncErr.message : syncErr
+        );
+      }
+    }
+
+    const data = await sumOutboundRefueledForPeriod(safe);
     return {
       ok: true,
       data: {

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   ChevronRight,
@@ -26,6 +26,7 @@ type SidebarProps = {
 /** Сайдбар Gunmetal Iron зі згортанням (стиль azhunebi-platform) */
 export function Sidebar({ collapsed, onToggleCollapsed }: SidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const expanded = !collapsed;
   const [me, setMe] = useState<AppActor | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -38,19 +39,16 @@ export function Sidebar({ collapsed, onToggleCollapsed }: SidebarProps) {
     const Icon = item.icon;
     const active = isNavItemActive(pathname, item.href);
 
-    const link = (
-      <Link
-        href={item.href}
-        aria-label={item.label}
-        aria-current={active ? "page" : undefined}
-        className={cn(
-          "group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
-          collapsed ? "justify-center px-0" : "justify-center md:justify-start",
-          active
-            ? "bg-gradient-to-r from-[#C05621]/25 to-transparent text-zinc-100"
-            : "text-zinc-400 hover:bg-zinc-700/30 hover:text-zinc-200"
-        )}
-      >
+    const itemClassName = cn(
+      "group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
+      collapsed ? "justify-center px-0" : "justify-center md:justify-start",
+      active
+        ? "bg-gradient-to-r from-[#C05621]/25 to-transparent text-zinc-100"
+        : "text-zinc-400 hover:bg-zinc-700/30 hover:text-zinc-200"
+    );
+
+    const iconBlock = (
+      <>
         {active && collapsed ? (
           <span
             className="absolute top-1/2 left-0 h-5 w-0.5 -translate-y-1/2 rounded-full bg-[#C05621]"
@@ -70,18 +68,35 @@ export function Sidebar({ collapsed, onToggleCollapsed }: SidebarProps) {
         {expanded ? (
           <span className="hidden truncate md:inline">{item.label}</span>
         ) : null}
-      </Link>
+      </>
     );
 
-    if (!collapsed) return <div key={item.href}>{link}</div>;
+    if (!collapsed) {
+      return (
+        <div key={item.href}>
+          <Link
+            href={item.href}
+            aria-label={item.label}
+            aria-current={active ? "page" : undefined}
+            className={itemClassName}
+          >
+            {iconBlock}
+          </Link>
+        </div>
+      );
+    }
 
     return (
       <SidebarNavTooltip key={item.href} title={item.label} hint={item.hint}>
-        {(handlers) => (
-          <span className="block w-full" {...handlers}>
-            {link}
-          </span>
-        )}
+        <button
+          type="button"
+          onClick={() => router.push(item.href)}
+          aria-label={item.label}
+          aria-current={active ? "page" : undefined}
+          className={itemClassName}
+        >
+          {iconBlock}
+        </button>
       </SidebarNavTooltip>
     );
   }
@@ -163,11 +178,7 @@ export function Sidebar({ collapsed, onToggleCollapsed }: SidebarProps) {
               title="Розгорнути"
               hint="Показати повне меню"
             >
-              {(handlers) => (
-                <span className="block w-full" {...handlers}>
-                  {collapseToggle}
-                </span>
-              )}
+              {collapseToggle}
             </SidebarNavTooltip>
           ) : (
             collapseToggle
@@ -186,23 +197,21 @@ export function Sidebar({ collapsed, onToggleCollapsed }: SidebarProps) {
               title={me.fullName}
               hint="Профіль"
             >
-              {(handlers) => (
-                <span className="mb-1 block w-full" {...handlers}>
-                  <ProfilePopover
-                    open={profileOpen}
-                    onOpenChange={setProfileOpen}
-                    me={me}
-                    onUpdated={setMe}
-                    collapsed
-                    triggerClassName="flex items-center justify-center rounded-xl px-0 py-1"
-                    triggerAriaLabel="Профіль"
-                  >
-                    <span className="flex h-8 w-8 items-center justify-center rounded-full border border-[#C05621]/35 bg-gradient-to-br from-[#C05621]/30 to-[#9c4221]/20 text-[11px] font-bold text-[#E8A87C] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
-                      {me.fullName.slice(0, 1).toUpperCase()}
-                    </span>
-                  </ProfilePopover>
-                </span>
-              )}
+              <div className="mb-1 w-full">
+                <ProfilePopover
+                  open={profileOpen}
+                  onOpenChange={setProfileOpen}
+                  me={me}
+                  onUpdated={setMe}
+                  collapsed
+                  triggerClassName="flex items-center justify-center rounded-xl px-0 py-1"
+                  triggerAriaLabel="Профіль"
+                >
+                  <span className="flex h-8 w-8 items-center justify-center rounded-full border border-[#C05621]/35 bg-gradient-to-br from-[#C05621]/30 to-[#9c4221]/20 text-[11px] font-bold text-[#E8A87C] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+                    {me.fullName.slice(0, 1).toUpperCase()}
+                  </span>
+                </ProfilePopover>
+              </div>
             </SidebarNavTooltip>
           ) : (
             <div className="mb-1 hidden md:block">
@@ -236,21 +245,17 @@ export function Sidebar({ collapsed, onToggleCollapsed }: SidebarProps) {
         ) : null}
         {collapsed ? (
           <SidebarNavTooltip title="Вийти" hint="Завершити сесію">
-            {(handlers) => (
-              <span className="block w-full" {...handlers}>
-                <form action={logoutAction}>
-                  <button
-                    type="submit"
-                    aria-label="Вийти"
-                    className="flex w-full items-center justify-center rounded-lg px-0 py-2.5 text-zinc-400 transition-colors hover:bg-zinc-700/30 hover:text-zinc-100"
-                  >
-                    <span className="flex h-8 w-8 items-center justify-center rounded-lg">
-                      <LogOut className="h-5 w-5" />
-                    </span>
-                  </button>
-                </form>
-              </span>
-            )}
+            <form action={logoutAction}>
+              <button
+                type="submit"
+                aria-label="Вийти"
+                className="flex w-full items-center justify-center rounded-lg px-0 py-2.5 text-zinc-400 transition-colors hover:bg-zinc-700/30 hover:text-zinc-100"
+              >
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg">
+                  <LogOut className="h-5 w-5" />
+                </span>
+              </button>
+            </form>
           </SidebarNavTooltip>
         ) : (
           <form action={logoutAction}>

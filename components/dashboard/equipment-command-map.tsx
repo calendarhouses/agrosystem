@@ -35,6 +35,7 @@ import {
 } from "@/lib/wialon";
 import { FARM_BASE_LOCATION } from "@/lib/farm-base-location";
 import { focusMapAroundFarmAnchor } from "@/lib/map-farm-camera";
+import { mapCameraPadding } from "@/lib/equipment-command-center-layout";
 import { cn } from "@/lib/utils";
 
 /** Дефолтний центр карти — база (Іванівка), не Київ */
@@ -277,13 +278,11 @@ export const EquipmentCommandMap = forwardRef<EquipmentCommandMapHandle, Props>(
         if (!map || !mapReady) return;
         const bounds = computeFleetBounds(units, geofences);
         if (!bounds) return;
+        const isDesktop =
+          typeof window !== "undefined" ? window.innerWidth >= 768 : true;
+        const padding = mapCameraPadding(isDesktop, "left");
         focusMapAroundFarmAnchor(map, bounds, {
-          padding: fitPadding ?? {
-            top: 50,
-            bottom: 110,
-            left: 436,
-            right: 48,
-          },
+          padding,
           maxZoom: 14,
           duration: 1200,
         });
@@ -314,8 +313,11 @@ export const EquipmentCommandMap = forwardRef<EquipmentCommandMapHandle, Props>(
       if (!map) return;
 
       initialFitDoneRef.current = true;
+      const isDesktop =
+        typeof window !== "undefined" ? window.innerWidth >= 768 : true;
+      const padding = mapCameraPadding(isDesktop, "left");
       focusMapAroundFarmAnchor(map, bounds, {
-        padding: fitPadding ?? { top: 50, bottom: 110, left: 436, right: 48 },
+        padding,
         maxZoom: 14,
         duration: 1000,
       });
