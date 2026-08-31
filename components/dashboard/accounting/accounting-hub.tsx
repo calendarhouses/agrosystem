@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { FileSpreadsheet, History, Link2, Loader2, Scale } from "lucide-react";
+import { FileSpreadsheet, Link2, Loader2, Scale } from "lucide-react";
 
 import {
   loadAccountingReconciliation,
@@ -9,7 +9,6 @@ import {
   type ActionResult,
 } from "@/app/accounting/actions";
 import { AccountantHubView } from "@/components/dashboard/accountant-hub-view";
-import { ActivityJournalPanel } from "@/components/dashboard/activity-journal-panel";
 import { MappingStudioLazy } from "@/components/dashboard/accounting/mapping-studio-lazy";
 import { ReconciliationStudio } from "@/components/dashboard/accounting/reconciliation-studio";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -21,7 +20,6 @@ const HUB_TABS = [
   { id: "export", label: "Експорт", short: "Експорт", icon: FileSpreadsheet },
   { id: "reconcile", label: "Звірка", short: "Звірка", icon: Scale },
   { id: "mapping", label: "Мапінг", short: "Мапінг", icon: Link2 },
-  { id: "activity", label: "Журнал", short: "Журнал", icon: History },
 ] as const;
 
 export function AccountingHub() {
@@ -252,12 +250,6 @@ export function AccountingHub() {
           ) : null}
         </TabsContent>
 
-        <TabsContent
-          value="activity"
-          className="mt-0 min-h-0 flex-1 overflow-y-auto overscroll-none bg-gradient-to-br from-[#E8F0EA] via-[#F4F1EA] to-[#EDE8DF] outline-none data-[hidden]:hidden"
-        >
-          {tab === "activity" ? <ActivityJournalPanel compact={isMobile} /> : null}
-        </TabsContent>
       </Tabs>
     </div>
   );

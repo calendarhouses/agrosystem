@@ -36,6 +36,8 @@ export function TopBar() {
     pathname?.startsWith("/export/") ||
     pathname === "/accounting" ||
     pathname?.startsWith("/accounting/") ||
+    pathname === "/journal" ||
+    pathname?.startsWith("/journal/") ||
     pathname === "/calendar" ||
     pathname?.startsWith("/calendar/");
   const activeSeason = useSeasonStore((s) => s.activeSeason);

@@ -201,4 +201,5 @@ export const APP_WARM_ROUTES = [
   "/finance",
   "/calendar",
   "/accounting",
+  "/journal",
 ] as const;

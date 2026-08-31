@@ -12,6 +12,7 @@ import {
 import { BottomNav } from "@/components/layout/bottom-nav";
 import { AppDataWarmer } from "@/components/layout/app-data-warmer";
 import { PreventEdgeSwipeBack } from "@/components/layout/prevent-edge-swipe-back";
+import { RouteReveal } from "@/components/layout/route-reveal";
 import { Sidebar } from "@/components/layout/sidebar";
 import { TopBar } from "@/components/layout/top-bar";
 import { AppBootProvider, useAppBoot } from "@/lib/app-boot";
@@ -62,7 +63,7 @@ function AppShellChrome({
             isCommandCenter && "min-h-0 bg-zinc-950"
           )}
         >
-          {children}
+          <RouteReveal>{children}</RouteReveal>
         </div>
       </div>
 

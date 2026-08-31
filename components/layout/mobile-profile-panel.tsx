@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { ChevronLeft, KeyRound, Loader2, Save } from "lucide-react";
+import { ChevronLeft, KeyRound, Loader2, LogOut, Save } from "lucide-react";
 import { toast } from "sonner";
 
+import { logoutAction } from "@/app/login/actions";
 import {
   updateMyLoginAction,
   updateMyPasswordAction,
@@ -283,6 +284,35 @@ export function ProfilePanelContent({
           </div>
         </div>
       )}
+
+      <div
+        className={cn(
+          "pt-1",
+          dark ? "border-t border-zinc-700/80" : "border-t border-border/60"
+        )}
+      >
+        <form action={logoutAction}>
+          <button
+            type="submit"
+            className={cn(
+              "mt-3 flex h-auto w-full items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-colors",
+              dark
+                ? "border-rose-500/25 bg-rose-500/[0.08] text-rose-200 hover:border-rose-500/40 hover:bg-rose-500/15 hover:ring-1 hover:ring-rose-500/30"
+                : "border-destructive/20 bg-destructive/5 text-destructive hover:bg-destructive/10"
+            )}
+          >
+            <span
+              className={cn(
+                "flex h-8 w-8 items-center justify-center rounded-lg",
+                dark ? "bg-rose-500/15 text-rose-300" : "bg-destructive/10"
+              )}
+            >
+              <LogOut className="h-4 w-4" />
+            </span>
+            <span className="text-sm font-medium">Вийти</span>
+          </button>
+        </form>
+      </div>
     </div>
   );
 }

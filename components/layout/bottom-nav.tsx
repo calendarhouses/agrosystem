@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
+import { motion, type PanInfo } from "framer-motion";
 import type { LucideIcon } from "lucide-react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
@@ -21,6 +21,9 @@ import type { AppActor } from "@/lib/app-actor-shared";
 import { cn } from "@/lib/utils";
 
 const DOCK_SPRING = { type: "spring" as const, stiffness: 300, damping: 30 };
+/** Поріг зміщення / швидкості для зміни сторінки dock */
+const SWIPE_OFFSET_PX = 56;
+const SWIPE_VELOCITY = 450;
 
 const NAV_TEXT_CLASS =
   "max-w-full truncate text-[11px] font-bold leading-none tracking-[0.15px]";
@@ -28,16 +31,19 @@ const NAV_TEXT_CLASS =
 const NAV_ITEM_CLASS =
   "flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center gap-1 self-stretch px-0.5 pt-1.5 pb-[max(0.25rem,env(safe-area-inset-bottom,0px))] transition-colors duration-200 touch-manipulation";
 
-const DOCK_TOGGLE_CLASS = cn(
-  NAV_ITEM_CLASS,
-  "text-zinc-400 active:text-zinc-200"
-);
-
 const slideVariants = {
   center: { x: "0%" },
   offLeft: { x: "-100%" },
   offRight: { x: "100%" },
 };
+
+function shouldGoNext(info: PanInfo): boolean {
+  return info.offset.x < -SWIPE_OFFSET_PX || info.velocity.x < -SWIPE_VELOCITY;
+}
+
+function shouldGoPrev(info: PanInfo): boolean {
+  return info.offset.x > SWIPE_OFFSET_PX || info.velocity.x > SWIPE_VELOCITY;
+}
 
 function NavLinkItem({
   href,
@@ -69,41 +75,39 @@ function NavLinkItem({
   );
 }
 
-function DockToggleIcon({
-  children,
-  active,
-}: {
-  children: React.ReactNode;
-  active?: boolean;
-}) {
-  return (
-    <span
-      className={cn(
-        "flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.05] ring-1 ring-white/[0.07]",
-        active && "bg-[#C05621]/15 ring-[#C05621]/25"
-      )}
-    >
-      {children}
-    </span>
-  );
-}
-
 function DockPage({
   page,
   activePage,
+  onSwipeNext,
+  onSwipePrev,
   children,
 }: {
   page: 0 | 1;
   activePage: 0 | 1;
+  onSwipeNext?: () => void;
+  onSwipePrev?: () => void;
   children: React.ReactNode;
 }) {
   const isActive = activePage === page;
+
+  function handleDragEnd(_event: unknown, info: PanInfo) {
+    if (!isActive) return;
+    if (shouldGoNext(info)) onSwipeNext?.();
+    else if (shouldGoPrev(info)) onSwipePrev?.();
+  }
+
   return (
     <motion.div
       variants={slideVariants}
       initial={false}
       animate={isActive ? "center" : page === 0 ? "offLeft" : "offRight"}
       transition={DOCK_SPRING}
+      drag={isActive ? "x" : false}
+      dragConstraints={{ left: 0, right: 0 }}
+      dragElastic={0.18}
+      dragMomentum={false}
+      dragDirectionLock
+      onDragEnd={handleDragEnd}
       className={cn(
         "absolute inset-0 flex items-stretch justify-around px-1",
         !isActive && "pointer-events-none"
@@ -165,7 +169,11 @@ export function BottomNav() {
         }}
         style={{ pointerEvents: revealChrome ? "auto" : "none" }}
       >
-        <DockPage page={0} activePage={activePage}>
+        <DockPage
+          page={0}
+          activePage={activePage}
+          onSwipeNext={() => goToPage(1)}
+        >
           {BOTTOM_NAV_ITEMS.map((item) => (
             <NavLinkItem
               key={item.href}
@@ -179,30 +187,38 @@ export function BottomNav() {
 
           <button
             type="button"
-            aria-label="Ще"
+            aria-label="Далі"
             onClick={() => goToPage(1)}
             className={cn(
-              DOCK_TOGGLE_CLASS,
-              (activePage === 1 || businessActive) && "text-[#E8A87C]"
+              NAV_ITEM_CLASS,
+              activePage === 1 || businessActive
+                ? "text-[#E8A87C]"
+                : "text-zinc-500 active:text-zinc-300"
             )}
           >
-            <DockToggleIcon active={activePage === 1 || businessActive}>
-              <ChevronRight className="h-5 w-5" strokeWidth={2} />
-            </DockToggleIcon>
-            <span className={NAV_TEXT_CLASS}>Ще</span>
+            <ChevronRight
+              className="h-6 w-6"
+              strokeWidth={activePage === 1 || businessActive ? 2.1 : 1.85}
+            />
+            <span className={NAV_TEXT_CLASS}>Далі</span>
           </button>
         </DockPage>
 
-        <DockPage page={1} activePage={activePage}>
+        <DockPage
+          page={1}
+          activePage={activePage}
+          onSwipePrev={() => goToPage(0)}
+        >
           <button
             type="button"
             aria-label="Назад"
             onClick={() => goToPage(0)}
-            className={DOCK_TOGGLE_CLASS}
+            className={cn(
+              NAV_ITEM_CLASS,
+              "text-zinc-500 active:text-zinc-300"
+            )}
           >
-            <DockToggleIcon>
-              <ChevronLeft className="h-5 w-5" strokeWidth={2} />
-            </DockToggleIcon>
+            <ChevronLeft className="h-6 w-6" strokeWidth={1.85} />
             <span className={NAV_TEXT_CLASS}>Назад</span>
           </button>
 

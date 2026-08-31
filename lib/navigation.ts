@@ -3,6 +3,7 @@ import {
   CalendarRange,
   FileSpreadsheet,
   Fuel,
+  History,
   Map as MapIcon,
   PieChart,
   Tractor,
@@ -17,7 +18,7 @@ export type AppNavItem = {
   icon: LucideIcon;
   /** Показувати в нижній панелі на мобільному */
   bottomNav?: boolean;
-  /** Показувати в меню «Ще» */
+  /** Показувати в меню «Ще» / бізнес-dock */
   moreMenu?: boolean;
 };
 
@@ -72,15 +73,25 @@ export const APP_NAV_ITEMS: AppNavItem[] = [
     icon: FileSpreadsheet,
     moreMenu: true,
   },
+  {
+    href: "/journal",
+    label: "Журнал",
+    hint: "Журнал дій користувачів",
+    icon: History,
+    moreMenu: true,
+  },
 ];
 
 export const BOTTOM_NAV_ITEMS = APP_NAV_ITEMS.filter((item) => item.bottomNav);
 
 export const MORE_MENU_ITEMS = APP_NAV_ITEMS.filter((item) => item.moreMenu);
 
-/** Сторінка 1 sliding dock — фінанси, бухгалтерія */
+/** Сторінка 1 sliding dock: Фінанси → Бухгалтерія → Журнал (Профіль окремо) */
 export const DOCK_BUSINESS_ITEMS = APP_NAV_ITEMS.filter(
-  (item) => item.href === "/finance" || item.href === "/accounting"
+  (item) =>
+    item.href === "/finance" ||
+    item.href === "/accounting" ||
+    item.href === "/journal"
 );
 
 export const PROFILE_DOCK_ITEM: AppNavItem = {
