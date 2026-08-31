@@ -24,6 +24,7 @@ import {
   DrawerContent,
   DrawerHandle,
   DrawerTitle,
+  NonModalDrawerBackdrop,
 } from "@/components/ui/drawer";
 import type { MapFieldItem } from "@/lib/map-fields";
 import { formatCountPlural } from "@/lib/plural";
@@ -715,6 +716,17 @@ export function FieldsGlassPanel({
           )
         ) : null}
 
+        <NonModalDrawerBackdrop
+          open={showFullSnap}
+          onClose={() => {
+            if (mobileDetailOpen) {
+              onMobileDetailClose?.();
+              return;
+            }
+            onMobileExpandedChange(false);
+            onMobileDrawerVisibleChange?.(true);
+          }}
+        />
         <Drawer
           open={showFullSnap}
           onOpenChange={(open) => {
@@ -735,16 +747,16 @@ export function FieldsGlassPanel({
             onMobileDrawerVisibleChange?.(true);
           }}
           dismissible
-          modal
+          modal={false}
           shouldScaleBackground={false}
           noBodyStyles
         >
           <DrawerContent
+            showOverlay={false}
             className={cn(
               FIELDS_MOBILE_DRAWER_SIZE,
               "flex flex-col border-[#E5DFD3]/90 bg-[#F4F1EA] pb-3"
             )}
-            overlayClassName="bg-black/70"
           >
             <DrawerTitle className="sr-only">
               {mobileDetailOpen ? "Деталі поля" : "Список полів"}

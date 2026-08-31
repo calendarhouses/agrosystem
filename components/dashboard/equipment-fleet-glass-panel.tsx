@@ -22,6 +22,7 @@ import {
   DrawerContent,
   DrawerHandle,
   DrawerTitle,
+  NonModalDrawerBackdrop,
 } from "@/components/ui/drawer";
 import type { FleetNonTrackedItem, FleetTrackedUnit } from "@/lib/equipment-fleet";
 import type { FleetActiveOperation } from "@/lib/equipment-active-ops";
@@ -619,6 +620,10 @@ export function EquipmentFleetGlassPanel({
             </button>
           ) : null}
 
+          <NonModalDrawerBackdrop
+            open={showFullSnap}
+            onClose={() => onMobileExpandedChange(false)}
+          />
           <Drawer
             open={showFullSnap}
             onOpenChange={(open) => {
@@ -631,13 +636,13 @@ export function EquipmentFleetGlassPanel({
               onMobileExpandedChange(false);
             }}
             dismissible
-            modal
+            modal={false}
             shouldScaleBackground={false}
             noBodyStyles
           >
             <DrawerContent
+              showOverlay={false}
               showCloseButton={false}
-              overlayClassName="bg-black/70"
               className={cn(
                 EQUIPMENT_MOBILE_DRAWER_SIZE,
                 "flex flex-col border-[#E5DFD3]/90 bg-[#F4F1EA] pb-3"

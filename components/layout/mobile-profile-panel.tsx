@@ -17,7 +17,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { ROLE_LABEL_UK, type AppActor } from "@/lib/app-actor-shared";
+import type { AppActor } from "@/lib/app-actor-shared";
 import { displayLoginFromEmail } from "@/lib/login-identity";
 import { cn } from "@/lib/utils";
 
@@ -133,7 +133,7 @@ export function ProfilePanelContent({
               dark ? "text-zinc-500" : "text-muted-foreground"
             )}
           >
-            {ROLE_LABEL_UK[me.role]}
+            {displayLoginFromEmail(me.email)}
           </p>
         </div>
       </div>
@@ -177,15 +177,6 @@ export function ProfilePanelContent({
             <span className="sr-only sm:not-sr-only sm:ml-1">Зберегти</span>
           </Button>
         </div>
-      </Field>
-
-      <Field label="Посада" dark={dark}>
-        <Input
-          value={ROLE_LABEL_UK[me.role]}
-          readOnly
-          disabled
-          className={inputClass}
-        />
       </Field>
 
       {!passwordOpen ? (
@@ -405,8 +396,62 @@ export function ProfileSheet(props: ProfilePopoverProps) {
   return <ProfilePopover {...props} />;
 }
 
+/** Skeleton профілю під час завантаження */
+export function ProfilePanelSkeleton({ variant = "dark" }: { variant?: "dark" | "default" }) {
+  const dark = variant === "dark";
+  return (
+    <div className="animate-pulse space-y-4 px-4 py-4">
+      <div
+        className={cn(
+          "flex items-center gap-2.5 rounded-xl border px-3 py-2.5",
+          dark ? "border-white/[0.08] bg-white/[0.04]" : "border-border/60 bg-muted/30"
+        )}
+      >
+        <div className={cn("h-9 w-9 shrink-0 rounded-full", dark ? "bg-zinc-700" : "bg-muted")} />
+        <div className="min-w-0 flex-1 space-y-2">
+          <div className={cn("h-3.5 w-28 rounded", dark ? "bg-zinc-700" : "bg-muted")} />
+          <div className={cn("h-3 w-36 rounded", dark ? "bg-zinc-800" : "bg-muted/70")} />
+        </div>
+      </div>
+      {[1, 2, 3].map((i) => (
+        <div key={i} className="space-y-2">
+          <div className={cn("h-3 w-16 rounded", dark ? "bg-zinc-700" : "bg-muted")} />
+          <div className={cn("h-11 w-full rounded-xl", dark ? "bg-zinc-800" : "bg-muted/50")} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function ProfilePanelError({
+  message,
+  onRetry,
+  variant = "dark",
+}: {
+  message: string;
+  onRetry: () => void;
+  variant?: "dark" | "default";
+}) {
+  const dark = variant === "dark";
+  return (
+    <div className="flex flex-col items-center gap-3 px-4 py-10 text-center">
+      <p className={cn("text-sm", dark ? "text-zinc-300" : "text-muted-foreground")}>
+        {message}
+      </p>
+      <Button
+        type="button"
+        size="sm"
+        onClick={onRetry}
+        className={dark ? "bg-emerald-600 text-white hover:bg-emerald-500" : undefined}
+      >
+        Повторити
+      </Button>
+    </div>
+  );
+}
+
 type MobileProfilePanelProps = {
-  me: AppActor;
+  me: AppActor | null;
   onUpdated: (next: AppActor) => void;
 };
 
@@ -414,18 +459,41 @@ type MobileProfilePanelProps = {
 export function MobileProfilePanel({
   me,
   onUpdated,
-}: MobileProfilePanelProps) {
+  loading = false,
+  error = null,
+  onRetry,
+}: MobileProfilePanelProps & {
+  loading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
+}) {
   return (
     <div className="pb-[calc(0.75rem+var(--safe-bottom))]">
       <div className="border-b border-zinc-800 px-4 pb-3 pr-14 pt-1">
         <h2 className="text-lg font-bold text-zinc-50">Профіль</h2>
       </div>
-      <ProfilePanelContent
-        me={me}
-        onUpdated={onUpdated}
-        variant="dark"
-        className="px-4 py-4"
-      />
+      {loading ? (
+        <ProfilePanelSkeleton variant="dark" />
+      ) : error ? (
+        <ProfilePanelError
+          message={error}
+          onRetry={() => onRetry?.()}
+          variant="dark"
+        />
+      ) : me ? (
+        <ProfilePanelContent
+          me={me}
+          onUpdated={onUpdated}
+          variant="dark"
+          className="px-4 py-4"
+        />
+      ) : (
+        <ProfilePanelError
+          message="Не вдалося завантажити профіль"
+          onRetry={() => onRetry?.()}
+          variant="dark"
+        />
+      )}
     </div>
   );
 }

@@ -180,7 +180,7 @@ export function FuelStorageDialog({
                 </SelectTrigger>
                 <SelectContent
                   sheetOnMobile={false}
-                  className="z-[80] rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-lg"
+                  className="z-[230] rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-lg"
                 >
                   <SelectItem
                     value="stationary"

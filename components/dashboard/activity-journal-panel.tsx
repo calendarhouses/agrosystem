@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { format, isToday, isYesterday, startOfDay, subDays } from "date-fns";
 import { uk } from "date-fns/locale";
 import {
+  AlertTriangle,
   ChevronDown,
   Fuel,
   History,
@@ -30,11 +31,7 @@ import { AnimatePresence, motion } from "framer-motion";
 
 import { listRecentActivityAction } from "@/app/team/actions";
 import type { ActivityLogRow } from "@/lib/activity-log";
-import {
-  ROLE_LABEL_UK,
-  normalizeActorDisplayName,
-  type AppRole,
-} from "@/lib/app-actor-shared";
+import { normalizeActorDisplayName } from "@/lib/app-actor-shared";
 import { cn } from "@/lib/utils";
 
 type PeriodFilter = "all" | "today" | "7d" | "30d";
@@ -174,11 +171,6 @@ function dayKey(iso: string): string {
   return format(d, "d MMMM yyyy", { locale: uk });
 }
 
-function roleLabel(role: AppRole | null): string | null {
-  if (!role) return null;
-  return ROLE_LABEL_UK[role];
-}
-
 type ActorOption = {
   /** Стабільний ключ фільтра: uuid або name:… */
   key: string;
@@ -311,6 +303,8 @@ export function ActivityJournalPanel({
 }) {
   const [rows, setRows] = useState<ActivityLogRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [query, setQuery] = useState("");
   const [period, setPeriod] = useState<PeriodFilter>("all");
   const [action, setAction] = useState<string>("all");
@@ -321,15 +315,26 @@ export function ActivityJournalPanel({
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    void listRecentActivityAction({ limit: 500 }).then((data) => {
-      if (cancelled) return;
-      setRows(data);
-      setLoading(false);
-    });
+    setLoadError(null);
+    void listRecentActivityAction({ limit: 500 })
+      .then((data) => {
+        if (cancelled) return;
+        setRows(data);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setRows([]);
+        setLoadError(
+          err instanceof Error ? err.message : "Помилка завантаження"
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadKey]);
 
   const actors = useMemo(() => buildActorOptions(rows), [rows]);
 
@@ -648,6 +653,21 @@ export function ActivityJournalPanel({
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Завантаження…
               </div>
+            ) : loadError ? (
+              <div className="rounded-3xl border border-rose-200 bg-rose-50/80 px-5 py-14 text-center">
+                <AlertTriangle className="mx-auto h-8 w-8 text-rose-400" />
+                <p className="mt-3 text-sm font-semibold text-rose-900">
+                  Помилка завантаження
+                </p>
+                <p className="mt-1 text-xs text-rose-700">{loadError}</p>
+                <button
+                  type="button"
+                  onClick={() => setReloadKey((k) => k + 1)}
+                  className="mt-4 inline-flex h-10 items-center rounded-xl bg-[#276749] px-4 text-sm font-semibold text-white hover:bg-[#1f5339]"
+                >
+                  Повторити
+                </button>
+              </div>
             ) : filtered.length === 0 ? (
               <div className="rounded-3xl border border-dashed border-[#E5DFD3] bg-white/60 px-5 py-14 text-center">
                 <History className="mx-auto h-8 w-8 text-zinc-300" />
@@ -677,7 +697,6 @@ export function ActivityJournalPanel({
                       {group.items.map((row, index) => {
                         const meta = actionMeta(row.action);
                         const Icon = meta.icon;
-                        const role = roleLabel(row.actorRole);
                         const displayName = normalizeActorDisplayName(
                           row.actorName || ""
                         );
@@ -706,7 +725,6 @@ export function ActivityJournalPanel({
                                 <span className="inline-flex items-center gap-1 rounded-full bg-zinc-900/[0.04] px-2 py-0.5 text-[10px] font-semibold text-zinc-600">
                                   <UserRound className="h-3 w-3" />
                                   {displayName || "—"}
-                                  {role ? ` · ${role}` : ""}
                                 </span>
                                 <span className="rounded-full bg-[#276749]/8 px-2 py-0.5 text-[10px] font-semibold text-[#276749]">
                                   {meta.label}

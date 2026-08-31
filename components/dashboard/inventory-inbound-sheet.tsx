@@ -395,7 +395,7 @@ export function InventoryInboundSheet({
                     </SelectTrigger>
                     <SelectContent sheetOnMobile={false}
                       align="start"
-                      className="z-[80] rounded-2xl border border-zinc-200 bg-white p-1.5 text-zinc-900 shadow-xl"
+                      className="z-[230] rounded-2xl border border-zinc-200 bg-white p-1.5 text-zinc-900 shadow-xl"
                     >
                       {CATEGORIES.map((cat) => (
                         <SelectItem

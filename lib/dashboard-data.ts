@@ -392,22 +392,6 @@ export const COMMAND_ITEMS = [
     icon: "fuel" as const,
     href: "/inventory",
   },
-  {
-    id: "cmd-bas-mapping",
-    label: "Мапінг BAS AGRO",
-    hint: "Зіставлення з BAS AGRO",
-    group: "Адмін",
-    icon: "link" as const,
-    href: "/admin/mapping",
-  },
-  {
-    id: "cmd-bas-request",
-    label: "Звірка полів",
-    hint: "Заявка бухгалтеру по довіднику BAS AGRO",
-    group: "Адмін",
-    icon: "link" as const,
-    href: "/admin/bas-request",
-  },
 ] as const;
 
 /** Типи фінансових операцій для ручного введення */

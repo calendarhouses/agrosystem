@@ -438,7 +438,7 @@ export function FuelRefuelRadar({
                         </SelectTrigger>
                         <SelectContent
                           sheetOnMobile={false}
-                          className="z-[80] rounded-2xl border border-zinc-200 bg-white p-1.5 text-zinc-900 shadow-lg"
+                          className="z-[230] rounded-2xl border border-zinc-200 bg-white p-1.5 text-zinc-900 shadow-lg"
                         >
                           {storages.length === 0 ? (
                             <SelectItem value="__none" disabled>

@@ -243,7 +243,6 @@ export const APP_WARM_ROUTES = [
   "/fuel",
   "/inventory",
   "/finance",
-  "/calendar",
   "/accounting",
   "/journal",
 ] as const;

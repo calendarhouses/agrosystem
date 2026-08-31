@@ -71,6 +71,7 @@ import {
   DrawerContent,
   DrawerHandle,
   DrawerTitle,
+  NonModalDrawerBackdrop,
 } from "@/components/ui/drawer";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LiveFieldEconomicsPanel, useLiveFieldEconomics } from "@/components/dashboard/live-field-economics-panel";
@@ -2638,18 +2639,23 @@ export function FieldDetailSheet({
             </div>
           </div>
 
+          <NonModalDrawerBackdrop
+            open={planOpen}
+            onClose={closePlanForm}
+            className="z-[159]"
+          />
           <Drawer
             open={planOpen}
             onOpenChange={(next) => {
               if (!next) closePlanForm();
             }}
             dismissible
-            modal
+            modal={false}
             shouldScaleBackground={false}
             noBodyStyles
           >
             <DrawerContent
-              overlayClassName="bg-black/70"
+              showOverlay={false}
               className={cn(
                 FIELDS_MOBILE_DRAWER_SIZE,
                 "z-[160] flex flex-col border-[#E5DFD3]/90 bg-[#F4F1EA] pb-3"
@@ -2669,18 +2675,23 @@ export function FieldDetailSheet({
             </DrawerContent>
           </Drawer>
 
+          <NonModalDrawerBackdrop
+            open={quickIssueOpen}
+            onClose={closeQuickIssueForm}
+            className="z-[159]"
+          />
           <Drawer
             open={quickIssueOpen}
             onOpenChange={(next) => {
               if (!next) closeQuickIssueForm();
             }}
             dismissible
-            modal
+            modal={false}
             shouldScaleBackground={false}
             noBodyStyles
           >
             <DrawerContent
-              overlayClassName="bg-black/70"
+              showOverlay={false}
               className={cn(
                 FIELDS_MOBILE_DRAWER_SIZE,
                 "z-[160] flex flex-col border-[#E5DFD3]/90 bg-[#F4F1EA] pb-3"
@@ -2706,25 +2717,27 @@ export function FieldDetailSheet({
   }
 
   return isMobile ? (
-    <Drawer
-      open={open}
-      onOpenChange={(next) => {
-        if (next) onOpenChange(true);
-        else closeHub();
-      }}
-      dismissible
-      modal
-      shouldScaleBackground={false}
-      noBodyStyles
-    >
-      <DrawerContent
-        className={cn(
-          FIELDS_MOBILE_DRAWER_SIZE,
-          "flex flex-col overflow-hidden border-[#E5DFD3]/90 bg-[#F4F1EA] pb-0"
-        )}
-        overlayClassName="bg-black/70"
-        showCloseButton
+    <>
+      <NonModalDrawerBackdrop open={open} onClose={closeHub} />
+      <Drawer
+        open={open}
+        onOpenChange={(next) => {
+          if (next) onOpenChange(true);
+          else closeHub();
+        }}
+        dismissible
+        modal={false}
+        shouldScaleBackground={false}
+        noBodyStyles
       >
+        <DrawerContent
+          showOverlay={false}
+          className={cn(
+            FIELDS_MOBILE_DRAWER_SIZE,
+            "flex flex-col overflow-hidden border-[#E5DFD3]/90 bg-[#F4F1EA] pb-0"
+          )}
+          showCloseButton
+        >
         <DrawerHandle />
         <DrawerTitle className="sr-only">
           {field?.name ? `Поле ${field.name}` : "Деталі поля"}
@@ -2732,8 +2745,9 @@ export function FieldDetailSheet({
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {hubInner}
         </div>
-      </DrawerContent>
-    </Drawer>
+        </DrawerContent>
+      </Drawer>
+    </>
   ) : (
     <Sheet
       open={open}

@@ -4,7 +4,7 @@ import * as React from "react"
 import { Select as SelectPrimitive } from "@base-ui/react/select"
 
 import { SwipeableSheet } from "@/components/ui/swipe-sheet"
-import { useInsideDrawer } from "@/components/ui/drawer"
+import { useInsideDrawer, useDrawerOpenInDom } from "@/components/ui/drawer"
 import { useIsMobile } from "@/lib/use-mobile"
 import { cn } from "@/lib/utils"
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon, XIcon } from "lucide-react"
@@ -85,14 +85,7 @@ function SelectContent({
   const isMobile = useIsMobile()
   /** Portal поза деревом Drawer → context часто false; дивимось і DOM. */
   const insideDrawerCtx = useInsideDrawer()
-  const [drawerOpenInDom, setDrawerOpenInDom] = React.useState(false)
-  React.useLayoutEffect(() => {
-    setDrawerOpenInDom(
-      !!document.querySelector(
-        '[data-slot="drawer-content"][data-state="open"], [data-slot="sheet-content"][data-state="open"]'
-      )
-    )
-  }, [])
+  const drawerOpenInDom = useDrawerOpenInDom()
   const insideDrawer = insideDrawerCtx || drawerOpenInDom
   const backdropRef = React.useRef<HTMLDivElement>(null)
   const useSheet = isMobile && sheetOnMobile && !insideDrawer

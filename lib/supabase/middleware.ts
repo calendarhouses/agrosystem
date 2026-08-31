@@ -95,5 +95,19 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(redirectUrl);
   }
 
+  const releaseHidden =
+    pathname === "/calendar" ||
+    pathname.startsWith("/calendar/") ||
+    pathname === "/reports" ||
+    pathname.startsWith("/reports/") ||
+    pathname.startsWith("/admin/");
+
+  if (releaseHidden) {
+    const redirectUrl = request.nextUrl.clone();
+    redirectUrl.pathname = "/";
+    redirectUrl.search = "";
+    return NextResponse.redirect(redirectUrl);
+  }
+
   return supabaseResponse;
 }

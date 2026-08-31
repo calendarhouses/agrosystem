@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { createPortal } from "react-dom"
 import { XIcon } from "lucide-react"
 import { Drawer as DrawerPrimitive } from "vaul"
 /** Локальна копія: `vaul` не експортує `style.css` у package.json exports → Next build падає. */
@@ -13,6 +14,53 @@ const DrawerDepthContext = React.createContext(0)
 
 export function useInsideDrawer() {
   return React.useContext(DrawerDepthContext) > 0
+}
+
+/** Чи є відкритий drawer/sheet у DOM (для портальних Popover/Select). */
+export function useDrawerOpenInDom() {
+  const [drawerOpenInDom, setDrawerOpenInDom] = React.useState(false)
+
+  React.useLayoutEffect(() => {
+    const check = () =>
+      !!document.querySelector(
+        '[data-slot="drawer-content"][data-state="open"], [data-slot="sheet-content"][data-state="open"]'
+      )
+    setDrawerOpenInDom(check())
+    const observer = new MutationObserver(check)
+    observer.observe(document.body, {
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["data-state"],
+    })
+    return () => observer.disconnect()
+  }, [])
+
+  return drawerOpenInDom
+}
+
+/** Затемнення для non-modal drawer (як у Паливі) — не блокує pointer-events на body. */
+export function NonModalDrawerBackdrop({
+  open,
+  onClose,
+  className,
+}: {
+  open: boolean
+  onClose: () => void
+  className?: string
+}) {
+  if (!open || typeof document === "undefined") return null
+  return createPortal(
+    <div
+      aria-hidden
+      className={cn(
+        "fixed top-0 right-0 bottom-[var(--app-bottom-inset)] left-0 z-[149]",
+        "bg-black/70 supports-backdrop-filter:backdrop-blur-[3px]",
+        className
+      )}
+      onClick={onClose}
+    />,
+    document.body
+  )
 }
 
 function Drawer({
@@ -82,16 +130,21 @@ function DrawerContent({
   children,
   overlayClassName,
   showCloseButton = true,
+  /** false — overlay рендериться окремо (modal={false} + NonModalDrawerBackdrop) */
+  showOverlay = true,
   ...props
 }: React.ComponentProps<typeof DrawerPrimitive.Content> & {
   overlayClassName?: string
   showCloseButton?: boolean
+  showOverlay?: boolean
 }) {
   const depth = React.useContext(DrawerDepthContext)
 
   return (
     <DrawerPortal>
-      <DrawerOverlay className={overlayClassName} />
+      {showOverlay ? (
+        <DrawerOverlay className={overlayClassName} />
+      ) : null}
       <DrawerDepthContext.Provider value={depth + 1}>
         <DrawerPrimitive.Content
           data-slot="drawer-content"

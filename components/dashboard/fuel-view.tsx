@@ -1619,50 +1619,104 @@ export function FuelView({
                   ? `+${formatLiters(tx.amountLiters)} L`
                   : `−${formatLiters(tx.amountLiters)} L`;
               return (
-                <button
+                <article
                   key={tx.id}
-                  type="button"
-                  onClick={() => openEdit(tx)}
-                  className="flex w-full items-start gap-3 rounded-2xl border border-[#E5DFD3]/90 bg-[#F4F1EA]/95 p-3.5 text-left shadow-[0_6px_20px_rgb(39,33,24,0.05)] active:scale-[0.99]"
+                  className="rounded-2xl border border-[#E5DFD3]/90 bg-[#F4F1EA]/95 shadow-[0_6px_20px_rgb(39,33,24,0.05)]"
                 >
-                  <div
-                    className={cn(
-                      "mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl",
-                      meta.iconWrap
-                    )}
-                  >
-                    <TypeIcon size={18} className={meta.iconClass} strokeWidth={1.8} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="truncate text-[13px] font-bold text-zinc-900">
-                        {meta.title}
-                      </p>
-                      <p
-                        className={cn(
-                          "shrink-0 text-[13px] font-extrabold tabular-nums",
-                          tx.type === "inbound" ? "text-emerald-700" : "text-zinc-900"
-                        )}
-                      >
-                        {litersLabel}
-                      </p>
+                  <div className="flex items-start gap-3 p-3.5">
+                    <div
+                      className={cn(
+                        "mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl",
+                        meta.iconWrap
+                      )}
+                    >
+                      <TypeIcon size={18} className={meta.iconClass} strokeWidth={1.8} />
                     </div>
-                    <p className="mt-0.5 truncate text-[11px] text-zinc-500">
-                      {formatRoute(tx)}
-                    </p>
-                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                      <span className="text-[10px] font-medium tabular-nums text-zinc-400">
-                        {formatTxDate(tx.transactionDate)}
-                      </span>
-                      <BasSyncBadge
-                        status={tx.syncStatus}
-                        canQueue1c={tx.type === "inbound" || tx.type === "transfer"}
-                        sending={send1cTxId === tx.id}
-                        onSend={() => void sendTransactionTo1c(tx)}
-                      />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="truncate text-[13px] font-bold text-zinc-900">
+                          {meta.title}
+                        </p>
+                        <p
+                          className={cn(
+                            "shrink-0 text-[13px] font-extrabold tabular-nums",
+                            tx.type === "inbound" ? "text-emerald-700" : "text-zinc-900"
+                          )}
+                        >
+                          {litersLabel}
+                        </p>
+                      </div>
+                      <p className="mt-0.5 truncate text-[11px] text-zinc-500">
+                        {formatRoute(tx)}
+                      </p>
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        <span className="text-[10px] font-medium tabular-nums text-zinc-400">
+                          {formatTxDate(tx.transactionDate)}
+                        </span>
+                        <BasSyncBadge
+                          status={tx.syncStatus}
+                          canQueue1c={tx.type === "inbound" || tx.type === "transfer"}
+                          sending={send1cTxId === tx.id}
+                          onSend={() => void sendTransactionTo1c(tx)}
+                        />
+                        {tx.type === "outbound" ? (
+                          <WialonControlCell
+                            tx={tx}
+                            unitHasDut={
+                              tx.wialonUnitId != null
+                                ? unitHasDutById.get(tx.wialonUnitId)
+                                : undefined
+                            }
+                            onReverify={(id) => void reverifySingleTransaction(id)}
+                            reverifyBusy={reverifyTxId === tx.id}
+                            compact
+                          />
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      {(tx.attachmentCount ?? 0) > 0 ? (
+                        <AttachmentViewerButton
+                          entityType="fuel_transaction"
+                          entityId={tx.id}
+                          count={tx.attachmentCount ?? 0}
+                        />
+                      ) : null}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          className={cn(
+                            "inline-flex h-9 w-9 items-center justify-center rounded-full text-zinc-400",
+                            "outline-none transition hover:bg-zinc-100 hover:text-zinc-700",
+                            "focus-visible:ring-2 focus-visible:ring-emerald-500/20"
+                          )}
+                        >
+                          <MoreHorizontal size={18} />
+                          <span className="sr-only">Дії</span>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                          align="end"
+                          className="z-[230] min-w-44 rounded-xl border border-zinc-200 bg-white p-1 text-zinc-900 shadow-lg"
+                        >
+                          <DropdownMenuItem
+                            className="cursor-pointer rounded-lg px-2.5 py-2"
+                            onClick={() => openEdit(tx)}
+                          >
+                            <Edit2 size={16} />
+                            Редагувати
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            variant="destructive"
+                            className="cursor-pointer rounded-lg px-2.5 py-2 text-rose-600 focus:text-rose-700"
+                            onClick={() => setDeleteTx(tx)}
+                          >
+                            <Trash2 size={16} />
+                            Видалити
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </div>
-                </button>
+                </article>
               );
             })
           )}

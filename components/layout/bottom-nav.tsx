@@ -125,9 +125,29 @@ export function BottomNav() {
   const [activePage, setActivePage] = useState<0 | 1>(0);
   const [profileOpen, setProfileOpen] = useState(false);
   const [me, setMe] = useState<AppActor | null>(null);
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [profileError, setProfileError] = useState<string | null>(null);
+
+  const loadProfile = () => {
+    setProfileLoading(true);
+    setProfileError(null);
+    void getMyProfileAction()
+      .then((data) => {
+        setMe(data);
+        if (!data) {
+          setProfileError("Не вдалося завантажити профіль");
+        }
+      })
+      .catch(() => {
+        setProfileError("Не вдалося завантажити профіль");
+      })
+      .finally(() => {
+        setProfileLoading(false);
+      });
+  };
 
   useEffect(() => {
-    void getMyProfileAction().then(setMe);
+    loadProfile();
   }, []);
 
   useEffect(() => {
@@ -252,15 +272,19 @@ export function BottomNav() {
         </DockPage>
       </motion.nav>
 
-      {me ? (
-        <MobileBottomDrawer
-          open={profileOpen}
-          onOpenChange={setProfileOpen}
-          preserveNav
-        >
-          <MobileProfilePanel me={me} onUpdated={setMe} />
-        </MobileBottomDrawer>
-      ) : null}
+      <MobileBottomDrawer
+        open={profileOpen}
+        onOpenChange={setProfileOpen}
+        preserveNav
+      >
+        <MobileProfilePanel
+          me={me}
+          onUpdated={setMe}
+          loading={profileLoading && profileOpen}
+          error={profileError}
+          onRetry={loadProfile}
+        />
+      </MobileBottomDrawer>
     </>
   );
 }

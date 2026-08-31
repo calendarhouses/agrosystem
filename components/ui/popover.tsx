@@ -5,7 +5,7 @@ import { XIcon } from "lucide-react"
 import { Popover as PopoverPrimitive } from "@base-ui/react/popover"
 
 import { SwipeableSheet } from "@/components/ui/swipe-sheet"
-import { useInsideDrawer } from "@/components/ui/drawer"
+import { useInsideDrawer, useDrawerOpenInDom } from "@/components/ui/drawer"
 import { useIsMobile } from "@/lib/use-mobile"
 import { cn } from "@/lib/utils"
 
@@ -51,15 +51,8 @@ function PopoverContent({
   const isMobile = useIsMobile()
   /** Portal поза деревом Drawer/Sheet → context часто false; дивимось і DOM. */
   const insideDrawerCtx = useInsideDrawer()
-  const [overlayOpenInDom, setOverlayOpenInDom] = React.useState(false)
-  React.useLayoutEffect(() => {
-    setOverlayOpenInDom(
-      !!document.querySelector(
-        '[data-slot="drawer-content"][data-state="open"], [data-slot="sheet-content"][data-state="open"]'
-      )
-    )
-  }, [])
-  const insideDrawer = insideDrawerCtx || overlayOpenInDom
+  const drawerOpenInDom = useDrawerOpenInDom()
+  const insideDrawer = insideDrawerCtx || drawerOpenInDom
   const closeRef = React.useRef<HTMLButtonElement>(null)
   const useSheet = isMobile && sheetOnMobile && !insideDrawer
 

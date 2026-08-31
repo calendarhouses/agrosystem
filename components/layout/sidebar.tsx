@@ -15,7 +15,7 @@ import { logoutAction } from "@/app/login/actions";
 import { ProfilePopover } from "@/components/layout/mobile-profile-panel";
 import { SidebarNavTooltip } from "@/components/layout/sidebar-nav-tooltip";
 import { APP_NAV_ITEMS, isNavItemActive, type AppNavItem } from "@/lib/navigation";
-import { ROLE_LABEL_UK, type AppActor } from "@/lib/app-actor-shared";
+import type { AppActor } from "@/lib/app-actor-shared";
 import { cn } from "@/lib/utils";
 
 type SidebarProps = {
@@ -184,7 +184,7 @@ export function Sidebar({ collapsed, onToggleCollapsed }: SidebarProps) {
           collapsed ? (
             <SidebarNavTooltip
               title={me.fullName}
-              hint={`${ROLE_LABEL_UK[me.role]} · профіль`}
+              hint="Профіль"
             >
               {(handlers) => (
                 <span className="mb-1 block w-full" {...handlers}>
@@ -226,7 +226,7 @@ export function Sidebar({ collapsed, onToggleCollapsed }: SidebarProps) {
                     {me.fullName}
                   </p>
                   <p className="truncate text-[10px] text-zinc-500">
-                    {ROLE_LABEL_UK[me.role]} · профіль
+                    Профіль
                   </p>
                 </div>
                 <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-500" />

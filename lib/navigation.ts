@@ -1,6 +1,5 @@
 import type { LucideIcon } from "lucide-react";
 import {
-  CalendarRange,
   FileSpreadsheet,
   Fuel,
   History,
@@ -30,13 +29,6 @@ export const APP_NAV_ITEMS: AppNavItem[] = [
     hint: "Поля, контури та погода",
     icon: MapIcon,
     bottomNav: true,
-  },
-  {
-    href: "/calendar",
-    label: "Агроплан",
-    hint: "Сезонний таймлайн і план робіт",
-    icon: CalendarRange,
-    moreMenu: true,
   },
   {
     href: "/equipment",
