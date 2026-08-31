@@ -12,7 +12,7 @@ import {
 
 import { getMyProfileAction } from "@/app/team/actions";
 import { logoutAction } from "@/app/login/actions";
-import { ProfileSheet } from "@/components/layout/mobile-profile-panel";
+import { ProfilePopover } from "@/components/layout/mobile-profile-panel";
 import { SidebarNavTooltip } from "@/components/layout/sidebar-nav-tooltip";
 import { APP_NAV_ITEMS, isNavItemActive, type AppNavItem } from "@/lib/navigation";
 import { ROLE_LABEL_UK, type AppActor } from "@/lib/app-actor-shared";
@@ -187,45 +187,50 @@ export function Sidebar({ collapsed, onToggleCollapsed }: SidebarProps) {
               hint={`${ROLE_LABEL_UK[me.role]} · профіль`}
             >
               {(handlers) => (
-                <span className="mb-1.5 block w-full" {...handlers}>
-                  <button
-                    type="button"
-                    onClick={() => setProfileOpen(true)}
-                    aria-label="Профіль"
-                    className="flex w-full items-center justify-center rounded-xl px-0 py-1.5"
+                <span className="mb-1 block w-full" {...handlers}>
+                  <ProfilePopover
+                    open={profileOpen}
+                    onOpenChange={setProfileOpen}
+                    me={me}
+                    onUpdated={setMe}
+                    collapsed
+                    triggerClassName="flex items-center justify-center rounded-xl px-0 py-1"
+                    triggerAriaLabel="Профіль"
                   >
-                    <span className="flex h-9 w-9 items-center justify-center rounded-full border border-[#C05621]/35 bg-gradient-to-br from-[#C05621]/30 to-[#9c4221]/20 text-xs font-bold text-[#E8A87C] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-full border border-[#C05621]/35 bg-gradient-to-br from-[#C05621]/30 to-[#9c4221]/20 text-[11px] font-bold text-[#E8A87C] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
                       {me.fullName.slice(0, 1).toUpperCase()}
                     </span>
-                  </button>
+                  </ProfilePopover>
                 </span>
               )}
             </SidebarNavTooltip>
           ) : (
-            <div className="mb-1.5 hidden md:block">
-              <button
-                type="button"
-                onClick={() => setProfileOpen(true)}
-                className={cn(
-                  "flex w-full items-center gap-2.5 rounded-xl border border-white/[0.07]",
-                  "bg-gradient-to-br from-white/[0.07] to-white/[0.02] px-2.5 py-2.5 text-left",
+            <div className="mb-1 hidden md:block">
+              <ProfilePopover
+                open={profileOpen}
+                onOpenChange={setProfileOpen}
+                me={me}
+                onUpdated={setMe}
+                triggerClassName={cn(
+                  "flex items-center gap-2 rounded-xl border border-white/[0.07]",
+                  "bg-gradient-to-br from-white/[0.07] to-white/[0.02] px-2 py-1.5",
                   "shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]",
-                  "transition-colors hover:border-white/[0.12] hover:bg-white/[0.08]"
+                  "hover:border-white/[0.12] hover:bg-white/[0.08]"
                 )}
               >
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#C05621]/35 bg-gradient-to-br from-[#C05621]/30 to-[#9c4221]/20 text-xs font-bold text-[#E8A87C]">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#C05621]/35 bg-gradient-to-br from-[#C05621]/30 to-[#9c4221]/20 text-[11px] font-bold text-[#E8A87C]">
                   {me.fullName.slice(0, 1).toUpperCase()}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold tracking-tight text-zinc-100">
+                  <p className="truncate text-[13px] font-semibold tracking-tight text-zinc-100">
                     {me.fullName}
                   </p>
-                  <p className="mt-0.5 truncate text-[11px] text-zinc-500">
+                  <p className="truncate text-[10px] text-zinc-500">
                     {ROLE_LABEL_UK[me.role]} · профіль
                   </p>
                 </div>
-                <ChevronRight className="h-4 w-4 shrink-0 text-zinc-500" />
-              </button>
+                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
+              </ProfilePopover>
             </div>
           )
         ) : null}
@@ -261,15 +266,6 @@ export function Sidebar({ collapsed, onToggleCollapsed }: SidebarProps) {
           </form>
         )}
       </div>
-
-      {me ? (
-        <ProfileSheet
-          open={profileOpen}
-          onOpenChange={setProfileOpen}
-          me={me}
-          onUpdated={setMe}
-        />
-      ) : null}
     </aside>
   );
 }

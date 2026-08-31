@@ -4,9 +4,9 @@ import {
   FileSpreadsheet,
   Fuel,
   Map as MapIcon,
-  MoreHorizontal,
   PieChart,
   Tractor,
+  User,
   Warehouse,
 } from "lucide-react";
 
@@ -78,12 +78,16 @@ export const BOTTOM_NAV_ITEMS = APP_NAV_ITEMS.filter((item) => item.bottomNav);
 
 export const MORE_MENU_ITEMS = APP_NAV_ITEMS.filter((item) => item.moreMenu);
 
-export const MORE_NAV_TRIGGER: AppNavItem = {
-  href: "#more",
-  label: "Ще",
-  hint: "Інші розділи та профіль",
-  icon: MoreHorizontal,
-  bottomNav: true,
+/** Сторінка 1 sliding dock — фінанси, бухгалтерія */
+export const DOCK_BUSINESS_ITEMS = APP_NAV_ITEMS.filter(
+  (item) => item.href === "/finance" || item.href === "/accounting"
+);
+
+export const PROFILE_DOCK_ITEM: AppNavItem = {
+  href: "#profile",
+  label: "Профіль",
+  hint: "Обліковий запис",
+  icon: User,
 };
 
 export function isNavItemActive(

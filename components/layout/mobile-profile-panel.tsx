@@ -12,21 +12,28 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { ROLE_LABEL_UK, type AppActor } from "@/lib/app-actor-shared";
 import { displayLoginFromEmail } from "@/lib/login-identity";
+import { cn } from "@/lib/utils";
 
 type ProfilePanelContentProps = {
   me: AppActor;
   onUpdated: (next: AppActor) => void;
+  variant?: "dark" | "default";
+  className?: string;
 };
 
-export function ProfilePanelContent({ me, onUpdated }: ProfilePanelContentProps) {
+export function ProfilePanelContent({
+  me,
+  onUpdated,
+  variant = "default",
+  className,
+}: ProfilePanelContentProps) {
+  const dark = variant === "dark";
   const [login, setLogin] = useState(() => displayLoginFromEmail(me.email));
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [password, setPassword] = useState("");
@@ -81,27 +88,65 @@ export function ProfilePanelContent({ me, onUpdated }: ProfilePanelContentProps)
     }
   }
 
+  const inputClass = dark
+    ? "h-9 border-zinc-600 bg-zinc-900/90 text-zinc-100 placeholder:text-zinc-600 disabled:cursor-default disabled:border-zinc-700 disabled:bg-zinc-900/70 disabled:text-zinc-300 disabled:opacity-100"
+    : "bg-muted/40 disabled:opacity-100";
+
   return (
-    <div className="custom-scrollbar flex-1 space-y-4 overflow-y-auto px-5 py-4">
-      <div className="flex items-center gap-3 rounded-xl border border-border/60 bg-muted/30 px-3 py-3">
-        <span className="flex h-11 w-11 items-center justify-center rounded-full border border-primary/25 bg-primary/10 text-sm font-bold text-primary">
+    <div
+      className={cn(
+        "custom-scrollbar space-y-3.5 px-4 py-3.5",
+        className
+      )}
+    >
+      <div
+        className={cn(
+          "flex items-center gap-2.5 rounded-xl border px-3 py-2.5",
+          dark
+            ? "border-white/[0.08] bg-gradient-to-br from-white/[0.06] to-white/[0.02]"
+            : "border-border/60 bg-muted/30"
+        )}
+      >
+        <span
+          className={cn(
+            "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-sm font-bold",
+            dark
+              ? "border-[#C05621]/35 bg-gradient-to-br from-[#C05621]/30 to-[#9c4221]/20 text-[#E8A87C]"
+              : "border-primary/25 bg-primary/10 text-primary"
+          )}
+        >
           {me.fullName.slice(0, 1).toUpperCase()}
         </span>
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-foreground">
+          <p
+            className={cn(
+              "truncate text-sm font-semibold",
+              dark ? "text-zinc-100" : "text-foreground"
+            )}
+          >
             {me.fullName}
           </p>
-          <p className="truncate text-xs text-muted-foreground">
+          <p
+            className={cn(
+              "truncate text-xs",
+              dark ? "text-zinc-500" : "text-muted-foreground"
+            )}
+          >
             {ROLE_LABEL_UK[me.role]}
           </p>
         </div>
       </div>
 
-      <Field label="Імʼя">
-        <Input value={me.fullName} readOnly disabled className="bg-muted/40" />
+      <Field label="Імʼя" dark={dark}>
+        <Input
+          value={me.fullName}
+          readOnly
+          disabled
+          className={inputClass}
+        />
       </Field>
 
-      <Field label="Логін">
+      <Field label="Логін" dark={dark}>
         <div className="flex gap-2">
           <Input
             value={login}
@@ -110,53 +155,83 @@ export function ProfilePanelContent({ me, onUpdated }: ProfilePanelContentProps)
             autoCorrect="off"
             spellCheck={false}
             placeholder="Логін"
+            className={inputClass}
           />
           <Button
             type="button"
+            size="sm"
             disabled={!loginDirty || pendingLogin}
             onClick={() => void saveLogin()}
-            className="shrink-0"
+            className={cn(
+              "h-9 shrink-0 px-2.5",
+              dark &&
+                "border border-emerald-500/30 bg-emerald-600/90 text-white hover:bg-emerald-600 hover:ring-2 hover:ring-emerald-500/40 disabled:opacity-40"
+            )}
           >
             {pendingLogin ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <Save className="h-4 w-4" />
             )}
-            Зберегти
+            <span className="sr-only sm:not-sr-only sm:ml-1">Зберегти</span>
           </Button>
         </div>
       </Field>
 
-      <Field label="Посада">
+      <Field label="Посада" dark={dark}>
         <Input
           value={ROLE_LABEL_UK[me.role]}
           readOnly
           disabled
-          className="bg-muted/40"
+          className={inputClass}
         />
       </Field>
 
       {!passwordOpen ? (
-        <Button
+        <button
           type="button"
-          variant="outline"
-          className="h-auto w-full justify-start gap-3 px-3 py-3"
           onClick={() => setPasswordOpen(true)}
+          className={cn(
+            "flex h-auto w-full items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-colors",
+            dark
+              ? "border-zinc-700 bg-zinc-900/60 text-zinc-200 hover:border-zinc-600 hover:bg-zinc-800/80 hover:ring-1 hover:ring-emerald-500/30"
+              : "border-border bg-background hover:bg-muted/40"
+          )}
         >
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-primary">
+          <span
+            className={cn(
+              "flex h-8 w-8 items-center justify-center rounded-lg",
+              dark ? "bg-zinc-800 text-[#E8A87C]" : "bg-muted text-primary"
+            )}
+          >
             <KeyRound className="h-4 w-4" />
           </span>
           <span className="text-sm font-medium">Змінити пароль</span>
-        </Button>
+        </button>
       ) : (
-        <div className="space-y-3 rounded-xl border border-border/60 bg-muted/20 p-3">
-          <p className="text-sm font-medium text-foreground">Новий пароль</p>
+        <div
+          className={cn(
+            "space-y-2.5 rounded-xl border p-3",
+            dark
+              ? "border-zinc-700 bg-zinc-900/50"
+              : "border-border/60 bg-muted/20"
+          )}
+        >
+          <p
+            className={cn(
+              "text-sm font-medium",
+              dark ? "text-zinc-200" : "text-foreground"
+            )}
+          >
+            Новий пароль
+          </p>
           <Input
             type="password"
             autoComplete="new-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Мін. 8 символів"
+            className={inputClass}
           />
           <Input
             type="password"
@@ -164,12 +239,17 @@ export function ProfilePanelContent({ me, onUpdated }: ProfilePanelContentProps)
             value={password2}
             onChange={(e) => setPassword2(e.target.value)}
             placeholder="Повторіть пароль"
+            className={inputClass}
           />
-          <div className="flex gap-2 pt-1">
+          <div className="flex gap-2 pt-0.5">
             <Button
               type="button"
               variant="outline"
-              className="flex-1"
+              size="sm"
+              className={cn(
+                "flex-1",
+                dark && "border-zinc-600 bg-transparent text-zinc-300 hover:bg-zinc-800"
+              )}
               onClick={() => {
                 setPasswordOpen(false);
                 setPassword("");
@@ -180,7 +260,12 @@ export function ProfilePanelContent({ me, onUpdated }: ProfilePanelContentProps)
             </Button>
             <Button
               type="button"
-              className="flex-[1.3]"
+              size="sm"
+              className={cn(
+                "flex-[1.3]",
+                dark &&
+                  "bg-emerald-600 hover:bg-emerald-500 hover:ring-2 hover:ring-emerald-500/40"
+              )}
               disabled={
                 pendingPassword ||
                 password.length < 8 ||
@@ -202,10 +287,23 @@ export function ProfilePanelContent({ me, onUpdated }: ProfilePanelContentProps)
   );
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+function Field({
+  label,
+  dark,
+  children,
+}: {
+  label: string;
+  dark: boolean;
+  children: ReactNode;
+}) {
   return (
     <div className="space-y-1.5">
-      <Label className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+      <Label
+        className={cn(
+          "text-[10px] font-semibold tracking-wider uppercase",
+          dark ? "text-zinc-500" : "text-muted-foreground"
+        )}
+      >
         {label}
       </Label>
       {children}
@@ -213,36 +311,68 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-type ProfileSheetProps = {
+type ProfilePopoverProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   me: AppActor;
   onUpdated: (next: AppActor) => void;
+  triggerClassName?: string;
+  triggerAriaLabel?: string;
+  collapsed?: boolean;
+  children: React.ReactNode;
 };
 
-/** Профіль на desktop — стандартна бічна шторка як у решті системи */
-export function ProfileSheet({
+/** Профіль на desktop — преміальний popover у колір сайдбару */
+export function ProfilePopover({
   open,
   onOpenChange,
   me,
   onUpdated,
-}: ProfileSheetProps) {
+  triggerClassName,
+  triggerAriaLabel,
+  collapsed,
+  children,
+}: ProfilePopoverProps) {
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="right"
-        className="flex w-full flex-col gap-0 overflow-hidden sm:max-w-md"
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <PopoverTrigger
+        type="button"
+        aria-label={triggerAriaLabel}
+        className={cn(
+          "w-full text-left outline-none transition-colors",
+          triggerClassName
+        )}
       >
-        <SheetHeader className="border-b border-border/60 px-5 py-4">
-          <SheetTitle>Профіль</SheetTitle>
-          <SheetDescription className="sr-only">
-            Налаштування облікового запису
-          </SheetDescription>
-        </SheetHeader>
-        <ProfilePanelContent me={me} onUpdated={onUpdated} />
-      </SheetContent>
-    </Sheet>
+        {children}
+      </PopoverTrigger>
+      <PopoverContent
+        side="right"
+        align={collapsed ? "center" : "end"}
+        sideOffset={10}
+        alignOffset={collapsed ? 0 : -6}
+        sheetOnMobile={false}
+        className={cn(
+          "w-[288px] gap-0 overflow-hidden rounded-xl border border-zinc-600",
+          "bg-zinc-800 p-0 text-zinc-200 shadow-2xl ring-1 ring-black/25"
+        )}
+      >
+        <div className="border-b border-zinc-700/80 px-4 py-2.5">
+          <p className="text-sm font-semibold text-zinc-100">Профіль</p>
+        </div>
+        <ProfilePanelContent
+          me={me}
+          onUpdated={onUpdated}
+          variant="dark"
+          className="max-h-[min(70vh,420px)] overflow-y-auto"
+        />
+      </PopoverContent>
+    </Popover>
   );
+}
+
+/** @deprecated Desktop uses ProfilePopover */
+export function ProfileSheet(props: ProfilePopoverProps) {
+  return <ProfilePopover {...props} />;
 }
 
 type MobileProfilePanelProps = {
@@ -260,8 +390,8 @@ export function MobileProfilePanel({
   backLabel = "Назад",
 }: MobileProfilePanelProps) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="border-b border-zinc-800 px-4 pb-3 pr-14 pt-1">
+    <div className="pb-[calc(0.75rem+var(--safe-bottom))]">
+      <div className="border-b border-zinc-800 px-4 pb-3 pr-14 pt-0.5">
         <button
           type="button"
           onClick={onBack}
@@ -272,9 +402,12 @@ export function MobileProfilePanel({
         </button>
         <h2 className="text-lg font-bold text-zinc-50">Профіль</h2>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto bg-zinc-950 pb-[calc(1rem+var(--safe-bottom))] [&_label]:text-zinc-400 [&_input]:border-zinc-700 [&_input]:bg-zinc-900 [&_input:disabled]:text-zinc-500">
-        <ProfilePanelContent me={me} onUpdated={onUpdated} />
-      </div>
+      <ProfilePanelContent
+        me={me}
+        onUpdated={onUpdated}
+        variant="dark"
+        className="px-4 py-4"
+      />
     </div>
   );
 }
