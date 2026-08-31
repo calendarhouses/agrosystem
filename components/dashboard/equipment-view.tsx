@@ -295,25 +295,19 @@ function sessionKey(zone: PreparedGeofence | null): string {
   return zone ? `g:${zone.id}` : "road";
 }
 
-function boundsFromCoords(
-  coords: Position[],
-  from: number,
-  to: number
+function boundsFromPoints(
+  points: Array<{ lng: number; lat: number }>
 ): [[number, number], [number, number]] | null {
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
-  for (let i = from; i <= to; i++) {
-    const c = coords[i];
-    if (!c) continue;
-    const x = c[0];
-    const y = c[1];
-    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-    if (x < minX) minX = x;
-    if (y < minY) minY = y;
-    if (x > maxX) maxX = x;
-    if (y > maxY) maxY = y;
+  for (const p of points) {
+    if (!Number.isFinite(p.lng) || !Number.isFinite(p.lat)) continue;
+    if (p.lng < minX) minX = p.lng;
+    if (p.lat < minY) minY = p.lat;
+    if (p.lng > maxX) maxX = p.lng;
+    if (p.lat > maxY) maxY = p.lat;
   }
   if (![minX, minY, maxX, maxY].every((v) => Number.isFinite(v))) return null;
   return [
@@ -322,98 +316,124 @@ function boundsFromCoords(
   ];
 }
 
-/** Аналіз треку → послідовні сесії в геозонах (оптимізовано семплінгом + bbox). */
-function buildLocationSessions(
+/** Найближчий індекс точки треку за unix (для playback). */
+function trackIndexAtUnix(
   track: WialonTrackLineFeature | null,
-  geofences: GeofenceCollection
-): LocationSession[] {
-  const coordinates = track?.geometry?.coordinates ?? [];
+  unix: number
+): number {
   const times = track?.properties?.times ?? [];
-  if (coordinates.length < 2 || times.length < 2) return [];
+  if (times.length === 0) return 0;
+  let best = 0;
+  let bestDt = Math.abs(times[0]! - unix);
+  for (let i = 1; i < times.length; i++) {
+    const dt = Math.abs(times[i]! - unix);
+    if (dt < bestDt) {
+      bestDt = dt;
+      best = i;
+    }
+  }
+  return best;
+}
+
+/**
+ * Сесії локацій з повних GPS-семплів (рух + стоянки).
+ * Так «На полях» = час присутності в геозоні, як у зведенні парку.
+ */
+function buildLocationSessionsFromGps(
+  gpsSamples: Array<{ lng: number; lat: number; t: number }>,
+  geofences: GeofenceCollection,
+  track: WialonTrackLineFeature | null
+): LocationSession[] {
+  if (gpsSamples.length < 2 || geofences.features.length === 0) return [];
 
   const prepared = prepareGeofences(geofences);
-  const samples: Array<{
-    index: number;
+  if (prepared.length === 0) return [];
+
+  const sorted = [...gpsSamples]
+    .filter(
+      (s) =>
+        Number.isFinite(s.t) &&
+        Number.isFinite(s.lng) &&
+        Number.isFinite(s.lat)
+    )
+    .sort((a, b) => a.t - b.t);
+  if (sorted.length < 2) return [];
+
+  type Sample = {
     unix: number;
+    lng: number;
+    lat: number;
     key: string;
     zone: PreparedGeofence | null;
-  }> = [];
+  };
 
+  const thinned: Sample[] = [];
   let lastSampleUnix = -Infinity;
   let hintIndex = -1;
-  const lastIdx = coordinates.length - 1;
+  const lastIdx = sorted.length - 1;
 
-  for (let i = 0; i < coordinates.length; i++) {
-    const unix = times[i];
-    const coord = coordinates[i];
-    if (unix == null || !Number.isFinite(unix) || !coord) continue;
+  for (let i = 0; i < sorted.length; i++) {
+    const s = sorted[i]!;
     const isLast = i === lastIdx;
-    if (!isLast && unix - lastSampleUnix < LOCATION_SAMPLE_STEP_SEC) continue;
+    if (!isLast && s.t - lastSampleUnix < LOCATION_SAMPLE_STEP_SEC) continue;
 
-    const lng = coord[0];
-    const lat = coord[1];
-    if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue;
-
-    const located = locatePointInGeofences(lng, lat, prepared, hintIndex);
+    const located = locatePointInGeofences(s.lng, s.lat, prepared, hintIndex);
     hintIndex = located.index;
-    samples.push({
-      index: i,
-      unix,
+    thinned.push({
+      unix: s.t,
+      lng: s.lng,
+      lat: s.lat,
       key: sessionKey(located.zone),
       zone: located.zone,
     });
-    lastSampleUnix = unix;
+    lastSampleUnix = s.t;
   }
 
-  if (samples.length === 0) return [];
+  if (thinned.length === 0) return [];
 
   type RawSession = {
     key: string;
     zone: PreparedGeofence | null;
     startUnix: number;
     endUnix: number;
-    startIndex: number;
-    endIndex: number;
+    points: Array<{ lng: number; lat: number }>;
   };
 
   const raw: RawSession[] = [];
-  let current = {
-    key: samples[0].key,
-    zone: samples[0].zone,
-    startUnix: samples[0].unix,
-    endUnix: samples[0].unix,
-    startIndex: samples[0].index,
-    endIndex: samples[0].index,
+  let current: RawSession = {
+    key: thinned[0]!.key,
+    zone: thinned[0]!.zone,
+    startUnix: thinned[0]!.unix,
+    endUnix: thinned[0]!.unix,
+    points: [{ lng: thinned[0]!.lng, lat: thinned[0]!.lat }],
   };
 
-  for (let i = 1; i < samples.length; i++) {
-    const sample = samples[i];
+  for (let i = 1; i < thinned.length; i++) {
+    const sample = thinned[i]!;
     if (sample.key === current.key) {
       const gapSec = sample.unix - current.endUnix;
       if (gapSec > MAX_LOCATION_SESSION_GAP_SEC) {
-        raw.push({ ...current });
+        raw.push(current);
         current = {
           key: sample.key,
           zone: sample.zone,
           startUnix: sample.unix,
           endUnix: sample.unix,
-          startIndex: sample.index,
-          endIndex: sample.index,
+          points: [{ lng: sample.lng, lat: sample.lat }],
         };
         continue;
       }
       current.endUnix = sample.unix;
-      current.endIndex = sample.index;
+      current.points.push({ lng: sample.lng, lat: sample.lat });
       continue;
     }
-    raw.push({ ...current });
+    raw.push(current);
     current = {
       key: sample.key,
       zone: sample.zone,
       startUnix: sample.unix,
       endUnix: sample.unix,
-      startIndex: sample.index,
-      endIndex: sample.index,
+      points: [{ lng: sample.lng, lat: sample.lat }],
     };
   }
   raw.push(current);
@@ -422,29 +442,22 @@ function buildLocationSessions(
     (session) => session.endUnix - session.startUnix >= MIN_LOCATION_SESSION_SEC
   );
 
-  // Зливаємо сусідні однакові зони після відсікання мікро-сесій
   const merged: RawSession[] = [];
   for (const session of filtered) {
     const prev = merged[merged.length - 1];
     if (prev && prev.key === session.key) {
       prev.endUnix = session.endUnix;
-      prev.endIndex = session.endIndex;
+      prev.points.push(...session.points);
       continue;
     }
-    merged.push({ ...session });
+    merged.push(session);
   }
 
   return merged.map((session, order) => {
-    const bounds = boundsFromCoords(
-      coordinates,
-      session.startIndex,
-      session.endIndex
-    );
-    const mid = coordinates[
-      Math.floor((session.startIndex + session.endIndex) / 2)
-    ];
+    const bounds = boundsFromPoints(session.points);
+    const mid = session.points[Math.floor(session.points.length / 2)];
     const center: [number, number] = mid
-      ? [mid[0], mid[1]]
+      ? [mid.lng, mid.lat]
       : bounds
         ? [
             (bounds[0][0] + bounds[1][0]) / 2,
@@ -459,12 +472,29 @@ function buildLocationSessions(
       kind: session.zone?.kind ?? "road",
       startUnix: session.startUnix,
       endUnix: session.endUnix,
-      startIndex: session.startIndex,
-      endIndex: session.endIndex,
+      startIndex: trackIndexAtUnix(track, session.startUnix),
+      endIndex: trackIndexAtUnix(track, session.endUnix),
       center,
       bounds,
     };
   });
+}
+
+/** @deprecated fallback — трек лише руху; для годин використовуй buildLocationSessionsFromGps */
+function buildLocationSessions(
+  track: WialonTrackLineFeature | null,
+  geofences: GeofenceCollection
+): LocationSession[] {
+  const coordinates = track?.geometry?.coordinates ?? [];
+  const times = track?.properties?.times ?? [];
+  if (coordinates.length < 2 || times.length < 2) return [];
+
+  const gps = coordinates.map((coord, i) => ({
+    lng: coord[0],
+    lat: coord[1],
+    t: times[i] ?? 0,
+  }));
+  return buildLocationSessionsFromGps(gps, geofences, track);
 }
 
 function formatSessionClock(unix: number): string {
@@ -1906,11 +1936,18 @@ export function EquipmentView() {
     [dayAnalytics.samples]
   );
 
-  const locationSessions = useMemo(
-    () =>
-      !trackLoading ? buildLocationSessions(trackGeoJSON, geofences) : [],
-    [geofences, trackGeoJSON, trackLoading]
-  );
+  const locationSessions = useMemo(() => {
+    if (trackLoading) return [];
+    const samples = dayAnalytics.samples;
+    if (samples.length >= 2) {
+      return buildLocationSessionsFromGps(
+        samples.map((s) => ({ lng: s.lng, lat: s.lat, t: s.t })),
+        geofences,
+        trackGeoJSON
+      );
+    }
+    return buildLocationSessions(trackGeoJSON, geofences);
+  }, [dayAnalytics.samples, geofences, trackGeoJSON, trackLoading]);
 
   const sessionTimeHours = useMemo(
     () => hoursFromSessionSpans(locationSessions),
