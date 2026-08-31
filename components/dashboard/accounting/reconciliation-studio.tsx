@@ -18,7 +18,6 @@ import {
   Plus,
   RefreshCw,
   Ruler,
-  Scale,
   Sparkles,
   Split,
   Tractor,
@@ -320,83 +319,87 @@ export function ReconciliationStudio({
       <header
         className={cn(
           "sticky top-0 z-40 border-b border-[#E5DFD3]/80 bg-[#F4F1EA]/90 backdrop-blur-xl",
-          isMobile ? "px-3 py-2.5" : "px-4 py-4 sm:px-6"
+          isMobile ? "px-3 py-2.5" : "px-4 py-3 sm:px-6"
         )}
       >
-        <div
-          className={cn(
-            "mx-auto flex w-full max-w-7xl",
-            isMobile
-              ? "items-center gap-2"
-              : "flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"
+        <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-2">
+          {counts.totalOpen > 0 ? (
+            <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-bold text-amber-900 ring-1 ring-amber-200/80 sm:text-[11px]">
+              {isMobile
+                ? counts.totalOpen
+                : `${counts.totalOpen} потребують уваги`}
+            </span>
+          ) : (
+            <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold text-emerald-800 ring-1 ring-emerald-200/80 sm:text-[11px]">
+              {isMobile ? "OK" : "Усе зведено"}
+            </span>
           )}
-        >
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-              {!isMobile ? (
-                <Scale className="h-5 w-5 text-[#276749]" />
-              ) : null}
-              <h2
-                className={cn(
-                  "truncate font-bold tracking-tight text-zinc-900",
-                  isMobile ? "text-sm" : "text-lg"
-                )}
-              >
-                Звірка
-              </h2>
-              {counts.totalOpen > 0 ? (
-                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900 ring-1 ring-amber-200/80 sm:text-[11px]">
-                  {isMobile
-                    ? counts.totalOpen
-                    : `${counts.totalOpen} потребують уваги`}
-                </span>
-              ) : (
-                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800 ring-1 ring-emerald-200/80 sm:text-[11px]">
-                  {isMobile ? "OK" : "Усе зведено"}
-                </span>
-              )}
-            </div>
-            {!isMobile ? (
-              <p className="mt-0.5 text-sm text-zinc-500">
-                Розбіжності з довідниками BAS AGRO
-              </p>
-            ) : null}
-          </div>
 
-          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
             <Button
               type="button"
               variant="outline"
               size="sm"
-              disabled={refreshing || pending}
-              onClick={() => void handleRefresh()}
-              className={cn(
-                "rounded-xl border-[#E5DFD3] bg-white/90",
-                isMobile ? "h-10 w-10 px-0" : "h-9 gap-1.5"
-              )}
-              aria-label="Оновити"
+              onClick={() => void handleCopy()}
+              aria-label="Скопіювати"
+              className="h-9 gap-1.5 rounded-xl border-[#E5DFD3] bg-white/90"
             >
-              <RefreshCw
-                className={cn("h-3.5 w-3.5", refreshing && "animate-spin")}
-              />
-              {!isMobile ? "Оновити" : null}
+              <ClipboardCopy className="h-3.5 w-3.5" />
+              {isMobile ? null : "Скопіювати"}
             </Button>
             <Button
               type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleCsv}
+              className="h-9 gap-1.5 rounded-xl border-[#E5DFD3] bg-white/90"
+            >
+              <Download className="h-3.5 w-3.5" />
+              CSV
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
               size="sm"
               disabled={pending && busyKey === "workbook"}
               onClick={handleWorkbook}
-              className={cn(
-                "rounded-xl bg-[#276749] text-white hover:bg-[#1f5339]",
-                isMobile ? "h-10 gap-1 px-2.5 text-[11px]" : "h-9 gap-1.5"
-              )}
+              className="h-9 gap-1.5 rounded-xl border-[#E5DFD3] bg-white/90"
             >
               {pending && busyKey === "workbook" ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
                 <FileSpreadsheet className="h-3.5 w-3.5" />
               )}
-              {isMobile ? "Файл" : "Файл для BAS AGRO"}
+              Excel
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={pending && busyKey === "relink"}
+              onClick={handleRelink}
+              title="Після того, як поля вже заведені або розділені в BAS AGRO"
+              className="h-9 gap-1.5 rounded-xl border-[#E5DFD3] bg-white/90"
+            >
+              {pending && busyKey === "relink" ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Link2 className="h-3.5 w-3.5" />
+              )}
+              Підтягнути
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={refreshing || pending}
+              onClick={() => void handleRefresh()}
+              className="h-9 gap-1.5 rounded-xl border-[#E5DFD3] bg-white/90"
+            >
+              <RefreshCw
+                className={cn("h-3.5 w-3.5", refreshing && "animate-spin")}
+              />
+              Оновити
             </Button>
           </div>
         </div>
@@ -510,47 +513,6 @@ export function ReconciliationStudio({
           </ol>
         </section>
 
-        {(domain === "overview" || domain === "fields") && (
-          <section className="flex flex-wrap gap-2 rounded-[1.75rem] border border-[#E5DFD3]/80 bg-[#FDFBF7]/90 px-4 py-3 shadow-[0_8px_30px_rgb(39,33,24,0.05)] sm:px-5">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => void handleCopy()}
-              className="h-9 gap-1.5 rounded-xl border-[#E5DFD3] bg-white"
-            >
-              <ClipboardCopy className="h-3.5 w-3.5" />
-              Скопіювати заявку
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleCsv}
-              className="h-9 gap-1.5 rounded-xl border-[#E5DFD3] bg-white"
-            >
-              <Download className="h-3.5 w-3.5" />
-              CSV
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={pending && busyKey === "relink"}
-              onClick={handleRelink}
-              title="Після того, як поля вже заведені або розділені в BAS AGRO"
-              className="h-9 gap-1.5 rounded-xl border-[#E5DFD3] bg-white"
-            >
-              {pending && busyKey === "relink" ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Link2 className="h-3.5 w-3.5" />
-              )}
-              Підтягнути звʼязки
-            </Button>
-          </section>
-        )}
-
         {hubQuiet ? (
           <EmptyState
             icon={CheckCircle2}
@@ -574,8 +536,8 @@ export function ReconciliationStudio({
         {showFieldsPanel && !hubQuiet ? (
           <>
             {(domain === "fields" || counts.fieldsOpen > 0 || !fieldsNothing) && (
-              <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-                <KpiChip
+              <section className="-mx-3 flex gap-2 overflow-x-auto px-3 pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 lg:grid-cols-5 [&::-webkit-scrollbar]:hidden">
+                <DomainChip
                   active={domain === "fields" && focus === "all"}
                   onClick={() => {
                     setDomain("fields");
@@ -584,6 +546,7 @@ export function ReconciliationStudio({
                   label="У роботі"
                   value={String(openItems.length)}
                   hint={`${ha(openHa)} · усього ${items.length}`}
+                  icon={Sparkles}
                   tone={
                     openItems.length === 0
                       ? "ok"
@@ -591,9 +554,10 @@ export function ReconciliationStudio({
                         ? "warn"
                         : "neutral"
                   }
+                  compact
                 />
                 {(["create", "split", "area"] as const).map((kind) => (
-                  <KpiChip
+                  <DomainChip
                     key={kind}
                     active={domain === "fields" && focus === kind}
                     onClick={() => {
@@ -605,11 +569,12 @@ export function ReconciliationStudio({
                     hint={ha(
                       request[kind].reduce((s, item) => s + item.areaHa, 0)
                     )}
-                    tone={request[kind].length > 0 ? "accent" : "neutral"}
                     icon={KIND_META[kind].icon}
+                    tone={request[kind].length > 0 ? "accent" : "neutral"}
+                    compact
                   />
                 ))}
-                <KpiChip
+                <DomainChip
                   active={domain === "fields" && focus === "orphans"}
                   onClick={() => {
                     setDomain("fields");
@@ -622,9 +587,9 @@ export function ReconciliationStudio({
                       ? `${collisions.length} з однаковою назвою`
                       : "без нашого поля"
                   }
-                  tone={collisions.length > 0 ? "warn" : "neutral"}
                   icon={AlertTriangle}
-                  pulse={collisions.length > 0}
+                  tone={collisions.length > 0 ? "warn" : "neutral"}
+                  compact
                 />
               </section>
             )}
@@ -849,9 +814,6 @@ export function ReconciliationStudio({
         !hubQuiet &&
         (counts.machinery > 0 || counts.storages > 0 || counts.tmc > 0) ? (
           <section className="space-y-5">
-            <h3 className="px-1 text-base font-bold text-zinc-900">
-              Без зіставлення з BAS AGRO
-            </h3>
             {(["machinery", "storages", "tmc"] as const).map((id) =>
               counts[id] > 0 ? (
                 <LinkGapQueue
@@ -1017,77 +979,6 @@ function DomainChip({
         {hint}
       </p>
       <span className="sr-only">{tone}</span>
-    </button>
-  );
-}
-
-function KpiChip({
-  active,
-  onClick,
-  label,
-  value,
-  hint,
-  tone,
-  icon: Icon,
-  pulse,
-}: {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-  value: string;
-  hint: string;
-  tone: "ok" | "warn" | "accent" | "neutral";
-  icon?: typeof Plus;
-  pulse?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "rounded-2xl border px-4 py-3.5 text-left transition",
-        "shadow-[0_4px_16px_rgb(39,33,24,0.04)] backdrop-blur-xl",
-        active
-          ? "border-[#276749]/40 bg-[#276749] text-white ring-2 ring-[#276749]/25"
-          : "border-[#E5DFD3]/80 bg-[#FDFBF7]/90 text-zinc-900 hover:border-[#276749]/25 hover:bg-white"
-      )}
-    >
-      <div className="flex items-center justify-between gap-2">
-        <span
-          className={cn(
-            "text-[11px] font-bold tracking-wide uppercase",
-            active ? "text-white/70" : "text-zinc-400"
-          )}
-        >
-          {label}
-        </span>
-        {Icon ? (
-          <Icon
-            className={cn(
-              "h-3.5 w-3.5",
-              active ? "text-white/80" : "text-zinc-400",
-              pulse && !active && "animate-pulse text-amber-600"
-            )}
-          />
-        ) : null}
-      </div>
-      <p
-        className={cn(
-          "mt-1 text-2xl font-extrabold tracking-tight tabular-nums",
-          !active && tone === "warn" && "text-amber-800",
-          !active && tone === "ok" && "text-emerald-700"
-        )}
-      >
-        {value}
-      </p>
-      <p
-        className={cn(
-          "mt-0.5 truncate text-[12px]",
-          active ? "text-white/65" : "text-zinc-500"
-        )}
-      >
-        {hint}
-      </p>
     </button>
   );
 }

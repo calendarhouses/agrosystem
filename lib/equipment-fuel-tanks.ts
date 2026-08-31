@@ -118,6 +118,54 @@ export function isFuelDeliveryUnit(
   return /бензовоз|fuel\s*truck|cistern|цистерн/i.test(haystack);
 }
 
+/**
+ * Рівень ДУТ вище бака трактора (~765–900 л) = цистерна / роздача.
+ * Навіть якщо юніт не названий «бензовоз» і не в equipment.
+ */
+export const CISTERN_FUEL_LEVEL_L = 1_200;
+
+/** Макс. правдоподібне спалювання самохідною за добу (л). */
+export const MAX_TRACTOR_DAY_BURN_L = 900;
+
+/** Макс. л/год під навантаженням (Case Magnum тощо). */
+export const MAX_TRACTOR_BURN_LPH = 90;
+
+export function isCisternFuelLevel(
+  ...levels: Array<number | null | undefined>
+): boolean {
+  for (const level of levels) {
+    const n = Number(level);
+    if (Number.isFinite(n) && n > CISTERN_FUEL_LEVEL_L) return true;
+  }
+  return false;
+}
+
+/**
+ * Чи рядок денної витрати схожий на спалювання ДВЗ, а не на роздачу з цистерни.
+ * Бензовоз їздить полями (hours_on_field > 0) — лише «поза полем» його не відсіє.
+ */
+export function isPlausibleTractorDayBurn(input: {
+  fuelConsumed: number | null | undefined;
+  fuelStart?: number | null;
+  fuelEnd?: number | null;
+  workHours?: number | null;
+  hoursOnField?: number | null;
+}): boolean {
+  const consumed = Number(input.fuelConsumed);
+  if (!Number.isFinite(consumed) || consumed <= 0) return false;
+  if (consumed > MAX_TRACTOR_DAY_BURN_L) return false;
+  if (isCisternFuelLevel(input.fuelStart, input.fuelEnd)) return false;
+
+  const work = Math.max(0, Number(input.workHours) || 0);
+  // Без майже роботи двигуна сотні літрів = злив/роздача, не «спалено»
+  if (consumed > 200 && work < 1.5) return false;
+
+  const maxByWork = Math.max(work, 0.35) * MAX_TRACTOR_BURN_LPH + 30;
+  if (consumed > maxByWork) return false;
+
+  return true;
+}
+
 /** Пошук номіналу бака за назвою техніки (BAS або Wialon). */
 export function resolveFuelTankVolumeLiters(
   ...names: Array<string | null | undefined>

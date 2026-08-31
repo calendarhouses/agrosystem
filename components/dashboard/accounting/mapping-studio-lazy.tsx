@@ -354,11 +354,19 @@ export function MappingStudioLazy({
   const loading = rowsLoading;
 
   return (
-    <div className="flex flex-col gap-3 lg:flex-row lg:gap-6">
-      <aside className="-mx-0.5 flex shrink-0 gap-1 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] lg:mx-0 lg:w-52 lg:flex-col lg:overflow-visible lg:pb-0 [&::-webkit-scrollbar]:hidden">
+    <div className="flex flex-col gap-4">
+      <section className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
         {CATALOGS.map((c) => {
           const Icon = c.icon;
           const active = catalog === c.id;
+          const mapped =
+            active && !loading
+              ? rows.filter((row) => {
+                  const v = values[row.id] ?? row.basRefKey ?? UNMAPPED_VALUE;
+                  return v !== UNMAPPED_VALUE;
+                }).length
+              : null;
+          const total = active && !loading ? rows.length : null;
           return (
             <button
               key={c.id}
@@ -366,19 +374,50 @@ export function MappingStudioLazy({
               onClick={() => setCatalog(c.id)}
               disabled={pending}
               className={cn(
-                "inline-flex shrink-0 items-center gap-1.5 rounded-xl px-2.5 py-2 text-left text-[11px] font-semibold transition sm:gap-2.5 sm:px-3.5 sm:py-2.5 sm:text-sm",
+                "rounded-2xl border px-3 py-3 text-left transition sm:px-4 sm:py-3.5",
+                "shadow-[0_4px_16px_rgb(39,33,24,0.04)] backdrop-blur-xl",
                 active
-                  ? "bg-[#276749] text-white shadow-md"
-                  : "bg-white/70 text-zinc-600 hover:bg-white hover:text-zinc-900",
+                  ? "border-[#276749]/40 bg-[#276749] text-white ring-2 ring-[#276749]/25"
+                  : "border-[#E5DFD3]/80 bg-[#FDFBF7]/90 text-zinc-900 hover:border-[#276749]/25 hover:bg-white",
                 pending && "opacity-60"
               )}
             >
-              <Icon className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
-              <span className="flex-1 whitespace-nowrap">{c.label}</span>
+              <div className="flex items-center justify-between gap-2">
+                <span
+                  className={cn(
+                    "text-[10px] font-bold tracking-wide uppercase sm:text-[11px]",
+                    active ? "text-white/70" : "text-zinc-400"
+                  )}
+                >
+                  {c.label}
+                </span>
+                <Icon
+                  className={cn(
+                    "h-3.5 w-3.5 shrink-0",
+                    active ? "text-white/80" : "text-zinc-400"
+                  )}
+                />
+              </div>
+              <p
+                className={cn(
+                  "mt-1 text-xl font-semibold tabular-nums tracking-tight sm:text-2xl",
+                  active ? "text-white" : "text-zinc-900"
+                )}
+              >
+                {mapped != null && total != null ? `${mapped}/${total}` : "—"}
+              </p>
+              <p
+                className={cn(
+                  "mt-0.5 line-clamp-2 text-[10px] leading-snug sm:text-[11px]",
+                  active ? "text-white/65" : "text-zinc-500"
+                )}
+              >
+                {c.hint}
+              </p>
             </button>
           );
         })}
-      </aside>
+      </section>
 
       <div className="min-w-0 flex-1">
         <div className="mb-3 flex flex-col gap-2 sm:mb-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-3">

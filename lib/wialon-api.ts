@@ -6,7 +6,10 @@
  * (той самий принцип, що таблиця unit_fillings у звітах Wialon).
  */
 
-import { isFuelDeliveryUnit } from "@/lib/equipment-fuel-tanks";
+import {
+  CISTERN_FUEL_LEVEL_L,
+  isFuelDeliveryUnit,
+} from "@/lib/equipment-fuel-tanks";
 import { createServiceSupabase } from "@/lib/supabase/server";
 import {
   detectFuelFills,
@@ -219,6 +222,14 @@ export async function getWialonRefuelings(
         ? listUnitSensors(unitWithSensors)
         : [];
       const samples = samplesFromMessages(messages, sensors);
+      // Цистерна: ДУТ > бака трактора — стрибки рівня = роздача/прийом, не заправка техніки
+      const maxLevel = samples.reduce(
+        (m, s) => (s.liters > m ? s.liters : m),
+        0
+      );
+      if (maxLevel > CISTERN_FUEL_LEVEL_L) {
+        return [] as WialonRefuelingEvent[];
+      }
       return detectFillingsFromSamples(
         samples,
         unit.id,

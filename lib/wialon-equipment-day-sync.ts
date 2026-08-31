@@ -8,7 +8,7 @@ import type { Feature, MultiPolygon, Polygon } from "geojson";
 
 import { EMPTY_DAY_ANALYTICS } from "@/lib/equipment-day-analytics";
 import type { DayAnalyticsPayload } from "@/lib/equipment-day-analytics";
-import { isFuelDeliveryUnit } from "@/lib/equipment-fuel-tanks";
+import { isFuelDeliveryUnit, isPlausibleTractorDayBurn } from "@/lib/equipment-fuel-tanks";
 import type { FieldGeometry } from "@/lib/farm-fields";
 import {
   kyivDayBoundsUnix,
@@ -313,6 +313,17 @@ async function runEquipmentDaySync(
 
           const delivery = isFuelDeliveryUnit(unit.name, unit.equipment_name);
           const hasFuel = analytics.summary.hasFuelSensor;
+          const rawConsumed =
+            hasFuel && !delivery ? analytics.summary.fuelConsumed : null;
+          const burnOk =
+            rawConsumed != null &&
+            isPlausibleTractorDayBurn({
+              fuelConsumed: rawConsumed,
+              fuelStart: analytics.summary.fuelStart,
+              fuelEnd: analytics.summary.fuelEnd,
+              workHours: analytics.summary.workHours,
+              hoursOnField: hoursOnField,
+            });
 
           return {
             equipment_id: unit.equipment_id,
@@ -327,10 +338,12 @@ async function runEquipmentDaySync(
             fuel_start: hasFuel ? analytics.summary.fuelStart : null,
             fuel_end: hasFuel ? analytics.summary.fuelEnd : null,
             fuel_delta: hasFuel ? analytics.summary.fuelDelta : null,
-            fuel_filled: hasFuel && !delivery ? analytics.summary.fuelFilled : 0,
-            // Цистерна бензовоза — злив клієнтам, не спалювання двигуном
-            fuel_consumed:
-              hasFuel && !delivery ? analytics.summary.fuelConsumed : null,
+            fuel_filled:
+              hasFuel && !delivery && burnOk
+                ? analytics.summary.fuelFilled
+                : 0,
+            // Цистерна / роздача — не «спалено двигуном»
+            fuel_consumed: burnOk ? rawConsumed : null,
             has_fuel_sensor: hasFuel,
             sync_time: syncTime,
           } satisfies EquipmentDayStatRow;
@@ -393,7 +406,7 @@ export async function sumFleetFuelConsumedForPeriod(
     supabase
       .from("wialon_equipment_day_stats")
       .select(
-        "fuel_consumed, work_hours, hours_on_field, wialon_unit_id, equipment_id"
+        "fuel_consumed, fuel_start, fuel_end, work_hours, hours_on_field, wialon_unit_id, equipment_id"
       )
       .gte("date", fromDate)
       .lte("date", toDate)
@@ -419,14 +432,19 @@ export async function sumFleetFuelConsumedForPeriod(
     if (Number.isFinite(wid) && deliveryWialonIds.has(wid)) return acc;
     if (eid && deliveryEquipmentIds.has(eid)) return acc;
 
-    const consumed = Number(row.fuel_consumed) || 0;
-    if (consumed <= 0) return acc;
-    // Цистерна / зрив ДУТ: тисячі літрів без роботи в полі
-    const onField = Number(row.hours_on_field) || 0;
-    if (consumed > 400 && onField < 0.15) return acc;
-    if (consumed > 1_500) return acc;
+    if (
+      !isPlausibleTractorDayBurn({
+        fuelConsumed: row.fuel_consumed,
+        fuelStart: row.fuel_start,
+        fuelEnd: row.fuel_end,
+        workHours: row.work_hours,
+        hoursOnField: row.hours_on_field,
+      })
+    ) {
+      return acc;
+    }
 
-    return acc + consumed;
+    return acc + (Number(row.fuel_consumed) || 0);
   }, 0);
 
   return {

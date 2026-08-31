@@ -160,7 +160,7 @@ export async function getFieldFuelConsumed(
           sum.liters > 0 ||
           fleet.liters > 0,
         liveSynced,
-        // Без міграції 036 денного кешу витрати ще немає — не показуємо 0
+        // Спалено самохідною (цистерни / роздача відсічені в sumFleet…)
         totalLiters: fleet.hasData
           ? Math.max(fleet.liters, sum.liters)
           : sum.liters,

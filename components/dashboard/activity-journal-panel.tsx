@@ -4,9 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import { format, isToday, isYesterday, startOfDay, subDays } from "date-fns";
 import { uk } from "date-fns/locale";
 import {
+  ChevronDown,
   Fuel,
   History,
   Link2,
+  ListFilter,
   Loader2,
   LogIn,
   MapPinned,
@@ -24,6 +26,7 @@ import {
   X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
 
 import { listRecentActivityAction } from "@/app/team/actions";
 import type { ActivityLogRow } from "@/lib/activity-log";
@@ -269,22 +272,22 @@ function FilterCard({
       type="button"
       onClick={onClick}
       className={cn(
-        "flex aspect-square w-full flex-col items-center justify-center gap-1 rounded-2xl px-1.5 text-center transition-all",
+        "flex h-[4.25rem] w-full flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-center transition-all",
         active
-          ? "bg-zinc-900 text-white shadow-[0_8px_20px_-10px_rgba(24,24,27,0.55)]"
-          : "bg-white/80 text-zinc-600 ring-1 ring-[#E5DFD3]/90 hover:bg-white hover:text-zinc-900"
+          ? "bg-zinc-900 text-white shadow-[0_6px_16px_-10px_rgba(24,24,27,0.55)]"
+          : "bg-white/85 text-zinc-600 ring-1 ring-[#E5DFD3]/90 hover:bg-white hover:text-zinc-900"
       )}
     >
       {Icon ? (
         <Icon
           className={cn(
-            "h-4 w-4 shrink-0 sm:h-[18px] sm:w-[18px]",
+            "h-3.5 w-3.5 shrink-0",
             active ? "text-white/90" : "text-zinc-400"
           )}
           strokeWidth={2}
         />
       ) : null}
-      <span className="line-clamp-2 text-[10px] leading-tight font-bold tracking-tight sm:text-[11px]">
+      <span className="line-clamp-2 max-w-full text-[9px] leading-tight font-bold tracking-tight">
         {label}
       </span>
       {count != null ? (
@@ -313,6 +316,7 @@ export function ActivityJournalPanel({
   const [action, setAction] = useState<string>("all");
   const [entity, setEntity] = useState<string>("all");
   const [actor, setActor] = useState<string>("all");
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -420,6 +424,12 @@ export function ActivityJournalPanel({
     entity !== "all" ||
     actor !== "all";
 
+  const activeChipCount =
+    (period !== "all" ? 1 : 0) +
+    (action !== "all" ? 1 : 0) +
+    (entity !== "all" ? 1 : 0) +
+    (actor !== "all" ? 1 : 0);
+
   return (
     <div
       className={cn(
@@ -471,126 +481,168 @@ export function ActivityJournalPanel({
 
       <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-none px-4 py-4 pb-[calc(var(--app-bottom-inset)+1.25rem)] sm:px-6">
         <div className="mx-auto w-full max-w-3xl space-y-3">
-          <div>
-            <p className="mb-1.5 px-0.5 text-[10px] font-bold tracking-wider text-zinc-400 uppercase">
-              Період
-            </p>
-            <div className="grid grid-cols-4 gap-2">
-              {PERIOD_FILTERS.map((p) => (
-                <FilterCard
-                  key={p.id}
-                  active={period === p.id}
-                  onClick={() => setPeriod(p.id)}
-                  label={p.label}
-                />
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <p className="mb-1.5 px-0.5 text-[10px] font-bold tracking-wider text-zinc-400 uppercase">
-              Дія
-            </p>
-            <div className="grid grid-cols-5 gap-2">
-              <FilterCard
-                active={action === "all"}
-                onClick={() => setAction("all")}
-                label="Усі"
-                icon={History}
-                count={rows.length}
-              />
-              {ACTION_FILTER_KEYS.map((key) => {
-                const meta = actionMeta(key);
-                return (
-                  <FilterCard
-                    key={key}
-                    active={action === key}
-                    onClick={() => setAction(key)}
-                    label={meta.label}
-                    icon={meta.icon}
-                    count={actionCounts.get(key) ?? 0}
-                  />
-                );
-              })}
-            </div>
-          </div>
-
-          <div>
-            <p className="mb-1.5 px-0.5 text-[10px] font-bold tracking-wider text-zinc-400 uppercase">
-              Розділ
-            </p>
-            <div className="grid grid-cols-4 gap-2 sm:grid-cols-5">
-              <FilterCard
-                active={entity === "all"}
-                onClick={() => setEntity("all")}
-                label="Усі"
-                icon={History}
-              />
-              {entityOptions.map((key) => {
-                const meta = ENTITY_META[key];
-                return (
-                  <FilterCard
-                    key={key}
-                    active={entity === key}
-                    onClick={() => setEntity(key)}
-                    label={entityLabel(key)}
-                    icon={meta?.icon}
-                    count={entityCounts.get(key) ?? 0}
-                  />
-                );
-              })}
-            </div>
-          </div>
-
-          {actors.length > 1 ? (
-            <div>
-              <p className="mb-1.5 px-0.5 text-[10px] font-bold tracking-wider text-zinc-400 uppercase">
-                Хто
-              </p>
-              <div
-                className={cn(
-                  "grid gap-2",
-                  actors.length + 1 <= 4
-                    ? "grid-cols-4"
-                    : "grid-cols-4 sm:grid-cols-5"
-                )}
-              >
-                <FilterCard
-                  active={actor === "all"}
-                  onClick={() => setActor("all")}
-                  label="Усі"
-                  icon={UserRound}
-                />
-                {actors.map((a) => (
-                  <FilterCard
-                    key={a.key}
-                    active={actor === a.key}
-                    onClick={() => setActor(a.key)}
-                    label={a.name}
-                    icon={UserRound}
-                  />
-                ))}
-              </div>
-            </div>
-          ) : null}
-
-          {hasFilters ? (
+          <div className="overflow-hidden rounded-2xl border border-[#E5DFD3]/90 bg-white/80 shadow-sm">
             <button
               type="button"
-              onClick={() => {
-                setQuery("");
-                setPeriod("all");
-                setAction("all");
-                setEntity("all");
-                setActor("all");
-              }}
-              className="text-[11px] font-semibold text-[#C05621] hover:underline"
+              onClick={() => setFiltersOpen((v) => !v)}
+              aria-expanded={filtersOpen}
+              className="flex w-full items-center gap-2.5 px-3.5 py-3 text-left transition hover:bg-[#F4F1EA]/70"
             >
-              Скинути фільтри
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-zinc-900 text-white">
+                <ListFilter className="h-4 w-4" strokeWidth={2} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-bold text-zinc-900">
+                  Фільтр
+                </span>
+                <span className="block text-[11px] text-zinc-400">
+                  {activeChipCount > 0
+                    ? `Активно: ${activeChipCount}`
+                    : "Період · дія · розділ · хто"}
+                </span>
+              </span>
+              {activeChipCount > 0 ? (
+                <span className="rounded-full bg-[#276749]/12 px-2 py-0.5 text-[10px] font-bold tabular-nums text-[#276749]">
+                  {activeChipCount}
+                </span>
+              ) : null}
+              <ChevronDown
+                className={cn(
+                  "h-4 w-4 shrink-0 text-zinc-400 transition-transform duration-200",
+                  filtersOpen && "rotate-180"
+                )}
+              />
             </button>
-          ) : null}
 
-          <div className="pt-2">
+            <AnimatePresence initial={false}>
+              {filtersOpen ? (
+                <motion.div
+                  key="filters"
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                  className="overflow-hidden"
+                >
+                  <div className="space-y-3 border-t border-[#E5DFD3]/80 px-3 pt-3 pb-3.5">
+                    <div>
+                      <p className="mb-1.5 px-0.5 text-[10px] font-bold tracking-wider text-zinc-400 uppercase">
+                        Період
+                      </p>
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {PERIOD_FILTERS.map((p) => (
+                          <FilterCard
+                            key={p.id}
+                            active={period === p.id}
+                            onClick={() => setPeriod(p.id)}
+                            label={p.label}
+                          />
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="mb-1.5 px-0.5 text-[10px] font-bold tracking-wider text-zinc-400 uppercase">
+                        Дія
+                      </p>
+                      <div className="grid grid-cols-4 gap-1.5">
+                        <FilterCard
+                          active={action === "all"}
+                          onClick={() => setAction("all")}
+                          label="Усі"
+                          icon={History}
+                          count={rows.length}
+                        />
+                        {ACTION_FILTER_KEYS.map((key) => {
+                          const meta = actionMeta(key);
+                          return (
+                            <FilterCard
+                              key={key}
+                              active={action === key}
+                              onClick={() => setAction(key)}
+                              label={meta.label}
+                              icon={meta.icon}
+                              count={actionCounts.get(key) ?? 0}
+                            />
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="mb-1.5 px-0.5 text-[10px] font-bold tracking-wider text-zinc-400 uppercase">
+                        Розділ
+                      </p>
+                      <div className="grid grid-cols-4 gap-1.5">
+                        <FilterCard
+                          active={entity === "all"}
+                          onClick={() => setEntity("all")}
+                          label="Усі"
+                          icon={History}
+                        />
+                        {entityOptions.map((key) => {
+                          const meta = ENTITY_META[key];
+                          return (
+                            <FilterCard
+                              key={key}
+                              active={entity === key}
+                              onClick={() => setEntity(key)}
+                              label={entityLabel(key)}
+                              icon={meta?.icon}
+                              count={entityCounts.get(key) ?? 0}
+                            />
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {actors.length > 1 ? (
+                      <div>
+                        <p className="mb-1.5 px-0.5 text-[10px] font-bold tracking-wider text-zinc-400 uppercase">
+                          Хто
+                        </p>
+                        <div className="grid grid-cols-4 gap-1.5">
+                          <FilterCard
+                            active={actor === "all"}
+                            onClick={() => setActor("all")}
+                            label="Усі"
+                            icon={UserRound}
+                          />
+                          {actors.map((a) => (
+                            <FilterCard
+                              key={a.key}
+                              active={actor === a.key}
+                              onClick={() => setActor(a.key)}
+                              label={a.name}
+                              icon={UserRound}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {activeChipCount > 0 || query.trim() ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setQuery("");
+                          setPeriod("all");
+                          setAction("all");
+                          setEntity("all");
+                          setActor("all");
+                        }}
+                        className="text-[11px] font-semibold text-[#C05621] hover:underline"
+                      >
+                        Скинути фільтри
+                      </button>
+                    ) : null}
+                  </div>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
+          </div>
+
+          <div className="pt-1">
             {loading ? (
               <div className="flex items-center justify-center gap-2 py-20 text-sm text-zinc-500">
                 <Loader2 className="h-4 w-4 animate-spin" />

@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { format } from "date-fns";
 import { uk } from "date-fns/locale";
+import type { DateRange } from "react-day-picker";
 import {
   AlertTriangle,
+  Calendar as CalendarIcon,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -18,9 +20,11 @@ import {
   PackagePlus,
   Paperclip,
   Pencil,
+  Plus,
   RefreshCw,
   ShoppingCart,
   Sparkles,
+  Sprout,
   Trash2,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -41,9 +45,11 @@ import {
   getLocalMoveById,
   type LocalMoveRow,
 } from "@/app/admin/inventory/actions";
+import { AttachmentDropzone } from "@/components/dashboard/attachment-dropzone";
 import { AttachmentViewerButton } from "@/components/dashboard/attachment-viewer";
 import { EditLocalMoveInline } from "@/components/dashboard/local-moves-history-sheet";
 import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import {
   Dialog,
@@ -61,24 +67,26 @@ import {
 } from "@/components/ui/popover";
 import {
   cachedFetchJson,
+  invalidateAppCache,
   peekAppCache,
   writeAppCache,
 } from "@/lib/client-data-cache";
+import { nextDateRangeSelection } from "@/lib/date-range-select";
 import {
   defaultFinanceSeasonYear,
+  FINANCE_QUICK_PERIODS,
   getFinancePeriodRange,
   getSeasonRange,
   toIsoRange,
   type FinancePeriod,
 } from "@/lib/finance-period";
 import { downloadAccountantPackageExcel } from "@/lib/inventory-excel-export";
-import { seasonLabel } from "@/lib/season";
 import { useSeasonStore } from "@/lib/season-store";
 import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
 
-const PERIOD_TABS: FinancePeriod[] = ["Сьогодні", "Місяць", "Сезон"];
 const SIDEBAR_COLLAPSED_KEY = "agrosystem-sidebar-collapsed";
+const SEASON_OPTIONS = [2024, 2025, 2026, 2027];
 
 const QUEUE_TABS: {
   id: AccountantQueueTab;
@@ -279,13 +287,98 @@ const kpiLabelClass =
 const kpiValueClass =
   "text-[1.35rem] leading-none font-semibold tracking-tight tabular-nums sm:text-[1.85rem] lg:text-[2.15rem]";
 
-const periodPill = (active: boolean) =>
-  cn(
-    "inline-flex h-9 items-center gap-1 rounded-full px-3.5 text-xs font-semibold transition-all",
-    active
-      ? "bg-white text-zinc-900 shadow-sm"
-      : "text-zinc-500 hover:text-zinc-800"
+function QueueCheck({
+  checked,
+  onClick,
+  label,
+}: {
+  checked: boolean;
+  onClick: () => void;
+  label?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex shrink-0 items-center gap-2"
+      aria-label={label ?? "Обрати"}
+    >
+      <span
+        className={cn(
+          "flex h-5 w-5 items-center justify-center rounded-md border transition",
+          checked
+            ? "border-[#276749] bg-[#276749] text-white"
+            : "border-zinc-300 bg-white"
+        )}
+      >
+        {checked ? <Check className="h-3 w-3" strokeWidth={3} /> : null}
+      </span>
+    </button>
   );
+}
+
+function QueueInvoiceControl({
+  item,
+  onChanged,
+}: {
+  item: AccountantQueueItem;
+  onChanged: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const entityType =
+    item.source === "fuel" ? "fuel_transaction" : "inventory_move";
+
+  if (item.hasAttachment) {
+    return (
+      <AttachmentViewerButton
+        entityType={entityType}
+        entityId={item.id}
+        count={1}
+      />
+    );
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        className="inline-flex h-8 items-center gap-1 rounded-full bg-zinc-100 px-2 text-[11px] font-semibold text-zinc-500 transition hover:bg-[#276749]/10 hover:text-[#276749]"
+        title="Додати накладну"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <Plus className="h-3.5 w-3.5" />
+        <Paperclip className="h-3.5 w-3.5" />
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        sideOffset={6}
+        className="z-[120] w-[min(100vw-2rem,18rem)] rounded-2xl border border-[#E5DFD3] bg-white p-3 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <p className="mb-2 text-[11px] font-semibold text-zinc-600">
+          Накладна до операції
+        </p>
+        <AttachmentDropzone
+          entityType={entityType}
+          entityId={item.id}
+          compact
+        />
+        <button
+          type="button"
+          className="mt-2 w-full rounded-xl bg-[#276749] py-2 text-[11px] font-bold text-white"
+          onClick={() => {
+            setOpen(false);
+            invalidateAppCache("api:inventory");
+            invalidateAppCache("api:fuel");
+            invalidateAppCache("api:accounting");
+            onChanged();
+          }}
+        >
+          Готово
+        </button>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 export function AccountantHubView({
   embedded = false,
@@ -301,18 +394,21 @@ export function AccountantHubView({
   const sidebarCollapsed = useSidebarCollapsed();
 
   const [period, setPeriod] = useState<FinancePeriod>("Сезон");
+  const [customRange, setCustomRange] = useState<DateRange | undefined>();
   const [seasonOpen, setSeasonOpen] = useState(false);
+  const [rangeOpen, setRangeOpen] = useState(false);
   const [tab, setTab] = useState<AccountantQueueTab>("all");
 
   const dateRange = useMemo(
-    () => getFinancePeriodRange(period, seasonYear),
-    [period, seasonYear]
+    () => getFinancePeriodRange(period, seasonYear, customRange),
+    [period, seasonYear, customRange]
   );
   const isoRange = useMemo(() => toIsoRange(dateRange), [dateRange]);
 
   const warmSeason = defaultFinanceSeasonYear();
   const warmRange = getSeasonRange(warmSeason);
   const usesWarmQueueCache =
+    period === "Сезон" &&
     seasonYear === warmSeason &&
     isoRange.startIso === warmRange.startIso &&
     isoRange.endIso === warmRange.endIso;
@@ -532,6 +628,19 @@ export function AccountantHubView({
     setActiveSeason(String(year));
     setPeriod("Сезон");
     setSeasonOpen(false);
+    setRangeOpen(false);
+  }
+
+  function applyPeriod(next: FinancePeriod) {
+    setPeriod(next);
+    if (next !== "Діапазон") setRangeOpen(false);
+  }
+
+  function bumpSyncedCaches() {
+    invalidateAppCache("api:inventory");
+    invalidateAppCache("api:fuel");
+    invalidateAppCache("api:accounting");
+    invalidateAppCache("api:finance");
   }
 
   async function openEdit(item: AccountantQueueItem) {
@@ -595,6 +704,7 @@ export function AccountantHubView({
       }
       toast.success("Паливо оновлено");
       closeInlineEdit();
+      bumpSyncedCaches();
       await load();
     });
   }
@@ -630,6 +740,7 @@ export function AccountantHubView({
       }
       toast.success("Видалено · запис в архіві сезону");
       setDeleteTarget(null);
+      bumpSyncedCaches();
       await load();
       if (archiveOpen) await loadArchive();
     });
@@ -657,28 +768,45 @@ export function AccountantHubView({
       <header
         className={cn(
           "sticky z-40 w-full border-b border-[#E5DFD3]/80 bg-[#F4F1EA]/90 backdrop-blur-xl",
-          isMobile
-            ? "top-0 px-3 py-2.5"
-            : "top-0 px-4 py-4 sm:px-6"
+          isMobile ? "top-0 px-3 py-2.5" : "top-0 px-4 py-4 sm:px-6"
         )}
       >
-        {isMobile ? (
-          <div className="space-y-2">
+        <div className="mx-auto w-full max-w-7xl space-y-2.5">
+          {!embedded ? (
             <div className="flex items-center gap-2">
-              {!embedded ? (
-                <h1 className="min-w-0 flex-1 truncate text-base font-extrabold tracking-tight text-zinc-900">
-                  Бухгалтерія
-                </h1>
-              ) : (
-                <div className="min-w-0 flex-1">
-                  <p className="text-[10px] font-bold tracking-[0.12em] text-zinc-400 uppercase">
-                    Черга експорту
-                  </p>
-                  <p className="truncate text-sm font-bold text-zinc-900">
-                    {seasonLabel(String(seasonYear))}
-                  </p>
-                </div>
-              )}
+              <h1 className="min-w-0 flex-1 truncate text-base font-extrabold tracking-tight text-zinc-900 sm:text-2xl lg:text-3xl">
+                Бухгалтерія
+              </h1>
+              <button
+                type="button"
+                onClick={() => void load()}
+                disabled={loading || pending}
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#E0DBD0] bg-white text-zinc-600 shadow-sm disabled:opacity-50 sm:h-9 sm:w-9 sm:rounded-full"
+                aria-label="Оновити"
+              >
+                <RefreshCw
+                  className={cn("h-4 w-4", loading && "animate-spin")}
+                />
+              </button>
+              <Button
+                type="button"
+                size="sm"
+                disabled={loading || pending || packageSummary.count === 0}
+                onClick={() => handleDownload(packageSummary.rows)}
+                className={cn(
+                  "h-10 shrink-0 rounded-xl px-3 font-bold text-white sm:h-9 sm:rounded-full sm:px-4",
+                  "bg-gradient-to-r from-[#1f5239] via-[#276749] to-[#2f7a52]"
+                )}
+              >
+                <Download className="h-3.5 w-3.5" />
+                <span className="sm:hidden">{packageSummary.count || "—"}</span>
+                <span className="hidden sm:inline">
+                  Excel · {packageSummary.count || "—"}
+                </span>
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={() => void load()}
@@ -704,161 +832,206 @@ export function AccountantHubView({
                 {packageSummary.count || "—"}
               </Button>
             </div>
+          )}
 
-            <div className="flex min-w-0 items-center gap-0.5 rounded-xl bg-[#EDE8DF] p-0.5">
-              {PERIOD_TABS.filter((t) => t !== "Сезон").map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => setPeriod(p)}
+          {/* Ряд 1: сезон + діапазон (як у Складі) */}
+          <div className="flex items-center gap-2">
+            <Popover
+              open={seasonOpen}
+              onOpenChange={(next) => {
+                setSeasonOpen(next);
+                if (next) {
+                  setRangeOpen(false);
+                  setPeriod("Сезон");
+                }
+              }}
+            >
+              <PopoverTrigger
+                className={cn(
+                  "inline-flex h-11 min-w-0 flex-1 items-center gap-2 rounded-xl border px-2.5 text-left text-sm font-semibold transition-all md:h-9 md:flex-none md:text-xs",
+                  period === "Сезон"
+                    ? "border-[#276749] bg-[#276749] text-white shadow-[0_6px_16px_-6px_rgba(39,103,73,0.55)]"
+                    : "border-[#E0DBD0] bg-white text-zinc-700"
+                )}
+                aria-label="Обрати агросезон"
+              >
+                <span
                   className={cn(
-                    "h-10 min-w-0 flex-1 rounded-[10px] px-1 text-[11px] font-semibold transition-all",
-                    period === p
-                      ? "bg-[#276749] text-white shadow-[0_4px_12px_-4px_rgba(39,103,73,0.55)]"
-                      : "text-zinc-500 active:bg-white/70"
-                  )}
-                >
-                  {p}
-                </button>
-              ))}
-              <Popover open={seasonOpen} onOpenChange={setSeasonOpen}>
-                <PopoverTrigger
-                  onClick={() => setPeriod("Сезон")}
-                  className={cn(
-                    "inline-flex h-10 min-w-0 flex-[1.15] items-center justify-center gap-1 rounded-[10px] px-1.5 text-[11px] font-semibold transition-all",
+                    "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg",
                     period === "Сезон"
-                      ? "bg-[#276749] text-white shadow-[0_4px_12px_-4px_rgba(39,103,73,0.55)]"
-                      : "text-zinc-500 active:bg-white/70"
+                      ? "bg-white/15 text-white"
+                      : "bg-[#276749]/12 text-[#276749]"
                   )}
                 >
-                  <span className="truncate tabular-nums">{seasonYear}</span>
-                  <ChevronDown className="h-3 w-3 shrink-0 opacity-70" />
-                </PopoverTrigger>
-                <PopoverContent
-                  align="end"
-                  sheetOnMobile={false}
-                  className="z-[100] w-44 rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-xl"
-                >
-                  {availableSeasons.map((s) => {
-                    const y = Number(s);
-                    return (
-                      <button
-                        key={s}
-                        type="button"
-                        onClick={() => selectSeason(y)}
+                  <Sprout className="h-3.5 w-3.5" />
+                </span>
+                <span className="truncate tabular-nums">
+                  Сезон {seasonYear}
+                </span>
+                <ChevronDown
+                  className={cn(
+                    "ml-auto h-3.5 w-3.5 shrink-0",
+                    period === "Сезон" ? "text-white/80" : "text-zinc-400"
+                  )}
+                />
+              </PopoverTrigger>
+              <PopoverContent
+                align="start"
+                sideOffset={6}
+                sheetOnMobile={false}
+                className="w-[min(100vw-2rem,22rem)] rounded-2xl border border-zinc-200 bg-white p-2 shadow-xl"
+              >
+                <p className="px-2.5 pt-1.5 pb-2 text-[11px] leading-snug text-zinc-500">
+                  Фільтр черги за агросезоном (березень–лютий).
+                </p>
+                <div className="space-y-1">
+                  {(availableSeasons.length > 0
+                    ? availableSeasons.map(Number)
+                    : SEASON_OPTIONS
+                  ).map((year) => (
+                    <button
+                      key={year}
+                      type="button"
+                      onClick={() => selectSeason(year)}
+                      className={cn(
+                        "flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left transition-colors",
+                        seasonYear === year
+                          ? "bg-[#276749] text-white"
+                          : "text-zinc-800"
+                      )}
+                    >
+                      <span className="text-sm font-semibold">
+                        Сезон {year}
+                      </span>
+                      <span
                         className={cn(
-                          "flex w-full rounded-xl px-3 py-2.5 text-left text-sm font-medium",
-                          seasonYear === y
-                            ? "bg-[#276749]/10 text-[#276749]"
-                            : "text-zinc-700 active:bg-zinc-50"
+                          "text-[11px] font-medium",
+                          seasonYear === year
+                            ? "text-white/75"
+                            : "text-zinc-400"
                         )}
                       >
-                        {seasonLabel(s)}
-                      </button>
-                    );
-                  })}
-                </PopoverContent>
-              </Popover>
-            </div>
-          </div>
-        ) : (
-          <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div className="min-w-0">
-              {!embedded ? (
-                <h1 className="truncate text-3xl font-extrabold tracking-tight text-zinc-900">
-                  Бухгалтерія
-                </h1>
-              ) : (
-                <h2 className="truncate text-lg font-bold tracking-tight text-zinc-900">
-                  Експорт
-                </h2>
-              )}
-              <p
+                        бер {year} – лют {year + 1}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
+
+            <Popover
+              open={rangeOpen}
+              onOpenChange={(next) => {
+                setRangeOpen(next);
+                if (next) {
+                  setSeasonOpen(false);
+                  applyPeriod("Діапазон");
+                }
+              }}
+            >
+              <PopoverTrigger
                 className={cn(
-                  "text-sm text-zinc-500",
-                  embedded ? "mt-0.5" : "mt-1"
+                  "inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl border px-3 text-sm font-semibold transition-all md:h-9 md:text-xs",
+                  period === "Діапазон"
+                    ? "border-[#276749] bg-[#276749] text-white shadow-[0_6px_16px_-6px_rgba(39,103,73,0.55)]"
+                    : "border-[#E0DBD0] bg-white text-zinc-700"
                 )}
               >
-                {seasonLabel(String(seasonYear))}
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="inline-flex items-center rounded-full border border-zinc-200/90 bg-white/80 p-1 shadow-sm">
-                {PERIOD_TABS.filter((t) => t !== "Сезон").map((p) => (
-                  <button
-                    key={p}
-                    type="button"
-                    onClick={() => setPeriod(p)}
-                    className={periodPill(period === p)}
-                  >
-                    {p}
-                  </button>
-                ))}
-                <Popover open={seasonOpen} onOpenChange={setSeasonOpen}>
-                  <PopoverTrigger
-                    className={periodPill(period === "Сезон")}
-                    onClick={() => setPeriod("Сезон")}
-                  >
-                    Сезон {seasonYear}
-                    <ChevronDown className="h-3.5 w-3.5 opacity-50" />
-                  </PopoverTrigger>
-                  <PopoverContent
-                    align="end"
-                    className="w-44 rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-xl"
-                  >
-                    {availableSeasons.map((s) => {
-                      const y = Number(s);
-                      return (
-                        <button
-                          key={s}
-                          type="button"
-                          onClick={() => selectSeason(y)}
-                          className={cn(
-                            "flex w-full rounded-xl px-3 py-2 text-left text-sm font-medium",
-                            seasonYear === y
-                              ? "bg-[#276749]/10 text-[#276749]"
-                              : "text-zinc-700 hover:bg-zinc-50"
-                          )}
-                        >
-                          {seasonLabel(s)}
-                        </button>
-                      );
-                    })}
-                  </PopoverContent>
-                </Popover>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => void load()}
-                disabled={loading || pending}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-zinc-200/90 bg-white/90 text-zinc-600 shadow-sm transition hover:bg-white disabled:opacity-50"
-                aria-label="Оновити"
-              >
-                <RefreshCw
-                  className={cn("h-4 w-4", loading && "animate-spin")}
+                <CalendarIcon
+                  className={cn(
+                    "h-3.5 w-3.5 shrink-0",
+                    period === "Діапазон" ? "text-white/90" : "opacity-70"
+                  )}
                 />
-              </button>
+                {period === "Діапазон" && customRange?.from
+                  ? `${format(customRange.from, "d MMM", { locale: uk })}${
+                      customRange.to
+                        ? ` – ${format(customRange.to, "d MMM", { locale: uk })}`
+                        : " → …"
+                    }`
+                  : "Діапазон"}
+              </PopoverTrigger>
+              <PopoverContent
+                align="end"
+                sideOffset={6}
+                sheetOnMobile={false}
+                className="w-[min(100vw-1.5rem,22.5rem)] rounded-2xl border border-zinc-200 bg-white p-3 shadow-xl"
+              >
+                <p className="mb-2 px-1 text-[11px] text-zinc-500">
+                  {customRange?.from && customRange?.to
+                    ? "Натисніть дату, щоб обрати новий початок"
+                    : customRange?.from
+                      ? "Тепер оберіть кінець періоду"
+                      : "Оберіть початок, потім кінець періоду"}
+                </p>
+                <Calendar
+                  mode="range"
+                  numberOfMonths={1}
+                  selected={customRange}
+                  defaultMonth={customRange?.from ?? new Date()}
+                  onSelect={(range, triggerDate) => {
+                    applyPeriod("Діапазон");
+                    setCustomRange(
+                      nextDateRangeSelection(customRange, range, triggerDate)
+                    );
+                  }}
+                  locale={uk}
+                  className="w-full rounded-xl [--cell-size:2.5rem]"
+                />
+                <div className="mt-3 flex items-center gap-2 border-t border-zinc-100 pt-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCustomRange(undefined);
+                      applyPeriod("Сезон");
+                      setRangeOpen(false);
+                    }}
+                    className="h-11 flex-1 rounded-xl border border-zinc-200 bg-white text-sm font-semibold text-zinc-600"
+                  >
+                    Скинути
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!customRange?.from}
+                    onClick={() => {
+                      if (!customRange?.from) return;
+                      if (!customRange.to) {
+                        setCustomRange({
+                          from: customRange.from,
+                          to: customRange.from,
+                        });
+                      }
+                      setPeriod("Діапазон");
+                      setRangeOpen(false);
+                    }}
+                    className="h-11 flex-[1.4] rounded-xl bg-[#276749] text-sm font-bold text-white disabled:opacity-50"
+                  >
+                    Застосувати
+                  </button>
+                </div>
+              </PopoverContent>
+            </Popover>
+          </div>
 
-              <Button
+          {/* Ряд 2: швидкі періоди */}
+          <div className="flex min-w-0 flex-1 items-center gap-0.5 rounded-xl bg-[#EDE8DF] p-0.5">
+            {FINANCE_QUICK_PERIODS.map((option) => (
+              <button
+                key={option}
                 type="button"
-                size="sm"
-                disabled={loading || pending || packageSummary.count === 0}
-                onClick={() => handleDownload(packageSummary.rows)}
+                onClick={() => applyPeriod(option)}
                 className={cn(
-                  "h-9 rounded-full px-4 font-bold text-white",
-                  "bg-gradient-to-r from-[#1f5239] via-[#276749] to-[#2f7a52]",
-                  "shadow-[0_8px_20px_-6px_rgba(39,103,73,0.55)]",
-                  "hover:brightness-105"
+                  "h-11 min-w-0 flex-1 rounded-[10px] px-1 text-[11px] font-semibold transition-all sm:px-2 sm:text-xs md:h-8",
+                  period === option
+                    ? "bg-[#276749] text-white shadow-[0_4px_12px_-4px_rgba(39,103,73,0.55)]"
+                    : "text-zinc-500"
                 )}
               >
-                <Download className="h-4 w-4" />
-                Excel · {packageSummary.count || "—"}
-              </Button>
-            </div>
+                {option}
+              </button>
+            ))}
           </div>
-        )}
+        </div>
       </header>
 
       <div
@@ -1118,34 +1291,25 @@ export function AccountantHubView({
             <button
               type="button"
               onClick={toggleVisibleAll}
-              className={cn(
-                "inline-flex items-center gap-2 self-start rounded-xl px-2.5 py-2 text-[11px] font-semibold text-zinc-500 transition hover:bg-white hover:text-zinc-800 sm:self-auto sm:px-3 sm:text-xs"
-              )}
+              className="inline-flex items-center gap-2 self-start rounded-xl px-2.5 py-2 text-[11px] font-semibold text-zinc-600 transition hover:bg-white hover:text-zinc-900 sm:self-auto sm:px-3 sm:text-xs"
             >
               <span
                 className={cn(
-                  "flex h-4 w-4 items-center justify-center rounded border",
+                  "flex h-5 w-5 items-center justify-center rounded-md border transition",
                   allVisibleSelected
                     ? "border-[#276749] bg-[#276749] text-white"
                     : "border-zinc-300 bg-white"
                 )}
               >
-                {allVisibleSelected ? <Check className="h-3 w-3" /> : null}
+                {allVisibleSelected ? (
+                  <Check className="h-3 w-3" strokeWidth={3} />
+                ) : null}
               </span>
-              {isMobile ? "Усі" : "Обрати видимі"}
+              Виділити всі
             </button>
           </div>
 
-          <div className="hidden grid-cols-[auto_7rem_minmax(0,1.2fr)_minmax(0,0.9fr)_6.5rem_6.5rem_4.5rem_5.5rem] gap-2 border-b border-[#E5DFD3]/70 px-5 py-2.5 text-[10px] font-bold tracking-[0.14em] text-zinc-400 uppercase md:grid">
-            <span className="w-4" />
-            <span>Тип</span>
-            <span>Операція</span>
-            <span>Поле / контрагент</span>
-            <span className="text-right">Кількість</span>
-            <span className="text-right">Сума</span>
-            <span className="text-right">Дата</span>
-            <span className="text-right">Дії</span>
-          </div>
+          <div className="hidden" />
 
           {loading ? (
             <div className="flex items-center justify-center gap-2 py-24 text-sm text-zinc-500">
@@ -1163,7 +1327,7 @@ export function AccountantHubView({
               </p>
             </div>
           ) : (
-            <ul className="divide-y divide-[#E5DFD3]/60">
+            <ul className="space-y-2 p-2.5 sm:p-3">
               {visible.map((item) => {
                 const meta = kindMeta(item.kind);
                 const Icon = meta.icon;
@@ -1176,14 +1340,21 @@ export function AccountantHubView({
                   editInventory != null;
                 const showFuelEdit =
                   isEditing && item.source === "fuel" && editFuel != null;
-                const showEditShell =
-                  showInventoryEdit || showFuelEdit || isEditLoading;
+                const priceLine =
+                  item.unitPriceUah != null
+                    ? `${formatUah(item.unitPriceUah)} ₴/${item.unit || "од."}`
+                    : item.pricePerLiter != null
+                      ? `${formatUah(item.pricePerLiter)} ₴/л`
+                      : null;
 
                 return (
                   <li
                     key={`${item.source}-${item.id}`}
                     id={`queue-edit-${item.id}`}
-                    className={cn(showEditShell && "overflow-hidden")}
+                    className={cn(
+                      "overflow-hidden rounded-2xl border border-[#E5DFD3]/90 bg-white/95 shadow-sm",
+                      checked && "ring-1 ring-[#276749]/35"
+                    )}
                   >
                     <AnimatePresence mode="wait" initial={false}>
                       {showInventoryEdit ? (
@@ -1214,6 +1385,7 @@ export function AccountantHubView({
                               onCancel={closeInlineEdit}
                               onSaved={() => {
                                 closeInlineEdit();
+                                bumpSyncedCaches();
                                 void load();
                               }}
                             />
@@ -1248,7 +1420,7 @@ export function AccountantHubView({
                                   <p className="text-[10px] font-bold tracking-[0.14em] text-orange-800 uppercase">
                                     Редагування палива
                                   </p>
-                                  <p className="mt-0.5 truncate text-sm font-semibold text-zinc-900">
+                                  <p className="mt-0.5 text-sm font-semibold text-zinc-900">
                                     {editFuel.title}
                                     {editFuel.party ? (
                                       <span className="font-normal text-zinc-500">
@@ -1350,137 +1522,94 @@ export function AccountantHubView({
                         >
                           <div
                             className={cn(
-                              "grid items-center gap-2 transition",
-                              isMobile
-                                ? "grid-cols-[auto_minmax(0,1fr)_auto] px-3 py-2.5"
-                                : "grid-cols-[auto_minmax(0,1fr)_auto] px-4 py-3.5 sm:px-5 md:grid-cols-[auto_7rem_minmax(0,1.2fr)_minmax(0,0.9fr)_6.5rem_6.5rem_4.5rem_5.5rem]",
-                              checked
-                                ? "bg-[#276749]/[0.06]"
-                                : "hover:bg-[#F4F1EA]/70"
+                              "flex gap-2.5 px-3 py-3 sm:gap-3 sm:px-3.5",
+                              checked && "bg-[#276749]/[0.04]"
                             )}
                           >
-                            <button
-                              type="button"
+                            <QueueCheck
+                              checked={checked}
                               onClick={() => toggle(item.id)}
-                              className={cn(
-                                "flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition",
-                                checked
-                                  ? "border-[#276749] bg-[#276749] text-white"
-                                  : "border-zinc-300 bg-white"
-                              )}
-                              aria-label="Обрати"
-                            >
-                              {checked ? <Check className="h-3 w-3" /> : null}
-                            </button>
+                            />
 
-                            <span
-                              className={cn(
-                                "hidden items-center gap-1.5 rounded-lg px-2 py-1 text-[10px] font-bold tracking-wide uppercase ring-1 md:inline-flex",
-                                meta.chip
-                              )}
-                            >
-                              <Icon className="h-3 w-3" strokeWidth={2.2} />
-                              {meta.label}
-                            </span>
-
-                            <div className="min-w-0">
-                              <div className="mb-0.5 flex items-center gap-1.5 md:hidden">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-start gap-2">
                                 <span
                                   className={cn(
-                                    "inline-flex h-6 w-6 items-center justify-center rounded-md",
+                                    "mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg",
                                     meta.well
                                   )}
                                 >
-                                  <Icon className="h-3 w-3" />
+                                  <Icon className="h-3.5 w-3.5" />
                                 </span>
-                                <span className="text-[9px] font-bold tracking-wider text-zinc-400 uppercase">
-                                  {meta.label}
-                                </span>
-                                <span className="ml-auto text-[10px] tabular-nums text-zinc-400">
-                                  {formatDate(item.date)}
-                                </span>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[9px] font-bold tracking-wider text-zinc-400 uppercase">
+                                      {meta.label}
+                                    </span>
+                                    {item.isLocalItem ? (
+                                      <span className="text-[9px] font-bold tracking-wider text-sky-600 uppercase">
+                                        нова
+                                      </span>
+                                    ) : null}
+                                    {item.basDraftSent ? (
+                                      <span className="text-[9px] font-bold tracking-wider text-emerald-700 uppercase">
+                                        у BAS
+                                      </span>
+                                    ) : null}
+                                    <span className="ml-auto shrink-0 text-[10px] font-medium tabular-nums text-zinc-400">
+                                      {formatDate(item.date)}
+                                    </span>
+                                  </div>
+                                  <p className="mt-0.5 text-[13px] leading-snug font-semibold text-zinc-900 sm:text-sm">
+                                    {item.title}
+                                  </p>
+                                  {(item.party || item.note) && (
+                                    <p className="mt-0.5 text-[11px] leading-snug text-zinc-500">
+                                      {item.party || item.note}
+                                    </p>
+                                  )}
+                                </div>
                               </div>
-                              <p className="truncate text-[13px] font-semibold text-zinc-900 sm:text-sm">
-                                {item.title}
-                                {item.isLocalItem ? (
-                                  <span className="ml-1.5 align-middle text-[9px] font-bold tracking-wider text-sky-600 uppercase">
-                                    нова
-                                  </span>
-                                ) : null}
-                                {item.basDraftSent ? (
-                                  <span
-                                    className="ml-1.5 align-middle text-[9px] font-bold tracking-wider text-emerald-700 uppercase"
-                                    title="Чернетка вже створена в BAS AGRO"
+
+                              <div className="mt-2 flex flex-wrap items-end justify-between gap-x-3 gap-y-1.5 border-t border-[#E5DFD3]/60 pt-2">
+                                <div className="min-w-0 space-y-0.5">
+                                  <p className="text-sm font-bold tabular-nums text-zinc-900">
+                                    {formatQty(item.qty, item.unit)}
+                                  </p>
+                                  <p className="text-[11px] tabular-nums text-zinc-500">
+                                    {[
+                                      priceLine,
+                                      item.amountUah != null
+                                        ? `сума ${formatUah(item.amountUah)} ₴`
+                                        : null,
+                                    ]
+                                      .filter(Boolean)
+                                      .join(" · ") || "без ціни"}
+                                  </p>
+                                </div>
+                                <div className="flex shrink-0 items-center gap-0.5">
+                                  <QueueInvoiceControl
+                                    item={item}
+                                    onChanged={() => void load()}
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => void openEdit(item)}
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition hover:bg-[#F4F1EA] hover:text-zinc-800"
+                                    title="Редагувати"
                                   >
-                                    у BAS
-                                  </span>
-                                ) : null}
-                              </p>
-                              <p className="mt-0.5 truncate text-[11px] text-zinc-400 md:hidden">
-                                {[
-                                  item.party,
-                                  item.amountUah != null
-                                    ? `${formatUah(item.amountUah)} ₴`
-                                    : null,
-                                ]
-                                  .filter(Boolean)
-                                  .join(" · ") || "—"}
-                              </p>
-                            </div>
-
-                            <p className="hidden min-w-0 truncate text-sm text-zinc-500 md:block">
-                              {item.party || item.note || "—"}
-                            </p>
-
-                            <p className="hidden text-right text-sm font-semibold tabular-nums text-zinc-900 md:block">
-                              {formatQty(item.qty, item.unit)}
-                            </p>
-
-                            <p className="hidden text-right text-sm tabular-nums text-zinc-600 md:block">
-                              {item.amountUah != null
-                                ? `${formatUah(item.amountUah)} ₴`
-                                : "—"}
-                            </p>
-
-                            <p className="hidden text-right text-xs text-zinc-400 md:block">
-                              {formatDate(item.date)}
-                            </p>
-
-                            <div className="flex items-center justify-end gap-0.5">
-                              <span className="mr-1 text-right text-sm font-semibold tabular-nums text-zinc-900 md:hidden">
-                                {formatQty(item.qty, item.unit)}
-                              </span>
-                              {item.hasAttachment ? (
-                                <AttachmentViewerButton
-                                  entityType={
-                                    item.source === "fuel"
-                                      ? "fuel_transaction"
-                                      : "inventory_move"
-                                  }
-                                  entityId={item.id}
-                                  count={1}
-                                />
-                              ) : (
-                                <span className="inline-flex h-8 w-8 items-center justify-center text-zinc-300">
-                                  <Paperclip className="h-3.5 w-3.5" />
-                                </span>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => void openEdit(item)}
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition hover:bg-white hover:text-zinc-800"
-                                title="Редагувати"
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setDeleteTarget(item)}
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition hover:bg-red-50 hover:text-red-700"
-                                title="Видалити"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
+                                    <Pencil className="h-3.5 w-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setDeleteTarget(item)}
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition hover:bg-red-50 hover:text-red-700"
+                                    title="Видалити"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              </div>
                             </div>
                           </div>
                         </motion.div>

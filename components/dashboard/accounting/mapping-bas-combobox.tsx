@@ -73,9 +73,16 @@ export function MappingBasCombobox({
 
   const label = selected?.label ?? "Обрати в BAS AGRO…";
 
+  function pickOption(nextValue: string) {
+    setOpen(false);
+    setQuery("");
+    window.setTimeout(() => onChange(nextValue), 0);
+  }
+
   return (
     <div className="flex min-w-0 flex-1 items-center gap-1.5">
       <Popover
+        modal={false}
         open={open}
         onOpenChange={(next) => {
           setOpen(next);
@@ -83,6 +90,7 @@ export function MappingBasCombobox({
         }}
       >
         <PopoverTrigger
+          type="button"
           disabled={disabled}
           className={cn(
             "inline-flex h-10 min-w-0 flex-1 items-center justify-between gap-2 rounded-xl border px-3 text-left text-sm font-medium transition",
@@ -98,9 +106,10 @@ export function MappingBasCombobox({
         </PopoverTrigger>
         <PopoverContent
           align="end"
-          className="w-[min(calc(100vw-2rem),22rem)] rounded-2xl border border-border p-0 shadow-xl"
+          sheetOnMobile={false}
+          className="z-[230] w-[min(calc(100vw-2rem),22rem)] rounded-2xl border border-border bg-popover p-0 shadow-xl"
         >
-          <Command className="rounded-2xl" shouldFilter={false}>
+          <Command className="rounded-2xl bg-popover" shouldFilter={false}>
             <CommandInput
               placeholder="Почніть вводити назву…"
               value={query}
@@ -118,14 +127,20 @@ export function MappingBasCombobox({
                   return (
                     <CommandItem
                       key={option.value}
-                      value={`${option.label} ${option.matchText ?? ""}`}
+                      value={option.value}
                       data-checked={active || undefined}
-                      onSelect={() => {
-                        onChange(option.value);
-                        setOpen(false);
-                        setQuery("");
+                      onSelect={(selectedValue) => {
+                        const hit =
+                          options.find((o) => o.value === selectedValue) ??
+                          options.find(
+                            (o) =>
+                              o.value.toLowerCase() ===
+                              selectedValue.toLowerCase()
+                          ) ??
+                          option;
+                        pickOption(hit.value);
                       }}
-                      className="cursor-pointer gap-2 rounded-xl"
+                      className="cursor-pointer gap-2 rounded-xl data-[selected=true]:bg-muted"
                     >
                       <Check
                         className={cn(
