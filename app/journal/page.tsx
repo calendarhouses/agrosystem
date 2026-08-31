@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { ActivityJournalPanel } from "@/components/dashboard/activity-journal-panel";
 
 export const metadata: Metadata = {
-  title: "Журнал",
+  title: "Журнал дій",
 };
 
 export const dynamic = "force-dynamic";

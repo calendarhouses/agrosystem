@@ -72,7 +72,7 @@ export async function listActivityLog(input?: {
       "id, created_at, actor_id, actor_name, actor_role, action, entity_type, entity_id, summary, meta"
     )
     .order("created_at", { ascending: false })
-    .limit(Math.min(input?.limit ?? 80, 200));
+    .limit(Math.min(input?.limit ?? 80, 500));
 
   if (input?.entityType) q = q.eq("entity_type", input.entityType);
   if (input?.entityId) q = q.eq("entity_id", input.entityId);

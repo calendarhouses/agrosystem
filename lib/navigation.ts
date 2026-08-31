@@ -76,7 +76,7 @@ export const APP_NAV_ITEMS: AppNavItem[] = [
   {
     href: "/journal",
     label: "Журнал",
-    hint: "Журнал дій користувачів",
+    hint: "Журнал дій",
     icon: History,
     moreMenu: true,
   },

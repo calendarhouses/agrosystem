@@ -2303,7 +2303,7 @@ function ItemDocumentsSheet({
             Немає документів у цьому фільтрі
           </div>
         ) : (
-          <ul className="overflow-hidden rounded-2xl border border-[#E5DFD3]/90 bg-white/90 shadow-sm">
+          <ul className="space-y-2">
             {filtered.map((doc) => (
               <SheetDocumentRow
                 key={doc.key}
@@ -2385,7 +2385,7 @@ function SheetDocumentRow({
 
   if (editMove) {
     return (
-      <li className="border-b border-[#E5DFD3]/80 bg-[#F4F1EA]/50 p-3 last:border-0">
+      <li className="rounded-2xl border border-[#E5DFD3]/90 bg-[#F4F1EA]/70 p-3 shadow-sm">
         <EditLocalMoveInline
           move={editMove}
           onCancel={() => onCancelEdit?.()}
@@ -2396,7 +2396,7 @@ function SheetDocumentRow({
   }
 
   const rowClass =
-    "group flex w-full items-center justify-between gap-3 border-b border-[#E5DFD3]/80 px-3.5 py-3.5 text-left transition-colors last:border-0";
+    "group flex w-full items-center justify-between gap-3 rounded-2xl border border-[#E5DFD3]/90 bg-white/90 px-3.5 py-3.5 text-left shadow-sm transition-colors";
 
   const body = (
     <>

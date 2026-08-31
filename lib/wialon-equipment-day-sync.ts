@@ -253,18 +253,22 @@ async function runEquipmentDaySync(
 
   if (eqResult.error) throw new Error(eqResult.error.message);
 
-  const eqByWialon = new Map<number, string>();
+  const eqByWialon = new Map<number, { id: string; name: string }>();
   for (const row of eqResult.data ?? []) {
     const wid = Number(row.wialon_id);
     if (Number.isFinite(wid) && wid > 0) {
-      eqByWialon.set(wid, String(row.id));
+      eqByWialon.set(wid, {
+        id: String(row.id),
+        name: String(row.name ?? ""),
+      });
     }
   }
 
   const units = wialonUnits.slice(0, MAX_UNITS).map((u) => ({
     wialon_id: u.id,
     name: u.nm,
-    equipment_id: eqByWialon.get(u.id) ?? null,
+    equipment_id: eqByWialon.get(u.id)?.id ?? null,
+    equipment_name: eqByWialon.get(u.id)?.name ?? "",
   }));
 
   if (units.length === 0) {
@@ -307,6 +311,9 @@ async function runEquipmentDaySync(
             polygons
           );
 
+          const delivery = isFuelDeliveryUnit(unit.name, unit.equipment_name);
+          const hasFuel = analytics.summary.hasFuelSensor;
+
           return {
             equipment_id: unit.equipment_id,
             wialon_unit_id: unit.wialon_id,
@@ -316,25 +323,15 @@ async function runEquipmentDaySync(
             work_hours: analytics.summary.workHours,
             hours_idling: analytics.summary.hoursIdling,
             hours_on_field: hoursOnField,
-            drain_events: isFuelDeliveryUnit(unit.name)
-              ? 0
-              : analytics.fuelEvents.length,
-            fuel_start: analytics.summary.hasFuelSensor
-              ? analytics.summary.fuelStart
-              : null,
-            fuel_end: analytics.summary.hasFuelSensor
-              ? analytics.summary.fuelEnd
-              : null,
-            fuel_delta: analytics.summary.hasFuelSensor
-              ? analytics.summary.fuelDelta
-              : null,
-            fuel_filled: analytics.summary.hasFuelSensor
-              ? analytics.summary.fuelFilled
-              : 0,
-            fuel_consumed: analytics.summary.hasFuelSensor
-              ? analytics.summary.fuelConsumed
-              : null,
-            has_fuel_sensor: analytics.summary.hasFuelSensor,
+            drain_events: delivery ? 0 : analytics.fuelEvents.length,
+            fuel_start: hasFuel ? analytics.summary.fuelStart : null,
+            fuel_end: hasFuel ? analytics.summary.fuelEnd : null,
+            fuel_delta: hasFuel ? analytics.summary.fuelDelta : null,
+            fuel_filled: hasFuel && !delivery ? analytics.summary.fuelFilled : 0,
+            // Цистерна бензовоза — злив клієнтам, не спалювання двигуном
+            fuel_consumed:
+              hasFuel && !delivery ? analytics.summary.fuelConsumed : null,
+            has_fuel_sensor: hasFuel,
             sync_time: syncTime,
           } satisfies EquipmentDayStatRow;
         } catch (err) {
@@ -383,28 +380,55 @@ export type FleetDaySummaryDto = {
 };
 
 /**
- * Спалено всім флотом за період (л) — з денного кешу техніки.
- * Це та сама цифра, що в картці «Зміна за день», лише підсумована.
+ * Спалено самохідною технікою за період (л) — з денного кешу.
+ * Бензовози / цистерни не входять: падіння бака — роздача, не ДВЗ.
  */
 export async function sumFleetFuelConsumedForPeriod(
   fromDate: string,
   toDate: string
 ): Promise<{ liters: number; hasData: boolean }> {
   const supabase = createServiceSupabase();
-  const { data, error } = await supabase
-    .from("wialon_equipment_day_stats")
-    .select("fuel_consumed")
-    .gte("date", fromDate)
-    .lte("date", toDate)
-    .not("fuel_consumed", "is", null);
+
+  const [{ data, error }, eqRes] = await Promise.all([
+    supabase
+      .from("wialon_equipment_day_stats")
+      .select(
+        "fuel_consumed, work_hours, hours_on_field, wialon_unit_id, equipment_id"
+      )
+      .gte("date", fromDate)
+      .lte("date", toDate)
+      .not("fuel_consumed", "is", null),
+    supabase.from("equipment").select("id, wialon_id, name"),
+  ]);
 
   // Міграція 036 ще не накатана
   if (error) return { liters: 0, hasData: false };
 
-  const liters = (data ?? []).reduce(
-    (acc, row) => acc + (Number(row.fuel_consumed) || 0),
-    0
-  );
+  const deliveryWialonIds = new Set<number>();
+  const deliveryEquipmentIds = new Set<string>();
+  for (const row of eqRes.data ?? []) {
+    if (!isFuelDeliveryUnit(row.name)) continue;
+    const wid = Number(row.wialon_id);
+    if (Number.isFinite(wid) && wid > 0) deliveryWialonIds.add(wid);
+    if (row.id) deliveryEquipmentIds.add(String(row.id));
+  }
+
+  const liters = (data ?? []).reduce((acc, row) => {
+    const wid = Number(row.wialon_unit_id);
+    const eid = row.equipment_id != null ? String(row.equipment_id) : null;
+    if (Number.isFinite(wid) && deliveryWialonIds.has(wid)) return acc;
+    if (eid && deliveryEquipmentIds.has(eid)) return acc;
+
+    const consumed = Number(row.fuel_consumed) || 0;
+    if (consumed <= 0) return acc;
+    // Цистерна / зрив ДУТ: тисячі літрів без роботи в полі
+    const onField = Number(row.hours_on_field) || 0;
+    if (consumed > 400 && onField < 0.15) return acc;
+    if (consumed > 1_500) return acc;
+
+    return acc + consumed;
+  }, 0);
+
   return {
     liters: Math.round(liters * 10) / 10,
     hasData: (data?.length ?? 0) > 0,

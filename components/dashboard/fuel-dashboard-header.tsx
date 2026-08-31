@@ -399,6 +399,14 @@ export function FuelDashboardHeader({
   // Показуємо всю витрату флоту: інакше «Спалено» непорівнянне із «Заправлено»,
   // бо заправляють і те паливо, що йде на переїзди та роботу на базі.
   const burnedTotal = fieldFuelTotalLiters ?? fieldFuelLiters;
+  const onFieldListed = fieldFuelBreakdown.reduce(
+    (acc, row) => acc + row.liters,
+    0
+  );
+  const onFieldResidual =
+    fieldFuelLiters != null
+      ? Math.max(0, Math.round((fieldFuelLiters - onFieldListed) * 10) / 10)
+      : 0;
   const offFieldLiters =
     fieldFuelTotalLiters != null && fieldFuelLiters != null
       ? Math.max(0, Math.round((fieldFuelTotalLiters - fieldFuelLiters) * 10) / 10)
@@ -410,7 +418,16 @@ export function FuelDashboardHeader({
       subtitle: row.fieldName,
       liters: row.liters,
     })),
-    ...(offFieldLiters != null && offFieldLiters > 0
+    ...(onFieldResidual > 1
+      ? [
+          {
+            title: "Інші записи на полях",
+            subtitle: "дрібні сесії, не зведені в рядки вище",
+            liters: onFieldResidual,
+          },
+        ]
+      : []),
+    ...(offFieldLiters != null && offFieldLiters > 1
       ? [
           {
             title: "Поза полями",

@@ -313,7 +313,10 @@ async function loadMappings(): Promise<{
   const wialonUnits = await listWialonUnitBasics(eid);
   const units: SyncUnit[] = wialonUnits
     .slice(0, MAX_UNITS)
-    .filter((u) => !isFuelDeliveryUnit(u.nm))
+    .filter((u) => {
+      const eq = eqByWialon.get(u.id);
+      return !isFuelDeliveryUnit(u.nm, eq?.name);
+    })
     .map((u) => {
       const eq = eqByWialon.get(u.id);
       return {

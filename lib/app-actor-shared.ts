@@ -34,3 +34,20 @@ export function isAppRole(value: unknown): value is AppRole {
 export function formatActorLabel(_role: AppRole, fullName: string): string {
   return fullName.trim() || "Користувач";
 }
+
+/**
+ * Прибирає старий префікс ролі («Власник Ігор» → «Ігор»),
+ * щоб один акаунт не дублювався в журналі.
+ */
+export function normalizeActorDisplayName(name: string): string {
+  let n = name.trim();
+  if (!n) return "Користувач";
+  for (const role of Object.values(ROLE_LABEL_UK)) {
+    const prefix = `${role} `;
+    if (n.length > prefix.length && n.toLowerCase().startsWith(prefix.toLowerCase())) {
+      n = n.slice(prefix.length).trim();
+      break;
+    }
+  }
+  return n || "Користувач";
+}
