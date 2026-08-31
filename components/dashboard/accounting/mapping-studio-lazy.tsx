@@ -82,6 +82,12 @@ const CATALOGS: {
 
 const BAS_DEBOUNCE_MS = 350;
 
+type CatalogStat = { linked: number; total: number };
+
+function countLinked(rows: MappingLocalRow[]): number {
+  return rows.filter((row) => row.basRefKey).length;
+}
+
 function initialValues(rows: MappingLocalRow[]): Record<string, string> {
   return Object.fromEntries(
     rows.map((row) => [row.id, row.basRefKey ?? UNMAPPED_VALUE])
@@ -161,8 +167,41 @@ export function MappingStudioLazy({
   const [values, setValues] = useState<Record<string, string>>({});
   const [saved, setSaved] = useState<Record<string, string | null>>({});
   const autoAppliedFor = useRef<string | null>(null);
+  const [catalogStats, setCatalogStats] = useState<
+    Partial<Record<MappingCatalogKind, CatalogStat>>
+  >({});
+  const [statsLoading, setStatsLoading] = useState(true);
 
   const meta = CATALOGS.find((c) => c.id === catalog)!;
+
+  // Статистика по всіх категоріях — одразу на картках
+  useEffect(() => {
+    let cancelled = false;
+    setStatsLoading(true);
+    void Promise.all(
+      CATALOGS.map(async (c) => {
+        const res = await loadMappingLocalRows(c.id);
+        if (!res.ok) return null;
+        return {
+          id: c.id,
+          linked: countLinked(res.data.rows),
+          total: res.data.rows.length,
+        };
+      })
+    ).then((results) => {
+      if (cancelled) return;
+      const next: Partial<Record<MappingCatalogKind, CatalogStat>> = {};
+      for (const row of results) {
+        if (!row) continue;
+        next[row.id] = { linked: row.linked, total: row.total };
+      }
+      setCatalogStats(next);
+      setStatsLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // 1) Локальні рядки — швидко, без BAS
   useEffect(() => {
@@ -196,6 +235,18 @@ export function MappingStudioLazy({
       cancelled = true;
     };
   }, [catalog]);
+
+  useEffect(() => {
+    if (rowsLoading) return;
+    const linked = rows.filter((row) => {
+      const v = values[row.id] ?? row.basRefKey ?? UNMAPPED_VALUE;
+      return v !== UNMAPPED_VALUE;
+    }).length;
+    setCatalogStats((prev) => ({
+      ...prev,
+      [catalog]: { linked, total: rows.length },
+    }));
+  }, [catalog, rows, rowsLoading, values]);
 
   // 2) BAS — лише після debounce (швидке клікання не бʼє OData кілька разів)
   useEffect(() => {
@@ -359,14 +410,13 @@ export function MappingStudioLazy({
         {CATALOGS.map((c) => {
           const Icon = c.icon;
           const active = catalog === c.id;
-          const mapped =
-            active && !loading
-              ? rows.filter((row) => {
-                  const v = values[row.id] ?? row.basRefKey ?? UNMAPPED_VALUE;
-                  return v !== UNMAPPED_VALUE;
-                }).length
-              : null;
-          const total = active && !loading ? rows.length : null;
+          const stat = catalogStats[c.id];
+          const countLabel =
+            stat != null
+              ? `${stat.linked}/${stat.total}`
+              : statsLoading
+                ? "…"
+                : "—";
           return (
             <button
               key={c.id}
@@ -404,7 +454,7 @@ export function MappingStudioLazy({
                   active ? "text-white" : "text-zinc-900"
                 )}
               >
-                {mapped != null && total != null ? `${mapped}/${total}` : "—"}
+                {countLabel}
               </p>
               <p
                 className={cn(

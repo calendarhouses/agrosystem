@@ -258,12 +258,7 @@ export function BottomNav() {
           onOpenChange={setProfileOpen}
           preserveNav
         >
-          <MobileProfilePanel
-            me={me}
-            onBack={() => setProfileOpen(false)}
-            onUpdated={setMe}
-            backLabel="Закрити"
-          />
+          <MobileProfilePanel me={me} onUpdated={setMe} />
         </MobileBottomDrawer>
       ) : null}
     </>

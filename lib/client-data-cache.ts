@@ -4,6 +4,7 @@
  */
 
 export const APP_DATA_TTL_MS = 2.5 * 60 * 1000; // ~2.5 хв
+export const APP_FETCH_TIMEOUT_MS = 25_000;
 
 type CacheRecord = {
   data: unknown;
@@ -65,7 +66,26 @@ type CachedFetchOptions = {
   /** Абсолютний expiry замість relative ttl (сезон до кінця дня) */
   expiresAt?: number;
   force?: boolean;
+  timeoutMs?: number;
 };
+
+async function fetchJsonWithTimeout(
+  input: string,
+  init: RequestInit | undefined,
+  timeoutMs: number
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: init?.signal ?? controller.signal,
+      cache: "no-store",
+    });
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
 
 /**
  * Fetch JSON з TTL + dedupe паралельних запитів на той самий key.
@@ -93,11 +113,16 @@ export async function cachedFetchJson<T>(
   }
 
   const request = (async () => {
-    const response = await fetch(input, {
-      ...init,
-      signal: options?.signal ?? init?.signal,
-      cache: "no-store",
-    });
+    const timeoutMs = options?.timeoutMs ?? APP_FETCH_TIMEOUT_MS;
+    let response: Response;
+    try {
+      response = await fetchJsonWithTimeout(input, init, timeoutMs);
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        throw new Error("Запит перевищив час очікування");
+      }
+      throw err;
+    }
     const data = (await response.json()) as T;
     if (!response.ok) {
       const err = data as { error?: string };
@@ -122,10 +147,16 @@ export async function cachedFetchJson<T>(
 export async function cachedCall<T>(
   key: string,
   fn: () => Promise<T>,
-  options?: { ttlMs?: number; expiresAt?: number; force?: boolean }
+  options?: {
+    ttlMs?: number;
+    expiresAt?: number;
+    force?: boolean;
+    timeoutMs?: number;
+  }
 ): Promise<{ data: T; fromCache: boolean }> {
   const ttlMs = options?.ttlMs ?? APP_DATA_TTL_MS;
   const force = options?.force === true;
+  const timeoutMs = options?.timeoutMs ?? APP_FETCH_TIMEOUT_MS;
 
   if (!force) {
     const fresh = peekAppCache<T>(key, ttlMs);
@@ -138,9 +169,22 @@ export async function cachedCall<T>(
   }
 
   const request = (async () => {
-    const data = await fn();
-    writeAppCache(key, data, { expiresAt: options?.expiresAt });
-    return data;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const data = await Promise.race([
+        fn(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error("Запит перевищив час очікування")),
+            timeoutMs
+          );
+        }),
+      ]);
+      writeAppCache(key, data, { expiresAt: options?.expiresAt });
+      return data;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   })();
 
   inflight.set(key, request);

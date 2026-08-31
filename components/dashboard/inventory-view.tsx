@@ -42,7 +42,6 @@ import { toast } from "sonner";
 
 import {
   getInventoryCacheMetaMap,
-  getLocalMoveById,
   getLocalMoveQtyByItem,
   deleteLocalMove,
   setInventoryItemHidden,
@@ -101,6 +100,7 @@ import {
   type ItemMove,
 } from "@/lib/inventory-bas";
 import { useSeasonStore } from "@/lib/season-store";
+import { localMoveFromOutboundRow } from "@/lib/local-move-edit";
 import { nextDateRangeSelection } from "@/lib/date-range-select";
 import { useFieldRealtime } from "@/lib/use-field-realtime";
 import { useIsMobile } from "@/lib/use-mobile";
@@ -1522,21 +1522,34 @@ function NomenclatureGrid({
     : "";
 
   const [editMove, setEditMove] = useState<LocalMoveRow | null>(null);
-  const [editLoadingId, setEditLoadingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (openItemId && !openItem) onOpenItem(null);
   }, [openItemId, openItem, onOpenItem]);
 
-  async function handleEditLocal(localId: string) {
-    setEditLoadingId(localId);
-    const res = await getLocalMoveById(localId);
-    setEditLoadingId(null);
-    if (!res.ok) {
-      toast.error(res.error);
+  function handleEditLocal(localId: string, row?: LocalOutboundRow) {
+    if (row && openItem) {
+      setEditMove(
+        localMoveFromOutboundRow(row, {
+          id: openItem.id,
+          name: openDisplayName || openItem.name,
+          unit: openItem.unit,
+          category: openItem.category,
+        })
+      );
       return;
     }
-    setEditMove(res.move);
+    const hit = openLocalMoves.find((r) => r.id === localId);
+    if (hit && openItem) {
+      setEditMove(
+        localMoveFromOutboundRow(hit, {
+          id: openItem.id,
+          name: openDisplayName || openItem.name,
+          unit: openItem.unit,
+          category: openItem.category,
+        })
+      );
+    }
   }
 
   return (
@@ -1576,14 +1589,13 @@ function NomenclatureGrid({
         localMoves={openLocalMoves}
         open={Boolean(openItem)}
         editMove={editMove}
-        editLoadingId={editLoadingId}
         onOpenChange={(next) => {
           if (!next) {
             onOpenItem(null);
             setEditMove(null);
           }
         }}
-        onEditLocal={(id) => void handleEditLocal(id)}
+        onEditLocal={(id, row) => void handleEditLocal(id, row)}
         onCancelEdit={() => setEditMove(null)}
         onSavedEdit={() => {
           setEditMove(null);
@@ -2080,7 +2092,6 @@ function ItemDocumentsSheet({
   onCancelEdit,
   onSavedEdit,
   onDeletedLocal,
-  editLoadingId,
   editMove,
 }: {
   item: InventoryItem | null;
@@ -2089,11 +2100,10 @@ function ItemDocumentsSheet({
   localMoves: LocalOutboundRow[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onEditLocal: (localId: string) => void;
+  onEditLocal: (localId: string, row?: LocalOutboundRow) => void;
   onCancelEdit: () => void;
   onSavedEdit: () => void;
   onDeletedLocal: () => void;
-  editLoadingId: string | null;
   editMove: LocalMoveRow | null;
 }) {
   const [kindFilter, setKindFilter] = useState<"all" | "in" | "sale">("all");
@@ -2129,6 +2139,7 @@ function ItemDocumentsSheet({
     amountLabel?: string | null;
     basMove?: ItemMove;
     localId?: string;
+    localRow?: LocalOutboundRow;
     attachmentCount?: number;
   };
 
@@ -2193,6 +2204,7 @@ function ItemDocumentsSheet({
               ? `${r.unitPriceUah.toLocaleString("uk-UA")} ₴/${item.unit || "од."}`
               : null,
         localId: r.id || undefined,
+        localRow: r,
         attachmentCount: r.attachmentCount,
       };
     }),
@@ -2314,11 +2326,10 @@ function ItemDocumentsSheet({
                     ? editMove
                     : null
                 }
-                editLoading={
-                  doc.localId != null && editLoadingId === doc.localId
-                }
                 onEditLocal={
-                  doc.localId ? () => onEditLocal(doc.localId!) : undefined
+                  doc.localId
+                    ? () => onEditLocal(doc.localId!, doc.localRow)
+                    : undefined
                 }
                 onCancelEdit={onCancelEdit}
                 onSavedEdit={onSavedEdit}
@@ -2339,7 +2350,6 @@ function SheetDocumentRow({
   onCancelEdit,
   onSavedEdit,
   onDeletedLocal,
-  editLoading,
   editMove,
 }: {
   doc: {
@@ -2358,7 +2368,6 @@ function SheetDocumentRow({
   onCancelEdit?: () => void;
   onSavedEdit?: () => void;
   onDeletedLocal?: () => void;
-  editLoading?: boolean;
   editMove?: LocalMoveRow | null;
 }) {
   const inbound = doc.direction === "in";
@@ -2437,15 +2446,11 @@ function SheetDocumentRow({
                 e.stopPropagation();
                 onEditLocal?.();
               }}
-              disabled={deleting || editLoading}
+              disabled={deleting}
               className="inline-flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition"
               title="Редагувати"
             >
-              {editLoading ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Pencil className="h-3.5 w-3.5" />
-              )}
+              <Pencil className="h-3.5 w-3.5" />
             </button>
             <button
               type="button"
@@ -2453,7 +2458,7 @@ function SheetDocumentRow({
                 e.stopPropagation();
                 handleDelete();
               }}
-              disabled={deleting || editLoading}
+              disabled={deleting}
               className="inline-flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition"
               title="Видалити"
             >

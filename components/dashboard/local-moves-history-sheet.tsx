@@ -380,6 +380,7 @@ export function EditLocalMoveInline({
   const [buyerName, setBuyerName] = useState("");
   const [unitPrice, setUnitPrice] = useState("");
   const [fields, setFields] = useState<QuickIssueFieldOption[]>([]);
+  const [fieldsLoading, setFieldsLoading] = useState(false);
   const [counterparties, setCounterparties] = useState<string[]>([]);
   const [counterpartiesLoading, setCounterpartiesLoading] = useState(false);
   const [counterpartySearch, setCounterpartySearch] = useState("");
@@ -406,24 +407,50 @@ export function EditLocalMoveInline({
     setCounterpartyOpen(false);
     setCounterpartySearch("");
     setCounterparties([]);
-    void getQuickIssueOptions().then((res) => {
-      if (res.ok) setFields(res.fields);
-    });
+  }, [move.id, move.qty, move.fieldId, move.buyerName, move.unitPriceUah]);
+
+  useEffect(() => {
+    if (fieldId || !move.fieldName || fields.length === 0) return;
+    const hit = fields.find((f) => f.name === move.fieldName);
+    if (hit) setFieldId(hit.id);
+  }, [fieldId, move.fieldName, fields]);
+
+  async function ensureFieldsLoaded() {
+    if (fields.length > 0 || fieldsLoading) return;
+    setFieldsLoading(true);
+    const res = await getQuickIssueOptions();
+    setFieldsLoading(false);
+    if (res.ok) setFields(res.fields);
+  }
+
+  async function ensureCounterpartiesLoaded() {
     const needCp = isSale || (isInbound && move.itemCategory !== "harvest");
-    if (!needCp) return;
+    if (!needCp || counterparties.length > 0 || counterpartiesLoading) return;
     setCounterpartiesLoading(true);
     const load = isSale ? listBuyerSuggestions() : listSupplierSuggestions();
-    void load.then((res) => {
-      setCounterpartiesLoading(false);
-      if (!res.ok) return;
-      const names = [...res.names];
-      const current = (move.buyerName ?? "").trim();
-      if (current && !names.some((n) => n.toLowerCase() === current.toLowerCase())) {
-        names.unshift(current);
-      }
-      setCounterparties(names);
-    });
-  }, [move.id, move.itemCategory, move.buyerName, isSale, isInbound]);
+    const res = await load;
+    setCounterpartiesLoading(false);
+    if (!res.ok) return;
+    const names = [...res.names];
+    const current = (move.buyerName ?? "").trim();
+    if (current && !names.some((n) => n.toLowerCase() === current.toLowerCase())) {
+      names.unshift(current);
+    }
+    setCounterparties(names);
+  }
+
+  function openFieldPicker(open: boolean) {
+    setFieldOpen(open);
+    if (open) void ensureFieldsLoaded();
+  }
+
+  function openCounterpartyPicker(open: boolean) {
+    setCounterpartyOpen(open);
+    if (open) {
+      setCounterpartySearch("");
+      void ensureCounterpartiesLoaded();
+    }
+  }
 
   const selectedField = useMemo(
     () => fields.find((f) => f.id === fieldId) ?? null,
@@ -456,11 +483,6 @@ export function EditLocalMoveInline({
     ) {
       setCounterparties((prev) => [trimmed, ...prev]);
     }
-  }
-
-  function openCounterpartyPicker(open: boolean) {
-    setCounterpartyOpen(open);
-    if (open) setCounterpartySearch("");
   }
 
   function handleSave() {
@@ -698,7 +720,7 @@ export function EditLocalMoveInline({
                     </button>
                   ) : null}
                 </div>
-                <Popover open={fieldOpen} onOpenChange={setFieldOpen}>
+                <Popover open={fieldOpen} onOpenChange={openFieldPicker}>
                   <PopoverTrigger className={editComboboxTriggerClass}>
                     <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900">
                       {selectedField ? (
@@ -875,7 +897,7 @@ export function EditLocalMoveInline({
                   </button>
                 ) : null}
               </div>
-              <Popover open={fieldOpen} onOpenChange={setFieldOpen}>
+              <Popover open={fieldOpen} onOpenChange={openFieldPicker}>
                 <PopoverTrigger className={editComboboxTriggerClass}>
                   <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900">
                     {selectedField ? (

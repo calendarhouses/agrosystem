@@ -239,11 +239,7 @@ export function AccountingHub() {
                       пишемо — лише зберігаємо звʼязок у нас.
                     </p>
                   </div>
-                ) : (
-                  <p className="mb-3 text-[11px] leading-snug text-zinc-500">
-                    Звʼязок з BAS AGRO — лише у нашій базі, без запису в 1С.
-                  </p>
-                )}
+                ) : null}
                 <MappingStudioLazy initialCatalog={mappingCatalog} />
               </div>
             </div>

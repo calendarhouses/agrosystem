@@ -322,86 +322,72 @@ export function ReconciliationStudio({
           isMobile ? "px-3 py-2.5" : "px-4 py-3 sm:px-6"
         )}
       >
-        <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-2">
-          {counts.totalOpen > 0 ? (
-            <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-bold text-amber-900 ring-1 ring-amber-200/80 sm:text-[11px]">
-              {isMobile
-                ? counts.totalOpen
-                : `${counts.totalOpen} потребують уваги`}
-            </span>
-          ) : (
-            <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold text-emerald-800 ring-1 ring-emerald-200/80 sm:text-[11px]">
-              {isMobile ? "OK" : "Усе зведено"}
-            </span>
-          )}
-
-          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => void handleCopy()}
-              aria-label="Скопіювати"
-              className="h-9 gap-1.5 rounded-xl border-[#E5DFD3] bg-white/90"
-            >
-              <ClipboardCopy className="h-3.5 w-3.5" />
-              {isMobile ? null : "Скопіювати"}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleCsv}
-              className="h-9 gap-1.5 rounded-xl border-[#E5DFD3] bg-white/90"
-            >
-              <Download className="h-3.5 w-3.5" />
-              CSV
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={pending && busyKey === "workbook"}
-              onClick={handleWorkbook}
-              className="h-9 gap-1.5 rounded-xl border-[#E5DFD3] bg-white/90"
-            >
-              {pending && busyKey === "workbook" ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <FileSpreadsheet className="h-3.5 w-3.5" />
-              )}
-              Excel
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={pending && busyKey === "relink"}
-              onClick={handleRelink}
-              title="Після того, як поля вже заведені або розділені в BAS AGRO"
-              className="h-9 gap-1.5 rounded-xl border-[#E5DFD3] bg-white/90"
-            >
-              {pending && busyKey === "relink" ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Link2 className="h-3.5 w-3.5" />
-              )}
-              Підтягнути
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={refreshing || pending}
-              onClick={() => void handleRefresh()}
-              className="h-9 gap-1.5 rounded-xl border-[#E5DFD3] bg-white/90"
-            >
-              <RefreshCw
-                className={cn("h-3.5 w-3.5", refreshing && "animate-spin")}
-              />
-              Оновити
-            </Button>
-          </div>
+        <div className="mx-auto flex w-full max-w-7xl flex-nowrap items-center gap-1.5 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] sm:gap-2 [&::-webkit-scrollbar]:hidden">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void handleCopy()}
+            aria-label="Скопіювати"
+            className="h-9 shrink-0 gap-1.5 rounded-xl border-[#E5DFD3] bg-white/90"
+          >
+            <ClipboardCopy className="h-3.5 w-3.5" />
+            {isMobile ? null : "Скопіювати"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleCsv}
+            className="h-9 shrink-0 gap-1.5 rounded-xl border-[#E5DFD3] bg-white/90"
+          >
+            <Download className="h-3.5 w-3.5" />
+            CSV
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={pending && busyKey === "workbook"}
+            onClick={handleWorkbook}
+            className="h-9 shrink-0 gap-1.5 rounded-xl border-[#E5DFD3] bg-white/90"
+          >
+            {pending && busyKey === "workbook" ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <FileSpreadsheet className="h-3.5 w-3.5" />
+            )}
+            Excel
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={pending && busyKey === "relink"}
+            onClick={handleRelink}
+            title="Після того, як поля вже заведені або розділені в BAS AGRO"
+            className="h-9 shrink-0 gap-1.5 rounded-xl border-[#E5DFD3] bg-white/90"
+          >
+            {pending && busyKey === "relink" ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Link2 className="h-3.5 w-3.5" />
+            )}
+            Підтягнути
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={refreshing || pending}
+            onClick={() => void handleRefresh()}
+            className="h-9 shrink-0 gap-1.5 rounded-xl border-[#E5DFD3] bg-white/90"
+          >
+            <RefreshCw
+              className={cn("h-3.5 w-3.5", refreshing && "animate-spin")}
+            />
+            Оновити
+          </Button>
         </div>
       </header>
 

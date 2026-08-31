@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { format } from "date-fns";
 import { uk } from "date-fns/locale";
 import type { DateRange } from "react-day-picker";
@@ -42,7 +42,6 @@ import {
 } from "@/app/export/actions";
 import {
   deleteLocalMove,
-  getLocalMoveById,
   type LocalMoveRow,
 } from "@/app/admin/inventory/actions";
 import { AttachmentDropzone } from "@/components/dashboard/attachment-dropzone";
@@ -66,10 +65,9 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import {
-  cachedFetchJson,
+  cachedCall,
   invalidateAppCache,
   peekAppCache,
-  writeAppCache,
 } from "@/lib/client-data-cache";
 import { nextDateRangeSelection } from "@/lib/date-range-select";
 import {
@@ -81,12 +79,22 @@ import {
   type FinancePeriod,
 } from "@/lib/finance-period";
 import { downloadAccountantPackageExcel } from "@/lib/inventory-excel-export";
+import { localMoveFromQueueItem } from "@/lib/local-move-edit";
 import { useSeasonStore } from "@/lib/season-store";
 import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
 
 const SIDEBAR_COLLAPSED_KEY = "agrosystem-sidebar-collapsed";
 const SEASON_OPTIONS = [2024, 2025, 2026, 2027];
+
+type QueueCachePayload = {
+  ok: boolean;
+  items?: AccountantQueueItem[];
+  stats?: AccountantQueueStats | null;
+  seasonYear?: number;
+  startIso?: string;
+  endIso?: string;
+};
 
 const QUEUE_TABS: {
   id: AccountantQueueTab;
@@ -317,14 +325,15 @@ function QueueCheck({
   );
 }
 
-function QueueInvoiceControl({
+function QueueInvoiceTrigger({
   item,
-  onChanged,
+  open,
+  onToggle,
 }: {
   item: AccountantQueueItem;
-  onChanged: () => void;
+  open: boolean;
+  onToggle: () => void;
 }) {
-  const [open, setOpen] = useState(false);
   const entityType =
     item.source === "fuel" ? "fuel_transaction" : "inventory_move";
 
@@ -339,44 +348,66 @@ function QueueInvoiceControl({
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger
-        className="inline-flex h-8 items-center gap-1 rounded-full bg-zinc-100 px-2 text-[11px] font-semibold text-zinc-500 transition hover:bg-[#276749]/10 hover:text-[#276749]"
-        title="Додати накладну"
-        onClick={(e) => e.stopPropagation()}
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle();
+      }}
+      className={cn(
+        "inline-flex h-8 items-center gap-1 rounded-full px-2 text-[11px] font-semibold transition",
+        open
+          ? "bg-[#276749]/15 text-[#276749]"
+          : "bg-zinc-100 text-zinc-500 hover:bg-[#276749]/10 hover:text-[#276749]"
+      )}
+      title="Додати накладну"
+      aria-expanded={open}
+    >
+      <Plus className="h-3.5 w-3.5" />
+      <Paperclip className="h-3.5 w-3.5" />
+    </button>
+  );
+}
+
+function QueueInvoicePanel({
+  item,
+  onClose,
+  onChanged,
+}: {
+  item: AccountantQueueItem;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const entityType =
+    item.source === "fuel" ? "fuel_transaction" : "inventory_move";
+
+  return (
+    <div
+      className="border-t border-[#E5DFD3]/60 bg-zinc-50/80 px-3 py-3"
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <p className="mb-2 text-[11px] font-semibold text-zinc-600">
+        Накладна до операції
+      </p>
+      <AttachmentDropzone
+        entityType={entityType}
+        entityId={item.id}
+        compact
+      />
+      <button
+        type="button"
+        className="mt-2 w-full rounded-xl bg-[#276749] py-2 text-[11px] font-bold text-white"
+        onClick={() => {
+          onClose();
+          invalidateAppCache("api:inventory");
+          invalidateAppCache("api:fuel");
+          invalidateAppCache("api:accounting");
+          onChanged();
+        }}
       >
-        <Plus className="h-3.5 w-3.5" />
-        <Paperclip className="h-3.5 w-3.5" />
-      </PopoverTrigger>
-      <PopoverContent
-        align="end"
-        sideOffset={6}
-        className="z-[120] w-[min(100vw-2rem,18rem)] rounded-2xl border border-[#E5DFD3] bg-white p-3 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <p className="mb-2 text-[11px] font-semibold text-zinc-600">
-          Накладна до операції
-        </p>
-        <AttachmentDropzone
-          entityType={entityType}
-          entityId={item.id}
-          compact
-        />
-        <button
-          type="button"
-          className="mt-2 w-full rounded-xl bg-[#276749] py-2 text-[11px] font-bold text-white"
-          onClick={() => {
-            setOpen(false);
-            invalidateAppCache("api:inventory");
-            invalidateAppCache("api:fuel");
-            invalidateAppCache("api:accounting");
-            onChanged();
-          }}
-        >
-          Готово
-        </button>
-      </PopoverContent>
-    </Popover>
+        Готово
+      </button>
+    </div>
   );
 }
 
@@ -416,11 +447,7 @@ export function AccountantHubView({
     ? "api:accounting:queue"
     : `api:accounting:queue:${seasonYear}:${isoRange.startIso}:${isoRange.endIso}`;
 
-  const seedQueue = peekAppCache<{
-    ok?: boolean;
-    items?: AccountantQueueItem[];
-    stats?: AccountantQueueStats | null;
-  }>(queueCacheKey);
+  const seedQueue = peekAppCache<QueueCachePayload>(queueCacheKey);
 
   const [items, setItems] = useState<AccountantQueueItem[]>(
     seedQueue?.ok ? (seedQueue.items ?? []) : []
@@ -436,6 +463,7 @@ export function AccountantHubView({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pending, startTransition] = useTransition();
+  const loadGen = useRef(0);
 
   const [editInventory, setEditInventory] = useState<LocalMoveRow | null>(null);
   const [editFuel, setEditFuel] = useState<AccountantQueueItem | null>(null);
@@ -449,62 +477,71 @@ export function AccountantHubView({
   const [deleteTarget, setDeleteTarget] = useState<AccountantQueueItem | null>(
     null
   );
+  const [invoiceOpenId, setInvoiceOpenId] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    const hadSeed = Boolean(
-      peekAppCache<{ ok?: boolean }>(queueCacheKey)?.ok
-    );
-    if (!hadSeed) setLoading(true);
-    setError(null);
+  const load = useCallback(
+    async (opts?: { force?: boolean }) => {
+      const gen = ++loadGen.current;
+      const force = opts?.force === true;
 
-    const url = `/api/accounting/queue?season=${seasonYear}&start=${encodeURIComponent(isoRange.startIso)}&end=${encodeURIComponent(isoRange.endIso)}`;
-
-    try {
-      const { data } = await cachedFetchJson<{
-        ok?: boolean;
-        items?: AccountantQueueItem[];
-        stats?: AccountantQueueStats | null;
-        error?: string;
-      }>(queueCacheKey, url, undefined, { force: !hadSeed });
-
-      if (data.ok === false) {
-        throw new Error(data.error || "Не вдалося завантажити чергу бухгалтера");
+      if (!force) {
+        const cached = peekAppCache<QueueCachePayload>(queueCacheKey);
+        if (cached?.ok) {
+          setItems(cached.items ?? []);
+          setStats(cached.stats ?? null);
+          setLoading(false);
+          setError(null);
+          return;
+        }
       }
-      setItems(data.items ?? []);
-      setStats(data.stats ?? null);
-      setSelected(new Set());
-    } catch (err) {
-      // Fallback на server action, якщо API недоступний
-      const res = await listAccountantQueue({
-        season: String(seasonYear),
-        startIso: isoRange.startIso,
-        endIso: isoRange.endIso,
-      });
-      if (!res.ok) {
-        setError(res.error);
+
+      setLoading(true);
+      setError(null);
+
+      try {
+        const { data } = await cachedCall(
+          queueCacheKey,
+          async () => {
+            const res = await listAccountantQueue({
+              season: String(seasonYear),
+              startIso: isoRange.startIso,
+              endIso: isoRange.endIso,
+            });
+            if (!res.ok) {
+              throw new Error(res.error);
+            }
+            return {
+              ok: true as const,
+              items: res.data.items,
+              stats: res.data.stats,
+              seasonYear,
+              startIso: isoRange.startIso,
+              endIso: isoRange.endIso,
+            } satisfies QueueCachePayload;
+          },
+          { force: true }
+        );
+
+        if (gen !== loadGen.current) return;
+        setItems(data.items ?? []);
+        setStats(data.stats ?? null);
+        setSelected(new Set());
+      } catch (err) {
+        if (gen !== loadGen.current) return;
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Не вдалося завантажити чергу бухгалтера"
+        );
         setItems([]);
         setStats(null);
         setSelected(new Set());
-        return;
+      } finally {
+        if (gen === loadGen.current) setLoading(false);
       }
-      writeAppCache(queueCacheKey, {
-        ok: true,
-        seasonYear,
-        items: res.data.items,
-        stats: res.data.stats,
-        startIso: isoRange.startIso,
-        endIso: isoRange.endIso,
-      });
-      setItems(res.data.items);
-      setStats(res.data.stats);
-      setSelected(new Set());
-      if (err instanceof Error && !hadSeed) {
-        /* API впав, але action ок */
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [seasonYear, isoRange.startIso, isoRange.endIso, queueCacheKey]);
+    },
+    [queueCacheKey, seasonYear, isoRange.startIso, isoRange.endIso]
+  );
 
   const loadArchive = useCallback(async () => {
     setArchiveLoading(true);
@@ -515,8 +552,20 @@ export function AccountantHubView({
   }, [seasonYear]);
 
   useEffect(() => {
+    const cached = peekAppCache<QueueCachePayload>(queueCacheKey);
+    if (cached?.ok) {
+      setItems(cached.items ?? []);
+      setStats(cached.stats ?? null);
+      setLoading(false);
+    } else {
+      setItems([]);
+      setStats(null);
+      setLoading(true);
+    }
+    setSelected(new Set());
+    setError(null);
     void load();
-  }, [load]);
+  }, [load, queueCacheKey]);
 
   useEffect(() => {
     if (archiveOpen) void loadArchive();
@@ -619,7 +668,7 @@ export function AccountantHubView({
         `Позначено ${res.data.inventory + res.data.fuel} операцій`
       );
       setConfirmOpen(false);
-      await load();
+      await load({ force: true });
       if (archiveOpen) await loadArchive();
     });
   }
@@ -650,17 +699,9 @@ export function AccountantHubView({
     }
     if (item.source === "inventory") {
       setEditFuel(null);
-      setEditInventory(null);
       setEditingId(item.id);
-      setEditLoadingId(item.id);
-      const res = await getLocalMoveById(item.id);
       setEditLoadingId(null);
-      if (!res.ok) {
-        toast.error(res.error);
-        setEditingId(null);
-        return;
-      }
-      setEditInventory(res.move);
+      setEditInventory(localMoveFromQueueItem(item));
       return;
     }
     setEditInventory(null);
@@ -705,7 +746,7 @@ export function AccountantHubView({
       toast.success("Паливо оновлено");
       closeInlineEdit();
       bumpSyncedCaches();
-      await load();
+      await load({ force: true });
     });
   }
 
@@ -741,7 +782,7 @@ export function AccountantHubView({
       toast.success("Видалено · запис в архіві сезону");
       setDeleteTarget(null);
       bumpSyncedCaches();
-      await load();
+      await load({ force: true });
       if (archiveOpen) await loadArchive();
     });
   }
@@ -773,66 +814,10 @@ export function AccountantHubView({
       >
         <div className="mx-auto w-full max-w-7xl space-y-2.5">
           {!embedded ? (
-            <div className="flex items-center gap-2">
-              <h1 className="min-w-0 flex-1 truncate text-base font-extrabold tracking-tight text-zinc-900 sm:text-2xl lg:text-3xl">
-                Бухгалтерія
-              </h1>
-              <button
-                type="button"
-                onClick={() => void load()}
-                disabled={loading || pending}
-                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#E0DBD0] bg-white text-zinc-600 shadow-sm disabled:opacity-50 sm:h-9 sm:w-9 sm:rounded-full"
-                aria-label="Оновити"
-              >
-                <RefreshCw
-                  className={cn("h-4 w-4", loading && "animate-spin")}
-                />
-              </button>
-              <Button
-                type="button"
-                size="sm"
-                disabled={loading || pending || packageSummary.count === 0}
-                onClick={() => handleDownload(packageSummary.rows)}
-                className={cn(
-                  "h-10 shrink-0 rounded-xl px-3 font-bold text-white sm:h-9 sm:rounded-full sm:px-4",
-                  "bg-gradient-to-r from-[#1f5239] via-[#276749] to-[#2f7a52]"
-                )}
-              >
-                <Download className="h-3.5 w-3.5" />
-                <span className="sm:hidden">{packageSummary.count || "—"}</span>
-                <span className="hidden sm:inline">
-                  Excel · {packageSummary.count || "—"}
-                </span>
-              </Button>
-            </div>
-          ) : (
-            <div className="flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => void load()}
-                disabled={loading || pending}
-                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#E0DBD0] bg-white text-zinc-600 shadow-sm disabled:opacity-50"
-                aria-label="Оновити"
-              >
-                <RefreshCw
-                  className={cn("h-4 w-4", loading && "animate-spin")}
-                />
-              </button>
-              <Button
-                type="button"
-                size="sm"
-                disabled={loading || pending || packageSummary.count === 0}
-                onClick={() => handleDownload(packageSummary.rows)}
-                className={cn(
-                  "h-10 shrink-0 rounded-xl px-3 font-bold text-white",
-                  "bg-gradient-to-r from-[#1f5239] via-[#276749] to-[#2f7a52]"
-                )}
-              >
-                <Download className="h-3.5 w-3.5" />
-                {packageSummary.count || "—"}
-              </Button>
-            </div>
-          )}
+            <h1 className="truncate text-base font-extrabold tracking-tight text-zinc-900 sm:text-2xl lg:text-3xl">
+              Бухгалтерія
+            </h1>
+          ) : null}
 
           {/* Ряд 1: сезон + діапазон (як у Складі) */}
           <div className="flex items-center gap-2">
@@ -1013,23 +998,50 @@ export function AccountantHubView({
             </Popover>
           </div>
 
-          {/* Ряд 2: швидкі періоди */}
-          <div className="flex min-w-0 flex-1 items-center gap-0.5 rounded-xl bg-[#EDE8DF] p-0.5">
-            {FINANCE_QUICK_PERIODS.map((option) => (
-              <button
-                key={option}
-                type="button"
-                onClick={() => applyPeriod(option)}
-                className={cn(
-                  "h-11 min-w-0 flex-1 rounded-[10px] px-1 text-[11px] font-semibold transition-all sm:px-2 sm:text-xs md:h-8",
-                  period === option
-                    ? "bg-[#276749] text-white shadow-[0_4px_12px_-4px_rgba(39,103,73,0.55)]"
-                    : "text-zinc-500"
-                )}
-              >
-                {option}
-              </button>
-            ))}
+          {/* Ряд 2: швидкі періоди + дії */}
+          <div className="flex items-center gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-0.5 rounded-xl bg-[#EDE8DF] p-0.5">
+              {FINANCE_QUICK_PERIODS.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => applyPeriod(option)}
+                  className={cn(
+                    "h-11 min-w-0 flex-1 rounded-[10px] px-1 text-[11px] font-semibold transition-all sm:px-2 sm:text-xs md:h-8",
+                    period === option
+                      ? "bg-[#276749] text-white shadow-[0_4px_12px_-4px_rgba(39,103,73,0.55)]"
+                      : "text-zinc-500"
+                  )}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => void load({ force: true })}
+              disabled={loading || pending}
+              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#E0DBD0] bg-white text-zinc-600 shadow-sm disabled:opacity-50 md:h-8 md:w-8"
+              aria-label="Оновити"
+            >
+              <RefreshCw
+                className={cn("h-4 w-4", loading && "animate-spin")}
+              />
+            </button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={loading || pending || packageSummary.count === 0}
+              onClick={() => handleDownload(packageSummary.rows)}
+              className={cn(
+                "h-11 shrink-0 rounded-xl px-3 font-bold text-white md:h-8",
+                "bg-gradient-to-r from-[#1f5239] via-[#276749] to-[#2f7a52]"
+              )}
+            >
+              <Download className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Скачати</span>
+              <span className="sm:hidden">{packageSummary.count || "—"}</span>
+            </Button>
           </div>
         </div>
       </header>
@@ -1386,7 +1398,7 @@ export function AccountantHubView({
                               onSaved={() => {
                                 closeInlineEdit();
                                 bumpSyncedCaches();
-                                void load();
+                                void load({ force: true });
                               }}
                             />
                           </div>
@@ -1588,9 +1600,14 @@ export function AccountantHubView({
                                   </p>
                                 </div>
                                 <div className="flex shrink-0 items-center gap-0.5">
-                                  <QueueInvoiceControl
+                                  <QueueInvoiceTrigger
                                     item={item}
-                                    onChanged={() => void load()}
+                                    open={invoiceOpenId === item.id}
+                                    onToggle={() =>
+                                      setInvoiceOpenId((prev) =>
+                                        prev === item.id ? null : item.id
+                                      )
+                                    }
                                   />
                                   <button
                                     type="button"
@@ -1615,6 +1632,13 @@ export function AccountantHubView({
                         </motion.div>
                       )}
                     </AnimatePresence>
+                    {invoiceOpenId === item.id && !item.hasAttachment ? (
+                      <QueueInvoicePanel
+                        item={item}
+                        onClose={() => setInvoiceOpenId(null)}
+                        onChanged={() => void load({ force: true })}
+                      />
+                    ) : null}
                   </li>
                 );
               })}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { ChevronLeft, KeyRound, Loader2, LogOut, Save } from "lucide-react";
+import { KeyRound, Loader2, LogOut, Save } from "lucide-react";
 import { toast } from "sonner";
 
 import { logoutAction } from "@/app/login/actions";
@@ -90,13 +90,13 @@ export function ProfilePanelContent({
   }
 
   const inputClass = dark
-    ? "h-9 border-zinc-600 bg-zinc-900/90 text-zinc-100 placeholder:text-zinc-600 disabled:cursor-default disabled:border-zinc-700 disabled:bg-zinc-900/70 disabled:text-zinc-300 disabled:opacity-100"
-    : "bg-muted/40 disabled:opacity-100";
+    ? "h-11 border-zinc-600 bg-zinc-900/90 px-3.5 text-base text-zinc-100 placeholder:text-zinc-600 disabled:cursor-default disabled:border-zinc-700 disabled:bg-zinc-900/70 disabled:text-zinc-300 disabled:opacity-100"
+    : "h-11 bg-muted/40 px-3.5 text-base disabled:opacity-100";
 
   return (
     <div
       className={cn(
-        "custom-scrollbar space-y-3.5 px-4 py-3.5",
+        "custom-scrollbar space-y-4 px-4 py-4",
         className
       )}
     >
@@ -164,7 +164,7 @@ export function ProfilePanelContent({
             disabled={!loginDirty || pendingLogin}
             onClick={() => void saveLogin()}
             className={cn(
-              "h-9 shrink-0 px-2.5",
+              "h-11 shrink-0 px-3",
               dark &&
                 "border border-emerald-500/30 bg-emerald-600/90 text-white hover:bg-emerald-600 hover:ring-2 hover:ring-emerald-500/40 disabled:opacity-40"
             )}
@@ -193,7 +193,7 @@ export function ProfilePanelContent({
           type="button"
           onClick={() => setPasswordOpen(true)}
           className={cn(
-            "flex h-auto w-full items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-colors",
+            "flex h-auto w-full items-center gap-2.5 rounded-xl border px-3.5 py-3 text-left transition-colors",
             dark
               ? "border-zinc-700 bg-zinc-900/60 text-zinc-200 hover:border-zinc-600 hover:bg-zinc-800/80 hover:ring-1 hover:ring-emerald-500/30"
               : "border-border bg-background hover:bg-muted/40"
@@ -212,7 +212,7 @@ export function ProfilePanelContent({
       ) : (
         <div
           className={cn(
-            "space-y-2.5 rounded-xl border p-3",
+            "space-y-3 rounded-xl border p-3.5",
             dark
               ? "border-zinc-700 bg-zinc-900/50"
               : "border-border/60 bg-muted/20"
@@ -327,7 +327,7 @@ function Field({
   children: ReactNode;
 }) {
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2">
       <Label
         className={cn(
           "text-[10px] font-semibold tracking-wider uppercase",
@@ -407,29 +407,17 @@ export function ProfileSheet(props: ProfilePopoverProps) {
 
 type MobileProfilePanelProps = {
   me: AppActor;
-  onBack: () => void;
   onUpdated: (next: AppActor) => void;
-  backLabel?: string;
 };
 
 /** Профіль у мобільному drawer «Інше» */
 export function MobileProfilePanel({
   me,
-  onBack,
   onUpdated,
-  backLabel = "Назад",
 }: MobileProfilePanelProps) {
   return (
     <div className="pb-[calc(0.75rem+var(--safe-bottom))]">
-      <div className="border-b border-zinc-800 px-4 pb-3 pr-14 pt-0.5">
-        <button
-          type="button"
-          onClick={onBack}
-          className="mb-2 inline-flex items-center gap-1.5 text-sm font-medium text-zinc-400 active:text-zinc-200"
-        >
-          <ChevronLeft className="h-4 w-4" />
-          {backLabel}
-        </button>
+      <div className="border-b border-zinc-800 px-4 pb-3 pr-14 pt-1">
         <h2 className="text-lg font-bold text-zinc-50">Профіль</h2>
       </div>
       <ProfilePanelContent
