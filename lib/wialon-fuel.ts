@@ -8,6 +8,7 @@ import {
   extractTimedFuelSamples,
   fuelConsumedFromSamples,
 } from "@/lib/wialon-fuel-decode";
+import { resolvePlausibleDayFuelConsumed } from "@/lib/equipment-fuel-consumed";
 import {
   extractFuelLevelsFromMessages,
   getWialonUnitSensors,
@@ -16,9 +17,6 @@ import {
   type WialonTrackMessage,
   wialonLogin,
 } from "@/lib/wialon";
-
-/** Немовірна витрата за інтервал — сміття датчика */
-const MAX_PLAUSIBLE_CONSUMED_L = 800;
 
 export type WialonFuelConsumptionResult = {
   /** Літри спаленого палива за ДРП; null — немає даних / помилка */
@@ -47,7 +45,8 @@ function samplesFromMessages(
  * з журналом палива і карткою техніки.
  */
 export function estimateFuelConsumedByFls(
-  samples: FuelSample[]
+  samples: FuelSample[],
+  options?: { tankVolumeLiters?: number | null; workHours?: number | null }
 ): WialonFuelConsumptionResult {
   const { consumed, start, end, filled } = fuelConsumedFromSamples(samples);
 
@@ -58,12 +57,16 @@ export function estimateFuelConsumedByFls(
     sampleCount: samples.length,
   };
 
-  if (consumed == null) return { ...base, consumedLiters: null };
-  if (consumed < 0) return { ...base, consumedLiters: 0 };
-  if (consumed > MAX_PLAUSIBLE_CONSUMED_L) {
-    return { ...base, consumedLiters: null };
-  }
-  return { ...base, consumedLiters: consumed };
+  const plausible = resolvePlausibleDayFuelConsumed({
+    start,
+    end,
+    filled,
+    tankVolumeLiters: options?.tankVolumeLiters,
+    workHours: options?.workHours,
+  });
+
+  if (plausible == null) return { ...base, consumedLiters: null };
+  return { ...base, consumedLiters: plausible };
 }
 
 /**

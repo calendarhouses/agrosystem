@@ -1,6 +1,7 @@
 import { length as turfLength, lineString } from "@turf/turf";
 import type { Position } from "geojson";
 
+import { resolvePlausibleDayFuelConsumed } from "@/lib/equipment-fuel-consumed";
 import { fuelConsumedFromSamples } from "@/lib/wialon-fuel-decode";
 
 /** Семпл повідомлення для денної аналітики */
@@ -409,7 +410,7 @@ function stableFuelEndpoints(
     return { fuelStart: null, fuelEnd: null, fuelDelta: null };
   }
   if (fuelDelta != null && Math.abs(fuelDelta) > MAX_PLAUSIBLE_DELTA) {
-    fuelDelta = null;
+    return { fuelStart: null, fuelEnd: null, fuelDelta: null };
   }
 
   return { fuelStart, fuelEnd, fuelDelta };
@@ -450,10 +451,6 @@ export function buildDayAnalyticsFromSamples(
     options?.tankVolumeLiters
   );
   const fuelFilled = fuelSeries.filled;
-  const fuelConsumed =
-    fuelStart != null && fuelEnd != null
-      ? Math.max(0, Math.round((fuelStart - fuelEnd + fuelFilled) * 10) / 10)
-      : null;
 
   const hoursIdling = sumConditionHours(
     samples,
@@ -470,6 +467,14 @@ export function buildDayAnalyticsFromSamples(
   const workHours = hasIgnitionSensor
     ? sumConditionHours(samples, (s) => s.ignition === true, 60)
     : sumConditionHours(samples, (s) => s.speed >= IDLE_MAX_SPEED, 60);
+
+  const fuelConsumed = resolvePlausibleDayFuelConsumed({
+    start: fuelStart,
+    end: fuelEnd,
+    filled: fuelFilled,
+    tankVolumeLiters: options?.tankVolumeLiters,
+    workHours,
+  });
 
   const summary: DayAnalyticsSummary = {
     distanceKm: computeDistanceKm(samples),

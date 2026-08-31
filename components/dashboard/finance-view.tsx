@@ -752,211 +752,9 @@ export function FinanceView({
               );
             })}
           </div>
-
-          <div className="mt-2.5 space-y-2.5">
-            {/* 1: сезон + діапазон */}
-            <div className="flex items-center gap-2">
-              <Popover
-                open={seasonOpen}
-                onOpenChange={(next) => {
-                  setSeasonOpen(next);
-                  if (next) {
-                    setRangeOpen(false);
-                    setPeriod("Сезон");
-                  }
-                }}
-              >
-                <PopoverTrigger
-                  className={cn(
-                    "inline-flex h-11 min-w-0 flex-1 items-center gap-2 rounded-xl border px-2.5 text-left text-sm font-semibold transition-all",
-                    period === "Сезон"
-                      ? "border-[#276749] bg-[#276749] text-white shadow-[0_6px_16px_-6px_rgba(39,103,73,0.55)]"
-                      : "border-[#E0DBD0] bg-white text-zinc-700 hover:border-[#276749]/35"
-                  )}
-                  aria-label="Обрати агросезон"
-                >
-                  <span
-                    className={cn(
-                      "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg",
-                      period === "Сезон"
-                        ? "bg-white/15 text-white"
-                        : "bg-[#276749]/12 text-[#276749]"
-                    )}
-                  >
-                    <Sprout className="h-3.5 w-3.5" />
-                  </span>
-                  <span className="truncate tabular-nums">
-                    Сезон {seasonYear}
-                  </span>
-                  <ChevronDown
-                    className={cn(
-                      "ml-auto h-3.5 w-3.5 shrink-0",
-                      period === "Сезон" ? "text-white/80" : "text-zinc-400"
-                    )}
-                  />
-                </PopoverTrigger>
-                <PopoverContent
-                  align="start"
-                  sideOffset={6}
-                  sheetOnMobile={false}
-                  className="z-[100] w-[min(100vw-2rem,22rem)] rounded-2xl border border-zinc-200 bg-white p-2 shadow-xl"
-                >
-                  <p className="px-2.5 pt-1.5 pb-2 text-[11px] leading-snug text-zinc-500">
-                    Фільтр фінансів за агросезоном (березень–лютий).
-                  </p>
-                  <div className="space-y-1">
-                    {SEASON_OPTIONS.map((year) => (
-                      <button
-                        key={year}
-                        type="button"
-                        onClick={() => selectSeasonYear(year)}
-                        className={cn(
-                          "flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left transition-colors",
-                          seasonYear === year
-                            ? "bg-[#276749] text-white"
-                            : "text-zinc-800 hover:bg-zinc-50"
-                        )}
-                      >
-                        <span className="text-sm font-semibold">
-                          Сезон {year}
-                        </span>
-                        <span
-                          className={cn(
-                            "text-[11px] font-medium",
-                            seasonYear === year
-                              ? "text-white/75"
-                              : "text-zinc-400"
-                          )}
-                        >
-                          бер {year} – лют {year + 1}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </PopoverContent>
-              </Popover>
-
-              <Popover
-                open={rangeOpen}
-                onOpenChange={(next) => {
-                  setRangeOpen(next);
-                  if (next) {
-                    setSeasonOpen(false);
-                    setPeriod("Діапазон");
-                  }
-                }}
-              >
-                <PopoverTrigger
-                  className={cn(
-                    "inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl border px-3 text-sm font-semibold transition-all",
-                    period === "Діапазон"
-                      ? "border-[#276749] bg-[#276749] text-white shadow-[0_6px_16px_-6px_rgba(39,103,73,0.55)]"
-                      : "border-[#E0DBD0] bg-white text-zinc-700 hover:border-[#276749]/35"
-                  )}
-                >
-                  <CalendarIcon
-                    className={cn(
-                      "h-3.5 w-3.5 shrink-0",
-                      period === "Діапазон" ? "text-white/90" : "text-zinc-500"
-                    )}
-                    aria-hidden
-                  />
-                  {period === "Діапазон" && customRange?.from
-                    ? `${format(customRange.from, "d MMM", { locale: uk })}${
-                        customRange.to
-                          ? ` – ${format(customRange.to, "d MMM", { locale: uk })}`
-                          : " → …"
-                      }`
-                    : "Діапазон"}
-                </PopoverTrigger>
-                <PopoverContent
-                  align="end"
-                  sideOffset={6}
-                  sheetOnMobile={false}
-                  className="z-[100] w-[min(100vw-1.5rem,22.5rem)] rounded-2xl border border-zinc-200 bg-white p-3 shadow-xl"
-                >
-                  <p className="mb-2 px-1 text-[11px] text-zinc-500">
-                    {customRange?.from && customRange?.to
-                      ? "Натисніть дату, щоб обрати новий початок"
-                      : customRange?.from
-                        ? "Тепер оберіть кінець періоду"
-                        : "Оберіть початок, потім кінець періоду"}
-                  </p>
-                  <Calendar
-                    mode="range"
-                    numberOfMonths={1}
-                    selected={customRange}
-                    defaultMonth={customRange?.from ?? new Date()}
-                    onSelect={(range, triggerDate) => {
-                      setPeriod("Діапазон");
-                      setCustomRange(
-                        nextDateRangeSelection(customRange, range, triggerDate)
-                      );
-                    }}
-                    locale={uk}
-                    className="w-full rounded-xl [--cell-size:2.5rem]"
-                  />
-                  <div className="mt-3 flex items-center gap-2 border-t border-zinc-100 pt-3">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCustomRange(undefined);
-                        setPeriod("Сезон");
-                        setRangeOpen(false);
-                      }}
-                      className="h-11 flex-1 rounded-xl border border-zinc-200 bg-white text-sm font-semibold text-zinc-600 hover:bg-zinc-50"
-                    >
-                      Скинути
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!customRange?.from}
-                      onClick={() => {
-                        if (!customRange?.from) return;
-                        if (!customRange.to) {
-                          setCustomRange({
-                            from: customRange.from,
-                            to: customRange.from,
-                          });
-                        }
-                        setPeriod("Діапазон");
-                        setRangeOpen(false);
-                      }}
-                      className="h-11 flex-[1.4] rounded-xl bg-[#276749] text-sm font-bold text-white hover:bg-[#22543d] disabled:opacity-50"
-                    >
-                      Застосувати
-                    </button>
-                  </div>
-                </PopoverContent>
-              </Popover>
-
-              {overviewLoading ? (
-                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-zinc-400" />
-              ) : null}
-            </div>
-
-            {/* 2: швидкі періоди */}
-            <div className="flex min-w-0 items-center gap-0.5 rounded-xl bg-[#EDE8DF] p-0.5">
-              {FINANCE_QUICK_PERIODS.map((tab) => (
-                <button
-                  key={tab}
-                  type="button"
-                  onClick={() => setPeriod(tab)}
-                  className={cn(
-                    "h-11 min-w-0 flex-1 rounded-[10px] px-1 text-[11px] font-semibold transition-all sm:px-2 sm:text-xs",
-                    period === tab
-                      ? "bg-[#276749] text-white shadow-[0_4px_12px_-4px_rgba(39,103,73,0.55)]"
-                      : "text-zinc-500 hover:bg-white/70 hover:text-zinc-800"
-                  )}
-                >
-                  {tab}
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
       ) : (
-        <header className="sticky top-0 z-40 w-full border-b border-[#E5DFD3]/80 bg-[#F4F1EA]/80 px-6 py-4 backdrop-blur-2xl">
+        <header className="w-full border-b border-[#E5DFD3]/80 bg-[#F4F1EA]/80 px-6 py-4 backdrop-blur-2xl">
           <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0">
               <h1 className="truncate text-2xl font-extrabold tracking-tight text-zinc-900 sm:text-3xl">
@@ -1165,6 +963,208 @@ export function FinanceView({
       )}
 
       <div className="mx-auto w-full max-w-7xl space-y-5 px-4 py-4 sm:space-y-6 sm:px-6 sm:py-6 lg:px-8">
+        {isMobile ? (
+          <div className="space-y-2.5">
+            <div className="flex items-center gap-2">
+              <Popover
+                open={seasonOpen}
+                onOpenChange={(next) => {
+                  setSeasonOpen(next);
+                  if (next) {
+                    setRangeOpen(false);
+                    setPeriod("Сезон");
+                  }
+                }}
+              >
+                <PopoverTrigger
+                  className={cn(
+                    "inline-flex h-11 min-w-0 flex-1 items-center gap-2 rounded-xl border px-2.5 text-left text-sm font-semibold transition-all",
+                    period === "Сезон"
+                      ? "border-[#276749] bg-[#276749] text-white shadow-[0_6px_16px_-6px_rgba(39,103,73,0.55)]"
+                      : "border-[#E0DBD0] bg-white text-zinc-700 hover:border-[#276749]/35"
+                  )}
+                  aria-label="Обрати агросезон"
+                >
+                  <span
+                    className={cn(
+                      "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg",
+                      period === "Сезон"
+                        ? "bg-white/15 text-white"
+                        : "bg-[#276749]/12 text-[#276749]"
+                    )}
+                  >
+                    <Sprout className="h-3.5 w-3.5" />
+                  </span>
+                  <span className="truncate tabular-nums">
+                    Сезон {seasonYear}
+                  </span>
+                  <ChevronDown
+                    className={cn(
+                      "ml-auto h-3.5 w-3.5 shrink-0",
+                      period === "Сезон" ? "text-white/80" : "text-zinc-400"
+                    )}
+                  />
+                </PopoverTrigger>
+                <PopoverContent
+                  align="start"
+                  sideOffset={6}
+                  sheetOnMobile={false}
+                  className="z-[100] w-[min(100vw-2rem,22rem)] rounded-2xl border border-zinc-200 bg-white p-2 shadow-xl"
+                >
+                  <p className="px-2.5 pt-1.5 pb-2 text-[11px] leading-snug text-zinc-500">
+                    Фільтр фінансів за агросезоном (березень–лютий).
+                  </p>
+                  <div className="space-y-1">
+                    {SEASON_OPTIONS.map((year) => (
+                      <button
+                        key={year}
+                        type="button"
+                        onClick={() => selectSeasonYear(year)}
+                        className={cn(
+                          "flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left transition-colors",
+                          seasonYear === year
+                            ? "bg-[#276749] text-white"
+                            : "text-zinc-800 hover:bg-zinc-50"
+                        )}
+                      >
+                        <span className="text-sm font-semibold">
+                          Сезон {year}
+                        </span>
+                        <span
+                          className={cn(
+                            "text-[11px] font-medium",
+                            seasonYear === year
+                              ? "text-white/75"
+                              : "text-zinc-400"
+                          )}
+                        >
+                          бер {year} – лют {year + 1}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+
+              <Popover
+                open={rangeOpen}
+                onOpenChange={(next) => {
+                  setRangeOpen(next);
+                  if (next) {
+                    setSeasonOpen(false);
+                    setPeriod("Діапазон");
+                  }
+                }}
+              >
+                <PopoverTrigger
+                  className={cn(
+                    "inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl border px-3 text-sm font-semibold transition-all",
+                    period === "Діапазон"
+                      ? "border-[#276749] bg-[#276749] text-white shadow-[0_6px_16px_-6px_rgba(39,103,73,0.55)]"
+                      : "border-[#E0DBD0] bg-white text-zinc-700 hover:border-[#276749]/35"
+                  )}
+                >
+                  <CalendarIcon
+                    className={cn(
+                      "h-3.5 w-3.5 shrink-0",
+                      period === "Діапазон" ? "text-white/90" : "text-zinc-500"
+                    )}
+                    aria-hidden
+                  />
+                  {period === "Діапазон" && customRange?.from
+                    ? `${format(customRange.from, "d MMM", { locale: uk })}${
+                        customRange.to
+                          ? ` – ${format(customRange.to, "d MMM", { locale: uk })}`
+                          : " → …"
+                      }`
+                    : "Діапазон"}
+                </PopoverTrigger>
+                <PopoverContent
+                  align="end"
+                  sideOffset={6}
+                  sheetOnMobile={false}
+                  className="z-[100] w-[min(100vw-1.5rem,22.5rem)] rounded-2xl border border-zinc-200 bg-white p-3 shadow-xl"
+                >
+                  <p className="mb-2 px-1 text-[11px] text-zinc-500">
+                    {customRange?.from && customRange?.to
+                      ? "Натисніть дату, щоб обрати новий початок"
+                      : customRange?.from
+                        ? "Тепер оберіть кінець періоду"
+                        : "Оберіть початок, потім кінець періоду"}
+                  </p>
+                  <Calendar
+                    mode="range"
+                    numberOfMonths={1}
+                    selected={customRange}
+                    defaultMonth={customRange?.from ?? new Date()}
+                    onSelect={(range, triggerDate) => {
+                      setPeriod("Діапазон");
+                      setCustomRange(
+                        nextDateRangeSelection(customRange, range, triggerDate)
+                      );
+                    }}
+                    locale={uk}
+                    className="w-full rounded-xl [--cell-size:2.5rem]"
+                  />
+                  <div className="mt-3 flex items-center gap-2 border-t border-zinc-100 pt-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCustomRange(undefined);
+                        setPeriod("Сезон");
+                        setRangeOpen(false);
+                      }}
+                      className="h-11 flex-1 rounded-xl border border-zinc-200 bg-white text-sm font-semibold text-zinc-600 hover:bg-zinc-50"
+                    >
+                      Скинути
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!customRange?.from}
+                      onClick={() => {
+                        if (!customRange?.from) return;
+                        if (!customRange.to) {
+                          setCustomRange({
+                            from: customRange.from,
+                            to: customRange.from,
+                          });
+                        }
+                        setPeriod("Діапазон");
+                        setRangeOpen(false);
+                      }}
+                      className="h-11 flex-[1.4] rounded-xl bg-[#276749] text-sm font-bold text-white hover:bg-[#22543d] disabled:opacity-50"
+                    >
+                      Застосувати
+                    </button>
+                  </div>
+                </PopoverContent>
+              </Popover>
+
+              {overviewLoading ? (
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-zinc-400" />
+              ) : null}
+            </div>
+
+            <div className="flex min-w-0 items-center gap-0.5 rounded-xl bg-[#EDE8DF] p-0.5">
+              {FINANCE_QUICK_PERIODS.map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setPeriod(tab)}
+                  className={cn(
+                    "h-11 min-w-0 flex-1 rounded-[10px] px-1 text-[11px] font-semibold transition-all sm:px-2 sm:text-xs",
+                    period === tab
+                      ? "bg-[#276749] text-white shadow-[0_4px_12px_-4px_rgba(39,103,73,0.55)]"
+                      : "text-zinc-500 hover:bg-white/70 hover:text-zinc-800"
+                  )}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         {overviewError && !overview ? (
           <div
             className={cn(

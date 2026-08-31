@@ -148,6 +148,7 @@ export function isPlausibleTractorDayBurn(input: {
   fuelConsumed: number | null | undefined;
   fuelStart?: number | null;
   fuelEnd?: number | null;
+  fuelFilled?: number | null;
   workHours?: number | null;
   hoursOnField?: number | null;
 }): boolean {
@@ -155,6 +156,29 @@ export function isPlausibleTractorDayBurn(input: {
   if (!Number.isFinite(consumed) || consumed <= 0) return false;
   if (consumed > MAX_TRACTOR_DAY_BURN_L) return false;
   if (isCisternFuelLevel(input.fuelStart, input.fuelEnd)) return false;
+
+  const start = Number(input.fuelStart);
+  const end = Number(input.fuelEnd);
+  if (
+    Number.isFinite(start) &&
+    Number.isFinite(end) &&
+    end > start + 25 &&
+    consumed > 40
+  ) {
+    // Рівень виріс — «спалено» з формули start−end+fills ненадійне.
+    return false;
+  }
+
+  const filled = Number(input.fuelFilled);
+  if (
+    Number.isFinite(filled) &&
+    filled > 200 &&
+    Number.isFinite(end) &&
+    Number.isFinite(start) &&
+    end >= start - 15
+  ) {
+    return false;
+  }
 
   const work = Math.max(0, Number(input.workHours) || 0);
   // Без майже роботи двигуна сотні літрів = злив/роздача, не «спалено»

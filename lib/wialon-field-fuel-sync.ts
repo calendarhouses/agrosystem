@@ -25,7 +25,8 @@ import {
   type WialonTrackMessage,
   wialonLogin,
 } from "@/lib/wialon";
-import { isFuelDeliveryUnit } from "@/lib/equipment-fuel-tanks";
+import { isFuelDeliveryUnit, resolveFuelTankVolumeLiters } from "@/lib/equipment-fuel-tanks";
+import { resolvePlausibleDayFuelConsumed } from "@/lib/equipment-fuel-consumed";
 
 export {
   getLatestFuelPurchasePriceUah,
@@ -38,8 +39,6 @@ const MIN_VISIT_SEC = 10 * 60;
 const MAX_GAP_SEC = 10 * 60;
 /** Швидкість, з якої вважаємо техніку працюючою */
 const ACTIVE_MIN_SPEED_KMH = 2;
-/** Немовірна витрата за добу на одиницю — сміття ДУТ */
-const MAX_DAY_CONSUMED_L = 1200;
 /** Ліміт юнітів за один CRON-прогін (зовнішній cron може ганяти частіше) */
 const MAX_UNITS = 80;
 
@@ -420,19 +419,20 @@ export async function syncWialonFieldFuelForDate(
         ? listUnitSensors(unitWithSensors)
         : [];
       const fuelSamples = extractFuelSamples(messages, sensors);
+      const dayActiveSec = activeSecondsInWindows(messages, [
+        { startUnix: fromUnix, endUnix: toUnix },
+      ]);
 
       // Денна витрата — опорна цифра (та сама, що в картці техніки).
       // Сума по полях не може її перевищити, інакше Техніка і Паливо розійдуться.
       const day = fuelConsumedFromSamples(fuelSamples);
-      const dayConsumed =
-        day.consumed != null &&
-        day.consumed >= 0 &&
-        day.consumed <= MAX_DAY_CONSUMED_L
-          ? day.consumed
-          : null;
-      const dayActiveSec = activeSecondsInWindows(messages, [
-        { startUnix: fromUnix, endUnix: toUnix },
-      ]);
+      const dayConsumed = resolvePlausibleDayFuelConsumed({
+        start: day.start,
+        end: day.end,
+        filled: day.filled,
+        tankVolumeLiters: resolveFuelTankVolumeLiters(unit.name),
+        workHours: dayActiveSec / 3600,
+      });
 
       const visited = fields
         .filter((field) => field.geometry != null)
@@ -1068,70 +1068,10 @@ function relationName(value: unknown): string | null {
   return null;
 }
 
-function isPlaceholderEquipmentName(name: string): boolean {
-  return (
-    !name.trim() ||
-    name === "Техніка" ||
-    /^Wialon #\d+$/i.test(name.trim())
-  );
-}
-
-/**
- * Імена для розшифровки: equipment (id / wialon_id) → назва з Wialon.
- * Після 033 багато логів без equipment_id — без цього fallback лишається «Wialon #…».
- */
-async function resolveBreakdownEquipmentNames(
-  wialonIds: number[],
-  knownByEquipmentId: Map<string, string>
-): Promise<{
-  byWialonId: Map<number, string>;
-  equipmentIdByWialon: Map<number, string>;
-}> {
-  const byWialonId = new Map<number, string>();
-  const equipmentIdByWialon = new Map<number, string>();
-  const unique = [...new Set(wialonIds.filter((id) => id > 0))];
-  if (unique.length === 0) {
-    return { byWialonId, equipmentIdByWialon };
-  }
-
-  const supabase = createServiceSupabase();
-  const { data: eqRows } = await supabase
-    .from("equipment")
-    .select("id, name, wialon_id")
-    .in("wialon_id", unique);
-
-  for (const row of eqRows ?? []) {
-    const wid = Number(row.wialon_id);
-    if (!Number.isFinite(wid) || wid <= 0) continue;
-    const name = String(row.name ?? "").trim();
-    if (name) byWialonId.set(wid, name);
-    equipmentIdByWialon.set(wid, String(row.id));
-    if (name) knownByEquipmentId.set(String(row.id), name);
-  }
-
-  const stillMissing = unique.filter((id) => !byWialonId.has(id));
-  if (stillMissing.length === 0) {
-    return { byWialonId, equipmentIdByWialon };
-  }
-
-  try {
-    const eid = await wialonLogin();
-    const units = await listWialonUnitBasics(eid);
-    const want = new Set(stillMissing);
-    for (const u of units) {
-      if (!want.has(u.id)) continue;
-      const nm = String(u.nm ?? "").trim();
-      if (nm) byWialonId.set(u.id, nm);
-    }
-  } catch (err) {
-    console.error(
-      "[field-fuel] breakdown Wialon names",
-      err instanceof Error ? err.message : err
-    );
-  }
-
-  return { byWialonId, equipmentIdByWialon };
-}
+import {
+  isPlaceholderEquipmentName,
+  resolveWialonUnitNames,
+} from "@/lib/wialon-unit-names";
 
 /**
  * Розшифровка: хто × на якому полі спалив за період.
@@ -1246,8 +1186,8 @@ export async function listFieldFuelBreakdownForPeriod(
     .filter((id): id is number => id != null && id > 0);
 
   if (needResolve.length > 0) {
-    const { byWialonId, equipmentIdByWialon } =
-      await resolveBreakdownEquipmentNames(needResolve, knownByEquipmentId);
+    const { names: byWialonId, equipmentIdByWialon } =
+      await resolveWialonUnitNames(needResolve);
 
     for (const row of map.values()) {
       if (row.equipmentId && knownByEquipmentId.has(row.equipmentId)) {

@@ -3,13 +3,16 @@
  * UI читає одним запитом замість N× /api/wialon/track.
  */
 
-import { booleanPointInPolygon, point } from "@turf/turf";
-import type { Feature, MultiPolygon, Polygon } from "geojson";
-
 import { EMPTY_DAY_ANALYTICS } from "@/lib/equipment-day-analytics";
 import type { DayAnalyticsPayload } from "@/lib/equipment-day-analytics";
-import { isFuelDeliveryUnit, isPlausibleTractorDayBurn } from "@/lib/equipment-fuel-tanks";
-import type { FieldGeometry } from "@/lib/farm-fields";
+import { hoursOnFieldFromGpsSamples } from "@/lib/equipment-field-hours";
+import { resolvePlausibleDayFuelConsumed } from "@/lib/equipment-fuel-consumed";
+import { resolveWialonUnitDisplayNames } from "@/lib/wialon-unit-names";
+import {
+  isFuelDeliveryUnit,
+  isPlausibleTractorDayBurn,
+  resolveFuelTankVolumeLiters,
+} from "@/lib/equipment-fuel-tanks";
 import {
   kyivDayBoundsUnix,
   shiftKyivYmd,
@@ -22,9 +25,11 @@ import {
   type FieldFuelPeriod,
 } from "@/lib/wialon-field-fuel-sync";
 import {
+  getWialonGeofences,
   getWialonUnitTrackBundle,
   listWialonUnitBasics,
   wialonLogin,
+  wialonResourcesToGeofenceGeoJSON,
 } from "@/lib/wialon";
 
 const MAX_UNITS = 120;
@@ -79,71 +84,6 @@ export function isFleetDayStatsStale(
 }
 
 const inflightSync = new Map<string, Promise<SyncEquipmentDayResult>>();
-
-/** Прогалини GPS довші за це не рахуємо як «на полі» (≈3× крок даунсемплу). */
-const MAX_FIELD_SAMPLE_GAP_SEC = 120;
-
-function toPolygonFeature(
-  geometry: FieldGeometry
-): Feature<Polygon | MultiPolygon> | null {
-  if (geometry.type !== "Polygon" && geometry.type !== "MultiPolygon") {
-    return null;
-  }
-  return { type: "Feature", properties: {}, geometry };
-}
-
-function sampleInsideFarmFields(
-  lng: number,
-  lat: number,
-  polygons: Feature<Polygon | MultiPolygon>[]
-): boolean {
-  if (!Number.isFinite(lng) || !Number.isFinite(lat)) return false;
-  try {
-    const pt = point([lng, lat]);
-    return polygons.some((poly) => booleanPointInPolygon(pt, poly));
-  } catch {
-    return false;
-  }
-}
-
-function hoursOnFarmFieldsFromSamples(
-  samples: { lng: number; lat: number; t: number }[],
-  polygons: Feature<Polygon | MultiPolygon>[]
-): number {
-  if (samples.length < 2 || polygons.length === 0) return 0;
-
-  let insideSec = 0;
-  for (let i = 1; i < samples.length; i++) {
-    const prev = samples[i - 1];
-    const cur = samples[i];
-    if (!prev || !cur || cur.t <= prev.t) continue;
-    const dt = cur.t - prev.t;
-    if (dt > MAX_FIELD_SAMPLE_GAP_SEC) continue;
-
-    const prevInside = sampleInsideFarmFields(prev.lng, prev.lat, polygons);
-    const curInside = sampleInsideFarmFields(cur.lng, cur.lat, polygons);
-    if (!prevInside && !curInside) continue;
-    if (prevInside && curInside) insideSec += dt;
-    else insideSec += dt / 2;
-  }
-  return Math.round((insideSec / 3600) * 100) / 100;
-}
-
-async function loadFieldPolygons(
-  supabase: ReturnType<typeof createServiceSupabase>
-): Promise<Feature<Polygon | MultiPolygon>[]> {
-  const { data, error } = await supabase
-    .from("farm_fields")
-    .select("geometry")
-    .not("geometry", "is", null);
-  if (error || !data) return [];
-  const out: Feature<Polygon | MultiPolygon>[] = [];
-  for (const row of data) {
-    const feature = toPolygonFeature(row.geometry as FieldGeometry);
-    if (feature) out.push(feature);
-  }
-  return out;
-}
 
 async function persistDayStatRows(
   supabase: ReturnType<typeof createServiceSupabase>,
@@ -261,7 +201,19 @@ async function runEquipmentDaySync(
   const startedAt = Date.now();
 
   const eid = await wialonLogin();
-  const [wialonUnits, eqResult, polygons] = await Promise.all([
+  let geofences = wialonResourcesToGeofenceGeoJSON([]);
+  try {
+    const resources = await getWialonGeofences(eid);
+    geofences = wialonResourcesToGeofenceGeoJSON(resources);
+  } catch (err) {
+    errors.push(
+      err instanceof Error
+        ? `Геозони Wialon: ${err.message}`
+        : "Не вдалося завантажити геозони Wialon"
+    );
+  }
+
+  const [wialonUnits, eqResult] = await Promise.all([
     listWialonUnitBasics(eid),
     supabase
       .from("equipment")
@@ -269,7 +221,6 @@ async function runEquipmentDaySync(
       .eq("is_active", true)
       .not("wialon_id", "is", null)
       .limit(MAX_UNITS),
-    loadFieldPolygons(supabase),
   ]);
 
   if (eqResult.error) throw new Error(eqResult.error.message);
@@ -327,9 +278,11 @@ async function runEquipmentDaySync(
             toUnix
           );
           const analytics = bundle.analytics ?? EMPTY_DAY_ANALYTICS;
-          const hoursOnField = hoursOnFarmFieldsFromSamples(
+          const workHours = analytics.summary.workHours;
+          const hoursOnField = hoursOnFieldFromGpsSamples(
             analytics.samples ?? [],
-            polygons
+            geofences,
+            workHours > 0 ? workHours : undefined
           );
 
           const delivery = isFuelDeliveryUnit(unit.name, unit.equipment_name);
@@ -342,6 +295,7 @@ async function runEquipmentDaySync(
               fuelConsumed: rawConsumed,
               fuelStart: analytics.summary.fuelStart,
               fuelEnd: analytics.summary.fuelEnd,
+              fuelFilled: analytics.summary.fuelFilled,
               workHours: analytics.summary.workHours,
               hoursOnField: hoursOnField,
             });
@@ -427,7 +381,7 @@ export async function sumFleetFuelConsumedForPeriod(
     supabase
       .from("wialon_equipment_day_stats")
       .select(
-        "fuel_consumed, fuel_start, fuel_end, work_hours, hours_on_field, wialon_unit_id, equipment_id"
+        "fuel_consumed, fuel_start, fuel_end, fuel_filled, work_hours, hours_on_field, wialon_unit_id, equipment_id"
       )
       .gte("date", fromDate)
       .lte("date", toDate)
@@ -447,17 +401,35 @@ export async function sumFleetFuelConsumedForPeriod(
     if (row.id) deliveryEquipmentIds.add(String(row.id));
   }
 
+  const eqNameByWid = new Map<number, string>();
+  for (const row of eqRes.data ?? []) {
+    const wid = Number(row.wialon_id);
+    if (Number.isFinite(wid) && wid > 0 && row.name) {
+      eqNameByWid.set(wid, String(row.name));
+    }
+  }
+
   const liters = (data ?? []).reduce((acc, row) => {
     const wid = Number(row.wialon_unit_id);
     const eid = row.equipment_id != null ? String(row.equipment_id) : null;
     if (Number.isFinite(wid) && deliveryWialonIds.has(wid)) return acc;
     if (eid && deliveryEquipmentIds.has(eid)) return acc;
 
+    const recalc = resolvePlausibleDayFuelConsumed({
+      start: row.fuel_start,
+      end: row.fuel_end,
+      filled: row.fuel_filled,
+      tankVolumeLiters: resolveFuelTankVolumeLiters(eqNameByWid.get(wid)),
+      workHours: row.work_hours,
+    });
+
     if (
+      recalc == null ||
       !isPlausibleTractorDayBurn({
-        fuelConsumed: row.fuel_consumed,
+        fuelConsumed: recalc,
         fuelStart: row.fuel_start,
         fuelEnd: row.fuel_end,
+        fuelFilled: row.fuel_filled,
         workHours: row.work_hours,
         hoursOnField: row.hours_on_field,
       })
@@ -465,7 +437,7 @@ export async function sumFleetFuelConsumedForPeriod(
       return acc;
     }
 
-    return acc + (Number(row.fuel_consumed) || 0);
+    return acc + recalc;
   }, 0);
 
   return {
@@ -511,15 +483,11 @@ export async function sumFleetFuelFilledForPeriod(
     return { liters: 0, hasData: false, rows: [], dutUnitIds: new Set() };
   }
 
-  const nameByWialon = new Map<number, string>();
   const deliveryWialonIds = new Set<number>();
   const deliveryEquipmentIds = new Set<string>();
   for (const row of eqRes.data ?? []) {
     const wid = Number(row.wialon_id);
     const nm = String(row.name ?? "").trim();
-    if (Number.isFinite(wid) && wid > 0) {
-      nameByWialon.set(wid, nm || `Wialon #${wid}`);
-    }
     if (!isFuelDeliveryUnit(nm)) continue;
     if (Number.isFinite(wid) && wid > 0) deliveryWialonIds.add(wid);
     if (row.id) deliveryEquipmentIds.add(String(row.id));
@@ -538,10 +506,13 @@ export async function sumFleetFuelFilledForPeriod(
     if (row.has_fuel_sensor === true) dutUnitIds.add(wid);
   }
 
+  const displayNames = await resolveWialonUnitDisplayNames([...byUnit.keys()]);
+
   const rows: FleetFuelFilledBreakdownRow[] = [...byUnit.entries()]
     .map(([wialonUnitId, liters]) => ({
       wialonUnitId,
-      equipmentName: nameByWialon.get(wialonUnitId) ?? `Wialon #${wialonUnitId}`,
+      equipmentName:
+        displayNames.get(wialonUnitId) ?? `Wialon #${wialonUnitId}`,
       liters: Math.round(liters * 10) / 10,
     }))
     .sort((a, b) => b.liters - a.liters);

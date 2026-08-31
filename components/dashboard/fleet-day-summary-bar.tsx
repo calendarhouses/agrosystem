@@ -103,7 +103,7 @@ export function FleetDaySummaryBar({
     },
     {
       metric: "onField",
-      label: "На полях · парк",
+      label: "На полях · Σ парк",
       value: summary ? formatHoursShort(summary.hoursOnField) : "—",
       empty: !summary || summary.hoursOnField <= 0,
       valueClassName: "text-emerald-700",

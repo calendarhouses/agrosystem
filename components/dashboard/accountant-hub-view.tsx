@@ -809,8 +809,8 @@ export function AccountantHubView({
       {(!embedded || showPeriodHeader) && (
       <header
         className={cn(
-          "sticky z-40 w-full border-b border-[#E5DFD3]/80 bg-[#F4F1EA]/90 backdrop-blur-xl",
-          isMobile ? "top-0 px-3 py-2.5" : "top-0 px-4 py-4 sm:px-6"
+          "w-full border-b border-[#E5DFD3]/80 bg-[#F4F1EA]/90 backdrop-blur-xl",
+          isMobile ? "px-3 py-2.5" : "px-4 py-4 sm:px-6"
         )}
       >
         <div className="mx-auto w-full max-w-7xl space-y-2.5">
@@ -835,23 +835,36 @@ export function AccountantHubView({
       </header>
       )}
 
-      <div
-        className={cn(
-          "mx-auto w-full max-w-7xl",
-          isMobile
-            ? cn(
-                "space-y-3 px-3 py-3",
-                showDock
-                  ? "pb-[calc(var(--app-bottom-inset)+5.5rem)]"
-                  : "pb-[calc(var(--app-bottom-inset)+1rem)]"
-              )
-            : cn(
-                "space-y-5 px-4 py-6 sm:px-6 lg:px-8",
-                showDock ? "pb-24" : "pb-8"
-              )
-        )}
-      >
         {hidePeriodHeader && embedded ? (
+          <div className="mx-auto w-full max-w-7xl space-y-3 border-b border-[#E5DFD3]/80 px-4 py-4 sm:px-6 lg:px-8">
+            <FinancePeriodToolbar
+              {...periodFilter}
+              variant="desktop"
+              seasonHint="Фільтр черги за агросезоном (березень–лютий)."
+              loading={loading}
+              trailing={periodActions}
+            />
+          </div>
+        ) : null}
+
+        <div
+          className={cn(
+            "mx-auto w-full max-w-7xl",
+            isMobile
+              ? cn(
+                  "space-y-3 px-3 py-3",
+                  showDock
+                    ? "pb-[calc(var(--app-bottom-inset)+5.5rem)]"
+                    : "pb-[calc(var(--app-bottom-inset)+1rem)]"
+                )
+              : cn(
+                  "space-y-5 px-4 py-6 sm:px-6 lg:px-8",
+                  showDock ? "pb-24" : "pb-8",
+                  hidePeriodHeader && embedded ? "pt-0" : undefined
+                )
+          )}
+        >
+        {hidePeriodHeader && embedded ? null : hidePeriodHeader ? (
           <div className="flex justify-end gap-2">{periodActions}</div>
         ) : null}
 

@@ -8,6 +8,7 @@ import {
   resolveFieldFuelPeriodBounds,
   type FieldFuelPeriod,
 } from "@/lib/wialon-field-fuel-sync";
+import { resolveWialonUnitDisplayNames } from "@/lib/wialon-unit-names";
 import { sumFleetFuelFilledForPeriod } from "@/lib/wialon-equipment-day-sync";
 import { kyivDayBoundsUnix } from "@/lib/kyiv-date";
 
@@ -102,7 +103,6 @@ export async function sumOutboundRefueledForPeriod(
     ),
   ];
   const wialonByEquipment = new Map<string, number>();
-  const nameByWialon = new Map<number, string>();
   if (eqIds.length > 0) {
     const { data: eqRows } = await supabase
       .from("equipment")
@@ -112,8 +112,6 @@ export async function sumOutboundRefueledForPeriod(
       const wid = Number(row.wialon_id);
       if (Number.isFinite(wid) && wid > 0) {
         wialonByEquipment.set(String(row.id), wid);
-        const nm = String(row.name ?? "").trim();
-        if (nm) nameByWialon.set(wid, nm);
       }
     }
   }
@@ -203,6 +201,14 @@ export async function sumOutboundRefueledForPeriod(
   }
 
   // Ручні outbound: лише без ДУТ (щоб не дублювати journal ↔ fuel_filled)
+  const manualWialonIds = manual
+    .map((tx) => tx.wialonUnitId)
+    .filter((id): id is number => id != null && id > 0);
+  const displayNames = await resolveWialonUnitDisplayNames([
+    ...dbFilled.rows.map((r) => r.wialonUnitId),
+    ...manualWialonIds,
+  ]);
+
   let manualOnlyLiters = 0;
   for (let i = 0; i < manual.length; i++) {
     const tx = manual[i]!;
@@ -211,7 +217,7 @@ export async function sumOutboundRefueledForPeriod(
     }
     manualOnlyLiters += tx.amountLiters;
     const name =
-      (tx.wialonUnitId != null ? nameByWialon.get(tx.wialonUnitId) : null) ||
+      (tx.wialonUnitId != null ? displayNames.get(tx.wialonUnitId) : null) ||
       tx.operatorName ||
       (tx.wialonUnitId != null ? `Wialon #${tx.wialonUnitId}` : "Техніка");
     const key =
