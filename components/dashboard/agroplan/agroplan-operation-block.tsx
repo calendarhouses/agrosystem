@@ -1,6 +1,5 @@
 "use client";
 
-import { motion } from "framer-motion";
 import { useRef, useState } from "react";
 
 import type { AgroplanBlock } from "@/lib/agroplan/blocks";
@@ -160,7 +159,7 @@ export function AgroplanOperationBlock({
   }
 
   function onResizePointerMove(e: React.PointerEvent<HTMLDivElement>) {
-    if (!resizing || !resizeStart.current || !onResize) return;
+    if (!resizing || !resizeStart.current) return;
     e.stopPropagation();
     const deltaX = e.clientX - resizeStart.current.x;
     const deltaHours = deltaX / pxPerHour;
@@ -192,48 +191,27 @@ export function AgroplanOperationBlock({
   }
 
   return (
-    <motion.div
+    <div
       role="button"
       tabIndex={0}
       title={title}
-      layout={!isAdjusting}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") onSelect(block);
       }}
-      animate={
-        warnShake
-          ? { x: [0, -5, 5, -4, 4, 0] }
-          : pulsing && !isAdjusting
-            ? {
-                boxShadow: [
-                  "0 0 12px rgba(52,211,153,0.15)",
-                  "0 0 22px rgba(52,211,153,0.35)",
-                  "0 0 12px rgba(52,211,153,0.15)",
-                ],
-              }
-            : { width, left }
-      }
-      transition={
-        isAdjusting
-          ? { duration: 0.05 }
-          : pulsing
-            ? { duration: 2.4, repeat: Infinity, ease: "easeInOut" }
-            : { type: "spring", stiffness: 420, damping: 34 }
-      }
       className={cn(
-        "absolute z-10 min-w-14 rounded-lg border bg-[#0f1218]/92 backdrop-blur-sm",
+        "absolute z-10 min-w-14 rounded-lg border bg-card/95 backdrop-blur-sm",
         accent.border,
         accent.glow,
-        block.source === "insight" && "border-dashed opacity-92",
-        block.source === "operation" && "border-solid bg-[#10141c]/95",
-        block.operationStatus === "in_progress" &&
-          "ring-1 ring-emerald-400/45",
-        block.operationStatus === "completed" && "opacity-55",
-        selected && "ring-2 ring-violet-400/55",
-        isAdjusting &&
-          "z-30 scale-[1.03] shadow-2xl ring-1 ring-white/20",
-        warnShake && "border-rose-400/70 bg-rose-950/35",
-        resizing && "ring-1 ring-violet-400/40"
+        block.source === "insight" && "border-dashed bg-card/80",
+        block.source === "operation" && "border-solid",
+        block.operationStatus === "in_progress" && "ring-2 ring-primary/25",
+        block.operationStatus === "completed" && "opacity-60",
+        selected && "ring-2 ring-primary/40",
+        pulsing && !isAdjusting && "ring-2 ring-primary/30",
+        isAdjusting && "z-30 shadow-md ring-2 ring-primary/20",
+        warnShake && "border-destructive/60 bg-destructive/5",
+        resizing && "ring-primary/30",
+        !isAdjusting && "transition-[width] duration-150 ease-out"
       )}
       style={{ left, width, top, height }}
     >
@@ -267,7 +245,7 @@ export function AgroplanOperationBlock({
             {block.insight.operationName}
           </p>
           {width > 80 ? (
-            <p className="truncate text-[10px] text-zinc-500">
+            <p className="truncate text-[10px] text-muted-foreground">
               {toKyivDayKey(new Date(displayStartMs))}
               {displayDurationHours > 1
                 ? ` · ${displayDurationHours} год`
@@ -277,7 +255,7 @@ export function AgroplanOperationBlock({
         </div>
         {hasDeficit ? (
           <span
-            className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.8)]"
+            className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-destructive shadow-sm"
             title="Дефіцит ТМЦ"
           />
         ) : null}
@@ -297,11 +275,11 @@ export function AgroplanOperationBlock({
           }}
           className={cn(
             "absolute inset-y-0 right-0 z-20 w-2 cursor-ew-resize rounded-r-lg",
-            "bg-gradient-to-l from-white/10 to-transparent hover:from-violet-400/30",
-            resizing && "from-violet-400/40"
+            "bg-gradient-to-l from-border/80 to-transparent hover:from-primary/25",
+            resizing && "from-primary/35"
           )}
         />
       ) : null}
-    </motion.div>
+    </div>
   );
 }

@@ -131,16 +131,16 @@ export function AgroplanMobileHud({ data, onPlan, onOrder }: Props) {
   }
 
   return (
-    <div className="flex h-full flex-col bg-[#07080b] text-zinc-100">
-      <header className="border-b border-white/[0.06] px-4 pb-3 pt-4">
+    <div className="flex h-full flex-col bg-background text-foreground">
+      <header className="border-b border-border/60 bg-card/40 px-4 pb-3 pt-4">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-emerald-400/25 bg-emerald-400/[0.08] text-emerald-300">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 text-primary">
               <Orbit className="h-4 w-4" strokeWidth={1.6} />
             </div>
             <div>
               <h1 className="text-sm font-semibold tracking-wide">Агроплан</h1>
-              <p className="text-[11px] text-zinc-500">
+              <p className="text-[11px] text-muted-foreground">
                 Польовий режим · {dayBlocks.length} задач
               </p>
             </div>
@@ -152,7 +152,7 @@ export function AgroplanMobileHud({ data, onPlan, onOrder }: Props) {
               variant={selectMode ? "default" : "ghost"}
               className={cn(
                 "h-9 w-9",
-                selectMode && "bg-violet-600/80 hover:bg-violet-600"
+                selectMode && "bg-primary hover:bg-primary/90"
               )}
               onClick={() => {
                 hapticLight();
@@ -163,14 +163,14 @@ export function AgroplanMobileHud({ data, onPlan, onOrder }: Props) {
               {selectMode ? (
                 <CheckSquare className="h-4 w-4" />
               ) : (
-                <Square className="h-4 w-4 text-zinc-400" />
+                <Square className="h-4 w-4 text-muted-foreground" />
               )}
             </Button>
             <Button
               type="button"
               size="icon"
               variant="ghost"
-              className="h-9 w-9 text-zinc-400"
+              className="h-9 w-9 text-muted-foreground"
               onClick={refresh}
             >
               <RefreshCw
@@ -180,30 +180,30 @@ export function AgroplanMobileHud({ data, onPlan, onOrder }: Props) {
           </div>
         </div>
         {data.liveWeather ? (
-          <p className="mt-2 text-[11px] text-zinc-500">
+          <p className="mt-2 text-[11px] text-muted-foreground">
             {Math.round(data.liveWeather.tempC)}°C · вітер{" "}
             {Math.round(data.liveWeather.windMs)} м/с
           </p>
         ) : null}
         <div className="relative mt-3">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-600" />
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={data.filters.query}
             onChange={(e) =>
               data.setFilters({ ...data.filters, query: e.target.value })
             }
             placeholder="Поле або операція…"
-            className="h-9 border-white/10 bg-black/30 pl-8 text-xs text-zinc-200"
+            className="h-9 border-border/60 bg-background pl-8 text-xs"
           />
         </div>
       </header>
 
       {topNdviAlerts.length > 0 ? (
-        <div className="space-y-1.5 border-b border-violet-400/15 bg-violet-950/20 px-4 py-2.5">
+        <div className="space-y-1.5 border-b border-violet-200 bg-violet-50 px-4 py-2.5">
           {topNdviAlerts.map((alert) => (
             <p
               key={alert.id}
-              className="flex items-center gap-1.5 text-[11px] text-violet-200/90"
+              className="flex items-center gap-1.5 text-[11px] text-violet-800"
             >
               <span className="h-1.5 w-1.5 rounded-full bg-violet-400" />
               {alert.fieldName}: NDVI −{alert.dropPercent}%
@@ -227,8 +227,8 @@ export function AgroplanMobileHud({ data, onPlan, onOrder }: Props) {
               className={cn(
                 "flex min-w-[52px] shrink-0 flex-col items-center rounded-xl border px-2 py-2 transition-colors",
                 active
-                  ? "border-emerald-400/40 bg-emerald-400/[0.08] text-emerald-100"
-                  : "border-white/[0.06] bg-white/[0.02] text-zinc-400",
+                  ? "border-primary/40 bg-primary/10 text-primary"
+                  : "border-border/60 bg-card text-muted-foreground",
                 risk === "rain" || risk === "storm"
                   ? "shadow-[inset_0_-8px_16px_rgba(244,63,94,0.08)]"
                   : null
@@ -242,7 +242,7 @@ export function AgroplanMobileHud({ data, onPlan, onOrder }: Props) {
       </div>
 
       {selectMode && fieldOptions.length > 0 ? (
-        <div className="no-scrollbar flex gap-2 overflow-x-auto border-b border-white/[0.06] px-4 pb-3">
+        <div className="no-scrollbar flex gap-2 overflow-x-auto border-b border-border/60 px-4 pb-3">
           {fieldOptions.map((field) => {
             const selected = selectedFieldIds.has(field.id);
             const ndvi = ndviFlags.get(field.id);
@@ -254,8 +254,8 @@ export function AgroplanMobileHud({ data, onPlan, onOrder }: Props) {
                 className={cn(
                   "shrink-0 rounded-full border px-3 py-1.5 text-[11px] transition-colors",
                   selected
-                    ? "border-violet-400/40 bg-violet-500/15 text-violet-100"
-                    : "border-white/[0.08] bg-white/[0.02] text-zinc-400"
+                    ? "border-primary/35 bg-primary/10 text-primary"
+                    : "border-border/60 bg-card text-muted-foreground"
                 )}
               >
                 {field.name}
@@ -268,7 +268,7 @@ export function AgroplanMobileHud({ data, onPlan, onOrder }: Props) {
 
       <div className="custom-scrollbar flex-1 space-y-3 overflow-y-auto px-4 pb-28 pt-1">
         {dayBlocks.length === 0 ? (
-          <p className="py-12 text-center text-sm text-zinc-600">
+          <p className="py-12 text-center text-sm text-muted-foreground">
             На цей день операцій немає
           </p>
         ) : (
@@ -297,15 +297,15 @@ export function AgroplanMobileHud({ data, onPlan, onOrder }: Props) {
       </div>
 
       {selectMode && selectedFieldIds.size > 0 ? (
-        <div className="fixed inset-x-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-30 mx-4 flex items-center gap-2 rounded-2xl border border-violet-400/25 bg-[#0c0e13]/95 p-2 shadow-2xl backdrop-blur-md">
-          <span className="shrink-0 px-2 text-[11px] text-violet-200">
+        <div className="fixed inset-x-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-30 mx-4 flex items-center gap-2 rounded-2xl border border-border/60 bg-card p-2 shadow-lg">
+          <span className="shrink-0 px-2 text-[11px] text-primary">
             {selectedFieldIds.size} пол.
           </span>
           <Button
             type="button"
             size="sm"
             variant="outline"
-            className="h-9 flex-1 border-violet-400/25 text-xs"
+            className="h-9 flex-1 text-xs"
             onClick={() => handleBulkShift(-1)}
           >
             −1д
@@ -314,7 +314,7 @@ export function AgroplanMobileHud({ data, onPlan, onOrder }: Props) {
             type="button"
             size="sm"
             variant="outline"
-            className="h-9 flex-1 border-violet-400/25 text-xs"
+            className="h-9 flex-1 text-xs"
             onClick={() => handleBulkShift(1)}
           >
             +1д
@@ -322,7 +322,7 @@ export function AgroplanMobileHud({ data, onPlan, onOrder }: Props) {
           <Button
             type="button"
             size="sm"
-            className="h-9 flex-1 bg-violet-600/90 text-xs hover:bg-violet-600"
+            className="h-9 flex-1 text-xs"
             onClick={() => handleBulkShift(7)}
           >
             +7д
@@ -388,14 +388,13 @@ function MobileTaskCard({
         if (e.key === "Enter" || e.key === " ") onOpen();
       }}
       className={cn(
-        "rounded-2xl border bg-[#0c0e13]/90 p-4 backdrop-blur-sm",
+        "rounded-2xl border bg-card/80 p-4 shadow-sm backdrop-blur-sm",
         accent.border,
         accent.glow,
         isOp && "border-solid",
         !isOp && "border-dashed",
-        pulsing && "animate-pulse",
-        block.operationStatus === "in_progress" &&
-          "ring-1 ring-emerald-400/35"
+        pulsing && "ring-2 ring-primary/20",
+        block.operationStatus === "in_progress" && "ring-2 ring-primary/25"
       )}
     >
       <div className="flex items-start justify-between gap-2">
@@ -403,9 +402,9 @@ function MobileTaskCard({
           <p className={cn("text-sm font-medium", accent.text)}>
             {block.insight.operationName}
           </p>
-          <p className="mt-0.5 text-xs text-zinc-500">{block.fieldName}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">{block.fieldName}</p>
           {isOp ? (
-            <p className="mt-1 text-[10px] uppercase tracking-wider text-cyan-400/80">
+            <p className="mt-1 text-[10px] uppercase tracking-wider text-primary/80">
               {block.operationStatus === "in_progress"
                 ? "У роботі"
                 : block.operationStatus === "completed"
@@ -415,10 +414,10 @@ function MobileTaskCard({
           ) : null}
         </div>
         {deficit ? (
-          <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.9)]" />
+          <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-destructive" />
         ) : null}
       </div>
-      <p className="mt-2 text-xs leading-relaxed text-zinc-400">
+      <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
         {block.insight.explanation}
       </p>
 
@@ -427,7 +426,7 @@ function MobileTaskCard({
           <Button
             type="button"
             size="sm"
-            className="h-9 flex-1 bg-emerald-600/90 text-xs hover:bg-emerald-600"
+            className="h-9 flex-1 text-xs"
             onClick={(e) => {
               e.stopPropagation();
               onPlan();
@@ -442,7 +441,7 @@ function MobileTaskCard({
             type="button"
             size="sm"
             variant="outline"
-            className="h-9 border-rose-400/35 text-xs text-rose-200"
+            className="h-9 border-destructive/35 text-xs text-destructive"
             onClick={(e) => {
               e.stopPropagation();
               onOrder();
@@ -456,7 +455,7 @@ function MobileTaskCard({
             type="button"
             size="sm"
             variant="outline"
-            className="h-9 border-white/10 text-xs text-zinc-300"
+            className="h-9 border-border/60 text-xs"
             disabled
           >
             <Check className="mr-1.5 h-3.5 w-3.5" />

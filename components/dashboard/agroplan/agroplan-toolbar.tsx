@@ -62,13 +62,13 @@ export function AgroplanToolbar({
   }
 
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-white/[0.06] bg-[#080a0e]/90 px-3 py-2">
-      <div className="flex items-center gap-0.5 rounded-lg border border-white/[0.08] bg-black/30 p-0.5">
+    <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border/60 bg-card/50 px-3 py-2">
+      <div className="flex items-center gap-0.5 rounded-lg border border-border/60 bg-background p-0.5">
         <Button
           type="button"
           size="icon"
           variant="ghost"
-          className="h-7 w-7 text-zinc-400 hover:text-zinc-100"
+          className="h-7 w-7 text-muted-foreground hover:text-foreground"
           onClick={() => onZoomIndexChange(Math.max(0, zoomIndex - 1))}
           disabled={zoomIndex === 0}
         >
@@ -82,8 +82,8 @@ export function AgroplanToolbar({
             className={cn(
               "rounded-md px-2 py-1 text-[10px] uppercase tracking-wider transition-colors",
               i === zoomIndex
-                ? "bg-emerald-500/15 text-emerald-300"
-                : "text-zinc-500 hover:text-zinc-300"
+                ? "bg-primary/10 text-primary"
+                : "text-muted-foreground hover:text-foreground"
             )}
           >
             {level.label}
@@ -93,7 +93,7 @@ export function AgroplanToolbar({
           type="button"
           size="icon"
           variant="ghost"
-          className="h-7 w-7 text-zinc-400 hover:text-zinc-100"
+          className="h-7 w-7 text-muted-foreground hover:text-foreground"
           onClick={() =>
             onZoomIndexChange(
               Math.min(AGROPLAN_ZOOM_LEVELS.length - 1, zoomIndex + 1)
@@ -109,10 +109,10 @@ export function AgroplanToolbar({
         type="button"
         size="sm"
         variant="outline"
-        className="h-8 border-white/10 bg-transparent text-xs text-zinc-300"
+        className="h-8 border-border/60 bg-background text-xs"
         onClick={onGoToday}
       >
-        <Target className="mr-1.5 h-3.5 w-3.5 text-emerald-400" />
+        <Target className="mr-1.5 h-3.5 w-3.5 text-primary" />
         Сьогодні
       </Button>
 
@@ -123,8 +123,8 @@ export function AgroplanToolbar({
         className={cn(
           "h-8 text-xs",
           panMode
-            ? "bg-cyan-600/80 hover:bg-cyan-600"
-            : "border-white/10 bg-transparent text-zinc-300"
+            ? "bg-primary hover:bg-primary/90"
+            : "border-border/60 bg-background text-foreground"
         )}
         onClick={() => onPanModeChange(!panMode)}
       >
@@ -138,20 +138,20 @@ export function AgroplanToolbar({
           onFiltersChange({ ...filters, query: e.target.value })
         }
         placeholder="Пошук поля / операції…"
-        className="h-8 w-40 border-white/10 bg-black/30 text-xs text-zinc-200 placeholder:text-zinc-600 lg:w-52"
+        className="h-8 w-40 border-border/60 bg-background text-xs lg:w-52"
       />
 
       <div className="hidden items-center gap-2 lg:flex">
-        <span className="inline-flex items-center gap-1 text-[10px] text-zinc-600">
-          <span className="h-2 w-4 rounded border border-dashed border-emerald-400/50" />
+        <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+          <span className="h-2 w-4 rounded border border-dashed border-primary/40" />
           Рекомендація
         </span>
-        <span className="inline-flex items-center gap-1 text-[10px] text-zinc-600">
-          <span className="h-2 w-4 rounded border border-cyan-400/50 bg-cyan-950/30" />
+        <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+          <span className="h-2 w-4 rounded border border-cyan-700/30 bg-cyan-900/5" />
           Наряд
         </span>
-        <span className="inline-flex items-center gap-1 text-[10px] text-zinc-600">
-          <span className="h-2 w-2 rounded-full bg-rose-500" />
+        <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+          <span className="h-2 w-2 rounded-full bg-destructive" />
           Дефіцит
         </span>
       </div>
@@ -165,8 +165,8 @@ export function AgroplanToolbar({
             className={cn(
               "rounded-full border px-2 py-0.5 text-[10px] transition-colors",
               filters.statuses.has(status)
-                ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-200"
-                : "border-white/[0.06] text-zinc-600 line-through"
+                ? "border-primary/30 bg-primary/10 text-primary"
+                : "border-border/60 text-muted-foreground line-through"
             )}
           >
             {STATUS_LABELS[status]}
@@ -205,15 +205,15 @@ export function AgroplanToolbar({
       </div>
 
       {selectedFieldCount > 0 && onBulkShift ? (
-        <div className="flex items-center gap-1 rounded-lg border border-violet-400/20 bg-violet-500/[0.06] px-1.5 py-0.5">
-          <span className="text-[10px] text-violet-200">
+        <div className="flex items-center gap-1 rounded-lg border border-primary/20 bg-primary/5 px-1.5 py-0.5">
+          <span className="text-[10px] text-primary">
             {selectedFieldCount} пол.
           </span>
           <Button
             type="button"
             size="sm"
             variant="ghost"
-            className="h-6 px-1.5 text-[10px] text-violet-200 hover:bg-violet-400/10"
+            className="h-6 px-1.5 text-[10px] text-primary hover:bg-primary/10"
             onClick={() => onBulkShift(-1)}
           >
             −1д
@@ -222,7 +222,7 @@ export function AgroplanToolbar({
             type="button"
             size="sm"
             variant="ghost"
-            className="h-6 px-1.5 text-[10px] text-violet-200 hover:bg-violet-400/10"
+            className="h-6 px-1.5 text-[10px] text-primary hover:bg-primary/10"
             onClick={() => onBulkShift(1)}
           >
             +1д
@@ -231,7 +231,7 @@ export function AgroplanToolbar({
             type="button"
             size="sm"
             variant="ghost"
-            className="h-6 px-1.5 text-[10px] text-violet-200 hover:bg-violet-400/10"
+            className="h-6 px-1.5 text-[10px] text-primary hover:bg-primary/10"
             onClick={() => onBulkShift(7)}
           >
             +7д
@@ -241,7 +241,7 @@ export function AgroplanToolbar({
               type="button"
               size="sm"
               variant="ghost"
-              className="h-6 px-1.5 text-[10px] text-zinc-500"
+              className="h-6 px-1.5 text-[10px] text-muted-foreground"
               onClick={onClearSelection}
             >
               ✕
@@ -255,7 +255,7 @@ export function AgroplanToolbar({
           type="button"
           size="sm"
           variant="ghost"
-          className="h-7 text-[10px] text-zinc-500"
+          className="h-7 text-[10px] text-muted-foreground"
           onClick={onExpandAll}
         >
           <ChevronRight className="mr-0.5 h-3 w-3" />
@@ -265,7 +265,7 @@ export function AgroplanToolbar({
           type="button"
           size="sm"
           variant="ghost"
-          className="h-7 text-[10px] text-zinc-500"
+          className="h-7 text-[10px] text-muted-foreground"
           onClick={onCollapseAll}
         >
           <ChevronLeft className="mr-0.5 h-3 w-3" />
@@ -273,7 +273,7 @@ export function AgroplanToolbar({
         </Button>
       </div>
 
-      <span className="hidden text-[10px] text-zinc-600 lg:inline">
+      <span className="hidden text-[10px] text-muted-foreground lg:inline">
         T — сьогодні · +/- — зум · ⌘Z — скасувати · ⌘+клік — вибір полів
       </span>
     </div>
@@ -296,8 +296,8 @@ function FilterChip({
       className={cn(
         "rounded-full border px-2 py-0.5 text-[10px] transition-colors",
         active
-          ? "border-cyan-400/25 bg-cyan-400/10 text-cyan-200"
-          : "border-white/[0.06] text-zinc-600 line-through"
+          ? "border-primary/25 bg-primary/10 text-primary"
+          : "border-border/60 text-muted-foreground line-through"
       )}
     >
       {label}

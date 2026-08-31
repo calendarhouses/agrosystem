@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { buildMeteoChips } from "@/components/dashboard/calendar/smart-insight-card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import type { AgroplanBlock } from "@/lib/agroplan/blocks";
 import { operationAccent } from "@/lib/agroplan/theme";
 import { climateColumnClass, type DayClimateRisk } from "@/lib/agroplan/weather-risk";
@@ -21,6 +22,8 @@ import { Button } from "@/components/ui/button";
 import {
   Sheet,
   SheetContent,
+  SheetDescription,
+  SheetFooter,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
@@ -66,37 +69,35 @@ export function AgroplanMobileDetail({
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
       <SheetContent
         side="bottom"
-        className="max-h-[85vh] rounded-t-2xl border-white/10 bg-[#0a0c10] text-zinc-100"
+        className="flex max-h-[var(--app-sheet-max)] flex-col gap-0 overflow-hidden p-0"
       >
         {block && accent ? (
           <>
-            <SheetHeader className="text-left">
-              <SheetTitle className="text-base text-zinc-100">
-                {block.insight.operationName}
-              </SheetTitle>
-              <p className="text-xs text-zinc-500">
+            <SheetHeader className="border-b border-border/60 px-5 py-4 text-left">
+              <SheetTitle>{block.insight.operationName}</SheetTitle>
+              <SheetDescription>
                 {block.fieldName} · {ymd}
                 {block.durationHours > 1
                   ? ` · ${block.durationHours} год`
                   : ""}
-              </p>
+              </SheetDescription>
             </SheetHeader>
 
-            <div className="mt-4 space-y-4 overflow-y-auto pb-4">
+            <div className="custom-scrollbar flex-1 space-y-4 overflow-y-auto px-5 py-4">
               {dayRisk && dayRisk !== "none" ? (
-                <div
-                  className={cn(
-                    "rounded-lg border border-rose-400/20 px-3 py-2 text-xs text-rose-200/90",
-                    climateColumnClass(dayRisk)
-                  )}
+                <Alert
+                  variant="destructive"
+                  className={cn("border-destructive/25", climateColumnClass(dayRisk))}
                 >
-                  Кліматичний ризик:{" "}
-                  {dayRisk === "storm"
-                    ? "шторм"
-                    : dayRisk === "rain"
-                      ? "дощ"
-                      : "заморозки"}
-                </div>
+                  <AlertTitle>Кліматичний ризик</AlertTitle>
+                  <AlertDescription>
+                    {dayRisk === "storm"
+                      ? "Шторм"
+                      : dayRisk === "rain"
+                        ? "Дощ"
+                        : "Заморозки"}
+                  </AlertDescription>
+                </Alert>
               ) : null}
 
               {onShiftDays ? (
@@ -105,7 +106,7 @@ export function AgroplanMobileDetail({
                     type="button"
                     size="sm"
                     variant="outline"
-                    className="h-9 flex-1 border-white/10 text-xs"
+                    className="h-9 flex-1 text-xs"
                     onClick={() => onShiftDays(block, -1)}
                   >
                     <ChevronLeft className="mr-1 h-3.5 w-3.5" />
@@ -115,7 +116,7 @@ export function AgroplanMobileDetail({
                     type="button"
                     size="sm"
                     variant="outline"
-                    className="h-9 flex-1 border-white/10 text-xs"
+                    className="h-9 flex-1 text-xs"
                     onClick={() => onShiftDays(block, 1)}
                   >
                     +1 день
@@ -125,7 +126,7 @@ export function AgroplanMobileDetail({
                     type="button"
                     size="sm"
                     variant="outline"
-                    className="h-9 border-white/10 text-xs"
+                    className="h-9 text-xs"
                     onClick={() => onShiftDays(block, 7)}
                   >
                     +7 днів
@@ -134,14 +135,14 @@ export function AgroplanMobileDetail({
               ) : null}
 
               {onDurationChange ? (
-                <div className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-black/20 px-3 py-2.5">
-                  <span className="text-xs text-zinc-500">Тривалість</span>
+                <div className="flex items-center justify-between rounded-xl border border-border/60 bg-muted/30 px-3 py-2.5">
+                  <span className="text-xs text-muted-foreground">Тривалість</span>
                   <div className="flex items-center gap-2">
                     <Button
                       type="button"
                       size="icon"
                       variant="outline"
-                      className="h-8 w-8 border-white/10"
+                      className="h-8 w-8"
                       disabled={block.durationHours <= 1}
                       onClick={() =>
                         onDurationChange(
@@ -152,14 +153,14 @@ export function AgroplanMobileDetail({
                     >
                       <Minus className="h-3.5 w-3.5" />
                     </Button>
-                    <span className="min-w-[3.5rem] text-center text-sm text-zinc-200">
+                    <span className="min-w-[3.5rem] text-center text-sm">
                       {block.durationHours} год
                     </span>
                     <Button
                       type="button"
                       size="icon"
                       variant="outline"
-                      className="h-8 w-8 border-white/10"
+                      className="h-8 w-8"
                       onClick={() =>
                         onDurationChange(block, block.durationHours + 0.5)
                       }
@@ -170,7 +171,7 @@ export function AgroplanMobileDetail({
                 </div>
               ) : null}
 
-              <p className="text-sm leading-relaxed text-zinc-400">
+              <p className="text-sm leading-relaxed text-muted-foreground">
                 {block.insight.explanation}
               </p>
 
@@ -182,8 +183,8 @@ export function AgroplanMobileDetail({
                       className={cn(
                         "rounded-full border px-2 py-0.5 text-[10px]",
                         chip.ok
-                          ? "border-emerald-400/25 text-emerald-200"
-                          : "border-amber-400/25 text-amber-200"
+                          ? "border-primary/25 bg-primary/5 text-primary"
+                          : "border-[#D69E2E]/30 bg-[#D69E2E]/10 text-[#9C4221]"
                       )}
                     >
                       {chip.label}
@@ -193,24 +194,24 @@ export function AgroplanMobileDetail({
               ) : null}
 
               {block.insight.resourceStatus.status === "DEFICIT" ? (
-                <p className="text-sm text-rose-200">
+                <p className="text-sm text-destructive">
                   Дефіцит: {block.insight.resourceStatus.item ?? "ТМЦ"}
                 </p>
               ) : null}
 
               {block.source === "insight" ? (
-                <p className="text-xs text-zinc-500">
+                <p className="text-xs text-muted-foreground">
                   ~{formatApproxUah(block.insight.estimatedCost.totalUah)}
                 </p>
               ) : null}
             </div>
 
-            <div className="flex flex-wrap gap-2 border-t border-white/[0.06] pt-4">
+            <SheetFooter className="flex-row flex-wrap gap-2 border-t border-border/60 px-5 py-4">
               {block.source === "insight" ||
               block.operationStatus === "planned" ? (
                 <Button
                   type="button"
-                  className="flex-1 bg-emerald-600"
+                  className="flex-1"
                   onClick={() => onPlan(block)}
                 >
                   <Play className="mr-1.5 h-4 w-4" />
@@ -221,7 +222,7 @@ export function AgroplanMobileDetail({
                 <Button
                   type="button"
                   variant="outline"
-                  className="border-rose-400/40 text-rose-200"
+                  className="border-destructive/40 text-destructive"
                   onClick={() => onOrder(block)}
                 >
                   <Package className="mr-1.5 h-4 w-4" />
@@ -232,7 +233,7 @@ export function AgroplanMobileDetail({
                 <Button
                   type="button"
                   variant="ghost"
-                  className="text-zinc-500"
+                  className="text-muted-foreground"
                   onClick={onUndo}
                 >
                   <Undo2 className="mr-1.5 h-4 w-4" />
@@ -243,13 +244,13 @@ export function AgroplanMobileDetail({
                 <Button
                   type="button"
                   variant="ghost"
-                  className="text-zinc-500"
+                  className="text-muted-foreground"
                   onClick={() => onDismiss(block)}
                 >
                   <EyeOff className="mr-1.5 h-4 w-4" />
                 </Button>
               ) : null}
-            </div>
+            </SheetFooter>
           </>
         ) : null}
       </SheetContent>

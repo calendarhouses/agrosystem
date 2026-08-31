@@ -105,16 +105,16 @@ export function AgroplanDesktop({ data, onPlan, onOrder }: Props) {
   }, [data]);
 
   return (
-    <div className="flex h-full flex-col bg-[#07080b] text-zinc-100">
-      <header className="flex shrink-0 items-center gap-3 border-b border-white/[0.06] px-5 py-3">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-emerald-400/20 bg-emerald-400/[0.06] text-emerald-300">
+    <div className="flex h-full flex-col bg-background text-foreground">
+      <header className="flex shrink-0 items-center gap-3 border-b border-border/60 bg-card/40 px-5 py-3">
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
           <Orbit className="h-5 w-5" strokeWidth={1.6} />
         </div>
         <div className="min-w-0">
-          <h1 className="text-base font-semibold tracking-[0.04em] text-zinc-100">
+          <h1 className="text-base font-semibold tracking-tight text-foreground">
             Агроплан
           </h1>
-          <p className="truncate text-xs text-zinc-500">
+          <p className="truncate text-xs text-muted-foreground">
             Сезон {data.seasonId} · {data.filteredBlocks.length} операцій
             {data.fieldsLoading ? " · завантаження…" : ` · ${data.fields.length} полів`}
             {data.realtimePulse ? " · live" : ""}
@@ -124,17 +124,19 @@ export function AgroplanDesktop({ data, onPlan, onOrder }: Props) {
           <div
             className={cn(
               "ml-auto hidden text-right text-xs md:block",
-              data.realtimePulse && "text-emerald-400/90"
+              data.realtimePulse && "text-primary"
             )}
           >
-            <span className="text-zinc-300">
+            <span className="text-foreground">
               {Math.round(data.liveWeather.tempC)}°C
             </span>
             {" · "}
-            вітер {Math.round(data.liveWeather.windMs)} м/с
-            {data.liveWeather.soilTempC != null
-              ? ` · ґрунт ${Math.round(data.liveWeather.soilTempC)}°C`
-              : ""}
+            <span className="text-muted-foreground">
+              вітер {Math.round(data.liveWeather.windMs)} м/с
+              {data.liveWeather.soilTempC != null
+                ? ` · ґрунт ${Math.round(data.liveWeather.soilTempC)}°C`
+                : ""}
+            </span>
           </div>
         ) : null}
       </header>

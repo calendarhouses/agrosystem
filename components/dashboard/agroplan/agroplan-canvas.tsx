@@ -37,7 +37,6 @@ import {
   climateColumnClass,
   type DayClimateRisk,
 } from "@/lib/agroplan/weather-risk";
-import { AGROPLAN_GRID, AGROPLAN_SURFACE } from "@/lib/agroplan/theme";
 import type { AgroForecastHour, AgroNdviAlert } from "@/lib/agronomy-engine";
 import type { FleetActiveOperation } from "@/lib/equipment-active-ops";
 import type { FarmField } from "@/lib/farm-fields";
@@ -318,22 +317,21 @@ export function AgroplanCanvas({
       onPointerUp={endPan}
       onPointerCancel={endPan}
       className={cn(
-        "custom-scrollbar relative min-w-0 flex-1 overflow-auto overscroll-none",
+        "custom-scrollbar relative min-w-0 flex-1 overflow-auto overscroll-none bg-background",
         panActive && (isPanning ? "cursor-grabbing" : "cursor-grab")
       )}
-      style={{ backgroundColor: AGROPLAN_SURFACE }}
     >
       <div style={{ width: contentWidth }} className="relative min-h-full">
         {/* Header */}
         <div
-          className="sticky top-0 z-40 flex h-10 border-b border-white/[0.06] bg-[#0a0c10]/95 backdrop-blur-md"
+          className="sticky top-0 z-40 flex h-10 border-b border-border/60 bg-card/90 backdrop-blur-md"
           style={{ width: contentWidth }}
         >
           <div
-            className="sticky left-0 z-50 flex shrink-0 items-end border-r border-white/[0.06] bg-[#0a0c10]/98 pb-1 pl-3"
+            className="sticky left-0 z-50 flex shrink-0 items-end border-r border-border/60 bg-card pb-1 pl-3"
             style={{ width: STICKY_LABEL_W }}
           >
-            <span className="text-[10px] uppercase tracking-[0.14em] text-zinc-600">
+            <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
               {zoom.label}
             </span>
           </div>
@@ -365,7 +363,7 @@ export function AgroplanCanvas({
                 <span
                   className={cn(
                     "whitespace-nowrap pl-1 text-[10px]",
-                    tick.major ? "text-zinc-400" : "text-zinc-600"
+                    tick.major ? "text-foreground/80" : "text-muted-foreground"
                   )}
                 >
                   {tick.label}
@@ -373,36 +371,23 @@ export function AgroplanCanvas({
               </div>
             ))}
             <div
-              className="pointer-events-none absolute inset-y-0 w-px bg-emerald-400/70 shadow-[0_0_12px_rgba(52,211,153,0.5)]"
+              className="pointer-events-none absolute inset-y-0 w-0.5 bg-primary/70"
               style={{ left: todayX }}
             />
           </div>
         </div>
 
-        {/* Grid bg */}
-        <div
-          className="pointer-events-none absolute inset-0"
-          style={{
-            left: STICKY_LABEL_W,
-            backgroundImage: `
-              linear-gradient(${AGROPLAN_GRID} 1px, transparent 1px),
-              linear-gradient(90deg, ${AGROPLAN_GRID} 1px, transparent 1px)
-            `,
-            backgroundSize: `${Math.max(8, 24 * zoom.pxPerHour)}px 48px`,
-          }}
-        />
-
         {dayGridLines.map((x, i) => (
           <div
             key={i}
-            className="pointer-events-none absolute inset-y-10 w-px bg-white/[0.03]"
+            className="pointer-events-none absolute inset-y-10 w-px bg-border/70"
             style={{ left: x }}
           />
         ))}
 
         {visibleFields.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 px-6 py-20">
-            <p className="text-sm text-zinc-500">
+            <p className="text-sm text-muted-foreground">
               Розгорніть поля зліва, щоб побачити сезонний таймлайн
             </p>
             {onExpandAll ? (
@@ -410,7 +395,6 @@ export function AgroplanCanvas({
                 type="button"
                 size="sm"
                 variant="outline"
-                className="border-emerald-400/30 text-emerald-200"
                 onClick={onExpandAll}
               >
                 Розгорнути всі поля
@@ -418,7 +402,7 @@ export function AgroplanCanvas({
             ) : null}
           </div>
         ) : (
-          visibleFields.map((field) => {
+          visibleFields.map((field, rowIndex) => {
             const meta = fieldRowMeta.get(field.id)!;
             const fieldBlocks = (blocksByField.get(field.id) ?? []).filter(
               (b) => blocks.some((x) => x.id === b.id)
@@ -430,32 +414,35 @@ export function AgroplanCanvas({
             return (
               <div
                 key={field.id}
-                className="flex border-b border-white/[0.04]"
+                className={cn(
+                  "flex border-b border-border/50",
+                  rowIndex % 2 === 1 && "bg-muted/25"
+                )}
                 style={{ height: meta.height }}
               >
                 <div
                   className={cn(
-                    "sticky left-0 z-30 flex shrink-0 items-center border-r border-white/[0.06] bg-[#080a0e]/95 px-3",
-                    fieldSelected && "bg-violet-950/35 ring-1 ring-inset ring-violet-400/25"
+                    "sticky left-0 z-30 flex shrink-0 items-center border-r border-border/60 bg-card px-3",
+                    fieldSelected && "bg-primary/5 ring-1 ring-inset ring-primary/20"
                   )}
                   style={{ width: STICKY_LABEL_W }}
                 >
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5">
                       {isLive ? (
-                        <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]" />
+                        <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-primary" />
                       ) : null}
                       {ndviFlag ? (
                         <span
-                          className="h-1.5 w-1.5 shrink-0 rounded-full bg-violet-400 shadow-[0_0_6px_rgba(167,139,250,0.8)]"
+                          className="h-1.5 w-1.5 shrink-0 rounded-full bg-violet-500"
                           title={`NDVI −${ndviFlag.dropPercent}%${ndviFlag.zoneNote ? ` · ${ndviFlag.zoneNote}` : ""}`}
                         />
                       ) : null}
-                      <p className="truncate text-xs font-medium text-zinc-300">
+                      <p className="truncate text-xs font-medium text-foreground">
                         {field.name}
                       </p>
                     </div>
-                    <p className="truncate text-[10px] text-zinc-600">
+                    <p className="truncate text-[10px] text-muted-foreground">
                       {field.crop || "—"}
                     </p>
                   </div>

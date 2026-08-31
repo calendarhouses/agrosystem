@@ -122,8 +122,8 @@ export function evaluateDropWeatherRisk(input: {
 }
 
 export function climateColumnClass(level: DayClimateRisk["level"]): string {
-  if (level === "storm") return "bg-rose-500/[0.12]";
-  if (level === "rain") return "bg-rose-400/[0.07]";
-  if (level === "frost") return "bg-sky-400/[0.06]";
+  if (level === "storm") return "bg-destructive/12";
+  if (level === "rain") return "bg-destructive/8";
+  if (level === "frost") return "bg-sky-500/10";
   return "";
 }

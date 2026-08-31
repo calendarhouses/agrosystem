@@ -41,15 +41,15 @@ export function AgroplanFieldRail({
     : fields;
 
   return (
-    <aside className="flex w-[220px] shrink-0 flex-col border-r border-white/[0.06] bg-[#080a0e]/95">
-      <div className="border-b border-white/[0.06] px-3 py-3">
-        <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500">
+    <aside className="flex w-[220px] shrink-0 flex-col border-r border-border/60 bg-card/50">
+      <div className="border-b border-border/60 px-3 py-3">
+        <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-muted-foreground">
           Поля · {visibleFields.length}
         </p>
       </div>
       <div className="custom-scrollbar flex-1 overflow-y-auto">
         {visibleFields.length === 0 ? (
-          <p className="px-3 py-6 text-xs text-zinc-600">Немає полів</p>
+          <p className="px-3 py-6 text-xs text-muted-foreground">Немає полів</p>
         ) : (
           visibleFields.map((field) => (
             <FieldAccordionRow
@@ -103,46 +103,46 @@ function FieldAccordionRow({
   onToggle: (multi: boolean) => void;
 }) {
   return (
-    <div className="border-b border-white/[0.04]">
+    <div className="border-b border-border/40">
       <button
         type="button"
         onClick={(e) => onToggle(e.metaKey || e.ctrlKey)}
         className={cn(
-          "flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-white/[0.03]",
-          expanded && "bg-white/[0.02]",
-          selected && "bg-violet-500/[0.08] ring-1 ring-inset ring-violet-400/25",
-          isLive && !selected && "bg-emerald-400/[0.04]"
+          "flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-muted/40",
+          expanded && "bg-muted/30",
+          selected && "bg-primary/5 ring-1 ring-inset ring-primary/20",
+          isLive && !selected && "bg-primary/[0.04]"
         )}
       >
         <ChevronDown
           className={cn(
-            "h-3.5 w-3.5 shrink-0 text-zinc-500 transition-transform",
+            "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
             !expanded && "-rotate-90"
           )}
         />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <p className="truncate text-xs font-medium text-zinc-200">
+            <p className="truncate text-xs font-medium text-foreground">
               {field.name}
             </p>
             {isLive ? (
-              <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-emerald-400" />
+              <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-primary" />
             ) : null}
             {ndviDrop != null ? (
               <span
-                className="shrink-0 rounded bg-violet-500/15 px-1 py-0.5 text-[9px] font-medium text-violet-300"
+                className="shrink-0 rounded bg-violet-500/10 px-1 py-0.5 text-[9px] font-medium text-violet-700"
                 title={`NDVI −${ndviDrop}%`}
               >
                 NDVI
               </span>
             ) : null}
           </div>
-          <p className="truncate text-[10px] text-zinc-600">
+          <p className="truncate text-[10px] text-muted-foreground">
             {field.crop || "—"} · {blocks.length} оп.
           </p>
         </div>
         {todayPerfectCount > 0 ? (
-          <span className="shrink-0 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-300">
+          <span className="shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
             {todayPerfectCount}
           </span>
         ) : null}
