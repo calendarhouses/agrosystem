@@ -60,8 +60,16 @@ export type DayAnalyticsPayload = {
 const SAMPLE_STEP_SEC = 40;
 const IDLE_MIN_SEC = 2 * 60;
 const IDLE_MAX_SPEED = 2;
-/** Справжня стоянка — майже без зміщення; GPS-дрейф при русі відсікаємо */
-const IDLE_MAX_DISPLACEMENT_KM = 0.15;
+/**
+ * Справжня стоянка: майже без зміщення.
+ * База 40 м (GPS-шум) + 25 м/год, стеля 80 м — повільне «поповзання»
+ * трактора в полі за кілька годин більше не виглядає як холостий хід.
+ */
+const IDLE_DISPLACEMENT_BASE_KM = 0.04;
+const IDLE_DISPLACEMENT_PER_HOUR_KM = 0.025;
+const IDLE_DISPLACEMENT_CAP_KM = 0.08;
+/** Середня швидкість сегмента вище цього — уже рух, не стоянка */
+const IDLE_MAX_AVG_KMH = 0.2;
 
 /**
  * Детекція зливу (анти-шум Wialon/LLS):
@@ -223,11 +231,15 @@ function sumIdleHours(samples: DayAnalyticsSample[]): number {
       const b = samples[j]!;
       km += haversineKm([a.lng, a.lat], [b.lng, b.lat]);
     }
-    if (km <= IDLE_MAX_DISPLACEMENT_KM) {
-      const hours = dur / 3600;
-      const avgKmh = hours > 0 ? km / hours : 0;
-      // Повільна робота з «нулями» швидкості, але зі зміщенням — не холостий хід.
-      if (avgKmh <= 0.35) totalSec += dur;
+    const hours = dur / 3600;
+    const maxKm = Math.min(
+      IDLE_DISPLACEMENT_CAP_KM,
+      IDLE_DISPLACEMENT_BASE_KM + IDLE_DISPLACEMENT_PER_HOUR_KM * hours
+    );
+    const avgKmh = hours > 0 ? km / hours : 0;
+    // Повільна робота / поповзання з «нулями» швидкості GPS — не холостий.
+    if (km <= maxKm && avgKmh <= IDLE_MAX_AVG_KMH) {
+      totalSec += dur;
     }
 
     runStart = null;
