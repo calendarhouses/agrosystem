@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  Activity,
   FileSpreadsheet,
   Fuel,
   History,
@@ -29,6 +30,12 @@ export const APP_NAV_ITEMS: AppNavItem[] = [
     hint: "Поля, контури та погода",
     icon: MapIcon,
     bottomNav: true,
+  },
+  {
+    href: "/operations",
+    label: "Хронологія",
+    hint: "Наряди, ТМЦ і скаутинг по полях",
+    icon: Activity,
   },
   {
     href: "/equipment",

@@ -90,10 +90,10 @@ type DemoFieldPack = {
 };
 
 const FIELD_PHOTO = {
-  crop: "https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=900&auto=format&fit=crop&q=80",
-  soil: "https://images.unsplash.com/photo-1574943329822-55c397a0e0cc?w=900&auto=format&fit=crop&q=80",
-  leaf: "https://images.unsplash.com/photo-1464226187744-fa90b21236aa?w=900&auto=format&fit=crop&q=80",
-  sprayer: "https://images.unsplash.com/photo-1500382017468-9049fed747aa?w=900&auto=format&fit=crop&q=80",
+  crop: "https://picsum.photos/seed/agro-vas1-crop/480/360",
+  soil: "https://picsum.photos/seed/agro-vas2-soil/480/360",
+  leaf: "https://picsum.photos/seed/agro-vas1-leaf/480/360",
+  sprayer: "https://picsum.photos/seed/agro-hryh-stand/480/360",
 } as const;
 
 const DEMO_FIELD_PACKS: DemoFieldPack[] = [

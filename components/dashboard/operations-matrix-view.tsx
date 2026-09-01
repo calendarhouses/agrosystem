@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { filterTimelineByIsoRange } from "@/lib/field-timeline-filter";
 import type { FieldTimelineField, FieldWithTimeline, UnifiedTimelineEvent } from "@/lib/field-timeline";
 import { useFieldTimeline } from "@/lib/use-field-timeline";
+import { ukFieldLabel, ukStationLabel } from "@/lib/uk-plural";
 import { useFinancePeriodFilter } from "@/lib/use-finance-period-filter";
 import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
@@ -271,10 +272,8 @@ export function OperationsMatrixView() {
                   Наряди техніки та списання ТМЦ по полях обраного сезону.
                   {!isLoading && !error ? (
                     <span className="ml-1 font-medium text-zinc-600">
-                      {summary.fieldCount}{" "}
-                      {summary.fieldCount === 1 ? "поле" : "полів"} ·{" "}
-                      {summary.stationCount}{" "}
-                      {summary.stationCount === 1 ? "станція" : "станцій"}
+                      {ukFieldLabel(summary.fieldCount)} ·{" "}
+                      {ukStationLabel(summary.stationCount)}
                     </span>
                   ) : null}
                 </p>

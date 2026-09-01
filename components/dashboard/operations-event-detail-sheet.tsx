@@ -31,6 +31,7 @@ import {
   OperationsSheetHeader,
   useOpsChrome,
 } from "@/components/dashboard/operations-sheet-chrome";
+import { OperationsTimelineImage } from "@/components/dashboard/operations-timeline-image";
 import { OperationsWeatherBadge } from "@/components/dashboard/operations-weather-badge";
 import { deleteFieldOperation, type FieldOperation } from "@/lib/field-operations";
 import type { FieldTimelineField, UnifiedTimelineEvent } from "@/lib/field-timeline";
@@ -181,13 +182,11 @@ function ScoutingDetailHero({ event }: { event: UnifiedTimelineEvent }) {
         <OperationsWeatherBadge weatherContext={event.weatherContext} />
       </div>
 
-      {event.imageUrl ? (
-        <img
-          src={event.imageUrl}
-          alt=""
-          className="w-full rounded-2xl border border-white/10 object-cover"
-        />
-      ) : null}
+      <OperationsTimelineImage
+        src={event.imageUrl}
+        variant="dark"
+        aspectClassName="aspect-[4/3] w-full"
+      />
 
       {event.notes ? (
         <p className="mt-4 text-sm leading-relaxed text-zinc-300">{event.notes}</p>

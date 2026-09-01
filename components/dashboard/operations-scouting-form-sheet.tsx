@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { format } from "date-fns";
 import { Camera, ImageIcon, Loader2, Search, X } from "lucide-react";
@@ -50,7 +50,7 @@ export function OperationsScoutingForm({
   const [notes, setNotes] = useState("");
   const [photo, setPhoto] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (!photo) {
@@ -75,36 +75,37 @@ export function OperationsScoutingForm({
     setPhoto(file);
   }
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!photo) {
-      toast.error("Додайте фото з поля");
+    if (!photo || submitting) {
+      if (!photo) toast.error("Додайте фото з поля");
       return;
     }
 
-    startTransition(async () => {
-      try {
-        const imageBase64 = await fileToBase64(photo);
-        const res = await createScoutingReport({
-          fieldId: field.id,
-          notes,
-          date,
-          imageBase64,
-          imageMimeType: photo.type,
-          imageFileName: photo.name,
-        });
-        if (!res.ok) {
-          toast.error(res.error);
-          return;
-        }
-        toast.success("Звіт скаутингу збережено");
-        onSaved();
-      } catch (err) {
-        toast.error(
-          err instanceof Error ? err.message : "Не вдалося зберегти звіт"
-        );
+    setSubmitting(true);
+    try {
+      const imageBase64 = await fileToBase64(photo);
+      const res = await createScoutingReport({
+        fieldId: field.id,
+        notes,
+        date,
+        imageBase64,
+        imageMimeType: photo.type,
+        imageFileName: photo.name,
+      });
+      if (!res.ok) {
+        toast.error(res.error);
+        return;
       }
-    });
+      toast.success("Звіт скаутингу збережено");
+      onSaved();
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Не вдалося зберегти звіт"
+      );
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -227,13 +228,13 @@ export function OperationsScoutingForm({
       <OperationsSheetFooter>
         <button
           type="submit"
-          disabled={pending || !photo}
+          disabled={submitting || !photo}
           className={cn(
             chrome.primaryBtn,
             "bg-sky-600 shadow-[0_8px_24px_-10px_rgba(2,132,199,0.55)] hover:bg-sky-500"
           )}
         >
-          {pending ? (
+          {submitting ? (
             <>
               <Loader2 className="mr-2 inline size-4 animate-spin" />
               Збереження…

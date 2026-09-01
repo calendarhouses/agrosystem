@@ -7,16 +7,19 @@ import {
   ChevronLeft,
   ChevronRight,
   FlaskConical,
+  Maximize2,
+  Minimize2,
   Package,
   Plus,
   Search,
   Sprout,
   Tractor,
-  Wheat,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { motion } from "framer-motion";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { normalizeFieldCrop } from "@/components/dashboard/field-passport-form";
+import { OperationsTimelineImageThumb } from "@/components/dashboard/operations-timeline-image";
 import { OperationsWeatherBadge } from "@/components/dashboard/operations-weather-badge";
 import {
   Accordion,
@@ -43,6 +46,7 @@ import {
   TIMELINE_NO_CROP_LABEL,
   type TimelineCropGroup,
 } from "@/lib/field-timeline-crops";
+import { ukFieldLabel, ukStationLabel } from "@/lib/uk-plural";
 import { cn } from "@/lib/utils";
 
 export type OperationsMetroVariant = "mobile" | "desktop";
@@ -50,14 +54,27 @@ export type OperationsMetroVariant = "mobile" | "desktop";
 const STATION_CARD_WIDTH = 216;
 const STATION_STEP = 252;
 const TRACK_PAD_X = STATION_CARD_WIDTH / 2 + 24;
-const TRACK_HEIGHT = 420;
-const LINE_Y_TOP = 168;
-const LINE_Y_BOTTOM = 264;
+const METRO_TRACK_MIN_HEIGHT = 420;
+const METRO_CARD_GAP = 20;
+const METRO_NODE_RADIUS = 10;
+const METRO_NODE_OUTER_RADIUS = 13;
+const METRO_LINE_GAP = 88;
+const METRO_TRACK_PADDING_Y = 16;
+const METRO_STANDARD_CARD_H = 148;
+const METRO_SCOUTING_CARD_H = 268;
+const METRO_OVERVIEW_SPRING = { type: "spring" as const, damping: 25, stiffness: 120 };
+const METRO_OVERVIEW_VIEWPORT_OFFSET = 200;
+const METRO_CINEMATIC_NODE_SCALE = 1.35;
+const METRO_CURVE_BEND = 0.52;
+const METRO_VERTICAL_BEND = 0.42;
 
 const METRO_LINE_COLORS = [
   {
     id: "amber",
     stroke: "#f97316",
+    strokeBright: "#fdba74",
+    strokeDim: "#c2410c",
+    glowRgb: "249, 115, 22",
     ring: "border-orange-500",
     glow: "shadow-orange-500/30",
     fill: "bg-orange-500",
@@ -65,6 +82,9 @@ const METRO_LINE_COLORS = [
   {
     id: "emerald",
     stroke: "#34d399",
+    strokeBright: "#6ee7b7",
+    strokeDim: "#059669",
+    glowRgb: "52, 211, 153",
     ring: "border-emerald-500",
     glow: "shadow-emerald-500/30",
     fill: "bg-emerald-500",
@@ -72,6 +92,9 @@ const METRO_LINE_COLORS = [
   {
     id: "sky",
     stroke: "#38bdf8",
+    strokeBright: "#7dd3fc",
+    strokeDim: "#0284c7",
+    glowRgb: "56, 189, 248",
     ring: "border-sky-500",
     glow: "shadow-sky-500/30",
     fill: "bg-sky-500",
@@ -79,6 +102,9 @@ const METRO_LINE_COLORS = [
   {
     id: "violet",
     stroke: "#a78bfa",
+    strokeBright: "#c4b5fd",
+    strokeDim: "#7c3aed",
+    glowRgb: "167, 139, 250",
     ring: "border-violet-500",
     glow: "shadow-violet-500/30",
     fill: "bg-violet-500",
@@ -86,11 +112,16 @@ const METRO_LINE_COLORS = [
   {
     id: "rose",
     stroke: "#fb7185",
+    strokeBright: "#fda4af",
+    strokeDim: "#e11d48",
+    glowRgb: "251, 113, 133",
     ring: "border-rose-500",
     glow: "shadow-rose-500/30",
     fill: "bg-rose-500",
   },
 ] as const;
+
+type MetroLineColor = (typeof METRO_LINE_COLORS)[number];
 
 const uahFormatter = new Intl.NumberFormat("uk-UA", {
   style: "currency",
@@ -186,20 +217,280 @@ function eventIcon(
   }
 }
 
-function buildMetroSegments(count: number, yPositions: number[]): string[] {
-  if (count < 2) return [];
-  const segments: string[] = [];
+function estimateStationCardHeight(event: UnifiedTimelineEvent): number {
+  if (event.type !== "scouting") return METRO_STANDARD_CARD_H;
+
+  let height = 108;
+  height += 104;
+  if (event.notes?.trim()) height += 40;
+  else height += 22;
+  return Math.max(height, METRO_SCOUTING_CARD_H);
+}
+
+function computeMetroTrackLayout(events: UnifiedTimelineEvent[]): {
+  trackHeight: number;
+  yPositions: number[];
+} {
+  if (events.length === 0) {
+    return { trackHeight: METRO_TRACK_MIN_HEIGHT, yPositions: [] };
+  }
+
+  let maxAbove = 0;
+  let maxBelow = 0;
+
+  for (let index = 0; index < events.length; index++) {
+    const height = estimateStationCardHeight(events[index]!);
+    if (index % 2 === 0) {
+      maxAbove = Math.max(maxAbove, height);
+    } else {
+      maxBelow = Math.max(maxBelow, height);
+    }
+  }
+
+  const lineYTop =
+    METRO_TRACK_PADDING_Y +
+    maxAbove +
+    METRO_CARD_GAP +
+    METRO_NODE_RADIUS;
+  const lineYBottom = lineYTop + METRO_LINE_GAP;
+  const trackHeight = Math.max(
+    METRO_TRACK_MIN_HEIGHT,
+    lineYBottom + METRO_CARD_GAP + maxBelow + METRO_TRACK_PADDING_Y
+  );
+
+  const yPositions = events.map((_, index) =>
+    index % 2 === 0 ? lineYTop : lineYBottom
+  );
+
+  return { trackHeight, yPositions };
+}
+
+function metroStationX(index: number): number {
+  return TRACK_PAD_X + index * STATION_STEP;
+}
+
+function cubicBezierSegment(
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  bend = METRO_CURVE_BEND
+): string {
+  const dx = (x1 - x0) * bend;
+  return `C ${x0 + dx} ${y0}, ${x1 - dx} ${y1}, ${x1} ${y1}`;
+}
+
+function verticalBezierSegment(
+  x: number,
+  y0: number,
+  y1: number,
+  bend = METRO_VERTICAL_BEND
+): string {
+  const dy = (y1 - y0) * bend;
+  return `C ${x} ${y0 + dy}, ${x} ${y1 - dy}, ${x} ${y1}`;
+}
+
+function buildMetroPath(
+  count: number,
+  yPositions: number[],
+  trackHeight: number
+): string {
+  if (count === 0) return "";
+
+  const x0 = metroStationX(0);
+  const y0 = yPositions[0] ?? 0;
+  const parts: string[] = [`M ${x0} 0`, verticalBezierSegment(x0, 0, y0)];
+
   for (let i = 1; i < count; i++) {
-    const x0 = TRACK_PAD_X + (i - 1) * STATION_STEP;
-    const x1 = TRACK_PAD_X + i * STATION_STEP;
-    const y0 = yPositions[i - 1] ?? LINE_Y_TOP;
-    const y1 = yPositions[i] ?? LINE_Y_BOTTOM;
-    const midX = (x0 + x1) / 2;
-    segments.push(
-      `M ${x0} ${y0} H ${midX - 10} Q ${midX} ${y0} ${midX} ${(y0 + y1) / 2} Q ${midX} ${y1} ${midX + 10} ${y1} H ${x1}`
+    parts.push(
+      cubicBezierSegment(
+        metroStationX(i - 1),
+        yPositions[i - 1] ?? y0,
+        metroStationX(i),
+        yPositions[i] ?? y0
+      )
     );
   }
-  return segments;
+
+  const xLast = metroStationX(count - 1);
+  const yLast = yPositions[count - 1] ?? y0;
+  parts.push(verticalBezierSegment(xLast, yLast, trackHeight));
+
+  return parts.join(" ");
+}
+
+function computeOverviewScale(
+  scrollHeight: number,
+  scrollWidth: number
+): number {
+  if (scrollHeight <= 0 || scrollWidth <= 0) return 1;
+  const scaleY =
+    (window.innerHeight - METRO_OVERVIEW_VIEWPORT_OFFSET) / scrollHeight;
+  const scaleX = (window.innerWidth - 80) / scrollWidth;
+  return Math.min(1, scaleY, scaleX);
+}
+
+function MetroTrackSvg({
+  line,
+  lineIndex,
+  trackWidth,
+  trackHeight,
+  metroPath,
+  yPositions,
+  desktop,
+  cinematic = false,
+}: {
+  line: MetroLineColor;
+  lineIndex: number;
+  trackWidth: number;
+  trackHeight: number;
+  metroPath: string;
+  yPositions: number[];
+  desktop: boolean;
+  cinematic?: boolean;
+}) {
+  const gradId = `metro-grad-${line.id}-${lineIndex}`;
+  const glowFilterId = `metro-glow-${line.id}-${lineIndex}`;
+  const nodeGlowId = `metro-node-glow-${line.id}-${lineIndex}`;
+  const xEnd = metroStationX(Math.max(yPositions.length - 1, 0));
+
+  return (
+    <svg
+      className="pointer-events-none absolute inset-0"
+      width={trackWidth}
+      height={trackHeight}
+      aria-hidden
+    >
+      <defs>
+        <linearGradient
+          id={gradId}
+          gradientUnits="userSpaceOnUse"
+          x1={metroStationX(0)}
+          y1={0}
+          x2={xEnd}
+          y2={trackHeight}
+        >
+          <stop offset="0%" stopColor={line.strokeDim} stopOpacity={0.45} />
+          <stop offset="12%" stopColor={line.strokeBright} stopOpacity={1} />
+          <stop offset="50%" stopColor={line.stroke} stopOpacity={1} />
+          <stop offset="88%" stopColor={line.strokeBright} stopOpacity={1} />
+          <stop offset="100%" stopColor={line.strokeDim} stopOpacity={0.45} />
+        </linearGradient>
+
+        <filter
+          id={glowFilterId}
+          x="-40%"
+          y="-20%"
+          width="180%"
+          height="140%"
+          colorInterpolationFilters="sRGB"
+        >
+          <feGaussianBlur stdDeviation="5" result="blurWide" />
+          <feGaussianBlur in="SourceGraphic" stdDeviation="2.5" result="blurMid" />
+          <feMerge>
+            <feMergeNode in="blurWide" />
+            <feMergeNode in="blurMid" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+
+        <filter id={nodeGlowId} x="-100%" y="-100%" width="300%" height="300%">
+          <feGaussianBlur stdDeviation="3.5" result="nodeBlur" />
+          <feMerge>
+            <feMergeNode in="nodeBlur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+
+      <g
+        style={{
+          filter: cinematic
+            ? `drop-shadow(0 0 12px rgba(${line.glowRgb}, 0.8)) drop-shadow(0 0 28px rgba(${line.glowRgb}, 0.45))`
+            : `drop-shadow(0 0 8px rgba(${line.glowRgb}, 0.6)) drop-shadow(0 0 18px rgba(${line.glowRgb}, 0.28))`,
+        }}
+      >
+        {metroPath ? (
+          <>
+            <path
+              d={metroPath}
+              fill="none"
+              stroke={line.stroke}
+              strokeWidth={16}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              opacity={0.14}
+            />
+            <path
+              d={metroPath}
+              fill="none"
+              stroke={line.strokeBright}
+              strokeWidth={10}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              opacity={0.28}
+            />
+            <path
+              d={metroPath}
+              fill="none"
+              stroke={`url(#${gradId})`}
+              strokeWidth={5.5}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              filter={`url(#${glowFilterId})`}
+            />
+          </>
+        ) : null}
+      </g>
+
+      {yPositions.map((y, index) => {
+        const x = metroStationX(index);
+        const nodeFill = desktop ? "#fafafa" : "#09090b";
+        const outerR = METRO_NODE_OUTER_RADIUS * (cinematic ? METRO_CINEMATIC_NODE_SCALE : 1);
+        const midR = METRO_NODE_RADIUS * (cinematic ? METRO_CINEMATIC_NODE_SCALE : 1);
+        const coreR = (METRO_NODE_RADIUS - 3) * (cinematic ? METRO_CINEMATIC_NODE_SCALE : 1);
+        const haloR = (METRO_NODE_OUTER_RADIUS + 4) * (cinematic ? METRO_CINEMATIC_NODE_SCALE : 1);
+        const specR = 2.5 * (cinematic ? METRO_CINEMATIC_NODE_SCALE : 1);
+
+        return (
+          <g key={index} filter={`url(#${nodeGlowId})`}>
+            <circle
+              cx={x}
+              cy={y}
+              r={haloR}
+              fill={`rgba(${line.glowRgb}, ${cinematic ? 0.28 : 0.16})`}
+            />
+            <circle
+              cx={x}
+              cy={y}
+              r={outerR}
+              fill={nodeFill}
+              fillOpacity={desktop ? 0.92 : 0.88}
+              stroke={`rgba(${line.glowRgb}, ${cinematic ? 0.55 : 0.35})`}
+              strokeWidth={cinematic ? 2.5 : 2}
+            />
+            <circle
+              cx={x}
+              cy={y}
+              r={midR}
+              fill="none"
+              stroke={line.stroke}
+              strokeWidth={cinematic ? 3 : 2.5}
+              opacity={0.9}
+            />
+            <circle cx={x} cy={y} r={coreR} fill={line.strokeBright} />
+            <circle
+              cx={x - 1.5}
+              cy={y - 1.5}
+              r={specR}
+              fill="#ffffff"
+              fillOpacity={cinematic ? 0.7 : 0.55}
+            />
+          </g>
+        );
+      })}
+    </svg>
+  );
 }
 
 function MetroStationDateRow({
@@ -232,12 +523,17 @@ function MetroStationCard({
   event,
   onClick,
   desktop = false,
+  cinematic = false,
 }: {
   event: UnifiedTimelineEvent;
   onClick?: () => void;
   desktop?: boolean;
+  cinematic?: boolean;
 }) {
   const icon = deriveTimelineIcon(event);
+  const cinematicText = cinematic
+    ? "[&_p]:opacity-50 [&_time]:opacity-50 [&_span]:opacity-50"
+    : "";
 
   if (event.type === "scouting") {
     return (
@@ -245,7 +541,9 @@ function MetroStationCard({
         type="button"
         onClick={onClick}
         className={cn(
-          "relative z-10 w-[13.5rem] rounded-2xl border p-3 text-left backdrop-blur-md transition active:scale-[0.98]",
+          "relative z-10 w-full touch-pan-xy rounded-2xl border p-3 text-left backdrop-blur-md transition active:scale-[0.98]",
+          cinematic && "transition-opacity duration-300",
+          cinematicText,
           desktop
             ? "border-[#E5DFD3]/90 bg-white/95 shadow-sm hover:border-blue-200 hover:shadow-md"
             : "border-white/10 bg-white/[0.07] shadow-[0_12px_40px_-20px_rgba(0,0,0,0.85)] hover:border-white/20 hover:bg-white/[0.12]"
@@ -253,28 +551,10 @@ function MetroStationCard({
       >
         <MetroStationDateRow event={event} desktop={desktop} />
 
-        {event.imageUrl ? (
-          <img
-            src={event.imageUrl}
-            alt=""
-            loading="lazy"
-            className={cn(
-              "mt-2 h-24 w-full rounded-xl border object-cover",
-              desktop ? "border-zinc-200/80" : "border-white/10"
-            )}
-          />
-        ) : (
-          <div
-            className={cn(
-              "mt-2 flex h-24 w-full items-center justify-center rounded-xl border border-dashed",
-              desktop
-                ? "border-zinc-200 bg-zinc-50 text-zinc-400"
-                : "border-white/10 bg-white/[0.02] text-zinc-500"
-            )}
-          >
-            <Wheat className="size-6 opacity-40" aria-hidden />
-          </div>
-        )}
+        <OperationsTimelineImageThumb
+          src={event.imageUrl}
+          variant={desktop ? "light" : "dark"}
+        />
 
         {event.notes ? (
           <p
@@ -313,7 +593,9 @@ function MetroStationCard({
       type="button"
       onClick={onClick}
       className={cn(
-        "relative z-10 w-[13.5rem] rounded-2xl border p-3 text-left backdrop-blur-md transition active:scale-[0.98]",
+        "relative z-10 w-full touch-pan-xy rounded-2xl border p-3 text-left backdrop-blur-md transition active:scale-[0.98]",
+        cinematic && "transition-opacity duration-300",
+        cinematicText,
         desktop
           ? "border-[#E5DFD3]/90 bg-white/95 shadow-sm hover:border-[#276749]/20 hover:shadow-md"
           : "border-white/10 bg-white/[0.07] shadow-[0_12px_40px_-20px_rgba(0,0,0,0.85)] hover:border-white/20 hover:bg-white/[0.12]"
@@ -398,20 +680,50 @@ function MetroFieldLine({
     [item.events]
   );
 
-  const yPositions = events.map((_, index) =>
-    index % 2 === 0 ? LINE_Y_TOP : LINE_Y_BOTTOM
+  const { trackHeight, yPositions } = useMemo(
+    () => computeMetroTrackLayout(events),
+    [events]
   );
   const trackWidth = Math.max(
     STATION_STEP * Math.max(events.length - 1, 0) + TRACK_PAD_X * 2,
     STATION_CARD_WIDTH + TRACK_PAD_X * 2
   );
-  const segments = buildMetroSegments(events.length, yPositions);
+  const metroPath = buildMetroPath(events.length, yPositions, trackHeight);
+
+  const [isZoomedOut, setIsZoomedOut] = useState(false);
+  const [overviewScale, setOverviewScale] = useState(1);
+  const timelineContentRef = useRef<HTMLDivElement>(null);
+
+  const refreshOverviewScale = useCallback(() => {
+    const el = timelineContentRef.current;
+    if (!el) return;
+    setOverviewScale(
+      computeOverviewScale(el.scrollHeight, el.scrollWidth)
+    );
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!isZoomedOut) return;
+    refreshOverviewScale();
+    const raf = requestAnimationFrame(refreshOverviewScale);
+    return () => cancelAnimationFrame(raf);
+  }, [isZoomedOut, refreshOverviewScale, trackWidth, trackHeight, events.length]);
+
+  useEffect(() => {
+    if (!isZoomedOut) return;
+    refreshOverviewScale();
+    window.addEventListener("resize", refreshOverviewScale);
+    return () => window.removeEventListener("resize", refreshOverviewScale);
+  }, [isZoomedOut, refreshOverviewScale, trackWidth, trackHeight, events.length]);
+
+  const activeScale = isZoomedOut ? overviewScale : 1;
+  const scaledTrackHeight = trackHeight * activeScale;
 
   return (
     <AccordionItem
       value={item.fieldId}
       className={cn(
-        "overflow-hidden rounded-3xl border",
+        "overflow-visible rounded-3xl border",
         desktop
           ? "border-[#E5DFD3]/90 bg-white/80 shadow-sm"
           : "border-white/8 bg-gradient-to-br from-white/[0.06] via-white/[0.03] to-transparent"
@@ -484,9 +796,38 @@ function MetroFieldLine({
                   : "border-white/10 bg-black/20 text-zinc-300"
               )}
             >
-              {events.length}{" "}
-              {events.length === 1 ? "станція" : "станцій"}
+              {ukStationLabel(events.length)}
             </span>
+
+            {events.length > 0 ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsZoomedOut((prev) => !prev);
+                }}
+                aria-label={
+                  isZoomedOut ? "Звичайний вигляд таймлайну" : "Огляд маршруту"
+                }
+                aria-pressed={isZoomedOut}
+                className={cn(
+                  "hidden size-8 items-center justify-center rounded-full border backdrop-blur-md transition-all group-data-[state=open]:inline-flex",
+                  isZoomedOut
+                    ? desktop
+                      ? "border-[#C05621]/30 bg-[#C05621]/10 text-[#C05621]"
+                      : "border-orange-400/40 bg-orange-500/15 text-orange-300"
+                    : desktop
+                      ? "border-[#E5DFD3]/80 bg-white/70 text-zinc-600 hover:bg-white"
+                      : "border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10"
+                )}
+              >
+                {isZoomedOut ? (
+                  <Minimize2 className="size-3.5" strokeWidth={2.2} />
+                ) : (
+                  <Maximize2 className="size-3.5" strokeWidth={2.2} />
+                )}
+              </button>
+            ) : null}
 
             <button
               type="button"
@@ -515,7 +856,7 @@ function MetroFieldLine({
         </div>
       </AccordionTrigger>
 
-      <AccordionContent className={cn("pb-0", !desktop && "touch-pan-xy")}>
+      <AccordionContent className="overflow-visible pb-0 touch-pan-y">
         {events.length === 0 ? (
           <div className="px-4 py-10 text-center">
             <p
@@ -541,89 +882,87 @@ function MetroFieldLine({
             </button>
           </div>
         ) : (
-          <div className="relative py-2">
+          <div
+            className="relative overflow-visible"
+            style={{ overscrollBehaviorX: "contain" }}
+          >
             <div
-              className="overflow-x-auto overscroll-x-contain px-1 pb-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              className={cn(
+                "ops-track-scroll overscroll-x-contain touch-pan-xy px-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+                isZoomedOut
+                  ? "overflow-hidden"
+                  : "overflow-x-auto overflow-y-visible"
+              )}
               aria-label={`Хронологія поля ${item.fieldName}`}
-              data-allow-pan="true"
             >
               <div
-                className="relative mx-auto"
-                style={{ width: trackWidth, height: TRACK_HEIGHT }}
+                className={cn(
+                  "mx-auto overflow-visible transition-[height] duration-300",
+                  isZoomedOut && "flex justify-center"
+                )}
+                style={{
+                  height: isZoomedOut ? scaledTrackHeight : trackHeight,
+                  width: isZoomedOut ? "100%" : trackWidth,
+                }}
               >
-                <svg
-                  className="pointer-events-none absolute inset-0"
-                  width={trackWidth}
-                  height={TRACK_HEIGHT}
-                  aria-hidden
+                <motion.div
+                  ref={timelineContentRef}
+                  className="relative overflow-visible"
+                  style={{
+                    width: trackWidth,
+                    height: trackHeight,
+                    minHeight: trackHeight,
+                    transformOrigin: "top center",
+                  }}
+                  animate={{ scale: activeScale }}
+                  transition={METRO_OVERVIEW_SPRING}
                 >
-                  <defs>
-                    <filter id={`glow-${line.id}-${lineIndex}`}>
-                      <feGaussianBlur stdDeviation="3" result="blur" />
-                      <feMerge>
-                        <feMergeNode in="blur" />
-                        <feMergeNode in="SourceGraphic" />
-                      </feMerge>
-                    </filter>
-                  </defs>
-                  {segments.map((d, index) => (
-                    <path
-                      key={index}
-                      d={d}
-                      fill="none"
-                      stroke={line.stroke}
-                      strokeWidth={7}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      opacity={0.95}
-                      filter={`url(#glow-${line.id}-${lineIndex})`}
-                    />
-                  ))}
-                </svg>
+                  <MetroTrackSvg
+                    line={line}
+                    lineIndex={lineIndex}
+                    trackWidth={trackWidth}
+                    trackHeight={trackHeight}
+                    metroPath={metroPath}
+                    yPositions={yPositions}
+                    desktop={desktop}
+                    cinematic={isZoomedOut}
+                  />
 
-                {events.map((event, index) => {
-                  const x = TRACK_PAD_X + index * STATION_STEP;
-                  const y = yPositions[index] ?? LINE_Y_TOP;
-                  const cardAbove = y === LINE_Y_TOP;
+                  {events.map((event, index) => {
+                    const x = metroStationX(index);
+                    const y = yPositions[index] ?? 0;
+                    const cardAbove = index % 2 === 0;
 
-                  return (
-                    <div
-                      key={event.id}
-                      className="absolute top-0 left-0"
-                      style={{
-                        left: x,
-                        transform: "translateX(-50%)",
-                        width: 0,
-                        height: TRACK_HEIGHT,
-                      }}
-                    >
-                      <span
-                        className={cn(
-                          "absolute left-1/2 size-5 -translate-x-1/2 rounded-full border-[3px] shadow-lg",
-                          desktop ? "bg-white" : "bg-zinc-950",
-                          line.ring,
-                          line.glow
-                        )}
-                        style={{ top: y - 10 }}
-                      />
-
+                    return (
                       <div
-                        className="absolute left-1/2 -translate-x-1/2"
-                        style={
-                          cardAbove
-                            ? { bottom: TRACK_HEIGHT - y + 20 }
-                            : { top: y + 20 }
-                        }
+                        key={event.id}
+                        className="absolute top-0 flex flex-col items-center"
+                        style={{
+                          left: x,
+                          width: STATION_CARD_WIDTH,
+                          marginLeft: -STATION_CARD_WIDTH / 2,
+                          height: trackHeight,
+                        }}
                       >
-                        <MetroStationCard
-                          event={event}
-                          desktop={desktop}
-                          onClick={() => onEventClick?.(field, event)}
-                        />
+                        <div
+                          className="absolute left-0 w-full"
+                          style={
+                            cardAbove
+                              ? { bottom: trackHeight - y + METRO_CARD_GAP }
+                              : { top: y + METRO_CARD_GAP }
+                          }
+                        >
+                          <MetroStationCard
+                            event={event}
+                            desktop={desktop}
+                            cinematic={isZoomedOut}
+                            onClick={() => onEventClick?.(field, event)}
+                          />
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </motion.div>
               </div>
             </div>
 
@@ -656,7 +995,7 @@ function CropCategoryCard({
   const description =
     group.label === TIMELINE_NO_CROP_LABEL
       ? "Поля без культури в паспорті"
-      : `${group.fieldCount} ${group.fieldCount === 1 ? "поле" : group.fieldCount < 5 ? "поля" : "полів"} · ${group.stationCount} ${group.stationCount === 1 ? "станція" : group.stationCount < 5 ? "станції" : "станцій"}`;
+      : `${ukFieldLabel(group.fieldCount)} · ${ukStationLabel(group.stationCount)}`;
 
   if (desktop) {
     return (
@@ -920,10 +1259,8 @@ export function OperationsMetroMap({
                     {activeGroup.label}
                   </h2>
                   <p className="mt-0.5 text-sm text-zinc-500">
-                    {activeGroup.fieldCount}{" "}
-                    {activeGroup.fieldCount === 1 ? "поле" : "полів"} ·{" "}
-                    {activeGroup.stationCount}{" "}
-                    {activeGroup.stationCount === 1 ? "станція" : "станцій"} ·{" "}
+                    {ukFieldLabel(activeGroup.fieldCount)} ·{" "}
+                    {ukStationLabel(activeGroup.stationCount)} ·{" "}
                     {formatAreaHa(activeGroup.totalAreaHa)}
                   </p>
                 </div>
@@ -992,10 +1329,8 @@ export function OperationsMetroMap({
               {activeGroup.label}
             </h2>
             <p className="mt-0.5 text-xs text-zinc-400">
-              {activeGroup.fieldCount}{" "}
-              {activeGroup.fieldCount === 1 ? "поле" : "полів"} ·{" "}
-              {activeGroup.stationCount}{" "}
-              {activeGroup.stationCount === 1 ? "станція" : "станцій"} ·{" "}
+              {ukFieldLabel(activeGroup.fieldCount)} ·{" "}
+              {ukStationLabel(activeGroup.stationCount)} ·{" "}
               {formatAreaHa(activeGroup.totalAreaHa)}
             </p>
           </div>
