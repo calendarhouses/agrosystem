@@ -1,5 +1,5 @@
 /**
- * Демо-наряди та списання ТМЦ для перегляду «Хронології полів».
+ * Демо-дані для «Хронології полів»: наряди, списання ТМЦ, скаутинг, weather_context.
  *
  *   npm run seed:timeline-demo
  *   npm run seed:timeline-demo -- --field "Василиха 1"
@@ -11,6 +11,14 @@ config({ path: ".env.local" });
 import { createServiceSupabase } from "../lib/supabase/server";
 
 const SEASON = "2026";
+const DEMO_PREFIX = "demo-timeline-v2";
+
+type WeatherContext = {
+  temp: number;
+  humidity: number;
+  condition: string;
+  icon: string;
+};
 
 const DEMO_ITEMS = [
   {
@@ -52,7 +60,7 @@ const DEMO_ITEMS = [
 
 type DemoFieldPack = {
   needle: string;
-  prefix: string;
+  slug: string;
   crop: string;
   areaHa: number;
   ops: Array<{
@@ -63,19 +71,35 @@ type DemoFieldPack = {
     occurred_at: string;
     area_fact: number;
     fuel_fact: number;
-    closed_by_name: string;
+    wage_fact?: number;
+    weather_context: WeatherContext;
   }>;
   moves: Array<{
     item_ref_key: string;
     qty: number;
     date: string;
+    weather_context: WeatherContext;
+  }>;
+  scouting: Array<{
+    key: string;
+    date: string;
+    notes: string;
+    image_url: string;
+    weather_context: WeatherContext;
   }>;
 };
+
+const FIELD_PHOTO = {
+  crop: "https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=900&auto=format&fit=crop&q=80",
+  soil: "https://images.unsplash.com/photo-1574943329822-55c397a0e0cc?w=900&auto=format&fit=crop&q=80",
+  leaf: "https://images.unsplash.com/photo-1464226187744-fa90b21236aa?w=900&auto=format&fit=crop&q=80",
+  sprayer: "https://images.unsplash.com/photo-1500382017468-9049fed747aa?w=900&auto=format&fit=crop&q=80",
+} as const;
 
 const DEMO_FIELD_PACKS: DemoFieldPack[] = [
   {
     needle: "Василиха 1",
-    prefix: "demo-timeline-vasilyha1",
+    slug: "vasilyha1",
     crop: "Соя",
     areaHa: 26.6,
     ops: [
@@ -87,7 +111,13 @@ const DEMO_FIELD_PACKS: DemoFieldPack[] = [
         occurred_at: "2026-03-18",
         area_fact: 26.6,
         fuel_fact: 142,
-        closed_by_name: "Іван Петренко",
+        wage_fact: 4200,
+        weather_context: {
+          temp: 11,
+          humidity: 58,
+          condition: "Мінливо хмарно",
+          icon: "cloud-sun",
+        },
       },
       {
         key: "cultivation",
@@ -97,17 +127,29 @@ const DEMO_FIELD_PACKS: DemoFieldPack[] = [
         occurred_at: "2026-04-05",
         area_fact: 26.6,
         fuel_fact: 96,
-        closed_by_name: "Олег Коваленко",
+        wage_fact: 3100,
+        weather_context: {
+          temp: 16,
+          humidity: 52,
+          condition: "Ясно",
+          icon: "sun",
+        },
       },
       {
         key: "spray",
         work_type: "Внесення ЗЗР",
         machinery: "МТЗ-82",
-        implement: "Обприскувач",
+        implement: "Обприскувач 18 м",
         occurred_at: "2026-05-22",
         area_fact: 26.6,
         fuel_fact: 58,
-        closed_by_name: "Іван Петренко",
+        wage_fact: 2800,
+        weather_context: {
+          temp: 19,
+          humidity: 71,
+          condition: "Хмарно",
+          icon: "cloud",
+        },
       },
     ],
     moves: [
@@ -115,22 +157,66 @@ const DEMO_FIELD_PACKS: DemoFieldPack[] = [
         item_ref_key: DEMO_ITEMS[0].bas_ref_key,
         qty: 1200,
         date: "2026-03-10T10:00:00.000Z",
+        weather_context: {
+          temp: 9,
+          humidity: 64,
+          condition: "Туман",
+          icon: "cloud",
+        },
       },
       {
         item_ref_key: DEMO_ITEMS[1].bas_ref_key,
         qty: 180,
         date: "2026-03-15T09:30:00.000Z",
+        weather_context: {
+          temp: 12,
+          humidity: 55,
+          condition: "Переважно ясно",
+          icon: "cloud-sun",
+        },
       },
       {
         item_ref_key: DEMO_ITEMS[2].bas_ref_key,
         qty: 24,
         date: "2026-05-20T14:15:00.000Z",
+        weather_context: {
+          temp: 18,
+          humidity: 68,
+          condition: "Мінливо хмарно",
+          icon: "cloud-sun",
+        },
+      },
+    ],
+    scouting: [
+      {
+        key: "emergence",
+        date: "2026-03-28T11:20:00.000Z",
+        notes: "Сходи рівномірні, фаза VE. Вологість ґрунту достатня.",
+        image_url: FIELD_PHOTO.crop,
+        weather_context: {
+          temp: 14,
+          humidity: 61,
+          condition: "Ясно",
+          icon: "sun",
+        },
+      },
+      {
+        key: "pest-check",
+        date: "2026-05-18T08:45:00.000Z",
+        notes: "Пошкодження листя мінімальні. Рекомендовано обробку ЗЗР.",
+        image_url: FIELD_PHOTO.leaf,
+        weather_context: {
+          temp: 17,
+          humidity: 74,
+          condition: "Хмарно",
+          icon: "cloud",
+        },
       },
     ],
   },
   {
     needle: "Василиха 2",
-    prefix: "demo-timeline-vasilyha2",
+    slug: "vasilyha2",
     crop: "Пшениця",
     areaHa: 22.5,
     ops: [
@@ -142,7 +228,13 @@ const DEMO_FIELD_PACKS: DemoFieldPack[] = [
         occurred_at: "2026-02-12",
         area_fact: 22.5,
         fuel_fact: 210,
-        closed_by_name: "Олег Коваленко",
+        wage_fact: 5400,
+        weather_context: {
+          temp: 3,
+          humidity: 78,
+          condition: "Хмарно",
+          icon: "cloud",
+        },
       },
       {
         key: "fertilizer",
@@ -152,7 +244,13 @@ const DEMO_FIELD_PACKS: DemoFieldPack[] = [
         occurred_at: "2026-03-02",
         area_fact: 22.5,
         fuel_fact: 74,
-        closed_by_name: "Іван Петренко",
+        wage_fact: 2600,
+        weather_context: {
+          temp: 8,
+          humidity: 66,
+          condition: "Мінливо хмарно",
+          icon: "cloud-sun",
+        },
       },
     ],
     moves: [
@@ -160,12 +258,32 @@ const DEMO_FIELD_PACKS: DemoFieldPack[] = [
         item_ref_key: DEMO_ITEMS[3].bas_ref_key,
         qty: 900,
         date: "2026-02-28T11:00:00.000Z",
+        weather_context: {
+          temp: 5,
+          humidity: 70,
+          condition: "Хмарно",
+          icon: "cloud",
+        },
+      },
+    ],
+    scouting: [
+      {
+        key: "tillering",
+        date: "2026-04-12T16:10:00.000Z",
+        notes: "Кущіння нормальне. Локально затоплення на північній ділянці.",
+        image_url: FIELD_PHOTO.soil,
+        weather_context: {
+          temp: 13,
+          humidity: 82,
+          condition: "Мряка",
+          icon: "cloud-rain",
+        },
       },
     ],
   },
   {
     needle: "Григорівка",
-    prefix: "demo-timeline-hryhorivka",
+    slug: "hryhorivka",
     crop: "Соняшник",
     areaHa: 9.8,
     ops: [
@@ -177,7 +295,13 @@ const DEMO_FIELD_PACKS: DemoFieldPack[] = [
         occurred_at: "2026-04-18",
         area_fact: 9.8,
         fuel_fact: 48,
-        closed_by_name: "Максим Сидоренко",
+        wage_fact: 1800,
+        weather_context: {
+          temp: 15,
+          humidity: 49,
+          condition: "Ясно",
+          icon: "sun",
+        },
       },
       {
         key: "seeding",
@@ -187,7 +311,13 @@ const DEMO_FIELD_PACKS: DemoFieldPack[] = [
         occurred_at: "2026-05-03",
         area_fact: 9.8,
         fuel_fact: 52,
-        closed_by_name: "Максим Сидоренко",
+        wage_fact: 1950,
+        weather_context: {
+          temp: 18,
+          humidity: 44,
+          condition: "Переважно ясно",
+          icon: "cloud-sun",
+        },
       },
     ],
     moves: [
@@ -195,11 +325,37 @@ const DEMO_FIELD_PACKS: DemoFieldPack[] = [
         item_ref_key: DEMO_ITEMS[4].bas_ref_key,
         qty: 42,
         date: "2026-04-28T08:45:00.000Z",
+        weather_context: {
+          temp: 16,
+          humidity: 51,
+          condition: "Ясно",
+          icon: "sun",
+        },
       },
       {
         item_ref_key: DEMO_ITEMS[2].bas_ref_key,
         qty: 8,
         date: "2026-06-10T15:20:00.000Z",
+        weather_context: {
+          temp: 24,
+          humidity: 38,
+          condition: "Ясно",
+          icon: "sun",
+        },
+      },
+    ],
+    scouting: [
+      {
+        key: "stand-count",
+        date: "2026-05-20T07:30:00.000Z",
+        notes: "Густота посіву в нормі. Є окремі прогалини на краю поля.",
+        image_url: FIELD_PHOTO.sprayer,
+        weather_context: {
+          temp: 20,
+          humidity: 46,
+          condition: "Ясно",
+          icon: "sun",
+        },
       },
     ],
   },
@@ -246,6 +402,45 @@ async function findField(
   );
 }
 
+async function purgeOldDemo(
+  supabase: ReturnType<typeof createServiceSupabase>,
+  fieldIds: string[]
+) {
+  const prefixes = ["demo-timeline-", `${DEMO_PREFIX}:`];
+
+  for (const prefix of prefixes) {
+    const { error: opsErr } = await supabase
+      .from("field_operations")
+      .delete()
+      .like("client_key", `${prefix}%`);
+    if (opsErr && !opsErr.message.includes("PGRST205")) {
+      console.warn(`  ! field_operations purge (${prefix}): ${opsErr.message}`);
+    }
+  }
+
+  if (fieldIds.length > 0) {
+    const { error: movesErr } = await supabase
+      .from("inventory_local_moves")
+      .delete()
+      .in("field_id", fieldIds)
+      .in(
+        "item_ref_key",
+        DEMO_ITEMS.map((item) => item.bas_ref_key)
+      );
+    if (movesErr && !movesErr.message.includes("PGRST205")) {
+      console.warn(`  ! inventory_local_moves purge: ${movesErr.message}`);
+    }
+
+    const { error: scoutErr } = await supabase
+      .from("scouting_reports")
+      .delete()
+      .in("field_id", fieldIds);
+    if (scoutErr && !scoutErr.message.includes("PGRST205")) {
+      console.warn(`  ! scouting_reports purge: ${scoutErr.message}`);
+    }
+  }
+}
+
 async function upsertDemoItems(supabase: ReturnType<typeof createServiceSupabase>) {
   for (const item of DEMO_ITEMS) {
     const { error } = await supabase.from("inventory_items_cache").upsert(
@@ -272,7 +467,7 @@ async function upsertDemoOps(
   const now = new Date().toISOString();
   for (const op of pack.ops) {
     const payload: Record<string, unknown> = {
-      client_key: `${pack.prefix}:op:${op.key}`,
+      client_key: `${DEMO_PREFIX}:${pack.slug}:op:${op.key}`,
       field_id: field.id,
       field_key: `farm:${field.id}`,
       work_type: op.work_type,
@@ -287,9 +482,10 @@ async function upsertDemoOps(
       area_fact: op.area_fact,
       fuel_plan: op.fuel_fact,
       fuel_fact: op.fuel_fact,
+      wage_plan: op.wage_fact ?? null,
+      wage_fact: op.wage_fact ?? null,
       closed_at: `${op.occurred_at}T16:00:00.000Z`,
-      closed_by_name: op.closed_by_name,
-      actor_name: "Демо-агроном",
+      weather_context: op.weather_context,
       updated_at: now,
     };
 
@@ -298,11 +494,23 @@ async function upsertDemoOps(
       .upsert(payload, { onConflict: "client_key" });
 
     if (error) {
+      if (error.message.includes("weather_context")) {
+        const { weather_context: _w, ...withoutWeather } = payload;
+        const retry = await supabase
+          .from("field_operations")
+          .upsert(withoutWeather, { onConflict: "client_key" });
+        if (retry.error) {
+          throw new Error(`field_operations: ${retry.error.message}`);
+        }
+        continue;
+      }
+
       const {
         season: _s,
         season_year: _sy,
-        actor_name: _a,
-        closed_by_name: _c,
+        wage_plan: _wp,
+        wage_fact: _wf,
+        weather_context: _w,
         ...fallback
       } = payload;
       const retry = await supabase
@@ -319,17 +527,6 @@ async function upsertDemoMoves(
   pack: DemoFieldPack
 ) {
   for (const move of pack.moves) {
-    const { data: existing, error: findError } = await supabase
-      .from("inventory_local_moves")
-      .select("id")
-      .eq("field_id", fieldId)
-      .eq("item_ref_key", move.item_ref_key)
-      .eq("date", move.date)
-      .maybeSingle();
-
-    if (findError) throw new Error(findError.message);
-    if (existing?.id) continue;
-
     const payload: Record<string, unknown> = {
       item_ref_key: move.item_ref_key,
       field_id: fieldId,
@@ -338,14 +535,58 @@ async function upsertDemoMoves(
       date: move.date,
       status: "draft",
       season: SEASON,
-      actor_name: "Демо-агроном",
+      weather_context: move.weather_context,
     };
 
     const { error } = await supabase.from("inventory_local_moves").insert(payload);
     if (error) {
-      const { season: _s, actor_name: _a, ...fallback } = payload;
+      if (error.message.includes("weather_context")) {
+        const { weather_context: _w, ...withoutWeather } = payload;
+        const retry = await supabase
+          .from("inventory_local_moves")
+          .insert(withoutWeather);
+        if (retry.error) {
+          throw new Error(`inventory_local_moves: ${retry.error.message}`);
+        }
+        continue;
+      }
+
+      const { season: _s, weather_context: _w, ...fallback } = payload;
       const retry = await supabase.from("inventory_local_moves").insert(fallback);
-      if (retry.error) throw new Error(`inventory_local_moves: ${retry.error.message}`);
+      if (retry.error) {
+        throw new Error(`inventory_local_moves: ${retry.error.message}`);
+      }
+    }
+  }
+}
+
+async function upsertDemoScouting(
+  supabase: ReturnType<typeof createServiceSupabase>,
+  fieldId: string,
+  pack: DemoFieldPack
+) {
+  for (const report of pack.scouting) {
+    const payload: Record<string, unknown> = {
+      field_id: fieldId,
+      date: report.date,
+      notes: report.notes,
+      image_url: report.image_url,
+      weather_context: report.weather_context,
+    };
+
+    const { error } = await supabase.from("scouting_reports").insert(payload);
+    if (error) {
+      if (error.message.includes("weather_context")) {
+        const { weather_context: _w, ...withoutWeather } = payload;
+        const retry = await supabase
+          .from("scouting_reports")
+          .insert(withoutWeather);
+        if (retry.error) {
+          throw new Error(`scouting_reports: ${retry.error.message}`);
+        }
+        continue;
+      }
+      throw new Error(`scouting_reports: ${error.message}`);
     }
   }
 }
@@ -363,6 +604,11 @@ async function seedFieldPack(
 
   await upsertDemoMoves(supabase, field.id, pack);
   console.log(`  ✓ Списання ТМЦ (${pack.moves.length})`);
+
+  await upsertDemoScouting(supabase, field.id, pack);
+  console.log(`  ✓ Скаутинг (${pack.scouting.length})`);
+
+  return field.id;
 }
 
 async function main() {
@@ -378,6 +624,19 @@ async function main() {
     throw new Error(`Немає демо-пакета для поля «${singleField}»`);
   }
 
+  console.log("Очищення старих демо-записів…");
+  const fieldIds: string[] = [];
+  for (const pack of DEMO_FIELD_PACKS) {
+    try {
+      const field = await findField(supabase, pack.needle);
+      fieldIds.push(field.id);
+    } catch {
+      /* поле може бути відсутнє */
+    }
+  }
+  await purgeOldDemo(supabase, fieldIds);
+  console.log("✓ Старі демо-дані прибрано");
+
   await upsertDemoItems(supabase);
   console.log("✓ Демо-ТМЦ");
 
@@ -385,7 +644,9 @@ async function main() {
     await seedFieldPack(supabase, pack);
   }
 
-  console.log("\nГотово. Відкрий /operations — 3 поля з хронологією.");
+  console.log(
+    "\nГотово. Відкрий /operations — наряди, ТМЦ, скаутинг і погодні штампи на карті метро."
+  );
 }
 
 main().catch((error) => {

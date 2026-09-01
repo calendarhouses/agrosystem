@@ -102,6 +102,7 @@ async function main() {
     { table: "accountant_operation_archive", note: "архів бухгалтерії" },
     { table: "activity_log", note: "журнал дій" },
     { table: "field_operations", note: "наряди / роботи на полях" },
+    { table: "scouting_reports", note: "звіти скаутингу" },
     {
       table: "wialon_field_fuel_logs",
       note: "паливо на полях (ДРП) — інакше «Економіка культур» лишає ₴",
@@ -158,6 +159,7 @@ async function main() {
     "accountant_operation_archive",
     "activity_log",
     "field_operations",
+    "scouting_reports",
     "fuel_transactions",
     "fuel_radar_dismissed",
     "wialon_field_fuel_logs",
