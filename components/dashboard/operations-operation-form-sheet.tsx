@@ -13,13 +13,7 @@ import {
   OperationsPanelShell,
   OperationsSheetFooter,
   OperationsSheetHeader,
-  opsFieldLabelClass,
-  opsInputClass,
-  opsPrimaryBtnClass,
-  opsSelectContentClass,
-  opsSelectItemClass,
-  opsSelectTriggerClass,
-  opsSheetBodyClass,
+  useOpsChrome,
 } from "@/components/dashboard/operations-sheet-chrome";
 import { Label } from "@/components/ui/label";
 import {
@@ -73,6 +67,7 @@ export function OperationsOperationForm({
   onSaved,
   onCancel,
 }: OperationsOperationFormProps) {
+  const chrome = useOpsChrome();
   const fieldKey = fieldOperationsKeyFromFarmId(field.id);
   const isEdit = Boolean(initial);
 
@@ -276,7 +271,7 @@ export function OperationsOperationForm({
         onBack={onBack ?? onCancel}
       />
 
-      <div className={opsSheetBodyClass} data-vaul-no-drag="" data-allow-pan="true">
+      <div className={chrome.body} data-vaul-no-drag="" data-allow-pan="true">
         {error ? (
           <p className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
             {error}
@@ -284,19 +279,19 @@ export function OperationsOperationForm({
         ) : null}
 
         <section className="space-y-2">
-          <p className={opsFieldLabelClass}>Тип робіт</p>
+          <p className={chrome.label}>Тип робіт</p>
           <Select
             value={type}
             onValueChange={(value) => {
               if (value) setType(value);
             }}
           >
-            <SelectTrigger className={opsSelectTriggerClass}>
+            <SelectTrigger className={chrome.selectTrigger}>
               <SelectValue />
             </SelectTrigger>
-            <SelectContent className={opsSelectContentClass}>
+            <SelectContent className={chrome.selectContent}>
               {OPERATION_TYPES.map((item) => (
-                <SelectItem key={item} value={item} className={opsSelectItemClass}>
+                <SelectItem key={item} value={item} className={chrome.selectItem}>
                   {item}
                 </SelectItem>
               ))}
@@ -306,40 +301,40 @@ export function OperationsOperationForm({
 
         <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="min-w-0 space-y-2">
-            <Label className={opsFieldLabelClass}>Дата</Label>
+            <Label className={chrome.label}>Дата</Label>
             <OperationsDatePicker value={date} onChange={setDate} />
           </div>
           <div className="min-w-0 space-y-2">
-            <Label className={opsFieldLabelClass}>Площа, га</Label>
+            <Label className={chrome.label}>Площа, га</Label>
             <input
               inputMode="decimal"
               value={areaDone}
               onChange={(e) => setAreaDone(e.target.value)}
-              className={opsInputClass}
+              className={chrome.input}
             />
           </div>
         </section>
 
         <section className="space-y-2">
-          <p className={opsFieldLabelClass}>Техніка</p>
+          <p className={chrome.label}>Техніка</p>
           <Select
             value={unitKey ?? undefined}
             onValueChange={(value) => setUnitKey(value ?? null)}
             disabled={equipmentLoading || unitOptions.length === 0}
           >
-            <SelectTrigger className={opsSelectTriggerClass}>
+            <SelectTrigger className={chrome.selectTrigger}>
               <SelectValue
                 placeholder={
                   equipmentLoading ? "Завантаження…" : "Оберіть техніку"
                 }
               />
             </SelectTrigger>
-            <SelectContent className={opsSelectContentClass}>
+            <SelectContent className={chrome.selectContent}>
               {unitOptions.map((unit: EquipmentOpsOption) => (
                 <SelectItem
                   key={unit.key}
                   value={unit.key}
-                  className={opsSelectItemClass}
+                  className={chrome.selectItem}
                 >
                   {unit.label}
                 </SelectItem>
@@ -349,7 +344,7 @@ export function OperationsOperationForm({
         </section>
 
         <section className="space-y-2">
-          <Label className={opsFieldLabelClass}>Знаряддя</Label>
+          <Label className={chrome.label}>Знаряддя</Label>
           {implementOptions.length > 0 ? (
             <Select
               value={implementId ?? undefined}
@@ -357,15 +352,15 @@ export function OperationsOperationForm({
                 if (value) handleImplementSelect(value);
               }}
             >
-              <SelectTrigger className={opsSelectTriggerClass}>
+              <SelectTrigger className={chrome.selectTrigger}>
                 <SelectValue placeholder="Оберіть знаряддя" />
               </SelectTrigger>
-              <SelectContent className={opsSelectContentClass}>
+              <SelectContent className={chrome.selectContent}>
                 {implementOptions.map((item) => (
                   <SelectItem
                     key={item.id}
                     value={item.id}
-                    className={opsSelectItemClass}
+                    className={chrome.selectItem}
                   >
                     {item.name}
                     {item.workingWidthM > 0
@@ -379,7 +374,7 @@ export function OperationsOperationForm({
             <input
               value={implement}
               onChange={(e) => setImplement(e.target.value)}
-              className={opsInputClass}
+              className={chrome.input}
               placeholder="Сівалка, культиватор…"
             />
           )}
@@ -387,31 +382,31 @@ export function OperationsOperationForm({
 
         <section className="grid grid-cols-2 gap-3">
           <div className="space-y-2">
-            <Label className={opsFieldLabelClass}>Паливо, л</Label>
+            <Label className={chrome.label}>Паливо, л</Label>
             <input
               inputMode="decimal"
               value={fuelUsed}
               onChange={(e) => setFuelUsed(e.target.value)}
-              className={opsInputClass}
+              className={chrome.input}
             />
           </div>
           <div className="space-y-2">
-            <Label className={opsFieldLabelClass}>Оплата, ₴</Label>
+            <Label className={chrome.label}>Оплата, ₴</Label>
             <input
               inputMode="decimal"
               value={wage}
               onChange={(e) => setWage(e.target.value)}
-              className={opsInputClass}
+              className={chrome.input}
             />
           </div>
         </section>
 
         <section className="space-y-2">
-          <Label className={opsFieldLabelClass}>Коментар</Label>
+          <Label className={chrome.label}>Коментар</Label>
           <input
             value={comment}
             onChange={(e) => setComment(e.target.value)}
-            className={opsInputClass}
+            className={chrome.input}
             placeholder="Необовʼязково"
           />
         </section>
@@ -421,7 +416,7 @@ export function OperationsOperationForm({
         <Button
           type="submit"
           disabled={saving}
-          className={opsPrimaryBtnClass}
+          className={chrome.primaryBtn}
         >
           {saving ? (
             <>

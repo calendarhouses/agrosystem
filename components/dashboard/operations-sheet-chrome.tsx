@@ -1,7 +1,11 @@
 "use client";
 
 import type { LucideIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 import { format } from "date-fns";
 import { uk } from "date-fns/locale";
@@ -22,10 +26,68 @@ import {
   DrawerTitle,
   DRAWER_CLOSE_BELOW_HANDLE_CLASS,
 } from "@/components/ui/drawer";
+import {
+  fuelFieldLabelClass,
+  fuelInputClass,
+  fuelPrimaryBtnClass,
+  fuelSelectItemClass,
+  fuelSelectTriggerClass,
+  fuelSheetBodyClass,
+  fuelSheetStickyFooterClass,
+} from "@/components/dashboard/fuel-sheet-chrome";
 import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
 
 export type OperationsSheetAccent = "emerald" | "orange" | "zinc" | "sky";
+export type OpsSurface = "dark" | "light";
+
+const OpsSurfaceContext = createContext<OpsSurface>("dark");
+
+export function useOpsSurface() {
+  return useContext(OpsSurfaceContext);
+}
+
+export function useOpsChrome() {
+  const surface = useOpsSurface();
+  if (surface === "light") {
+    return {
+      surface,
+      body: fuelSheetBodyClass,
+      label: fuelFieldLabelClass,
+      input: fuelInputClass,
+      selectTrigger: fuelSelectTriggerClass,
+      selectItem: fuelSelectItemClass,
+      primaryBtn: fuelPrimaryBtnClass,
+      footer: fuelSheetStickyFooterClass,
+      selectContent: undefined as string | undefined,
+    };
+  }
+  return {
+    surface,
+    body: opsSheetBodyClass,
+    label: opsFieldLabelClass,
+    input: opsInputClass,
+    selectTrigger: opsSelectTriggerClass,
+    selectItem: opsSelectItemClass,
+    primaryBtn: opsPrimaryBtnClass,
+    footer: opsSheetFooterClass,
+    selectContent: opsSelectContentClass,
+  };
+}
+
+const accentWellLight: Record<OperationsSheetAccent, string> = {
+  emerald: "bg-emerald-600 text-white shadow-emerald-600/30",
+  orange: "bg-orange-500 text-white shadow-orange-500/30",
+  zinc: "bg-[#276749] text-white shadow-emerald-900/25",
+  sky: "bg-sky-600 text-white shadow-sky-600/30",
+};
+
+const accentGlowLight: Record<OperationsSheetAccent, string> = {
+  emerald: "from-emerald-500/[0.07]",
+  orange: "from-orange-500/[0.07]",
+  zinc: "from-[#276749]/[0.06]",
+  sky: "from-sky-500/[0.07]",
+};
 
 const accentWell: Record<OperationsSheetAccent, string> = {
   emerald: "bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/30",
@@ -200,16 +262,21 @@ export function OperationsPanelShell({
       <>
         {dim}
         {open ? (
-          <div
-            className={cn(
-              "fixed inset-y-0 right-0 z-[150] flex w-full max-w-md flex-col overflow-hidden",
-              "border-l border-white/10 bg-zinc-950 text-zinc-50",
-              "shadow-[-16px_0_48px_-12px_rgba(0,0,0,0.65)]",
-              className
-            )}
-          >
-            {children}
-          </div>
+          <OpsSurfaceContext.Provider value="light">
+            <div
+              className={cn(
+                "fixed inset-y-0 right-0 z-[150] flex w-full max-w-lg flex-col overflow-hidden",
+                "border-l border-[#E5DFD3]/80 text-zinc-900",
+                "bg-[linear-gradient(180deg,#ffffff_0%,#F4F1EA_55%,#EDE8DF_100%)]",
+                "shadow-[-12px_0_40px_-12px_rgba(39,33,24,0.16)]",
+                className
+              )}
+            >
+              <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+                {children}
+              </div>
+            </div>
+          </OpsSurfaceContext.Provider>
         ) : null}
       </>
     );
@@ -228,7 +295,7 @@ export function OperationsPanelShell({
       : null;
 
   return (
-    <>
+    <OpsSurfaceContext.Provider value="dark">
       {dim}
       <Drawer
         open={open}
@@ -248,14 +315,15 @@ export function OperationsPanelShell({
             className
           )}
           showCloseButton
+          showOverlay={false}
         >
           <DrawerTitle className="sr-only">{title}</DrawerTitle>
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
             {children}
           </div>
         </DrawerContent>
       </Drawer>
-    </>
+    </OpsSurfaceContext.Provider>
   );
 }
 
@@ -277,11 +345,14 @@ export function OperationsSheetHeader({
   className?: string;
 }) {
   const isMobile = useIsMobile();
+  const surface = useOpsSurface();
+  const light = surface === "light";
 
   return (
     <div
       className={cn(
-        "relative shrink-0 overflow-hidden border-b border-white/10",
+        "relative shrink-0 overflow-hidden border-b",
+        light ? "border-[#E5DFD3]/80" : "border-white/10",
         className
       )}
     >
@@ -289,12 +360,15 @@ export function OperationsSheetHeader({
         aria-hidden
         className={cn(
           "pointer-events-none absolute inset-0 bg-gradient-to-br to-transparent",
-          accentGlow[accent]
+          light ? accentGlowLight[accent] : accentGlow[accent]
         )}
       />
       <div
         aria-hidden
-        className="pointer-events-none absolute -top-16 -right-10 h-40 w-40 rounded-full bg-emerald-500/10 blur-3xl"
+        className={cn(
+          "pointer-events-none absolute -top-16 -right-10 h-40 w-40 rounded-full blur-3xl",
+          light ? "bg-white/50" : "bg-emerald-500/10"
+        )}
       />
 
       {isMobile ? <DrawerHeaderHandle theme="dark" /> : null}
@@ -302,14 +376,19 @@ export function OperationsSheetHeader({
       <div
         className={cn(
           "relative px-4 pb-4 pr-14 md:px-5",
-          isMobile ? "pt-0" : "pt-4"
+          isMobile ? "pt-0" : "pt-5"
         )}
       >
         {onBack ? (
           <button
             type="button"
             onClick={onBack}
-            className="relative mb-3 inline-flex min-h-10 items-center gap-1.5 rounded-lg px-1 text-sm font-medium text-zinc-400 transition-colors hover:text-zinc-100"
+            className={cn(
+              "relative mb-3 inline-flex min-h-10 items-center gap-1.5 rounded-lg px-1 text-sm font-medium transition-colors",
+              light
+                ? "text-zinc-500 hover:text-zinc-900"
+                : "text-zinc-400 hover:text-zinc-100"
+            )}
           >
             <ChevronLeft className="size-4" />
             Назад
@@ -320,17 +399,27 @@ export function OperationsSheetHeader({
           <div
             className={cn(
               "flex size-11 shrink-0 items-center justify-center rounded-2xl shadow-lg",
-              accentWell[accent]
+              light ? accentWellLight[accent] : accentWell[accent]
             )}
           >
             <Icon className="size-[18px]" strokeWidth={1.9} />
           </div>
           <div className="min-w-0 flex-1 pt-0.5">
-            <h2 className="text-[1.15rem] font-bold tracking-tight text-zinc-50 sm:text-lg">
+            <h2
+              className={cn(
+                "text-[1.15rem] font-bold tracking-tight sm:text-lg",
+                light ? "text-zinc-900" : "text-zinc-50"
+              )}
+            >
               {title}
             </h2>
             {description ? (
-              <p className="mt-1 text-[13px] leading-snug text-zinc-400">
+              <p
+                className={cn(
+                  "mt-1 text-[13px] leading-snug",
+                  light ? "text-zinc-500" : "text-zinc-400"
+                )}
+              >
                 {description}
               </p>
             ) : null}
@@ -349,13 +438,15 @@ export function OperationsSheetFooter({
   children: ReactNode;
   className?: string;
 }) {
+  const { footer } = useOpsChrome();
   return (
-    <div className={cn(opsSheetFooterClass, "flex flex-col gap-2", className)}>
+    <div className={cn(footer, "flex flex-col gap-2", className)}>
       {children}
     </div>
   );
 }
 
+/** Підтвердження видалення всередині шторки — не в порталі (drawer overlay краде кліки). */
 export function OperationsConfirmDeleteDialog({
   open,
   onOpenChange,
@@ -375,24 +466,25 @@ export function OperationsConfirmDeleteDialog({
   pending?: boolean;
   onConfirm: () => void;
 }) {
-  if (!open || typeof document === "undefined") return null;
+  if (!open) return null;
 
-  return createPortal(
-    <>
-      <div
-        aria-hidden
-        className="fixed inset-0 z-[400] bg-black/75 supports-backdrop-filter:backdrop-blur-[4px]"
-        onClick={() => {
-          if (!pending) onOpenChange(false);
-        }}
-      />
+  return (
+    <div
+      className={cn(
+        "absolute inset-0 z-50 flex items-center justify-center p-4",
+        "bg-black/75 supports-backdrop-filter:backdrop-blur-[4px]"
+      )}
+      onClick={() => {
+        if (!pending) onOpenChange(false);
+      }}
+    >
       <div
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="ops-delete-title"
         aria-describedby="ops-delete-desc"
         className={cn(
-          "fixed top-1/2 left-1/2 z-[401] w-[min(calc(100%-2rem),22rem)] -translate-x-1/2 -translate-y-1/2",
+          "pointer-events-auto w-full max-w-[22rem] touch-manipulation",
           "overflow-hidden rounded-[1.35rem] border border-red-500/20 bg-zinc-900 text-zinc-50",
           "shadow-[0_24px_60px_-18px_rgba(0,0,0,0.75)]"
         )}
@@ -432,7 +524,7 @@ export function OperationsConfirmDeleteDialog({
             className={cn(
               "h-11 flex-1 rounded-2xl border border-white/10 bg-white/5",
               "text-sm font-semibold text-zinc-200 transition hover:bg-white/10",
-              "disabled:cursor-not-allowed disabled:opacity-50"
+              "touch-manipulation disabled:cursor-not-allowed disabled:opacity-50"
             )}
           >
             {cancelLabel}
@@ -446,7 +538,7 @@ export function OperationsConfirmDeleteDialog({
               "text-sm font-bold text-white",
               "bg-red-600 shadow-[0_8px_18px_-8px_rgba(220,38,38,0.55)]",
               "transition hover:bg-red-500",
-              "disabled:cursor-not-allowed disabled:opacity-50"
+              "touch-manipulation disabled:cursor-not-allowed disabled:opacity-50"
             )}
           >
             {pending ? (
@@ -457,7 +549,6 @@ export function OperationsConfirmDeleteDialog({
           </button>
         </div>
       </div>
-    </>,
-    document.body
+    </div>
   );
 }

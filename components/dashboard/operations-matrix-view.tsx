@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Search, X } from "lucide-react";
+import { ArrowLeft, ChevronRight, Search, X } from "lucide-react";
 
 import { FinancePeriodToolbar } from "@/components/dashboard/finance-period-toolbar";
 import { OperationsEventDetailSheet } from "@/components/dashboard/operations-event-detail-sheet";
@@ -12,28 +13,130 @@ import { OperationsOperationFormSheet } from "@/components/dashboard/operations-
 import { OperationsPanelShell } from "@/components/dashboard/operations-sheet-chrome";
 import { QuickIssueSheet } from "@/components/dashboard/quick-issue-sheet";
 import { Input } from "@/components/ui/input";
-import {
-  filterTimelineByIsoRange,
-} from "@/lib/field-timeline-filter";
-import type { FieldTimelineField, UnifiedTimelineEvent } from "@/lib/field-timeline";
+import { filterTimelineByIsoRange } from "@/lib/field-timeline-filter";
+import type { FieldTimelineField, FieldWithTimeline, UnifiedTimelineEvent } from "@/lib/field-timeline";
 import { useFieldTimeline } from "@/lib/use-field-timeline";
 import { useFinancePeriodFilter } from "@/lib/use-finance-period-filter";
+import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
 
 function normalizeSearch(value: string): string {
   return value.trim().toLowerCase();
 }
 
-function fieldMatchesSearch(field: FieldTimelineField, query: string): boolean {
+function fieldMatchesSearch(item: FieldWithTimeline, query: string): boolean {
   if (!query) return true;
   return (
-    field.name.toLowerCase().includes(query) ||
-    field.crop.toLowerCase().includes(query)
+    item.fieldName.toLowerCase().includes(query) ||
+    item.cropName.toLowerCase().includes(query)
+  );
+}
+
+function OperationsSheets({
+  selectedEvent,
+  setSelectedEvent,
+  addField,
+  setAddField,
+  addOperationField,
+  setAddOperationField,
+  addIssueField,
+  setAddIssueField,
+  season,
+  seasonYear,
+  refresh,
+  issueTheme,
+}: {
+  selectedEvent: {
+    event: UnifiedTimelineEvent;
+    field: FieldTimelineField;
+  } | null;
+  setSelectedEvent: (
+    value: {
+      event: UnifiedTimelineEvent;
+      field: FieldTimelineField;
+    } | null
+  ) => void;
+  addField: FieldTimelineField | null;
+  setAddField: (value: FieldTimelineField | null) => void;
+  addOperationField: FieldTimelineField | null;
+  setAddOperationField: (value: FieldTimelineField | null) => void;
+  addIssueField: FieldTimelineField | null;
+  setAddIssueField: (value: FieldTimelineField | null) => void;
+  season: string;
+  seasonYear: number;
+  refresh: () => void;
+  issueTheme: "dark" | "light";
+}) {
+  return (
+    <>
+      <OperationsEventDetailSheet
+        open={Boolean(selectedEvent)}
+        onOpenChange={(open) => {
+          if (!open) setSelectedEvent(null);
+        }}
+        event={selectedEvent?.event ?? null}
+        field={selectedEvent?.field ?? null}
+        season={season}
+        onChanged={refresh}
+      />
+
+      <OperationsFieldAddSheet
+        open={Boolean(addField)}
+        onOpenChange={(open) => {
+          if (!open) setAddField(null);
+        }}
+        field={addField}
+        onAddOperation={() => {
+          setAddOperationField(addField);
+          setAddField(null);
+        }}
+        onAddInventory={() => {
+          setAddIssueField(addField);
+          setAddField(null);
+        }}
+      />
+
+      <OperationsOperationFormSheet
+        open={Boolean(addOperationField)}
+        onOpenChange={(open) => {
+          if (!open) setAddOperationField(null);
+        }}
+        field={addOperationField}
+        seasonYear={seasonYear}
+        onSaved={refresh}
+      />
+
+      <OperationsPanelShell
+        open={Boolean(addIssueField)}
+        onOpenChange={(open) => {
+          if (!open) setAddIssueField(null);
+        }}
+        title="Списати ТМЦ"
+      >
+        {addIssueField ? (
+          <QuickIssueSheet
+            variant="panel"
+            theme={issueTheme}
+            open
+            onOpenChange={(open) => {
+              if (!open) setAddIssueField(null);
+            }}
+            presetFieldId={addIssueField.id}
+            lockField
+            onSuccess={() => {
+              refresh();
+              setAddIssueField(null);
+            }}
+          />
+        ) : null}
+      </OperationsPanelShell>
+    </>
   );
 }
 
 export function OperationsMatrixView() {
   const router = useRouter();
+  const isMobile = useIsMobile();
   const periodFilter = useFinancePeriodFilter("Сезон");
   const { isoRange, seasonYear } = periodFilter;
   const { fieldsWithTimeline, isLoading, error, refresh, season } =
@@ -65,11 +168,19 @@ export function OperationsMatrixView() {
 
   const visibleFields = useMemo(() => {
     const bySearch = filteredFields.filter((item) =>
-      fieldMatchesSearch(item.field, searchQuery)
+      fieldMatchesSearch(item, searchQuery)
     );
     if (searchQuery) return bySearch;
     return bySearch.filter((item) => item.events.length > 0);
   }, [filteredFields, searchQuery]);
+
+  const summary = useMemo(() => {
+    const stationCount = visibleFields.reduce(
+      (sum, item) => sum + item.events.length,
+      0
+    );
+    return { fieldCount: visibleFields.length, stationCount };
+  }, [visibleFields]);
 
   function handleExit() {
     if (typeof window !== "undefined" && window.history.length > 1) {
@@ -77,6 +188,130 @@ export function OperationsMatrixView() {
       return;
     }
     router.push("/");
+  }
+
+  const sheets = (
+    <OperationsSheets
+      selectedEvent={selectedEvent}
+      setSelectedEvent={setSelectedEvent}
+      addField={addField}
+      setAddField={setAddField}
+      addOperationField={addOperationField}
+      setAddOperationField={setAddOperationField}
+      addIssueField={addIssueField}
+      setAddIssueField={setAddIssueField}
+      season={season}
+      seasonYear={seasonYear}
+      refresh={refresh}
+      issueTheme={isMobile ? "dark" : "light"}
+    />
+  );
+
+  const metroMap = (
+    <OperationsMetroMap
+      variant={isMobile ? "mobile" : "desktop"}
+      fields={visibleFields}
+      isLoading={isLoading}
+      searchQuery={searchQuery}
+      onEventClick={(field, event) => setSelectedEvent({ field, event })}
+      onAddClick={(field) => setAddField(field)}
+    />
+  );
+
+  const emptyState = !isLoading && !error && visibleFields.length === 0;
+
+  if (!isMobile) {
+    return (
+      <div className="relative flex h-full min-h-0 flex-col bg-gradient-to-br from-[#E8F0EA] via-[#F4F1EA] to-[#EDE8DF]">
+        <header className="sticky top-0 z-30 shrink-0 border-b border-[#E5DFD3]/80 bg-[#F4F1EA]/92 px-6 py-5 backdrop-blur-xl">
+          <div className="mx-auto flex w-full max-w-7xl flex-col gap-4">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+              <div className="min-w-0">
+                <nav
+                  aria-label="Навігація"
+                  className="mb-2 flex items-center gap-1.5 text-sm text-zinc-500"
+                >
+                  <Link
+                    href="/"
+                    className="font-medium transition-colors hover:text-[#276749]"
+                  >
+                    Поля
+                  </Link>
+                  <ChevronRight className="size-3.5 shrink-0 opacity-60" />
+                  <span className="font-semibold text-zinc-800">
+                    Хронологія
+                  </span>
+                </nav>
+                <h1 className="text-2xl font-extrabold tracking-tight text-zinc-900 sm:text-3xl">
+                  Хронологія полів
+                </h1>
+                <p className="mt-1 max-w-2xl text-sm leading-relaxed text-zinc-500">
+                  Наряди техніки та списання ТМЦ по полях обраного сезону.
+                  {!isLoading && !error ? (
+                    <span className="ml-1 font-medium text-zinc-600">
+                      {summary.fieldCount}{" "}
+                      {summary.fieldCount === 1 ? "поле" : "полів"} ·{" "}
+                      {summary.stationCount}{" "}
+                      {summary.stationCount === 1 ? "станція" : "станцій"}
+                    </span>
+                  ) : null}
+                </p>
+              </div>
+
+              <FinancePeriodToolbar
+                {...periodFilter}
+                variant="desktop"
+                theme="light"
+                loading={isLoading}
+                className="w-full max-w-none shrink-0 xl:w-auto"
+              />
+            </div>
+
+            <div className="relative max-w-md">
+              <Search className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-zinc-400" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Пошук поля або культури…"
+                className="h-11 rounded-xl border-[#E0DBD0] bg-white pl-10 pr-10 text-zinc-900 shadow-sm placeholder:text-zinc-400 focus-visible:border-[#276749]/40 focus-visible:ring-[#276749]/15"
+              />
+              {search ? (
+                <button
+                  type="button"
+                  onClick={() => setSearch("")}
+                  className="absolute top-1/2 right-2 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700"
+                  aria-label="Очистити пошук"
+                >
+                  <X className="size-4" />
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </header>
+
+        <main className="min-h-0 flex-1 overflow-hidden">
+          <div className="mx-auto flex h-full w-full max-w-7xl flex-col px-6 py-5">
+            {!isLoading && error ? (
+              <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+                {error}
+              </div>
+            ) : null}
+
+            {emptyState ? (
+              <p className="rounded-3xl border border-[#E5DFD3]/90 bg-white/70 px-6 py-16 text-center text-sm text-zinc-500 shadow-sm">
+                {searchQuery
+                  ? "Полів за запитом не знайдено."
+                  : "За обраний період подій немає. Спробуйте інший діапазон або додайте операцію через пошук поля."}
+              </p>
+            ) : (
+              <div className="min-h-0 flex-1 overflow-hidden">{metroMap}</div>
+            )}
+          </div>
+        </main>
+
+        {sheets}
+      </div>
+    );
   }
 
   return (
@@ -128,7 +363,7 @@ export function OperationsMatrixView() {
         className={cn(
           "min-h-0 flex-1 overflow-y-auto overscroll-y-auto px-4 pt-1.5 pb-4",
           "touch-pan-y [-webkit-overflow-scrolling:touch]",
-          "pb-[calc(var(--bottom-nav-height)+1rem)] md:pb-6"
+          "pb-[calc(var(--bottom-nav-height)+1rem)]"
         )}
         data-allow-pan="true"
         data-vaul-no-drag=""
@@ -139,84 +374,18 @@ export function OperationsMatrixView() {
           </div>
         ) : null}
 
-        {!isLoading && !error && visibleFields.length === 0 ? (
+        {emptyState ? (
           <p className="rounded-3xl border border-white/10 bg-white/5 px-4 py-12 text-center text-sm text-zinc-500">
             {searchQuery
               ? "Полів за запитом не знайдено."
               : "За обраний період подій немає. Спробуйте інший діапазон або додайте операцію через пошук поля."}
           </p>
         ) : (
-          <OperationsMetroMap
-            fields={visibleFields}
-            isLoading={isLoading}
-            searchQuery={searchQuery}
-            onEventClick={(field, event) => setSelectedEvent({ field, event })}
-            onAddClick={(field) => setAddField(field)}
-          />
+          metroMap
         )}
       </div>
 
-      <OperationsEventDetailSheet
-        open={Boolean(selectedEvent)}
-        onOpenChange={(open) => {
-          if (!open) setSelectedEvent(null);
-        }}
-        event={selectedEvent?.event ?? null}
-        field={selectedEvent?.field ?? null}
-        season={season}
-        onChanged={refresh}
-      />
-
-      <OperationsFieldAddSheet
-        open={Boolean(addField)}
-        onOpenChange={(open) => {
-          if (!open) setAddField(null);
-        }}
-        field={addField}
-        onAddOperation={() => {
-          setAddOperationField(addField);
-          setAddField(null);
-        }}
-        onAddInventory={() => {
-          setAddIssueField(addField);
-          setAddField(null);
-        }}
-      />
-
-      <OperationsOperationFormSheet
-        open={Boolean(addOperationField)}
-        onOpenChange={(open) => {
-          if (!open) setAddOperationField(null);
-        }}
-        field={addOperationField}
-        seasonYear={seasonYear}
-        onSaved={refresh}
-      />
-
-      <OperationsPanelShell
-        open={Boolean(addIssueField)}
-        onOpenChange={(open) => {
-          if (!open) setAddIssueField(null);
-        }}
-        title="Списати ТМЦ"
-      >
-        {addIssueField ? (
-          <QuickIssueSheet
-            variant="panel"
-            theme="dark"
-            open
-            onOpenChange={(open) => {
-              if (!open) setAddIssueField(null);
-            }}
-            presetFieldId={addIssueField.id}
-            lockField
-            onSuccess={() => {
-              refresh();
-              setAddIssueField(null);
-            }}
-          />
-        ) : null}
-      </OperationsPanelShell>
+      {sheets}
     </section>
   );
 }

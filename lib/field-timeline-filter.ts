@@ -1,16 +1,27 @@
-import type { FieldWithTimeline } from "@/lib/field-timeline";
+import {
+  computeCostPerHectare,
+  type FieldWithTimeline,
+  timelineEventDateIso,
+} from "@/lib/field-timeline";
 
 export function filterTimelineByIsoRange(
   fields: FieldWithTimeline[],
   startIso: string,
   endIso: string
 ): FieldWithTimeline[] {
-  return fields.map((item) => ({
-    ...item,
-    events: item.events.filter(
-      (event) => event.date >= startIso && event.date <= endIso
-    ),
-  }));
+  return fields.map((item) => {
+    const events = item.events.filter((event) => {
+      const iso = timelineEventDateIso(event.date);
+      return iso >= startIso && iso <= endIso;
+    });
+    const totalCost = events.reduce((sum, event) => sum + event.cost, 0);
+    return {
+      ...item,
+      events,
+      totalCost,
+      costPerHectare: computeCostPerHectare(totalCost, item.area),
+    };
+  });
 }
 
 export function countTimelineEvents(fields: FieldWithTimeline[]): number {

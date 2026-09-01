@@ -82,7 +82,7 @@ export function groupTimelineByCrop(
   const buckets = new Map<string, FieldWithTimeline[]>();
 
   for (const item of fields) {
-    const key = timelineCropCategoryKey(item.field.crop);
+    const key = timelineCropCategoryKey(item.cropName);
     const bucket = buckets.get(key) ?? [];
     bucket.push(item);
     buckets.set(key, bucket);
@@ -117,12 +117,12 @@ function buildTimelineCropGroup(
   fields: FieldWithTimeline[]
 ): TimelineCropGroup {
   const sorted = [...fields].sort((a, b) =>
-    a.field.name.localeCompare(b.field.name, "uk")
+    a.fieldName.localeCompare(b.fieldName, "uk")
   );
   const stationCount = sorted.reduce((sum, item) => sum + item.events.length, 0);
-  const totalAreaHa = sorted.reduce((sum, item) => sum + item.field.areaHa, 0);
+  const totalAreaHa = sorted.reduce((sum, item) => sum + item.area, 0);
   const accentColor =
-    normalizeFieldLineColor(sorted[0]?.field.color) ||
+    normalizeFieldLineColor(sorted[0]?.color) ||
     defaultCropAccentColor(label);
 
   return {

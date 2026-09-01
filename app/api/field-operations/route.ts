@@ -4,6 +4,7 @@ import { logActivity } from "@/lib/activity-log";
 import { actorCloseColumns, actorCreateColumns, getCurrentActor } from "@/lib/app-actor";
 import { mapOperationRow } from "@/lib/field-operations";
 import { upsertFieldOperationRow } from "@/lib/field-operations-db";
+import { captureWeatherContextForField } from "@/lib/field-weather-context";
 import { createServiceSupabase } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -229,6 +230,14 @@ export async function POST(request: Request) {
       ...(!hasAuthor ? actorCreateColumns(actor) : {}),
       ...(status === "completed" ? actorCloseColumns(actor) : {}),
     };
+
+    if (isNew) {
+      row.weather_context = await captureWeatherContextForField(
+        supabase,
+        fieldId,
+        fieldKey
+      );
+    }
 
     const result = await upsertFieldOperationRow(supabase, row);
 

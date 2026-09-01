@@ -5,6 +5,7 @@ import { ChevronRight, PackageMinus, Plus, Tractor } from "lucide-react";
 import {
   OperationsPanelShell,
   OperationsSheetHeader,
+  useOpsSurface,
 } from "@/components/dashboard/operations-sheet-chrome";
 import type { FieldTimelineField } from "@/lib/field-timeline";
 import { cn } from "@/lib/utils";
@@ -30,6 +31,7 @@ function ActionCard({
   accent: "orange" | "emerald";
   onClick: () => void;
 }) {
+  const light = useOpsSurface() === "light";
   const accentStyles =
     accent === "orange"
       ? {
@@ -51,10 +53,9 @@ function ActionCard({
       onClick={onClick}
       className={cn(
         "group relative w-full overflow-hidden rounded-3xl border p-4 text-left transition",
-        "bg-gradient-to-br to-transparent",
-        accentStyles.border,
-        accentStyles.glow,
-        accentStyles.hover
+        light
+          ? "border-[#E5DFD3]/90 bg-white/90 shadow-sm hover:border-[#276749]/20 hover:bg-white"
+          : cn("bg-gradient-to-br to-transparent", accentStyles.border, accentStyles.glow, accentStyles.hover)
       )}
     >
       <div className="flex items-center gap-4">
@@ -67,14 +68,29 @@ function ActionCard({
           <Icon className="size-6" strokeWidth={1.8} />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-base font-bold tracking-tight text-zinc-50">
+          <p
+            className={cn(
+              "text-base font-bold tracking-tight",
+              light ? "text-zinc-900" : "text-zinc-50"
+            )}
+          >
             {title}
           </p>
-          <p className="mt-1 text-sm leading-snug text-zinc-400">
+          <p
+            className={cn(
+              "mt-1 text-sm leading-snug",
+              light ? "text-zinc-500" : "text-zinc-400"
+            )}
+          >
             {description}
           </p>
         </div>
-        <ChevronRight className="size-5 shrink-0 text-zinc-600 transition group-hover:translate-x-0.5 group-hover:text-zinc-300" />
+        <ChevronRight
+          className={cn(
+            "size-5 shrink-0 transition group-hover:translate-x-0.5",
+            light ? "text-zinc-400 group-hover:text-zinc-600" : "text-zinc-600 group-hover:text-zinc-300"
+          )}
+        />
       </div>
     </button>
   );

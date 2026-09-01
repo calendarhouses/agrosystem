@@ -284,6 +284,24 @@ html[data-app-nav="1"] {
   touch-action: pan-x pan-y;
 }
 
+.ops-track-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(161 161 170 / 0.55) transparent;
+}
+
+.ops-track-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+
+.ops-track-scroll::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  background: rgb(161 161 170 / 0.55);
+}
+
+.ops-track-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 @utility safe-top-notch {
   padding-top: env(safe-area-inset-top);
 }

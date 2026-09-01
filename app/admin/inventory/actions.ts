@@ -26,6 +26,7 @@ import {
   actorUpdateColumns,
   getCurrentActor,
 } from "@/lib/app-actor";
+import { captureWeatherContextForField } from "@/lib/field-weather-context";
 import {
   enqueueInventoryOutboundBasDraft,
   syncLocalMovesToBas,
@@ -388,6 +389,10 @@ export async function createLocalOutboundMove(input: {
 
     const actor = await getCurrentActor();
     const actorCols = actorCreateColumns(actor);
+    const weather_context = await captureWeatherContextForField(
+      supabase,
+      fieldId
+    );
     const payload: Record<string, unknown> = {
       item_ref_key: itemRefKey,
       field_id: fieldId,
@@ -397,6 +402,7 @@ export async function createLocalOutboundMove(input: {
       status: "draft",
       season,
       note,
+      weather_context,
       ...actorCols,
     };
     const { data, error } = await supabase
@@ -407,6 +413,7 @@ export async function createLocalOutboundMove(input: {
 
     if (error) {
       if (
+        error.message?.includes("weather_context") ||
         error.message?.includes("season") ||
         error.message?.includes("note") ||
         error.message?.includes("actor_")
@@ -414,6 +421,7 @@ export async function createLocalOutboundMove(input: {
         const {
           season: _s,
           note: _n,
+          weather_context: _w,
           actor_id: _a,
           actor_name: _an,
           ...withoutExtra

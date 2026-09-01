@@ -7,22 +7,17 @@ import {
   ChevronLeft,
   ChevronRight,
   FlaskConical,
-  Fuel,
   Package,
   Plus,
+  Search,
   Sprout,
   Tractor,
+  Wheat,
 } from "lucide-react";
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-  type RefObject,
-} from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { normalizeFieldCrop } from "@/components/dashboard/field-passport-form";
+import { OperationsWeatherBadge } from "@/components/dashboard/operations-weather-badge";
 import {
   Accordion,
   AccordionContent,
@@ -34,10 +29,13 @@ import type {
   FieldTimelineField,
   FieldWithTimeline,
   UnifiedTimelineEvent,
-  UnifiedTimelineIcon,
+  UnifiedTimelineEventType,
 } from "@/lib/field-timeline";
 import {
-  fieldLineGlowShadow,
+  timelineEventDateIso,
+  toTimelineField,
+} from "@/lib/field-timeline";
+import {
   groupTimelineByCrop,
   normalizeFieldLineColor,
   TIMELINE_NO_CROP_LABEL,
@@ -45,57 +43,19 @@ import {
 } from "@/lib/field-timeline-crops";
 import { cn } from "@/lib/utils";
 
-const STATION_CARD_WIDTH = 216;
-const STATION_STEP = 252;
-const TRACK_PAD_X = STATION_CARD_WIDTH / 2 + 24;
-const TRACK_HEIGHT = 392;
-const LINE_Y_TOP = 156;
-const LINE_Y_BOTTOM = 248;
+export type OperationsMetroVariant = "mobile" | "desktop";
 
-/** Фіксована позиція станції — картки лишаються як раніше */
-function stationX(index: number): number {
-  return TRACK_PAD_X + index * STATION_STEP;
-}
+const uahFormatter = new Intl.NumberFormat("uk-UA", {
+  style: "currency",
+  currency: "UAH",
+  maximumFractionDigits: 0,
+});
 
-function minTrackWidth(count: number): number {
-  if (count <= 1) {
-    return STATION_CARD_WIDTH + TRACK_PAD_X * 2;
-  }
-  return STATION_STEP * Math.max(count - 1, 0) + TRACK_PAD_X * 2;
-}
-
-function useContainerWidth(ref: RefObject<HTMLElement | null>) {
-  const [width, setWidth] = useState(0);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-
-    const update = () => setWidth(el.getBoundingClientRect().width);
-    update();
-
-    const observer = new ResizeObserver(() => update());
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [ref]);
-
-  return width;
-}
-
-type FieldLineVisual = {
-  color: string;
-  filterKey: string;
-};
-
-function getFieldLineVisual(
-  field: FieldTimelineField,
-  suffix: string
-): FieldLineVisual {
-  return {
-    color: normalizeFieldLineColor(field.color),
-    filterKey: `${field.id}-${suffix}`,
-  };
-}
+const uahFormatterPrecise = new Intl.NumberFormat("uk-UA", {
+  style: "currency",
+  currency: "UAH",
+  maximumFractionDigits: 2,
+});
 
 function formatAreaHa(areaHa: number): string {
   return `${new Intl.NumberFormat("uk-UA", {
@@ -103,185 +63,396 @@ function formatAreaHa(areaHa: number): string {
   }).format(areaHa)} га`;
 }
 
-function formatStationDate(iso: string): string {
-  const d = new Date(`${iso.slice(0, 10)}T12:00:00`);
-  if (Number.isNaN(d.getTime())) return iso;
-  return format(d, "d MMM", { locale: uk });
+function formatStationDate(date: Date): string {
+  if (Number.isNaN(date.getTime())) return "—";
+  return format(date, "d MMM yyyy", { locale: uk });
 }
 
-function eventIcon(icon: UnifiedTimelineIcon, type: UnifiedTimelineEvent["type"]) {
-  if (type === "equipment") {
-    return <Tractor className="size-3.5 shrink-0 text-orange-400" aria-hidden />;
-  }
-  switch (icon) {
-    case "wheat":
-      return <Sprout className="size-3.5 shrink-0 text-emerald-400" aria-hidden />;
-    case "flask":
-      return <FlaskConical className="size-3.5 shrink-0 text-emerald-400" aria-hidden />;
-    case "fuel":
-      return <Fuel className="size-3.5 shrink-0 text-emerald-400" aria-hidden />;
-    default:
-      return <Package className="size-3.5 shrink-0 text-emerald-400" aria-hidden />;
+function formatUah(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return "—";
+  return uahFormatter.format(value);
+}
+
+function formatCostUah(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return "—";
+  return uahFormatterPrecise.format(value);
+}
+
+function nodeBorderClass(type: UnifiedTimelineEventType): string {
+  switch (type) {
+    case "equipment":
+      return "border-orange-400";
+    case "inventory":
+      return "border-emerald-400";
+    case "scouting":
+      return "border-blue-400";
   }
 }
 
-function buildMetroSegments(
-  count: number,
-  yPositions: number[],
-  trackWidth: number
-): string[] {
-  if (count < 2) return [];
+function eventTypeLabel(type: UnifiedTimelineEventType): string {
+  switch (type) {
+    case "equipment":
+      return "Техніка";
+    case "inventory":
+      return "ТМЦ";
+    case "scouting":
+      return "Скаутинг";
+  }
+}
 
-  const segments: string[] = [];
-  const firstX = stationX(0);
-  const firstY = yPositions[0] ?? LINE_Y_TOP;
-  segments.push(`M 0 ${firstY} H ${firstX}`);
+function EventTypeIcon({
+  event,
+  desktop,
+}: {
+  event: UnifiedTimelineEvent;
+  desktop?: boolean;
+}) {
+  const box = cn(
+    "flex size-9 shrink-0 items-center justify-center rounded-xl border",
+    desktop ? "border-zinc-200/80 bg-zinc-50" : "border-white/10 bg-white/[0.04]"
+  );
 
-  for (let i = 1; i < count; i++) {
-    const x0 = stationX(i - 1);
-    const x1 = stationX(i);
-    const y0 = yPositions[i - 1] ?? LINE_Y_TOP;
-    const y1 = yPositions[i] ?? LINE_Y_BOTTOM;
-    const midX = (x0 + x1) / 2;
-    segments.push(
-      `M ${x0} ${y0} H ${midX - 10} Q ${midX} ${y0} ${midX} ${(y0 + y1) / 2} Q ${midX} ${y1} ${midX + 10} ${y1} H ${x1}`
+  if (event.type === "equipment") {
+    return (
+      <div className={box}>
+        <Tractor
+          className={cn("size-4", desktop ? "text-orange-600" : "text-orange-400")}
+          aria-hidden
+        />
+      </div>
     );
   }
-
-  const lastX = stationX(count - 1);
-  const lastY = yPositions[count - 1] ?? LINE_Y_BOTTOM;
-  segments.push(`M ${lastX} ${lastY} H ${trackWidth}`);
-
-  return segments;
+  if (event.type === "scouting") {
+    return (
+      <div className={box}>
+        <Search
+          className={cn("size-4", desktop ? "text-blue-600" : "text-blue-400")}
+          aria-hidden
+        />
+      </div>
+    );
+  }
+  if (event.subtitle === "Насіння") {
+    return (
+      <div className={box}>
+        <Sprout
+          className={cn("size-4", desktop ? "text-emerald-700" : "text-emerald-400")}
+          aria-hidden
+        />
+      </div>
+    );
+  }
+  if (event.subtitle === "Добрива") {
+    return (
+      <div className={box}>
+        <FlaskConical
+          className={cn("size-4", desktop ? "text-emerald-700" : "text-emerald-400")}
+          aria-hidden
+        />
+      </div>
+    );
+  }
+  return (
+    <div className={box}>
+      <Package
+        className={cn("size-4", desktop ? "text-emerald-700" : "text-emerald-400")}
+        aria-hidden
+      />
+    </div>
+  );
 }
 
-function MetroStationCard({
+function TimelineEventDateRow({
+  event,
+  desktop,
+}: {
+  event: UnifiedTimelineEvent;
+  desktop?: boolean;
+}) {
+  return (
+    <div className="mb-2 flex flex-wrap items-center gap-x-1 gap-y-1">
+      <time
+        className={cn(
+          "text-[10px] font-semibold tracking-[0.14em] uppercase",
+          desktop ? "text-zinc-400" : "text-zinc-500"
+        )}
+        dateTime={timelineEventDateIso(event.date)}
+      >
+        {formatStationDate(event.date)}
+      </time>
+      <OperationsWeatherBadge
+        weatherContext={event.weatherContext}
+        desktop={desktop}
+      />
+    </div>
+  );
+}
+
+function TimelineStandardEventCard({
   event,
   onClick,
+  desktop,
 }: {
   event: UnifiedTimelineEvent;
   onClick?: () => void;
+  desktop?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        "relative z-10 w-[13.5rem] rounded-2xl border border-white/10 bg-white/[0.07] p-3 text-left backdrop-blur-md",
-        "shadow-[0_12px_40px_-20px_rgba(0,0,0,0.85)] transition",
-        "touch-pan-xy",
-        "hover:border-white/20 hover:bg-white/[0.12] active:scale-[0.98]"
+        "w-full rounded-xl p-3 text-left transition active:scale-[0.99]",
+        desktop
+          ? "border border-[#E5DFD3]/90 bg-white/90 shadow-sm hover:border-[#276749]/20 hover:shadow-md"
+          : "border border-white/10 bg-white/[0.03] hover:border-white/15 hover:bg-white/[0.05]"
       )}
     >
-      <time
-        className="text-[10px] font-semibold tracking-wide text-zinc-500 uppercase"
-        dateTime={event.date}
-      >
-        {formatStationDate(event.date)}
-      </time>
-      <div className="mt-2 flex items-start justify-between gap-2">
-        <div className="flex min-w-0 items-start gap-2">
-          {eventIcon(event.icon, event.type)}
+      <TimelineEventDateRow event={event} desktop={desktop} />
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <EventTypeIcon event={event} desktop={desktop} />
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-zinc-50">
+            <p
+              className={cn(
+                "truncate text-sm font-semibold tracking-tight",
+                desktop ? "text-zinc-900" : "text-zinc-100"
+              )}
+            >
               {event.title}
             </p>
-            <p className="truncate text-[11px] text-zinc-400">{event.subtitle}</p>
+            <p
+              className={cn(
+                "mt-0.5 truncate text-xs",
+                desktop ? "text-zinc-500" : "text-zinc-400"
+              )}
+            >
+              {event.subtitle}
+            </p>
+            <p
+              className={cn(
+                "mt-1.5 text-[10px] font-semibold tracking-[0.12em] uppercase",
+                event.type === "equipment"
+                  ? desktop
+                    ? "text-orange-600"
+                    : "text-orange-400/90"
+                  : desktop
+                    ? "text-emerald-700"
+                    : "text-emerald-400/90"
+              )}
+            >
+              {eventTypeLabel(event.type)}
+            </p>
           </div>
         </div>
-        <p className="shrink-0 text-sm font-bold tabular-nums text-zinc-100">
-          {event.metric}
-        </p>
+        <div className="shrink-0 text-right">
+          <p
+            className={cn(
+              "text-sm font-bold tabular-nums tracking-tight",
+              desktop ? "text-zinc-900" : "text-zinc-50"
+            )}
+          >
+            {event.metric ?? "—"}
+          </p>
+          <p
+            className={cn(
+              "mt-1 text-xs tabular-nums",
+              desktop ? "text-red-600/80" : "text-red-400/80"
+            )}
+          >
+            {formatCostUah(event.cost)}
+          </p>
+        </div>
       </div>
-      <p
-        className={cn(
-          "mt-2 text-[10px] font-bold tracking-[0.14em] uppercase",
-          event.type === "equipment" ? "text-orange-400/90" : "text-emerald-400/90"
-        )}
-      >
-        {event.type === "equipment" ? "Техніка" : "ТМЦ"}
-      </p>
     </button>
   );
 }
 
-function MetroDot({
-  line,
-  className,
-  style,
+function TimelineScoutingEventCard({
+  event,
+  onClick,
+  desktop,
 }: {
-  line: FieldLineVisual;
-  className?: string;
-  style?: CSSProperties;
+  event: UnifiedTimelineEvent;
+  onClick?: () => void;
+  desktop?: boolean;
 }) {
   return (
-    <span
+    <button
+      type="button"
+      onClick={onClick}
       className={cn(
-        "absolute size-5 rounded-full border-[3px] bg-zinc-950",
-        className
+        "w-full rounded-xl p-3 text-left transition active:scale-[0.99]",
+        desktop
+          ? "border border-[#E5DFD3]/90 bg-white/90 shadow-sm hover:border-blue-200 hover:shadow-md"
+          : "border border-white/10 bg-white/[0.03] hover:border-white/15 hover:bg-white/[0.05]"
       )}
-      style={{
-        borderColor: line.color,
-        boxShadow: fieldLineGlowShadow(line.color),
-        ...style,
-      }}
-    />
+    >
+      <TimelineEventDateRow event={event} desktop={desktop} />
+
+      {event.imageUrl ? (
+        <img
+          src={event.imageUrl}
+          alt=""
+          loading="lazy"
+          className={cn(
+            "mt-2 h-40 w-full rounded-xl border object-cover shadow-sm",
+            desktop ? "border-zinc-200/80" : "border-white/10"
+          )}
+        />
+      ) : (
+        <div
+          className={cn(
+            "mt-2 flex h-40 w-full items-center justify-center rounded-xl border border-dashed",
+            desktop
+              ? "border-zinc-200 bg-zinc-50 text-zinc-400"
+              : "border-white/10 bg-white/[0.02] text-zinc-500"
+          )}
+        >
+          <Wheat className="size-8 opacity-40" aria-hidden />
+        </div>
+      )}
+
+      {event.notes ? (
+        <p
+          className={cn(
+            "mt-2 text-sm leading-relaxed",
+            desktop ? "text-zinc-600" : "text-zinc-300"
+          )}
+        >
+          {event.notes}
+        </p>
+      ) : null}
+    </button>
   );
 }
 
-function MetroSingleStationTrack({
+function TimelineEventCard({
   event,
-  line,
-  onEventClick,
-  field,
+  onClick,
+  desktop,
 }: {
   event: UnifiedTimelineEvent;
-  line: FieldLineVisual;
-  onEventClick?: (field: FieldTimelineField, event: UnifiedTimelineEvent) => void;
-  field: FieldTimelineField;
+  onClick?: () => void;
+  desktop?: boolean;
+}) {
+  if (event.type === "scouting") {
+    return (
+      <TimelineScoutingEventCard event={event} onClick={onClick} desktop={desktop} />
+    );
+  }
+  return (
+    <TimelineStandardEventCard event={event} onClick={onClick} desktop={desktop} />
+  );
+}
+
+function TimelineEmptyState({
+  onAdd,
+  desktop,
+}: {
+  onAdd?: () => void;
+  desktop?: boolean;
 }) {
   return (
-    <div className="touch-pan-xy py-3">
-      <div className="relative mx-auto mb-3 max-w-sm px-4">
-        <div className="flex justify-center">
-          <MetroStationCard
-            event={event}
-            onClick={() => onEventClick?.(field, event)}
-          />
-        </div>
-      </div>
-
-      <div className="relative h-5 w-full touch-pan-y">
-        <svg
-          className="absolute inset-0 h-full w-full overflow-visible"
-          preserveAspectRatio="none"
+    <div className="flex flex-col items-center px-4 py-12 text-center">
+      <div
+        className={cn(
+          "mb-4 flex size-14 items-center justify-center rounded-2xl border",
+          desktop
+            ? "border-[#E5DFD3] bg-[#F4F1EA]"
+            : "border-white/10 bg-white/[0.04]"
+        )}
+      >
+        <Package
+          className={cn("size-6", desktop ? "text-zinc-400" : "text-zinc-500")}
           aria-hidden
-        >
-          <defs>
-            <filter id={`glow-single-${line.filterKey}`}>
-              <feGaussianBlur stdDeviation="2.5" result="blur" />
-              <feMerge>
-                <feMergeNode in="blur" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-          </defs>
-          <line
-            x1="0"
-            y1="50%"
-            x2="100%"
-            y2="50%"
-            stroke={line.color}
-            strokeWidth={6}
-            strokeLinecap="butt"
-            filter={`url(#glow-single-${line.filterKey})`}
-          />
-        </svg>
-        <MetroDot
-          line={line}
-          className="top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
         />
       </div>
+      <p
+        className={cn(
+          "text-sm font-medium",
+          desktop ? "text-zinc-700" : "text-zinc-300"
+        )}
+      >
+        Історія операцій порожня
+      </p>
+      <p
+        className={cn(
+          "mt-1 max-w-[16rem] text-xs leading-relaxed",
+          desktop ? "text-zinc-500" : "text-zinc-500"
+        )}
+      >
+        Додайте наряд техніки, списання ТМЦ або звіт скаутингу
+      </p>
+      {onAdd ? (
+        <button
+          type="button"
+          onClick={onAdd}
+          className={cn(
+            "mt-5 inline-flex items-center gap-2 rounded-full border px-4 py-2.5 text-sm font-medium transition",
+            desktop
+              ? "border-[#E5DFD3] bg-white text-zinc-700 hover:bg-[#F4F1EA]"
+              : "border-white/10 bg-white/5 text-zinc-200 hover:bg-white/10"
+          )}
+        >
+          <Plus className="size-4" />
+          Додати першу позицію
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function VerticalFieldTimeline({
+  events,
+  field,
+  onEventClick,
+  onAddClick,
+  desktop,
+}: {
+  events: UnifiedTimelineEvent[];
+  field: FieldTimelineField;
+  onEventClick?: (field: FieldTimelineField, event: UnifiedTimelineEvent) => void;
+  onAddClick?: () => void;
+  desktop?: boolean;
+}) {
+  if (events.length === 0) {
+    return <TimelineEmptyState onAdd={onAddClick} desktop={desktop} />;
+  }
+
+  return (
+    <div
+      className={cn("relative", desktop ? "px-1 pb-1" : "px-0 pb-1")}
+      data-allow-pan="true"
+    >
+      {/* Лінія від верху блоку до низу останньої події */}
+      <div
+        className={cn(
+          "absolute top-0 bottom-0 left-[7px] w-0 border-l-2",
+          desktop ? "border-zinc-200" : "border-white/10"
+        )}
+        aria-hidden
+      />
+
+      <ul className="relative space-y-4">
+        {events.map((event) => (
+          <li key={event.id} className="relative pl-6">
+            <span
+              className={cn(
+                "absolute top-5 -left-[9px] size-4 rounded-full border-2",
+                desktop ? "bg-white" : "bg-zinc-950",
+                nodeBorderClass(event.type)
+              )}
+              aria-hidden
+            />
+            <TimelineEventCard
+              event={event}
+              desktop={desktop}
+              onClick={() => onEventClick?.(field, event)}
+            />
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -290,184 +461,128 @@ function MetroFieldLine({
   item,
   onEventClick,
   onAddClick,
+  variant = "mobile",
 }: {
   item: FieldWithTimeline;
   onEventClick?: (field: FieldTimelineField, event: UnifiedTimelineEvent) => void;
   onAddClick?: (field: FieldTimelineField) => void;
+  variant?: OperationsMetroVariant;
 }) {
-  const trackContainerRef = useRef<HTMLDivElement>(null);
-  const containerWidth = useContainerWidth(trackContainerRef);
-  const line = getFieldLineVisual(item.field, "track");
+  const desktop = variant === "desktop";
+  const field = toTimelineField(item);
+  const accent = normalizeFieldLineColor(item.color);
+
   const events = useMemo(
-    () => [...item.events].sort((a, b) => a.date.localeCompare(b.date)),
+    () =>
+      [...item.events].sort((a, b) => b.date.getTime() - a.date.getTime()),
     [item.events]
   );
 
-  const yPositions = events.map((_, index) =>
-    index % 2 === 0 ? LINE_Y_TOP : LINE_Y_BOTTOM
-  );
-  const trackWidth = Math.max(
-    minTrackWidth(events.length),
-    containerWidth
-  );
-  const segments = buildMetroSegments(events.length, yPositions, trackWidth);
-
   return (
     <AccordionItem
-      value={item.field.id}
-      className="overflow-hidden rounded-3xl border border-white/8 bg-gradient-to-br from-white/[0.06] via-white/[0.03] to-transparent"
+      value={item.fieldId}
+      className={cn(
+        "overflow-hidden rounded-2xl border",
+        desktop
+          ? "border-[#E5DFD3]/90 bg-white/80 shadow-sm"
+          : "border-white/10 bg-white/5 backdrop-blur-md"
+      )}
     >
-      <AccordionTrigger className="group border-b border-white/5 px-4 py-3 hover:no-underline [&>svg]:hidden">
-        <div className="flex min-w-0 flex-1 items-start justify-between gap-3 pr-2">
+      <AccordionTrigger
+        className={cn(
+          "group w-full p-4 hover:no-underline [&>svg]:hidden",
+          desktop ? "hover:bg-white/60" : "hover:bg-white/[0.03]"
+        )}
+      >
+        <div className="flex min-w-0 flex-1 items-start justify-between gap-4 pr-1">
           <div className="min-w-0 text-left">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2.5">
               <span
-                className="inline-flex h-2.5 w-8 shrink-0 rounded-full"
-                style={{ backgroundColor: line.color }}
+                className="inline-flex h-2 w-8 shrink-0 rounded-full"
+                style={{ backgroundColor: accent }}
                 aria-hidden
               />
-              <h3 className="truncate text-base font-semibold tracking-tight text-zinc-50">
-                {item.field.name}
+              <h3
+                className={cn(
+                  "truncate text-lg font-medium tracking-tight",
+                  desktop ? "text-zinc-900" : "text-zinc-100"
+                )}
+              >
+                {item.fieldName}
               </h3>
             </div>
-            <p className="mt-1 text-xs text-zinc-400">
-              {normalizeFieldCrop(item.field.crop) || TIMELINE_NO_CROP_LABEL} ·{" "}
-              {formatAreaHa(item.field.areaHa)}
+            <p
+              className={cn(
+                "mt-1 text-sm",
+                desktop ? "text-zinc-500" : "text-zinc-400"
+              )}
+            >
+              {normalizeFieldCrop(item.cropName) || TIMELINE_NO_CROP_LABEL}
+              <span className="mx-1.5 opacity-40">·</span>
+              {formatAreaHa(item.area)}
             </p>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <span className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-[11px] font-semibold text-zinc-300 tabular-nums">
-              {events.length}{" "}
-              {events.length === 1 ? "станція" : "станцій"}
-            </span>
+
+          <div className="flex shrink-0 items-start gap-2">
+            <div className="text-right">
+              <p
+                className={cn(
+                  "text-base font-semibold tabular-nums tracking-tight",
+                  desktop ? "text-red-600/90" : "text-red-400/90"
+                )}
+              >
+                {formatUah(item.totalCost)}
+              </p>
+              <p
+                className={cn(
+                  "mt-0.5 text-[10px] tabular-nums",
+                  desktop ? "text-zinc-400" : "text-zinc-500"
+                )}
+              >
+                {item.area > 0 && item.totalCost > 0
+                  ? `${formatCostUah(item.costPerHectare)}/га`
+                  : "—/га"}
+              </p>
+            </div>
+
             <button
               type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                onAddClick?.(item.field);
+              onClick={(e) => {
+                e.stopPropagation();
+                onAddClick?.(field);
               }}
-              className="inline-flex size-9 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/15 text-emerald-200 transition hover:bg-emerald-500/25"
-              aria-label={`Додати позицію для ${item.field.name}`}
+              className={cn(
+                "inline-flex size-9 items-center justify-center rounded-full border transition",
+                desktop
+                  ? "border-emerald-600/20 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                  : "border-emerald-500/25 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20"
+              )}
+              aria-label={`Додати позицію для ${item.fieldName}`}
             >
               <Plus className="size-4" />
             </button>
-            <ChevronDown className="size-5 shrink-0 text-zinc-500 transition-transform duration-200 group-data-[state=open]:rotate-180" />
+
+            <ChevronDown
+              className={cn(
+                "mt-1 size-5 shrink-0 transition-transform duration-300 group-data-[state=open]:rotate-180",
+                desktop ? "text-zinc-400" : "text-zinc-500"
+              )}
+            />
           </div>
         </div>
       </AccordionTrigger>
 
       <AccordionContent
-        className="overflow-visible pb-0 touch-pan-xy"
+        className={cn("px-4 pb-4 pt-1", !desktop && "touch-pan-xy")}
         data-allow-pan="true"
       >
-        {events.length === 0 ? (
-          <div className="px-4 py-10 text-center">
-            <p className="text-sm text-zinc-500 italic">
-              Історія операцій порожня
-            </p>
-            <button
-              type="button"
-              onClick={() => onAddClick?.(item.field)}
-              className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-zinc-200 transition hover:bg-white/10"
-            >
-              <Plus className="size-4" />
-              Додати першу позицію
-            </button>
-          </div>
-        ) : events.length === 1 ? (
-          <MetroSingleStationTrack
-            event={events[0]!}
-            line={line}
-            field={item.field}
-            onEventClick={onEventClick}
-          />
-        ) : (
-          <div
-            ref={trackContainerRef}
-            className="relative touch-pan-xy py-2"
-            data-allow-pan="true"
-            style={{ overscrollBehaviorX: "contain" }}
-          >
-            <div
-              className="touch-pan-xy overflow-x-auto overscroll-x-contain overscroll-y-auto pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-              aria-label={`Хронологія поля ${item.field.name}`}
-            >
-              <div
-                className="relative touch-pan-xy"
-                style={{ width: trackWidth, height: TRACK_HEIGHT }}
-              >
-                <svg
-                  className="pointer-events-none absolute inset-0"
-                  width={trackWidth}
-                  height={TRACK_HEIGHT}
-                  aria-hidden
-                >
-                  <defs>
-                    <filter id={`glow-${line.filterKey}`}>
-                      <feGaussianBlur stdDeviation="3" result="blur" />
-                      <feMerge>
-                        <feMergeNode in="blur" />
-                        <feMergeNode in="SourceGraphic" />
-                      </feMerge>
-                    </filter>
-                  </defs>
-                  {segments.map((d, index) => (
-                    <path
-                      key={index}
-                      d={d}
-                      fill="none"
-                      stroke={line.color}
-                      strokeWidth={7}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      opacity={0.95}
-                      filter={`url(#glow-${line.filterKey})`}
-                    />
-                  ))}
-                </svg>
-
-                {events.map((event, index) => {
-                  const x = stationX(index);
-                  const y = yPositions[index] ?? LINE_Y_TOP;
-                  const cardAbove = y === LINE_Y_TOP;
-
-                  return (
-                    <div
-                      key={event.id}
-                      className="absolute top-0 left-0"
-                      style={{
-                        left: x,
-                        transform: "translateX(-50%)",
-                        width: 0,
-                        height: TRACK_HEIGHT,
-                      }}
-                    >
-                      <MetroDot
-                        line={line}
-                        className="left-1/2 -translate-x-1/2"
-                        style={{ top: y - 10 }}
-                      />
-
-                      <div
-                        className="absolute left-1/2 -translate-x-1/2"
-                        style={
-                          cardAbove
-                            ? { bottom: TRACK_HEIGHT - y + 20 }
-                            : { top: y + 20 }
-                        }
-                      >
-                        <MetroStationCard
-                          event={event}
-                          onClick={() => onEventClick?.(item.field, event)}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        )}
+        <VerticalFieldTimeline
+          events={events}
+          field={field}
+          desktop={desktop}
+          onEventClick={onEventClick}
+          onAddClick={() => onAddClick?.(field)}
+        />
       </AccordionContent>
     </AccordionItem>
   );
@@ -476,23 +591,59 @@ function MetroFieldLine({
 function CropCategoryCard({
   group,
   onSelect,
+  active = false,
+  variant = "mobile",
 }: {
   group: TimelineCropGroup;
   onSelect: () => void;
+  active?: boolean;
+  variant?: OperationsMetroVariant;
 }) {
+  const desktop = variant === "desktop";
   const description =
     group.label === TIMELINE_NO_CROP_LABEL
       ? "Поля без культури в паспорті"
       : `${group.fieldCount} ${group.fieldCount === 1 ? "поле" : group.fieldCount < 5 ? "поля" : "полів"} · ${group.stationCount} ${group.stationCount === 1 ? "станція" : group.stationCount < 5 ? "станції" : "станцій"}`;
+
+  if (desktop) {
+    return (
+      <button
+        type="button"
+        onClick={onSelect}
+        className={cn(
+          "w-full rounded-xl border px-3 py-2.5 text-left transition",
+          active
+            ? "border-[#276749]/25 bg-white shadow-sm ring-1 ring-[#276749]/15"
+            : "border-transparent hover:bg-white/70"
+        )}
+      >
+        <div className="flex items-center gap-2.5">
+          <span
+            className="h-9 w-1 shrink-0 rounded-full"
+            style={{ backgroundColor: group.accentColor }}
+            aria-hidden
+          />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-bold text-zinc-900">
+              {group.label}
+            </p>
+            <p className="mt-0.5 truncate text-xs text-zinc-500">
+              {description}
+            </p>
+          </div>
+        </div>
+      </button>
+    );
+  }
 
   return (
     <button
       type="button"
       onClick={onSelect}
       className={cn(
-        "group relative w-full overflow-hidden rounded-3xl border border-white/8 text-left transition",
-        "bg-gradient-to-br from-white/[0.07] via-white/[0.03] to-transparent",
-        "hover:border-white/15 hover:from-white/[0.09] active:scale-[0.99]"
+        "group relative w-full overflow-hidden rounded-2xl border border-white/10 text-left transition",
+        "bg-white/5 backdrop-blur-md",
+        "hover:border-white/15 hover:bg-white/[0.07] active:scale-[0.99]"
       )}
     >
       <div
@@ -509,7 +660,7 @@ function CropCategoryCard({
           aria-hidden
         />
         <div className="min-w-0 flex-1">
-          <h3 className="text-lg font-bold tracking-tight text-zinc-50">
+          <h3 className="text-lg font-medium tracking-tight text-zinc-100">
             {group.label}
           </h3>
           <p className="mt-1 text-sm text-zinc-400">{description}</p>
@@ -527,11 +678,14 @@ function MetroFieldsAccordion({
   fields,
   onEventClick,
   onAddClick,
+  variant = "mobile",
 }: {
   fields: FieldWithTimeline[];
   onEventClick?: (field: FieldTimelineField, event: UnifiedTimelineEvent) => void;
   onAddClick?: (field: FieldTimelineField) => void;
+  variant?: OperationsMetroVariant;
 }) {
+  const desktop = variant === "desktop";
   const [openIds, setOpenIds] = useState<string[]>([]);
 
   useEffect(() => {
@@ -540,23 +694,25 @@ function MetroFieldsAccordion({
       return;
     }
     setOpenIds((prev) => {
-      const valid = prev.filter((id) => fields.some((item) => item.field.id === id));
+      const valid = prev.filter((id) => fields.some((item) => item.fieldId === id));
       if (valid.length > 0) return valid;
-      return [fields[0]!.field.id];
+      if (desktop) return fields.map((item) => item.fieldId);
+      return [fields[0]!.fieldId];
     });
-  }, [fields]);
+  }, [fields, desktop]);
 
   return (
     <Accordion
       type="multiple"
       value={openIds}
       onValueChange={setOpenIds}
-      className="space-y-3"
+      className={cn(desktop ? "space-y-4" : "space-y-3")}
     >
       {fields.map((item) => (
         <MetroFieldLine
-          key={item.field.id}
+          key={item.fieldId}
           item={item}
+          variant={variant}
           onEventClick={onEventClick}
           onAddClick={onAddClick}
         />
@@ -565,13 +721,19 @@ function MetroFieldsAccordion({
   );
 }
 
-function MetroMapSkeleton() {
+function MetroMapSkeleton({ variant = "mobile" }: { variant?: OperationsMetroVariant }) {
+  const desktop = variant === "desktop";
   return (
-    <div className="space-y-4" aria-busy="true" aria-label="Завантаження карти">
+    <div className="space-y-3" aria-busy="true" aria-label="Завантаження хронології">
       {[0, 1, 2].map((i) => (
         <Skeleton
           key={i}
-          className="h-56 w-full animate-pulse rounded-3xl border border-white/5 bg-white/10"
+          className={cn(
+            "h-28 w-full animate-pulse rounded-2xl border",
+            desktop
+              ? "border-[#E5DFD3]/80 bg-white/60"
+              : "border-white/10 bg-white/5"
+          )}
         />
       ))}
     </div>
@@ -582,15 +744,18 @@ export function OperationsMetroMap({
   fields,
   isLoading,
   searchQuery = "",
+  variant = "mobile",
   onEventClick,
   onAddClick,
 }: {
   fields: FieldWithTimeline[];
   isLoading: boolean;
   searchQuery?: string;
+  variant?: OperationsMetroVariant;
   onEventClick?: (field: FieldTimelineField, event: UnifiedTimelineEvent) => void;
   onAddClick?: (field: FieldTimelineField) => void;
 }) {
+  const desktop = variant === "desktop";
   const [selectedCropId, setSelectedCropId] = useState<string | null>(null);
   const cropGroups = useMemo(() => groupTimelineByCrop(fields), [fields]);
   const isSearchMode = Boolean(searchQuery.trim());
@@ -599,13 +764,44 @@ export function OperationsMetroMap({
     setSelectedCropId(null);
   }, [fields, searchQuery]);
 
-  if (isLoading) return <MetroMapSkeleton />;
+  useEffect(() => {
+    if (!desktop || isSearchMode || cropGroups.length === 0) return;
+    setSelectedCropId((prev) => prev ?? cropGroups[0]!.id);
+  }, [desktop, isSearchMode, cropGroups]);
+
+  if (isLoading) return <MetroMapSkeleton variant={variant} />;
 
   if (fields.length === 0) {
     return (
-      <p className="rounded-3xl border border-white/10 bg-white/5 px-4 py-12 text-center text-sm text-zinc-400">
-        Активних полів не знайдено.
-      </p>
+      <div
+        className={cn(
+          "flex flex-col items-center rounded-2xl border px-6 py-14 text-center",
+          desktop
+            ? "border-[#E5DFD3]/90 bg-white/70"
+            : "border-white/10 bg-white/5 backdrop-blur-md"
+        )}
+      >
+        <Search
+          className={cn("mb-4 size-10", desktop ? "text-zinc-300" : "text-zinc-600")}
+          aria-hidden
+        />
+        <p
+          className={cn(
+            "text-sm font-medium",
+            desktop ? "text-zinc-600" : "text-zinc-300"
+          )}
+        >
+          Активних полів не знайдено
+        </p>
+        <p
+          className={cn(
+            "mt-1 text-xs",
+            desktop ? "text-zinc-500" : "text-zinc-500"
+          )}
+        >
+          Спробуйте інший пошук або період
+        </p>
+      </div>
     );
   }
 
@@ -613,16 +809,84 @@ export function OperationsMetroMap({
     return (
       <MetroFieldsAccordion
         fields={fields}
+        variant={variant}
         onEventClick={onEventClick}
         onAddClick={onAddClick}
       />
     );
   }
 
+  const activeGroup =
+    cropGroups.find((group) => group.id === selectedCropId) ?? cropGroups[0] ?? null;
+
+  const fieldsPanel = (
+    <MetroFieldsAccordion
+      fields={activeGroup?.fields ?? fields}
+      variant={variant}
+      onEventClick={onEventClick}
+      onAddClick={onAddClick}
+    />
+  );
+
+  if (desktop) {
+    return (
+      <div className="flex h-full min-h-0 gap-5">
+        <aside className="flex w-60 shrink-0 flex-col gap-3">
+          <p className="px-1 text-[11px] font-semibold tracking-[0.1em] text-zinc-500 uppercase">
+            Культури
+          </p>
+          <div className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
+            {cropGroups.map((group) => (
+              <CropCategoryCard
+                key={group.id}
+                group={group}
+                variant="desktop"
+                active={activeGroup?.id === group.id}
+                onSelect={() => setSelectedCropId(group.id)}
+              />
+            ))}
+          </div>
+        </aside>
+
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-hidden">
+          {activeGroup ? (
+            <div
+              className="shrink-0 rounded-2xl border border-[#E5DFD3]/90 bg-white/80 px-5 py-4 shadow-sm"
+              style={{
+                background: `linear-gradient(135deg, ${activeGroup.accentColor}14 0%, rgba(255,255,255,0.92) 65%)`,
+              }}
+            >
+              <div className="flex items-center gap-3">
+                <span
+                  className="h-10 w-1.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: activeGroup.accentColor }}
+                />
+                <div>
+                  <h2 className="text-lg font-bold text-zinc-900">
+                    {activeGroup.label}
+                  </h2>
+                  <p className="mt-0.5 text-sm text-zinc-500">
+                    {activeGroup.fieldCount}{" "}
+                    {activeGroup.fieldCount === 1 ? "поле" : "полів"} ·{" "}
+                    {activeGroup.stationCount}{" "}
+                    {activeGroup.stationCount === 1 ? "станція" : "станцій"} ·{" "}
+                    {formatAreaHa(activeGroup.totalAreaHa)}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="min-h-0 flex-1 overflow-y-auto pr-1">{fieldsPanel}</div>
+        </div>
+      </div>
+    );
+  }
+
   if (!selectedCropId) {
     return (
       <div className="space-y-3">
-        <p className="px-1 text-[11px] font-semibold tracking-[0.1em] text-zinc-500 uppercase">
+        <p className="px-1 text-[11px] font-semibold tracking-[0.14em] text-zinc-500 uppercase">
           Культури
         </p>
         {cropGroups.map((group) => (
@@ -636,12 +900,11 @@ export function OperationsMetroMap({
     );
   }
 
-  const activeGroup = cropGroups.find((group) => group.id === selectedCropId);
-
   if (!activeGroup) {
     return (
       <MetroFieldsAccordion
         fields={fields}
+        variant={variant}
         onEventClick={onEventClick}
         onAddClick={onAddClick}
       />
@@ -649,7 +912,7 @@ export function OperationsMetroMap({
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       <button
         type="button"
         onClick={() => setSelectedCropId(null)}
@@ -660,9 +923,9 @@ export function OperationsMetroMap({
       </button>
 
       <div
-        className="rounded-3xl border border-white/8 px-4 py-3"
+        className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur-md"
         style={{
-          background: `linear-gradient(135deg, ${activeGroup.accentColor}18 0%, transparent 70%)`,
+          background: `linear-gradient(135deg, ${activeGroup.accentColor}18 0%, rgba(255,255,255,0.03) 70%)`,
         }}
       >
         <div className="flex items-center gap-3">
@@ -671,7 +934,9 @@ export function OperationsMetroMap({
             style={{ backgroundColor: activeGroup.accentColor }}
           />
           <div>
-            <h2 className="text-base font-bold text-zinc-50">{activeGroup.label}</h2>
+            <h2 className="text-base font-medium text-zinc-100">
+              {activeGroup.label}
+            </h2>
             <p className="mt-0.5 text-xs text-zinc-400">
               {activeGroup.fieldCount}{" "}
               {activeGroup.fieldCount === 1 ? "поле" : "полів"} ·{" "}
@@ -683,11 +948,7 @@ export function OperationsMetroMap({
         </div>
       </div>
 
-      <MetroFieldsAccordion
-        fields={activeGroup.fields}
-        onEventClick={onEventClick}
-        onAddClick={onAddClick}
-      />
+      {fieldsPanel}
     </div>
   );
 }

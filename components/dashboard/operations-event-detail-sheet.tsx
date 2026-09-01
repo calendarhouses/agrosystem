@@ -27,10 +27,7 @@ import {
   OperationsPanelShell,
   OperationsSheetFooter,
   OperationsSheetHeader,
-  opsFieldLabelClass,
-  opsInputClass,
-  opsPrimaryBtnClass,
-  opsSheetBodyClass,
+  useOpsChrome,
 } from "@/components/dashboard/operations-sheet-chrome";
 import { deleteFieldOperation, type FieldOperation } from "@/lib/field-operations";
 import type { FieldTimelineField, UnifiedTimelineEvent } from "@/lib/field-timeline";
@@ -52,10 +49,9 @@ type OperationsEventDetailSheetProps = {
 
 type DetailView = "detail" | "edit-equipment" | "edit-inventory";
 
-function formatDetailDate(iso: string): string {
-  const d = new Date(`${iso.slice(0, 10)}T12:00:00`);
-  if (Number.isNaN(d.getTime())) return iso;
-  return format(d, "d MMMM yyyy", { locale: uk });
+function formatDetailDate(date: Date): string {
+  if (Number.isNaN(date.getTime())) return "—";
+  return format(date, "d MMMM yyyy", { locale: uk });
 }
 
 function OperationsInventoryEditForm({
@@ -67,6 +63,7 @@ function OperationsInventoryEditForm({
   onBack: () => void;
   onSaved: () => void;
 }) {
+  const chrome = useOpsChrome();
   const [qty, setQty] = useState(String(move.qty));
   const [note, setNote] = useState(move.note ?? "");
   const [pending, startTransition] = useTransition();
@@ -115,9 +112,9 @@ function OperationsInventoryEditForm({
         onBack={onBack}
       />
 
-      <div className={opsSheetBodyClass}>
+      <div className={chrome.body}>
         <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3.5">
-          <p className={opsFieldLabelClass}>Товар</p>
+          <p className={chrome.label}>Товар</p>
           <p className="mt-1 text-base font-semibold text-zinc-50">{move.itemName}</p>
           {move.fieldName ? (
             <p className="mt-1 text-sm text-zinc-400">{move.fieldName}</p>
@@ -125,24 +122,24 @@ function OperationsInventoryEditForm({
         </div>
 
         <section className="space-y-2">
-          <label className={opsFieldLabelClass}>
+          <label className={chrome.label}>
             Кількість{move.itemUnit ? `, ${move.itemUnit}` : ""}
           </label>
           <input
             inputMode="decimal"
             value={qty}
             onChange={(e) => setQty(e.target.value)}
-            className={cn(opsInputClass, "text-center text-2xl font-bold tabular-nums")}
+            className={cn(chrome.input, "text-center text-2xl font-bold tabular-nums")}
             autoFocus
           />
         </section>
 
         <section className="space-y-2">
-          <label className={opsFieldLabelClass}>Примітка</label>
+          <label className={chrome.label}>Примітка</label>
           <input
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            className={opsInputClass}
+            className={chrome.input}
             placeholder="Необовʼязково"
           />
         </section>
@@ -152,7 +149,7 @@ function OperationsInventoryEditForm({
         <button
           type="submit"
           disabled={pending}
-          className={opsPrimaryBtnClass}
+          className={chrome.primaryBtn}
         >
           {pending ? (
             <>
@@ -268,6 +265,7 @@ export function OperationsEventDetailSheet({
   season,
   onChanged,
 }: OperationsEventDetailSheetProps) {
+  const chrome = useOpsChrome();
   const [view, setView] = useState<DetailView>("detail");
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -307,6 +305,15 @@ export function OperationsEventDetailSheet({
         return;
       }
 
+      if (parsed!.kind === "scouting") {
+        if (!cancelled) {
+          setOperation(null);
+          setInventoryMove(null);
+          setLoading(false);
+        }
+        return;
+      }
+
       const res = await listLocalMoves({ season });
       if (cancelled) return;
       if (!res.ok) {
@@ -314,7 +321,13 @@ export function OperationsEventDetailSheet({
         setLoading(false);
         return;
       }
-      const move = res.moves.find((m) => m.id === parsed!.moveId) ?? null;
+      if (parsed!.kind !== "inventory") {
+        if (!cancelled) setLoading(false);
+        return;
+      }
+
+      const move =
+        res.moves.find((m) => m.id === parsed!.moveId) ?? null;
       setInventoryMove(move);
       setOperation(null);
       setLoading(false);
@@ -339,10 +352,13 @@ export function OperationsEventDetailSheet({
           parsed.clientKey
         );
         toast.success("Наряд видалено");
-      } else {
+      } else if (parsed.kind === "inventory") {
         const res = await deleteLocalMove(parsed.moveId);
         if (!res.ok) throw new Error(res.error);
         toast.success("Списання видалено");
+      } else {
+        toast.error("Видалення скаутингу ще не підключено");
+        return;
       }
       setDeleteOpen(false);
       onChanged();
@@ -414,7 +430,7 @@ export function OperationsEventDetailSheet({
               }
             />
 
-            <div className={opsSheetBodyClass}>
+            <div className={chrome.body}>
               {loading ? (
                 <div className="flex items-center justify-center py-16 text-zinc-400">
                   <Loader2 className="mr-2 size-5 animate-spin" />
@@ -436,7 +452,7 @@ export function OperationsEventDetailSheet({
                   type="button"
                   onClick={handleEdit}
                   className={cn(
-                    opsPrimaryBtnClass,
+                    chrome.primaryBtn,
                     isEquipment
                       ? "bg-orange-600 shadow-[0_8px_24px_-10px_rgba(234,88,12,0.55)] hover:bg-orange-500"
                       : undefined
@@ -463,28 +479,28 @@ export function OperationsEventDetailSheet({
             ) : null}
           </div>
         )}
-      </OperationsPanelShell>
 
-      <OperationsConfirmDeleteDialog
-        open={deleteOpen}
-        onOpenChange={setDeleteOpen}
-        title="Видалити станцію?"
-        description={
-          <>
-            <span className="font-medium text-zinc-200">{event?.title}</span>
-            {field?.name ? (
-              <>
-                {" "}
-                з хронології поля{" "}
-                <span className="font-medium text-zinc-200">{field.name}</span>
-              </>
-            ) : null}
-            . Цю дію не можна скасувати.
-          </>
-        }
-        pending={deleting}
-        onConfirm={() => void handleDelete()}
-      />
+        <OperationsConfirmDeleteDialog
+          open={deleteOpen}
+          onOpenChange={setDeleteOpen}
+          title="Видалити станцію?"
+          description={
+            <>
+              <span className="font-medium text-zinc-200">{event?.title}</span>
+              {field?.name ? (
+                <>
+                  {" "}
+                  з хронології поля{" "}
+                  <span className="font-medium text-zinc-200">{field.name}</span>
+                </>
+              ) : null}
+              . Цю дію не можна скасувати.
+            </>
+          }
+          pending={deleting}
+          onConfirm={() => void handleDelete()}
+        />
+      </OperationsPanelShell>
     </>
   );
 }
