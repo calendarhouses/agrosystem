@@ -13,7 +13,14 @@ import {
   Sprout,
   Tractor,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type RefObject,
+} from "react";
 
 import { normalizeFieldCrop } from "@/components/dashboard/field-passport-form";
 import {
@@ -40,10 +47,39 @@ import { cn } from "@/lib/utils";
 
 const STATION_CARD_WIDTH = 216;
 const STATION_STEP = 252;
-const TRACK_PAD_X = STATION_CARD_WIDTH / 2 + 24;
+const STATION_HALF = STATION_CARD_WIDTH / 2;
 const TRACK_HEIGHT = 392;
 const LINE_Y_TOP = 156;
 const LINE_Y_BOTTOM = 248;
+
+function stationX(index: number, count: number, trackWidth: number): number {
+  if (count <= 1) return trackWidth / 2;
+  const span = Math.max(trackWidth - STATION_CARD_WIDTH, 0);
+  return STATION_HALF + (index / (count - 1)) * span;
+}
+
+function minTrackWidth(count: number): number {
+  if (count <= 1) return STATION_CARD_WIDTH;
+  return STATION_CARD_WIDTH + (count - 1) * STATION_STEP;
+}
+
+function useContainerWidth(ref: RefObject<HTMLElement | null>) {
+  const [width, setWidth] = useState(0);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    const update = () => setWidth(el.getBoundingClientRect().width);
+    update();
+
+    const observer = new ResizeObserver(() => update());
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [ref]);
+
+  return width;
+}
 
 type FieldLineVisual = {
   color: string;
@@ -88,12 +124,21 @@ function eventIcon(icon: UnifiedTimelineIcon, type: UnifiedTimelineEvent["type"]
   }
 }
 
-function buildMetroSegments(count: number, yPositions: number[]): string[] {
-  if (count < 2) return [];
+function buildMetroSegments(
+  count: number,
+  yPositions: number[],
+  trackWidth: number
+): string[] {
+  if (count < 1) return [];
+
   const segments: string[] = [];
+  const firstX = stationX(0, count, trackWidth);
+  const firstY = yPositions[0] ?? LINE_Y_TOP;
+  segments.push(`M 0 ${firstY} H ${firstX}`);
+
   for (let i = 1; i < count; i++) {
-    const x0 = TRACK_PAD_X + (i - 1) * STATION_STEP;
-    const x1 = TRACK_PAD_X + i * STATION_STEP;
+    const x0 = stationX(i - 1, count, trackWidth);
+    const x1 = stationX(i, count, trackWidth);
     const y0 = yPositions[i - 1] ?? LINE_Y_TOP;
     const y1 = yPositions[i] ?? LINE_Y_BOTTOM;
     const midX = (x0 + x1) / 2;
@@ -101,6 +146,11 @@ function buildMetroSegments(count: number, yPositions: number[]): string[] {
       `M ${x0} ${y0} H ${midX - 10} Q ${midX} ${y0} ${midX} ${(y0 + y1) / 2} Q ${midX} ${y1} ${midX + 10} ${y1} H ${x1}`
     );
   }
+
+  const lastX = stationX(count - 1, count, trackWidth);
+  const lastY = yPositions[count - 1] ?? LINE_Y_BOTTOM;
+  segments.push(`M ${lastX} ${lastY} H ${trackWidth}`);
+
   return segments;
 }
 
@@ -189,46 +239,44 @@ function MetroSingleStationTrack({
   field: FieldTimelineField;
 }) {
   return (
-    <div className="px-4 py-3">
-      <div className="relative mx-auto max-w-sm">
-        <div className="mb-3 flex justify-center">
-          <MetroStationCard
-            event={event}
-            onClick={() => onEventClick?.(field, event)}
-          />
-        </div>
+    <div className="py-3">
+      <div className="mb-3 flex justify-center px-4">
+        <MetroStationCard
+          event={event}
+          onClick={() => onEventClick?.(field, event)}
+        />
+      </div>
 
-        <div className="relative h-5 w-full">
-          <svg
-            className="absolute inset-0 h-full w-full overflow-visible"
-            preserveAspectRatio="none"
-            aria-hidden
-          >
-            <defs>
-              <filter id={`glow-single-${line.filterKey}`}>
-                <feGaussianBlur stdDeviation="2.5" result="blur" />
-                <feMerge>
-                  <feMergeNode in="blur" />
-                  <feMergeNode in="SourceGraphic" />
-                </feMerge>
-              </filter>
-            </defs>
-            <line
-              x1="0"
-              y1="50%"
-              x2="100%"
-              y2="50%"
-              stroke={line.color}
-              strokeWidth={6}
-              strokeLinecap="round"
-              filter={`url(#glow-single-${line.filterKey})`}
-            />
-          </svg>
-          <MetroDot
-            line={line}
-            className="top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
+      <div className="relative h-5 w-full">
+        <svg
+          className="absolute inset-0 h-full w-full overflow-visible"
+          preserveAspectRatio="none"
+          aria-hidden
+        >
+          <defs>
+            <filter id={`glow-single-${line.filterKey}`}>
+              <feGaussianBlur stdDeviation="2.5" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+          <line
+            x1="0"
+            y1="50%"
+            x2="100%"
+            y2="50%"
+            stroke={line.color}
+            strokeWidth={6}
+            strokeLinecap="butt"
+            filter={`url(#glow-single-${line.filterKey})`}
           />
-        </div>
+        </svg>
+        <MetroDot
+          line={line}
+          className="top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
+        />
       </div>
     </div>
   );
@@ -243,6 +291,8 @@ function MetroFieldLine({
   onEventClick?: (field: FieldTimelineField, event: UnifiedTimelineEvent) => void;
   onAddClick?: (field: FieldTimelineField) => void;
 }) {
+  const trackContainerRef = useRef<HTMLDivElement>(null);
+  const containerWidth = useContainerWidth(trackContainerRef);
   const line = getFieldLineVisual(item.field, "track");
   const events = useMemo(
     () => [...item.events].sort((a, b) => a.date.localeCompare(b.date)),
@@ -253,10 +303,10 @@ function MetroFieldLine({
     index % 2 === 0 ? LINE_Y_TOP : LINE_Y_BOTTOM
   );
   const trackWidth = Math.max(
-    STATION_STEP * Math.max(events.length - 1, 0) + TRACK_PAD_X * 2,
-    STATION_CARD_WIDTH + TRACK_PAD_X * 2
+    minTrackWidth(events.length),
+    containerWidth
   );
-  const segments = buildMetroSegments(events.length, yPositions);
+  const segments = buildMetroSegments(events.length, yPositions, trackWidth);
 
   return (
     <AccordionItem
@@ -302,7 +352,7 @@ function MetroFieldLine({
         </div>
       </AccordionTrigger>
 
-      <AccordionContent className="overflow-visible pb-0">
+      <AccordionContent className="overflow-visible pb-0 touch-pan-y">
         {events.length === 0 ? (
           <div className="px-4 py-10 text-center">
             <p className="text-sm text-zinc-500 italic">
@@ -325,16 +375,17 @@ function MetroFieldLine({
             onEventClick={onEventClick}
           />
         ) : (
-          <div className="relative py-2" style={{ overscrollBehaviorX: "contain" }}>
+          <div
+            ref={trackContainerRef}
+            className="relative py-2"
+            style={{ overscrollBehaviorX: "contain" }}
+          >
             <div
-              className="overflow-x-auto overscroll-x-contain px-1 pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-              data-vaul-no-drag=""
-              data-allow-pan="true"
-              style={{ touchAction: "pan-x" }}
+              className="overflow-x-auto overscroll-x-contain pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
               aria-label={`Хронологія поля ${item.field.name}`}
             >
               <div
-                className="relative mx-auto"
+                className="relative"
                 style={{ width: trackWidth, height: TRACK_HEIGHT }}
               >
                 <svg
@@ -368,7 +419,7 @@ function MetroFieldLine({
                 </svg>
 
                 {events.map((event, index) => {
-                  const x = TRACK_PAD_X + index * STATION_STEP;
+                  const x = stationX(index, events.length, trackWidth);
                   const y = yPositions[index] ?? LINE_Y_TOP;
                   const cardAbove = y === LINE_Y_TOP;
 

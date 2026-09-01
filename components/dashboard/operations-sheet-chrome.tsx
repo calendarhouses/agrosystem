@@ -10,13 +10,6 @@ import { useState } from "react";
 
 import { Calendar } from "@/components/ui/calendar";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -72,6 +65,12 @@ export const opsSelectTriggerClass = cn(
   "overflow-hidden outline-none transition-all",
   "focus:border-emerald-500/40 focus:ring-2 focus:ring-emerald-500/15",
   "data-placeholder:text-zinc-500"
+);
+
+export const opsComboboxTriggerClass = cn(
+  opsSelectTriggerClass,
+  "inline-flex items-center justify-between gap-3 text-left",
+  "disabled:cursor-not-allowed disabled:opacity-45"
 );
 
 export const opsPrimaryBtnClass = cn(
@@ -241,14 +240,16 @@ export function OperationsPanelShell({
         <DrawerContent
           className={cn(
             OPS_MOBILE_DRAWER_SIZE,
-            "flex flex-col overflow-hidden border-white/10 bg-zinc-950 pb-0 text-zinc-50",
+            "flex flex-col overflow-hidden !border-white/10 !bg-zinc-950 pb-0 text-zinc-50",
+            "[&_[data-slot=drawer-handle]]:bg-zinc-950",
+            "[&_[data-slot=drawer-handle]]:before:bg-zinc-600/70",
             "[&_[data-slot=drawer-close]]:bg-white/10 [&_[data-slot=drawer-close]]:text-zinc-300 [&_[data-slot=drawer-close]]:ring-white/10",
             "[&_[data-slot=drawer-close]]:hover:bg-white/15 [&_[data-slot=drawer-close]]:hover:text-zinc-50",
             className
           )}
           showCloseButton
         >
-          <DrawerHandle className="mb-0 bg-zinc-950 before:bg-white/25" />
+          <DrawerHandle className="mb-0 shrink-0 bg-zinc-950 before:bg-zinc-600/70" />
           <DrawerTitle className="sr-only">{title}</DrawerTitle>
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             {children}
@@ -364,44 +365,53 @@ export function OperationsConfirmDeleteDialog({
   pending?: boolean;
   onConfirm: () => void;
 }) {
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        if (!next && pending) return;
-        onOpenChange(next);
-      }}
-    >
-      <DialogContent
-        presentation="center"
-        showCloseButton={false}
+  if (!open || typeof document === "undefined") return null;
+
+  return createPortal(
+    <>
+      <div
+        aria-hidden
+        className="fixed inset-0 z-[400] bg-black/75 supports-backdrop-filter:backdrop-blur-[4px]"
+        onClick={() => {
+          if (!pending) onOpenChange(false);
+        }}
+      />
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="ops-delete-title"
+        aria-describedby="ops-delete-desc"
         className={cn(
-          "gap-0 overflow-hidden rounded-[1.35rem] border border-red-500/20",
-          "bg-zinc-900 p-0 text-zinc-50",
-          "shadow-[0_24px_60px_-18px_rgba(0,0,0,0.75)]",
-          "ring-0 sm:max-w-[22rem]"
+          "fixed top-1/2 left-1/2 z-[401] w-[min(calc(100%-2rem),22rem)] -translate-x-1/2 -translate-y-1/2",
+          "overflow-hidden rounded-[1.35rem] border border-red-500/20 bg-zinc-900 text-zinc-50",
+          "shadow-[0_24px_60px_-18px_rgba(0,0,0,0.75)]"
         )}
+        onClick={(event) => event.stopPropagation()}
       >
         <div className="relative overflow-hidden px-5 pt-5">
           <div
             aria-hidden
             className="pointer-events-none absolute inset-0 bg-gradient-to-br from-red-500/10 to-transparent"
           />
-          <DialogHeader className="relative gap-0 space-y-0 text-left">
-            <div className="flex items-start gap-3">
-              <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-red-500/15 text-red-300 ring-1 ring-red-500/25">
-                <Trash2 className="size-[18px]" strokeWidth={1.9} />
-              </div>
-              <div className="min-w-0 pt-0.5">
-                <DialogTitle className="text-[1.05rem] leading-snug font-bold tracking-tight text-zinc-50">
-                  {title}
-                </DialogTitle>
-                <DialogDescription className="mt-1.5 text-[13px] leading-snug text-zinc-400">
-                  {description}
-                </DialogDescription>
-              </div>
+          <div className="relative flex items-start gap-3">
+            <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-red-500/15 text-red-300 ring-1 ring-red-500/25">
+              <Trash2 className="size-[18px]" strokeWidth={1.9} />
             </div>
-          </DialogHeader>
+            <div className="min-w-0 pt-0.5">
+              <h2
+                id="ops-delete-title"
+                className="text-[1.05rem] leading-snug font-bold tracking-tight text-zinc-50"
+              >
+                {title}
+              </h2>
+              <p
+                id="ops-delete-desc"
+                className="mt-1.5 text-[13px] leading-snug text-zinc-400"
+              >
+                {description}
+              </p>
+            </div>
+          </div>
         </div>
 
         <div className="flex gap-2.5 px-5 pt-4 pb-5">
@@ -436,7 +446,8 @@ export function OperationsConfirmDeleteDialog({
             )}
           </button>
         </div>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </>,
+    document.body
   );
 }

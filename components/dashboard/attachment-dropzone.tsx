@@ -38,6 +38,7 @@ type Props = {
   onPendingChange?: (files: PendingAttachment[]) => void;
   className?: string;
   compact?: boolean;
+  variant?: "light" | "dark";
 };
 
 function isImage(mime: string) {
@@ -51,6 +52,7 @@ export function AttachmentDropzone({
   onPendingChange,
   className,
   compact = false,
+  variant = "light",
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [remote, setRemote] = useState<RemoteAttachment[]>([]);
@@ -148,6 +150,7 @@ export function AttachmentDropzone({
   }
 
   const total = pending.length + remote.length;
+  const isDark = variant === "dark";
 
   return (
     <div className={cn("space-y-2", className)}>
@@ -163,24 +166,54 @@ export function AttachmentDropzone({
           onPick(e.dataTransfer.files);
         }}
         className={cn(
-          "flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-zinc-300 bg-zinc-50/80 text-sm font-medium text-zinc-600 transition",
-          "hover:border-zinc-400 hover:bg-zinc-100/80 hover:text-zinc-900",
-          "disabled:opacity-50",
+          "flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed text-sm font-medium transition",
+          "disabled:cursor-not-allowed disabled:opacity-50",
+          isDark
+            ? cn(
+                "border-white/25 bg-zinc-950/80 text-zinc-200",
+                "hover:border-white/40 hover:bg-white/[0.06] hover:text-zinc-50"
+              )
+            : cn(
+                "border-zinc-300 bg-zinc-50/80 text-zinc-600",
+                "hover:border-zinc-400 hover:bg-zinc-100/80 hover:text-zinc-900"
+              ),
           compact ? "h-11 px-3" : "min-h-[4.5rem] flex-col px-4 py-4"
         )}
       >
         {uploading || loading ? (
-          <Loader2 className="h-4 w-4 animate-spin text-zinc-400" />
+          <Loader2
+            className={cn(
+              "h-4 w-4 animate-spin",
+              isDark ? "text-zinc-400" : "text-zinc-400"
+            )}
+          />
         ) : (
           <>
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-zinc-200/80">
-              <Plus className="h-4 w-4 text-zinc-700" />
+            <span
+              className={cn(
+                "inline-flex h-8 w-8 items-center justify-center rounded-full",
+                isDark
+                  ? "bg-white/10 ring-1 ring-white/15"
+                  : "bg-white shadow-sm ring-1 ring-zinc-200/80"
+              )}
+            >
+              <Plus
+                className={cn(
+                  "h-4 w-4",
+                  isDark ? "text-zinc-300" : "text-zinc-700"
+                )}
+              />
             </span>
-            <span className={cn(compact && "text-xs")}>
+            <span className={cn(compact && "text-xs font-semibold")}>
               {compact ? "Накладна" : "Додати накладну"}
             </span>
             {!compact ? (
-              <span className="text-[11px] font-normal text-zinc-400">
+              <span
+                className={cn(
+                  "text-[11px] font-normal",
+                  isDark ? "text-zinc-500" : "text-zinc-400"
+                )}
+              >
                 PDF або фото · до 10 МБ · макс. 5
               </span>
             ) : null}
@@ -201,7 +234,12 @@ export function AttachmentDropzone({
           {pending.map((p) => (
             <li
               key={p.id}
-              className="group relative flex h-16 w-16 items-center justify-center overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm"
+              className={cn(
+                "group relative flex h-16 w-16 items-center justify-center overflow-hidden rounded-xl border shadow-sm",
+                isDark
+                  ? "border-white/15 bg-zinc-900"
+                  : "border-zinc-200 bg-white"
+              )}
             >
               {p.previewUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -226,7 +264,12 @@ export function AttachmentDropzone({
           {remote.map((a) => (
             <li
               key={a.id}
-              className="group relative flex h-16 w-16 items-center justify-center overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm"
+              className={cn(
+                "group relative flex h-16 w-16 items-center justify-center overflow-hidden rounded-xl border shadow-sm",
+                isDark
+                  ? "border-white/15 bg-zinc-900"
+                  : "border-zinc-200 bg-white"
+              )}
               title={a.fileName}
             >
               {isImage(a.mimeType) && a.signedUrl ? (
@@ -255,7 +298,12 @@ export function AttachmentDropzone({
       ) : null}
 
       {!compact && total === 0 ? (
-        <p className="flex items-center gap-1.5 text-[11px] text-zinc-400">
+        <p
+          className={cn(
+            "flex items-center gap-1.5 text-[11px]",
+            isDark ? "text-zinc-500" : "text-zinc-400"
+          )}
+        >
           <Paperclip className="h-3 w-3" />
           Необовʼязково — можна додати пізніше з історії
         </p>

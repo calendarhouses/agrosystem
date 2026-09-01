@@ -125,7 +125,8 @@ export function OperationsMatrixView() {
 
       <div
         className={cn(
-          "min-h-0 flex-1 overflow-y-auto overscroll-y-auto px-4 py-4 touch-pan-y",
+          "min-h-0 flex-1 overflow-y-auto overscroll-y-auto px-4 py-4",
+          "[touch-action:pan-y] [-webkit-overflow-scrolling:touch]",
           "pb-[calc(var(--bottom-nav-height)+1rem)] md:pb-6"
         )}
       >

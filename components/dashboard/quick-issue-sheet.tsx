@@ -47,10 +47,10 @@ import {
   opsCommandInputClass,
   opsCommandItemClass,
   opsCommandListClass,
+  opsComboboxTriggerClass,
   opsFieldLabelClass,
   opsPopoverContentClass,
   opsPrimaryBtnClass,
-  opsSelectTriggerClass,
   opsSheetBodyClass,
   opsSheetFooterClass,
 } from "@/components/dashboard/operations-sheet-chrome";
@@ -75,7 +75,7 @@ import { cn } from "@/lib/utils";
 
 const comboboxTriggerClass = cn(
   fuelSelectTriggerClass,
-  "flex items-center justify-between gap-3 text-left"
+  "inline-flex h-12 items-center justify-between gap-3 text-left"
 );
 
 function formatQtyLabel(qty: number, unit: string): string {
@@ -582,28 +582,34 @@ export function QuickIssueSheet({
                 <PopoverTrigger
                   disabled={!category}
                   className={cn(
-                    isDark ? opsSelectTriggerClass : comboboxTriggerClass,
-                    "h-14 rounded-2xl",
-                    isDark
-                      ? ""
-                      : "border-transparent bg-white shadow-sm ring-1 ring-[#E5DFD3]/90"
+                    isDark ? opsComboboxTriggerClass : comboboxTriggerClass,
+                    !isDark &&
+                      "rounded-2xl border-transparent bg-white shadow-sm ring-1 ring-[#E5DFD3]/90"
                   )}
                 >
                   <span
                     className={cn(
-                      "min-w-0 flex-1 truncate text-left text-sm font-semibold",
-                      isDark ? "text-zinc-50" : "text-zinc-900"
+                      "min-w-0 flex-1 truncate text-left text-sm leading-snug",
+                      selectedItem
+                        ? isDark
+                          ? "font-semibold text-zinc-50"
+                          : "font-semibold text-zinc-900"
+                        : "font-medium text-zinc-400"
                     )}
                   >
-                    {selectedItem ? (
-                      selectedItem.name
-                    ) : (
-                      <span className="font-medium text-zinc-400">
-                        {category ? "Оберіть товар…" : "Спочатку категорію"}
-                      </span>
-                    )}
+                    {selectedItem
+                      ? selectedItem.name
+                      : category
+                        ? "Оберіть товар…"
+                        : "Спочатку категорію"}
                   </span>
-                  <ChevronDown className="h-4 w-4 shrink-0 text-zinc-400" />
+                  <ChevronDown
+                    className={cn(
+                      "size-4 shrink-0 self-center text-zinc-400",
+                      isDark && "opacity-70"
+                    )}
+                    aria-hidden
+                  />
                 </PopoverTrigger>
                 <PopoverContent
                   sheetOnMobile={false}
@@ -914,28 +920,20 @@ export function QuickIssueSheet({
 
             <section className="space-y-2.5 pb-2">
               <div>
-                <p className="text-[11px] font-semibold tracking-[0.08em] text-zinc-500 uppercase">
+                <p className={cn(isDark ? opsFieldLabelClass : "text-[11px] font-semibold tracking-[0.08em] text-zinc-500 uppercase")}>
                   Накладна
                 </p>
                 <p className="mt-0.5 text-xs text-zinc-400">
                   Фото або файл (за бажанням)
                 </p>
               </div>
-              <div
-                className={cn(
-                  "rounded-2xl p-3",
-                  isDark
-                    ? "bg-white/[0.04] ring-1 ring-white/10"
-                    : "bg-white shadow-sm ring-1 ring-[#E5DFD3]/90"
-                )}
-              >
-                <AttachmentDropzone
-                  entityType="inventory_move"
-                  pending={pendingFiles}
-                  onPendingChange={setPendingFiles}
-                  compact
-                />
-              </div>
+              <AttachmentDropzone
+                entityType="inventory_move"
+                pending={pendingFiles}
+                onPendingChange={setPendingFiles}
+                compact
+                variant={isDark ? "dark" : "light"}
+              />
             </section>
           </>
         )}
