@@ -363,7 +363,7 @@ async function fetchCompletedOperations(
     .eq("season", season)
     .order("occurred_at", { ascending: false });
 
-  if (!error) return (data ?? []) as RawOpRow[];
+  if (!error) return (data ?? []) as unknown as RawOpRow[];
 
   if (error.message?.includes("season") || error.code === "42703") {
     const legacy = await supabase
@@ -377,7 +377,7 @@ async function fetchCompletedOperations(
       }
       throw new Error(legacy.error.message);
     }
-    return (legacy.data ?? []) as RawOpRow[];
+    return (legacy.data ?? []) as unknown as RawOpRow[];
   }
 
   if (error.code === "PGRST205" || error.code === "42P01") return [];
@@ -393,7 +393,7 @@ async function fetchCompletedOperations(
       .eq("season", season)
       .order("occurred_at", { ascending: false });
     if (legacy.error) throw new Error(legacy.error.message);
-    return (legacy.data ?? []) as RawOpRow[];
+    return (legacy.data ?? []) as unknown as RawOpRow[];
   }
 
   throw new Error(error.message);
@@ -411,7 +411,7 @@ async function fetchOutboundMoves(
     .eq("season", season)
     .order("date", { ascending: false });
 
-  if (!error) return (data ?? []) as RawMoveRow[];
+  if (!error) return (data ?? []) as unknown as RawMoveRow[];
 
   if (error.message?.includes("season") || error.code === "42703") {
     const legacy = await supabase
@@ -426,7 +426,7 @@ async function fetchOutboundMoves(
       }
       throw new Error(legacy.error.message);
     }
-    return (legacy.data ?? []) as RawMoveRow[];
+    return (legacy.data ?? []) as unknown as RawMoveRow[];
   }
 
   if (error.code === "PGRST205" || error.code === "42P01") return [];
