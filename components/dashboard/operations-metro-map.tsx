@@ -74,9 +74,9 @@ const MOBILE_METRO_METRICS: MetroLayoutMetrics = {
   cardGap: 10,
   nodeRadius: 10,
   lineGap: 56,
-  trackPaddingY: 4,
-  standardCardH: 142,
-  scoutingCardH: 214,
+  trackPaddingY: 10,
+  standardCardH: 150,
+  scoutingCardH: 220,
   strokeWidth: 7,
 };
 
@@ -89,9 +89,9 @@ const DESKTOP_METRO_METRICS: MetroLayoutMetrics = {
   cardGap: 6,
   nodeRadius: 7,
   lineGap: 40,
-  trackPaddingY: 2,
-  standardCardH: 100,
-  scoutingCardH: 156,
+  trackPaddingY: 12,
+  standardCardH: 112,
+  scoutingCardH: 168,
   strokeWidth: 5,
 };
 
@@ -227,9 +227,12 @@ function estimateStationCardHeight(
   event: UnifiedTimelineEvent,
   metrics: MetroLayoutMetrics
 ): number {
+  const shadowBuffer = 8;
+
   if (event.type !== "scouting") {
     const withStatus = isFutureTimelineOperation(event) ? 20 : 0;
-    return metrics.standardCardH + withStatus;
+    const withWeather = event.weatherContext ? 6 : 0;
+    return metrics.standardCardH + withStatus + withWeather + shadowBuffer;
   }
 
   let height = 16;
@@ -237,7 +240,7 @@ function estimateStationCardHeight(
   if (event.notes?.trim()) height += metrics === DESKTOP_METRO_METRICS ? 28 : 34;
   else height += metrics === DESKTOP_METRO_METRICS ? 12 : 16;
   height += metrics === DESKTOP_METRO_METRICS ? 20 : 26;
-  return Math.max(height, metrics.scoutingCardH);
+  return Math.max(height, metrics.scoutingCardH) + shadowBuffer;
 }
 
 function computeMetroTrackLayout(
@@ -732,11 +735,11 @@ function MetroFieldLine({
           </div>
         ) : (
           <div
-            className="relative overflow-hidden"
+            className="relative overflow-x-hidden py-2"
             style={{ overscrollBehaviorX: "contain" }}
           >
             <MetroTrackScroll
-              className="ops-track-scroll overflow-x-auto overflow-y-hidden overscroll-x-contain touch-pan-xy px-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              className="ops-track-scroll overflow-x-auto overflow-y-visible overscroll-x-contain touch-pan-xy px-1 py-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
               aria-label={`Хронологія поля ${item.fieldName}`}
             >
               <div

@@ -277,7 +277,9 @@ function EventDetailHero({
       <p className="relative mt-1 text-base font-semibold text-zinc-100">
         {event.title}
       </p>
-      <p className="relative mt-0.5 text-sm text-zinc-400">{event.subtitle}</p>
+      {!isEquipment || !operation?.machinery ? (
+        <p className="relative mt-0.5 text-sm text-zinc-400">{event.subtitle}</p>
+      ) : null}
 
       {operation?.machinery ? (
         <p className="relative mt-4 rounded-2xl bg-black/25 px-3.5 py-2.5 text-sm text-zinc-300">
@@ -517,7 +519,7 @@ export function OperationsEventDetailSheet({
                     className={cn(
                       chrome.primaryBtn,
                       isEquipment
-                        ? "bg-orange-600 shadow-[0_8px_24px_-10px_rgba(234,88,12,0.55)] hover:bg-orange-500"
+                        ? "border border-orange-500/35 bg-orange-500/20 text-orange-100 shadow-none hover:bg-orange-500/30 hover:text-orange-50"
                         : undefined
                     )}
                   >

@@ -255,8 +255,8 @@ export function OperationsMatrixView() {
   if (!isMobile) {
     return (
       <section className="flex h-full min-h-0 flex-1 flex-col bg-zinc-950 text-zinc-50">
-        <header className="shrink-0 border-b border-white/5 px-6 pt-4 pb-3">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <header className="shrink-0 border-b border-white/5 px-6 pt-0 pb-2">
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0">
               <h1 className="text-xl font-semibold tracking-tight text-zinc-50">
                 Хронологія полів
@@ -281,7 +281,7 @@ export function OperationsMatrixView() {
             />
           </div>
 
-          <div className="relative mt-2.5 max-w-md">
+          <div className="relative mt-2 max-w-md">
             <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-zinc-500" />
             <Input
               value={search}
@@ -302,7 +302,7 @@ export function OperationsMatrixView() {
           </div>
         </header>
 
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-6 py-3">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-6 pt-2 pb-3">
           {!isLoading && error ? (
             <div className="mb-4 shrink-0 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
               {error}
