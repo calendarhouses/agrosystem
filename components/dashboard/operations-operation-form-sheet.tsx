@@ -6,15 +6,18 @@ import { format } from "date-fns";
 import { Loader2, Tractor } from "lucide-react";
 import { toast } from "sonner";
 
-import { listEquipmentForOps } from "@/app/admin/equipment/actions";
+import { listEquipmentForOps, listImplementsForOps, type ImplementOption } from "@/app/admin/equipment/actions";
 import { Button } from "@/components/ui/button";
 import {
+  OperationsDatePicker,
   OperationsPanelShell,
   OperationsSheetFooter,
   OperationsSheetHeader,
   opsFieldLabelClass,
   opsInputClass,
   opsPrimaryBtnClass,
+  opsSelectContentClass,
+  opsSelectItemClass,
   opsSelectTriggerClass,
   opsSheetBodyClass,
 } from "@/components/dashboard/operations-sheet-chrome";
@@ -81,6 +84,8 @@ export function OperationsOperationForm({
   const [date, setDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
   const [unitKey, setUnitKey] = useState<string | null>(null);
   const [implement, setImplement] = useState(IMPLEMENT_PRESETS.Посів);
+  const [implementId, setImplementId] = useState<string | null>(null);
+  const [implementOptions, setImplementOptions] = useState<ImplementOption[]>([]);
   const [areaDone, setAreaDone] = useState("");
   const [fuelUsed, setFuelUsed] = useState("");
   const [wage, setWage] = useState("");
@@ -97,6 +102,17 @@ export function OperationsOperationForm({
     () => findEquipmentOpsOption(unitOptions, { key: unitKey }),
     [unitKey, unitOptions]
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    void listImplementsForOps().then((res) => {
+      if (cancelled || !res.ok) return;
+      setImplementOptions(res.data);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -117,6 +133,7 @@ export function OperationsOperationForm({
       setType(initial.type || OPERATION_TYPES[0]);
       setDate(initial.occurredAt?.slice(0, 10) || format(new Date(), "yyyy-MM-dd"));
       setImplement(initial.implement || IMPLEMENT_PRESETS.Посів);
+      setImplementId(null);
       setAreaDone(String(initial.areaDone || areaDefault));
       setFuelUsed(
         String(initial.fuelUsed ?? estimatePlanFuelLiters(initial.type, initial.areaDone))
@@ -133,6 +150,7 @@ export function OperationsOperationForm({
     setType(OPERATION_TYPES[0]);
     setDate(format(new Date(), "yyyy-MM-dd"));
     setImplement(IMPLEMENT_PRESETS.Посів);
+    setImplementId(null);
     setAreaDone(String(areaDefault));
     setFuelUsed(String(estimatePlanFuelLiters(OPERATION_TYPES[0], areaDefault)));
     setWage(String(estimatePlanWageUah(areaDefault)));
@@ -151,7 +169,24 @@ export function OperationsOperationForm({
   useEffect(() => {
     if (initial) return;
     setImplement(IMPLEMENT_PRESETS[type] ?? "Знаряддя");
+    setImplementId(null);
   }, [initial, type]);
+
+  useEffect(() => {
+    if (implementOptions.length === 0 || !implement.trim()) return;
+    const matched = implementOptions.find(
+      (item) =>
+        item.name.trim().toLowerCase() === implement.trim().toLowerCase()
+    );
+    if (matched) setImplementId(matched.id);
+  }, [implementOptions, implement]);
+
+  function handleImplementSelect(id: string) {
+    const item = implementOptions.find((row) => row.id === id);
+    if (!item) return;
+    setImplementId(item.id);
+    setImplement(item.name);
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -259,9 +294,9 @@ export function OperationsOperationForm({
             <SelectTrigger className={opsSelectTriggerClass}>
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className={opsSelectContentClass}>
               {OPERATION_TYPES.map((item) => (
-                <SelectItem key={item} value={item}>
+                <SelectItem key={item} value={item} className={opsSelectItemClass}>
                   {item}
                 </SelectItem>
               ))}
@@ -269,17 +304,12 @@ export function OperationsOperationForm({
           </Select>
         </section>
 
-        <section className="grid grid-cols-2 gap-3">
-          <div className="space-y-2">
+        <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="min-w-0 space-y-2">
             <Label className={opsFieldLabelClass}>Дата</Label>
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className={opsInputClass}
-            />
+            <OperationsDatePicker value={date} onChange={setDate} />
           </div>
-          <div className="space-y-2">
+          <div className="min-w-0 space-y-2">
             <Label className={opsFieldLabelClass}>Площа, га</Label>
             <input
               inputMode="decimal"
@@ -304,9 +334,13 @@ export function OperationsOperationForm({
                 }
               />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className={opsSelectContentClass}>
               {unitOptions.map((unit: EquipmentOpsOption) => (
-                <SelectItem key={unit.key} value={unit.key}>
+                <SelectItem
+                  key={unit.key}
+                  value={unit.key}
+                  className={opsSelectItemClass}
+                >
                   {unit.label}
                 </SelectItem>
               ))}
@@ -316,11 +350,39 @@ export function OperationsOperationForm({
 
         <section className="space-y-2">
           <Label className={opsFieldLabelClass}>Знаряддя</Label>
-          <input
-            value={implement}
-            onChange={(e) => setImplement(e.target.value)}
-            className={opsInputClass}
-          />
+          {implementOptions.length > 0 ? (
+            <Select
+              value={implementId ?? undefined}
+              onValueChange={(value) => {
+                if (value) handleImplementSelect(value);
+              }}
+            >
+              <SelectTrigger className={opsSelectTriggerClass}>
+                <SelectValue placeholder="Оберіть знаряддя" />
+              </SelectTrigger>
+              <SelectContent className={opsSelectContentClass}>
+                {implementOptions.map((item) => (
+                  <SelectItem
+                    key={item.id}
+                    value={item.id}
+                    className={opsSelectItemClass}
+                  >
+                    {item.name}
+                    {item.workingWidthM > 0
+                      ? ` · ${item.workingWidthM} м`
+                      : " · 0 м"}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <input
+              value={implement}
+              onChange={(e) => setImplement(e.target.value)}
+              className={opsInputClass}
+              placeholder="Сівалка, культиватор…"
+            />
+          )}
         </section>
 
         <section className="grid grid-cols-2 gap-3">

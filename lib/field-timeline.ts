@@ -33,6 +33,8 @@ export type FieldTimelineField = {
   name: string;
   crop: string;
   areaHa: number;
+  /** Колір з паспорта поля (як на карті) */
+  color: string;
 };
 
 export type FieldWithTimeline = {
@@ -54,6 +56,7 @@ type TimelineFieldRow = {
   name: string;
   crop: string;
   area_ha: number | string;
+  color?: string | null;
   wialon_zone_id?: string | null;
 };
 
@@ -291,6 +294,7 @@ function mapTimelineFields(rows: TimelineFieldRow[]): FieldTimelineField[] {
     name: String(row.name),
     crop: String(row.crop),
     areaHa: num(row.area_ha),
+    color: String(row.color ?? "").trim() || "#276749",
   }));
 }
 
@@ -331,7 +335,7 @@ async function fetchActiveFields(
 ): Promise<TimelineFieldRow[]> {
   const withFlag = await supabase
     .from("farm_fields")
-    .select("id, name, crop, area_ha, wialon_zone_id")
+    .select("id, name, crop, area_ha, color, wialon_zone_id")
     .eq("is_field", true)
     .order("name", { ascending: true });
 
@@ -343,7 +347,7 @@ async function fetchActiveFields(
   ) {
     const fallback = await supabase
       .from("farm_fields")
-      .select("id, name, crop, area_ha, wialon_zone_id")
+      .select("id, name, crop, area_ha, color, wialon_zone_id")
       .order("name", { ascending: true });
     if (fallback.error) throw new Error(fallback.error.message);
     return (fallback.data ?? []) as TimelineFieldRow[];

@@ -1,30 +1,44 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { format } from "date-fns";
 import { uk } from "date-fns/locale";
-import { Loader2, PackageMinus, Pencil, Trash2, Tractor } from "lucide-react";
+import {
+  Loader2,
+  PackageMinus,
+  Pencil,
+  Tractor,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 
-import { deleteLocalMove, listLocalMoves } from "@/app/admin/inventory/actions";
-import type { LocalMoveRow } from "@/app/admin/inventory/actions";
-import { EditLocalMoveInline } from "@/components/dashboard/local-moves-history-sheet";
+import {
+  deleteLocalMove,
+  listLocalMoves,
+  updateLocalMove,
+  type LocalMoveRow,
+} from "@/app/admin/inventory/actions";
 import {
   loadFieldOperationByClientKey,
   OperationsOperationForm,
 } from "@/components/dashboard/operations-operation-form-sheet";
 import {
+  OperationsConfirmDeleteDialog,
   OperationsPanelShell,
+  OperationsSheetFooter,
   OperationsSheetHeader,
+  opsFieldLabelClass,
+  opsInputClass,
+  opsPrimaryBtnClass,
   opsSheetBodyClass,
 } from "@/components/dashboard/operations-sheet-chrome";
-import { Button } from "@/components/ui/button";
 import { deleteFieldOperation, type FieldOperation } from "@/lib/field-operations";
 import type { FieldTimelineField, UnifiedTimelineEvent } from "@/lib/field-timeline";
 import {
   fieldOperationsKeyFromFarmId,
   parseTimelineEventId,
 } from "@/lib/field-timeline-ids";
+import { suppressLocalInventoryMovesRealtimeToast } from "@/lib/realtime-toast-guard";
 import { cn } from "@/lib/utils";
 
 type OperationsEventDetailSheetProps = {
@@ -44,6 +58,208 @@ function formatDetailDate(iso: string): string {
   return format(d, "d MMMM yyyy", { locale: uk });
 }
 
+function OperationsInventoryEditForm({
+  move,
+  onBack,
+  onSaved,
+}: {
+  move: LocalMoveRow;
+  onBack: () => void;
+  onSaved: () => void;
+}) {
+  const [qty, setQty] = useState(String(move.qty));
+  const [note, setNote] = useState(move.note ?? "");
+  const [pending, startTransition] = useTransition();
+
+  useEffect(() => {
+    setQty(String(move.qty));
+    setNote(move.note ?? "");
+  }, [move.id, move.qty, move.note]);
+
+  function handleSave() {
+    const qtyNum = Number(String(qty).replace(",", "."));
+    if (!Number.isFinite(qtyNum) || qtyNum <= 0) {
+      toast.error("Вкажіть кількість більше нуля");
+      return;
+    }
+
+    startTransition(async () => {
+      suppressLocalInventoryMovesRealtimeToast();
+      const res = await updateLocalMove({
+        id: move.id,
+        qty: qtyNum,
+        note: note.trim() || null,
+      });
+      if (!res.ok) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success("Списання оновлено");
+      onSaved();
+    });
+  }
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        handleSave();
+      }}
+      className="flex min-h-0 flex-1 flex-col"
+    >
+      <OperationsSheetHeader
+        icon={PackageMinus}
+        accent="emerald"
+        title="Редагувати списання"
+        description={move.itemName}
+        onBack={onBack}
+      />
+
+      <div className={opsSheetBodyClass}>
+        <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3.5">
+          <p className={opsFieldLabelClass}>Товар</p>
+          <p className="mt-1 text-base font-semibold text-zinc-50">{move.itemName}</p>
+          {move.fieldName ? (
+            <p className="mt-1 text-sm text-zinc-400">{move.fieldName}</p>
+          ) : null}
+        </div>
+
+        <section className="space-y-2">
+          <label className={opsFieldLabelClass}>
+            Кількість{move.itemUnit ? `, ${move.itemUnit}` : ""}
+          </label>
+          <input
+            inputMode="decimal"
+            value={qty}
+            onChange={(e) => setQty(e.target.value)}
+            className={cn(opsInputClass, "text-center text-2xl font-bold tabular-nums")}
+            autoFocus
+          />
+        </section>
+
+        <section className="space-y-2">
+          <label className={opsFieldLabelClass}>Примітка</label>
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            className={opsInputClass}
+            placeholder="Необовʼязково"
+          />
+        </section>
+      </div>
+
+      <OperationsSheetFooter>
+        <button
+          type="submit"
+          disabled={pending}
+          className={opsPrimaryBtnClass}
+        >
+          {pending ? (
+            <>
+              <Loader2 className="mr-2 inline size-4 animate-spin" />
+              Збереження…
+            </>
+          ) : (
+            "Зберегти зміни"
+          )}
+        </button>
+      </OperationsSheetFooter>
+    </form>
+  );
+}
+
+function EventDetailHero({
+  event,
+  isEquipment,
+  operation,
+  inventoryMove,
+}: {
+  event: UnifiedTimelineEvent;
+  isEquipment: boolean;
+  operation: FieldOperation | null;
+  inventoryMove: LocalMoveRow | null;
+}) {
+  const accent = isEquipment ? "orange" : "emerald";
+
+  return (
+    <div
+      className={cn(
+        "relative overflow-hidden rounded-3xl border p-5",
+        isEquipment
+          ? "border-orange-500/20 bg-gradient-to-br from-orange-500/10 via-white/[0.04] to-transparent"
+          : "border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 via-white/[0.04] to-transparent"
+      )}
+    >
+      <div
+        aria-hidden
+        className={cn(
+          "pointer-events-none absolute -top-12 -right-8 size-32 rounded-full blur-3xl",
+          isEquipment ? "bg-orange-500/15" : "bg-emerald-500/15"
+        )}
+      />
+
+      <div className="relative flex items-start justify-between gap-3">
+        <div
+          className={cn(
+            "flex size-10 shrink-0 items-center justify-center rounded-2xl ring-1",
+            isEquipment
+              ? "bg-orange-500/20 text-orange-300 ring-orange-500/25"
+              : "bg-emerald-500/20 text-emerald-300 ring-emerald-500/25"
+          )}
+        >
+          {isEquipment ? (
+            <Tractor className="size-[18px]" strokeWidth={1.9} />
+          ) : (
+            <PackageMinus className="size-[18px]" strokeWidth={1.9} />
+          )}
+        </div>
+        <span
+          className={cn(
+            "rounded-full px-2.5 py-1 text-[10px] font-bold tracking-[0.12em] uppercase",
+            isEquipment
+              ? "bg-orange-500/15 text-orange-300"
+              : "bg-emerald-500/15 text-emerald-300"
+          )}
+        >
+          {isEquipment ? "Техніка" : "ТМЦ"}
+        </span>
+      </div>
+
+      <p className="relative mt-4 text-4xl font-bold tracking-tight text-zinc-50 tabular-nums">
+        {event.metric}
+      </p>
+      <p className="relative mt-1 text-base font-semibold text-zinc-100">
+        {event.title}
+      </p>
+      <p className="relative mt-0.5 text-sm text-zinc-400">{event.subtitle}</p>
+
+      {operation?.machinery ? (
+        <p className="relative mt-4 rounded-2xl bg-black/25 px-3.5 py-2.5 text-sm text-zinc-300">
+          {operation.machinery}
+          {operation.implement ? ` · ${operation.implement}` : ""}
+        </p>
+      ) : null}
+
+      {(operation?.agronomistComment || inventoryMove?.note) && (
+        <p className="relative mt-3 rounded-2xl border border-white/5 bg-black/20 px-3.5 py-2.5 text-sm leading-relaxed text-zinc-300">
+          {operation?.agronomistComment ?? inventoryMove?.note}
+        </p>
+      )}
+
+      <div className="relative mt-4 flex flex-wrap gap-2">
+        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-zinc-400">
+          {formatDetailDate(event.date)}
+        </span>
+        {accent === "orange" && operation?.areaDone ? (
+          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-zinc-400">
+            {operation.areaDone} га
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export function OperationsEventDetailSheet({
   open,
   onOpenChange,
@@ -55,6 +271,7 @@ export function OperationsEventDetailSheet({
   const [view, setView] = useState<DetailView>("detail");
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [operation, setOperation] = useState<FieldOperation | null>(null);
   const [inventoryMove, setInventoryMove] = useState<LocalMoveRow | null>(null);
 
@@ -68,6 +285,7 @@ export function OperationsEventDetailSheet({
       setOperation(null);
       setInventoryMove(null);
       setLoading(false);
+      setDeleteOpen(false);
       return;
     }
     if (!eventId || !fieldId) return;
@@ -113,9 +331,6 @@ export function OperationsEventDetailSheet({
     const parsed = parseTimelineEventId(eventId);
     if (!parsed) return;
 
-    const confirmed = window.confirm("Видалити цю позицію з хронології?");
-    if (!confirmed) return;
-
     setDeleting(true);
     try {
       if (parsed.kind === "equipment") {
@@ -129,12 +344,25 @@ export function OperationsEventDetailSheet({
         if (!res.ok) throw new Error(res.error);
         toast.success("Списання видалено");
       }
+      setDeleteOpen(false);
       onChanged();
       onOpenChange(false);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Не вдалося видалити");
     } finally {
       setDeleting(false);
+    }
+  }
+
+  function handleEdit() {
+    const parsed = eventId ? parseTimelineEventId(eventId) : null;
+    if (parsed?.kind === "equipment") {
+      if (operation) setView("edit-equipment");
+      else toast.error("Наряд не знайдено");
+    } else if (inventoryMove) {
+      setView("edit-inventory");
+    } else {
+      toast.error("Списання не знайдено");
     }
   }
 
@@ -146,134 +374,117 @@ export function OperationsEventDetailSheet({
         : (event?.title ?? "Деталі");
 
   return (
-    <OperationsPanelShell
-      open={open}
-      onOpenChange={onOpenChange}
-      title={shellTitle}
-    >
-      {view === "edit-equipment" && field && operation ? (
-        <OperationsOperationForm
-          field={field}
-          seasonYear={Number(season) || new Date().getFullYear()}
-          initial={operation}
-          onBack={() => setView("detail")}
-          onSaved={() => {
-            onChanged();
-            onOpenChange(false);
-          }}
-        />
-      ) : view === "edit-inventory" && inventoryMove ? (
-        <>
-          <OperationsSheetHeader
-            icon={PackageMinus}
-            accent="emerald"
-            title="Редагувати списання"
-            description={field?.name}
+    <>
+      <OperationsPanelShell
+        open={open}
+        onOpenChange={onOpenChange}
+        title={shellTitle}
+      >
+        {view === "edit-equipment" && field && operation ? (
+          <OperationsOperationForm
+            field={field}
+            seasonYear={Number(season) || new Date().getFullYear()}
+            initial={operation}
             onBack={() => setView("detail")}
+            onSaved={() => {
+              onChanged();
+              onOpenChange(false);
+            }}
           />
-          <div className={cn(opsSheetBodyClass, "pt-0")}>
-            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-              <EditLocalMoveInline
-                move={inventoryMove}
-                onCancel={() => setView("detail")}
-                onSaved={() => {
-                  onChanged();
-                  onOpenChange(false);
-                }}
-              />
+        ) : view === "edit-inventory" && inventoryMove ? (
+          <OperationsInventoryEditForm
+            move={inventoryMove}
+            onBack={() => setView("detail")}
+            onSaved={() => {
+              onChanged();
+              onOpenChange(false);
+            }}
+          />
+        ) : (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <OperationsSheetHeader
+              icon={isEquipment ? Tractor : PackageMinus}
+              accent={isEquipment ? "orange" : "emerald"}
+              title={event?.title ?? "Деталі"}
+              description={
+                <>
+                  {field?.name ?? "Поле"} ·{" "}
+                  {event ? formatDetailDate(event.date) : ""}
+                </>
+              }
+            />
+
+            <div className={opsSheetBodyClass}>
+              {loading ? (
+                <div className="flex items-center justify-center py-16 text-zinc-400">
+                  <Loader2 className="mr-2 size-5 animate-spin" />
+                  Завантаження…
+                </div>
+              ) : event ? (
+                <EventDetailHero
+                  event={event}
+                  isEquipment={isEquipment}
+                  operation={operation}
+                  inventoryMove={inventoryMove}
+                />
+              ) : null}
             </div>
+
+            {!loading && event ? (
+              <OperationsSheetFooter>
+                <button
+                  type="button"
+                  onClick={handleEdit}
+                  className={cn(
+                    opsPrimaryBtnClass,
+                    isEquipment
+                      ? "bg-orange-600 shadow-[0_8px_24px_-10px_rgba(234,88,12,0.55)] hover:bg-orange-500"
+                      : undefined
+                  )}
+                >
+                  <Pencil className="mr-2 inline size-4" />
+                  Редагувати
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDeleteOpen(true)}
+                  disabled={deleting}
+                  className={cn(
+                    "inline-flex h-12 w-full items-center justify-center rounded-2xl",
+                    "border border-red-500/30 bg-red-500/10 text-sm font-semibold text-red-200",
+                    "transition hover:bg-red-500/20 active:scale-[0.99]",
+                    "disabled:cursor-not-allowed disabled:opacity-50"
+                  )}
+                >
+                  <Trash2 className="mr-2 size-4" />
+                  Видалити станцію
+                </button>
+              </OperationsSheetFooter>
+            ) : null}
           </div>
-        </>
-      ) : (
-        <>
-          <OperationsSheetHeader
-            icon={isEquipment ? Tractor : PackageMinus}
-            accent={isEquipment ? "orange" : "emerald"}
-            title={event?.title ?? "Деталі"}
-            description={
+        )}
+      </OperationsPanelShell>
+
+      <OperationsConfirmDeleteDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="Видалити станцію?"
+        description={
+          <>
+            <span className="font-medium text-zinc-200">{event?.title}</span>
+            {field?.name ? (
               <>
-                {field?.name ?? "Поле"} ·{" "}
-                {event ? formatDetailDate(event.date) : ""}
+                {" "}
+                з хронології поля{" "}
+                <span className="font-medium text-zinc-200">{field.name}</span>
               </>
-            }
-          />
-
-          <div className={opsSheetBodyClass}>
-            {loading ? (
-              <div className="flex items-center justify-center py-16 text-zinc-400">
-                <Loader2 className="mr-2 size-5 animate-spin" />
-                Завантаження…
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-white/[0.07] via-white/[0.03] to-transparent p-5">
-                  <p className="text-[11px] font-semibold tracking-wide text-zinc-500 uppercase">
-                    {isEquipment ? "Техніка" : "ТМЦ"}
-                  </p>
-                  <p className="mt-2 text-3xl font-bold tabular-nums text-zinc-50">
-                    {event?.metric}
-                  </p>
-                  <p className="mt-1 text-sm text-zinc-300">{event?.subtitle}</p>
-                  {operation?.machinery ? (
-                    <p className="mt-3 text-sm text-zinc-400">
-                      {operation.machinery}
-                      {operation.implement ? ` · ${operation.implement}` : ""}
-                    </p>
-                  ) : null}
-                  {operation?.agronomistComment ? (
-                    <p className="mt-3 rounded-2xl bg-black/25 px-3 py-2 text-sm text-zinc-300">
-                      {operation.agronomistComment}
-                    </p>
-                  ) : null}
-                  {inventoryMove?.note ? (
-                    <p className="mt-3 rounded-2xl bg-black/25 px-3 py-2 text-sm text-zinc-300">
-                      {inventoryMove.note}
-                    </p>
-                  ) : null}
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-12 rounded-2xl border-white/10 bg-white/5 text-zinc-100 hover:bg-white/10"
-                    onClick={() => {
-                      const parsed = eventId
-                        ? parseTimelineEventId(eventId)
-                        : null;
-                      if (parsed?.kind === "equipment") {
-                        if (operation) setView("edit-equipment");
-                        else toast.error("Наряд не знайдено");
-                      } else if (inventoryMove) {
-                        setView("edit-inventory");
-                      } else {
-                        toast.error("Списання не знайдено");
-                      }
-                    }}
-                  >
-                    <Pencil className="mr-2 size-4" />
-                    Редагувати
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-12 rounded-2xl border-red-500/30 bg-red-500/10 text-red-200 hover:bg-red-500/20"
-                    onClick={() => void handleDelete()}
-                    disabled={deleting}
-                  >
-                    {deleting ? (
-                      <Loader2 className="mr-2 size-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="mr-2 size-4" />
-                    )}
-                    Видалити
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
-        </>
-      )}
-    </OperationsPanelShell>
+            ) : null}
+            . Цю дію не можна скасувати.
+          </>
+        }
+        pending={deleting}
+        onConfirm={() => void handleDelete()}
+      />
+    </>
   );
 }

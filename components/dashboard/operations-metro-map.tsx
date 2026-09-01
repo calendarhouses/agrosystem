@@ -4,6 +4,8 @@ import { format } from "date-fns";
 import { uk } from "date-fns/locale";
 import {
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   FlaskConical,
   Fuel,
   Package,
@@ -11,7 +13,7 @@ import {
   Sprout,
   Tractor,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 
 import { normalizeFieldCrop } from "@/components/dashboard/field-passport-form";
 import {
@@ -27,6 +29,13 @@ import type {
   UnifiedTimelineEvent,
   UnifiedTimelineIcon,
 } from "@/lib/field-timeline";
+import {
+  fieldLineGlowShadow,
+  groupTimelineByCrop,
+  normalizeFieldLineColor,
+  TIMELINE_NO_CROP_LABEL,
+  type TimelineCropGroup,
+} from "@/lib/field-timeline-crops";
 import { cn } from "@/lib/utils";
 
 const STATION_CARD_WIDTH = 216;
@@ -36,43 +45,20 @@ const TRACK_HEIGHT = 392;
 const LINE_Y_TOP = 156;
 const LINE_Y_BOTTOM = 248;
 
-const METRO_LINE_COLORS = [
-  {
-    id: "amber",
-    stroke: "#f97316",
-    ring: "border-orange-500",
-    glow: "shadow-orange-500/30",
-    fill: "bg-orange-500",
-  },
-  {
-    id: "emerald",
-    stroke: "#34d399",
-    ring: "border-emerald-500",
-    glow: "shadow-emerald-500/30",
-    fill: "bg-emerald-500",
-  },
-  {
-    id: "sky",
-    stroke: "#38bdf8",
-    ring: "border-sky-500",
-    glow: "shadow-sky-500/30",
-    fill: "bg-sky-500",
-  },
-  {
-    id: "violet",
-    stroke: "#a78bfa",
-    ring: "border-violet-500",
-    glow: "shadow-violet-500/30",
-    fill: "bg-violet-500",
-  },
-  {
-    id: "rose",
-    stroke: "#fb7185",
-    ring: "border-rose-500",
-    glow: "shadow-rose-500/30",
-    fill: "bg-rose-500",
-  },
-] as const;
+type FieldLineVisual = {
+  color: string;
+  filterKey: string;
+};
+
+function getFieldLineVisual(
+  field: FieldTimelineField,
+  suffix: string
+): FieldLineVisual {
+  return {
+    color: normalizeFieldLineColor(field.color),
+    filterKey: `${field.id}-${suffix}`,
+  };
+}
 
 function formatAreaHa(areaHa: number): string {
   return `${new Intl.NumberFormat("uk-UA", {
@@ -167,18 +153,97 @@ function MetroStationCard({
   );
 }
 
+function MetroDot({
+  line,
+  className,
+  style,
+}: {
+  line: FieldLineVisual;
+  className?: string;
+  style?: CSSProperties;
+}) {
+  return (
+    <span
+      className={cn(
+        "absolute size-5 rounded-full border-[3px] bg-zinc-950",
+        className
+      )}
+      style={{
+        borderColor: line.color,
+        boxShadow: fieldLineGlowShadow(line.color),
+        ...style,
+      }}
+    />
+  );
+}
+
+function MetroSingleStationTrack({
+  event,
+  line,
+  onEventClick,
+  field,
+}: {
+  event: UnifiedTimelineEvent;
+  line: FieldLineVisual;
+  onEventClick?: (field: FieldTimelineField, event: UnifiedTimelineEvent) => void;
+  field: FieldTimelineField;
+}) {
+  return (
+    <div className="px-4 py-3">
+      <div className="relative mx-auto max-w-sm">
+        <div className="mb-3 flex justify-center">
+          <MetroStationCard
+            event={event}
+            onClick={() => onEventClick?.(field, event)}
+          />
+        </div>
+
+        <div className="relative h-5 w-full">
+          <svg
+            className="absolute inset-0 h-full w-full overflow-visible"
+            preserveAspectRatio="none"
+            aria-hidden
+          >
+            <defs>
+              <filter id={`glow-single-${line.filterKey}`}>
+                <feGaussianBlur stdDeviation="2.5" result="blur" />
+                <feMerge>
+                  <feMergeNode in="blur" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+            </defs>
+            <line
+              x1="0"
+              y1="50%"
+              x2="100%"
+              y2="50%"
+              stroke={line.color}
+              strokeWidth={6}
+              strokeLinecap="round"
+              filter={`url(#glow-single-${line.filterKey})`}
+            />
+          </svg>
+          <MetroDot
+            line={line}
+            className="top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MetroFieldLine({
   item,
-  lineIndex,
   onEventClick,
   onAddClick,
 }: {
   item: FieldWithTimeline;
-  lineIndex: number;
   onEventClick?: (field: FieldTimelineField, event: UnifiedTimelineEvent) => void;
   onAddClick?: (field: FieldTimelineField) => void;
 }) {
-  const line = METRO_LINE_COLORS[lineIndex % METRO_LINE_COLORS.length];
+  const line = getFieldLineVisual(item.field, "track");
   const events = useMemo(
     () => [...item.events].sort((a, b) => a.date.localeCompare(b.date)),
     [item.events]
@@ -203,7 +268,8 @@ function MetroFieldLine({
           <div className="min-w-0 text-left">
             <div className="flex items-center gap-2">
               <span
-                className={cn("inline-flex h-2.5 w-8 shrink-0 rounded-full", line.fill)}
+                className="inline-flex h-2.5 w-8 shrink-0 rounded-full"
+                style={{ backgroundColor: line.color }}
                 aria-hidden
               />
               <h3 className="truncate text-base font-semibold tracking-tight text-zinc-50">
@@ -211,7 +277,8 @@ function MetroFieldLine({
               </h3>
             </div>
             <p className="mt-1 text-xs text-zinc-400">
-              {normalizeFieldCrop(item.field.crop)} · {formatAreaHa(item.field.areaHa)}
+              {normalizeFieldCrop(item.field.crop) || TIMELINE_NO_CROP_LABEL} ·{" "}
+              {formatAreaHa(item.field.areaHa)}
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -235,7 +302,7 @@ function MetroFieldLine({
         </div>
       </AccordionTrigger>
 
-      <AccordionContent className="pb-0">
+      <AccordionContent className="overflow-visible pb-0">
         {events.length === 0 ? (
           <div className="px-4 py-10 text-center">
             <p className="text-sm text-zinc-500 italic">
@@ -250,10 +317,20 @@ function MetroFieldLine({
               Додати першу позицію
             </button>
           </div>
+        ) : events.length === 1 ? (
+          <MetroSingleStationTrack
+            event={events[0]!}
+            line={line}
+            field={item.field}
+            onEventClick={onEventClick}
+          />
         ) : (
-          <div className="relative py-2">
+          <div className="relative py-2" style={{ overscrollBehaviorX: "contain" }}>
             <div
               className="overflow-x-auto overscroll-x-contain px-1 pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              data-vaul-no-drag=""
+              data-allow-pan="true"
+              style={{ touchAction: "pan-x" }}
               aria-label={`Хронологія поля ${item.field.name}`}
             >
               <div
@@ -267,7 +344,7 @@ function MetroFieldLine({
                   aria-hidden
                 >
                   <defs>
-                    <filter id={`glow-${line.id}-${lineIndex}`}>
+                    <filter id={`glow-${line.filterKey}`}>
                       <feGaussianBlur stdDeviation="3" result="blur" />
                       <feMerge>
                         <feMergeNode in="blur" />
@@ -280,12 +357,12 @@ function MetroFieldLine({
                       key={index}
                       d={d}
                       fill="none"
-                      stroke={line.stroke}
+                      stroke={line.color}
                       strokeWidth={7}
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       opacity={0.95}
-                      filter={`url(#glow-${line.id}-${lineIndex})`}
+                      filter={`url(#glow-${line.filterKey})`}
                     />
                   ))}
                 </svg>
@@ -298,7 +375,7 @@ function MetroFieldLine({
                   return (
                     <div
                       key={event.id}
-                      className="absolute left-0 top-0"
+                      className="absolute top-0 left-0"
                       style={{
                         left: x,
                         transform: "translateX(-50%)",
@@ -306,12 +383,9 @@ function MetroFieldLine({
                         height: TRACK_HEIGHT,
                       }}
                     >
-                      <span
-                        className={cn(
-                          "absolute left-1/2 size-5 -translate-x-1/2 rounded-full border-[3px] bg-zinc-950 shadow-lg",
-                          line.ring,
-                          line.glow
-                        )}
+                      <MetroDot
+                        line={line}
+                        className="left-1/2 -translate-x-1/2"
                         style={{ top: y - 10 }}
                       />
 
@@ -340,27 +414,62 @@ function MetroFieldLine({
   );
 }
 
-function MetroMapSkeleton() {
+function CropCategoryCard({
+  group,
+  onSelect,
+}: {
+  group: TimelineCropGroup;
+  onSelect: () => void;
+}) {
+  const description =
+    group.label === TIMELINE_NO_CROP_LABEL
+      ? "Поля без культури в паспорті"
+      : `${group.fieldCount} ${group.fieldCount === 1 ? "поле" : group.fieldCount < 5 ? "поля" : "полів"} · ${group.stationCount} ${group.stationCount === 1 ? "станція" : group.stationCount < 5 ? "станції" : "станцій"}`;
+
   return (
-    <div className="space-y-4" aria-busy="true" aria-label="Завантаження карти">
-      {[0, 1, 2].map((i) => (
-        <Skeleton
-          key={i}
-          className="h-56 w-full animate-pulse rounded-3xl border border-white/5 bg-white/10"
+    <button
+      type="button"
+      onClick={onSelect}
+      className={cn(
+        "group relative w-full overflow-hidden rounded-3xl border border-white/8 text-left transition",
+        "bg-gradient-to-br from-white/[0.07] via-white/[0.03] to-transparent",
+        "hover:border-white/15 hover:from-white/[0.09] active:scale-[0.99]"
+      )}
+    >
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 opacity-30"
+        style={{
+          background: `linear-gradient(135deg, ${group.accentColor}33 0%, transparent 55%)`,
+        }}
+      />
+      <div className="relative flex items-center gap-4 p-4">
+        <span
+          className="flex h-14 w-1.5 shrink-0 rounded-full"
+          style={{ backgroundColor: group.accentColor }}
+          aria-hidden
         />
-      ))}
-    </div>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-lg font-bold tracking-tight text-zinc-50">
+            {group.label}
+          </h3>
+          <p className="mt-1 text-sm text-zinc-400">{description}</p>
+          <p className="mt-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
+            {formatAreaHa(group.totalAreaHa)} загалом
+          </p>
+        </div>
+        <ChevronRight className="size-5 shrink-0 text-zinc-600 transition group-hover:translate-x-0.5 group-hover:text-zinc-300" />
+      </div>
+    </button>
   );
 }
 
-export function OperationsMetroMap({
+function MetroFieldsAccordion({
   fields,
-  isLoading,
   onEventClick,
   onAddClick,
 }: {
   fields: FieldWithTimeline[];
-  isLoading: boolean;
   onEventClick?: (field: FieldTimelineField, event: UnifiedTimelineEvent) => void;
   onAddClick?: (field: FieldTimelineField) => void;
 }) {
@@ -378,6 +487,59 @@ export function OperationsMetroMap({
     });
   }, [fields]);
 
+  return (
+    <Accordion
+      type="multiple"
+      value={openIds}
+      onValueChange={setOpenIds}
+      className="space-y-3"
+    >
+      {fields.map((item) => (
+        <MetroFieldLine
+          key={item.field.id}
+          item={item}
+          onEventClick={onEventClick}
+          onAddClick={onAddClick}
+        />
+      ))}
+    </Accordion>
+  );
+}
+
+function MetroMapSkeleton() {
+  return (
+    <div className="space-y-4" aria-busy="true" aria-label="Завантаження карти">
+      {[0, 1, 2].map((i) => (
+        <Skeleton
+          key={i}
+          className="h-56 w-full animate-pulse rounded-3xl border border-white/5 bg-white/10"
+        />
+      ))}
+    </div>
+  );
+}
+
+export function OperationsMetroMap({
+  fields,
+  isLoading,
+  searchQuery = "",
+  onEventClick,
+  onAddClick,
+}: {
+  fields: FieldWithTimeline[];
+  isLoading: boolean;
+  searchQuery?: string;
+  onEventClick?: (field: FieldTimelineField, event: UnifiedTimelineEvent) => void;
+  onAddClick?: (field: FieldTimelineField) => void;
+}) {
+  const [selectedCropId, setSelectedCropId] = useState<string | null>(null);
+  const cropGroups = useMemo(() => groupTimelineByCrop(fields), [fields]);
+  const isSearchMode = Boolean(searchQuery.trim());
+
+  useEffect(() => {
+    setSelectedCropId(null);
+  }, [fields, searchQuery]);
+
   if (isLoading) return <MetroMapSkeleton />;
 
   if (fields.length === 0) {
@@ -388,22 +550,85 @@ export function OperationsMetroMap({
     );
   }
 
+  if (isSearchMode) {
+    return (
+      <MetroFieldsAccordion
+        fields={fields}
+        onEventClick={onEventClick}
+        onAddClick={onAddClick}
+      />
+    );
+  }
+
+  if (!selectedCropId) {
+    return (
+      <div className="space-y-3">
+        <p className="px-1 text-[11px] font-semibold tracking-[0.1em] text-zinc-500 uppercase">
+          Культури
+        </p>
+        {cropGroups.map((group) => (
+          <CropCategoryCard
+            key={group.id}
+            group={group}
+            onSelect={() => setSelectedCropId(group.id)}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  const activeGroup = cropGroups.find((group) => group.id === selectedCropId);
+
+  if (!activeGroup) {
+    return (
+      <MetroFieldsAccordion
+        fields={fields}
+        onEventClick={onEventClick}
+        onAddClick={onAddClick}
+      />
+    );
+  }
+
   return (
-    <Accordion
-      type="multiple"
-      value={openIds}
-      onValueChange={setOpenIds}
-      className="space-y-3"
-    >
-      {fields.map((item, index) => (
-        <MetroFieldLine
-          key={item.field.id}
-          item={item}
-          lineIndex={index}
-          onEventClick={onEventClick}
-          onAddClick={onAddClick}
-        />
-      ))}
-    </Accordion>
+    <div className="space-y-3">
+      <button
+        type="button"
+        onClick={() => setSelectedCropId(null)}
+        className="inline-flex min-h-10 items-center gap-1.5 rounded-xl px-1 text-sm font-medium text-zinc-400 transition hover:text-zinc-100"
+      >
+        <ChevronLeft className="size-4" />
+        Усі культури
+      </button>
+
+      <div
+        className="rounded-3xl border border-white/8 px-4 py-3"
+        style={{
+          background: `linear-gradient(135deg, ${activeGroup.accentColor}18 0%, transparent 70%)`,
+        }}
+      >
+        <div className="flex items-center gap-3">
+          <span
+            className="h-10 w-1.5 shrink-0 rounded-full"
+            style={{ backgroundColor: activeGroup.accentColor }}
+          />
+          <div>
+            <h2 className="text-base font-bold text-zinc-50">{activeGroup.label}</h2>
+            <p className="mt-0.5 text-xs text-zinc-400">
+              {activeGroup.fieldCount}{" "}
+              {activeGroup.fieldCount === 1 ? "поле" : "полів"} ·{" "}
+              {activeGroup.stationCount}{" "}
+              {activeGroup.stationCount === 1 ? "станція" : "станцій"} ·{" "}
+              {formatAreaHa(activeGroup.totalAreaHa)}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <MetroFieldsAccordion
+        fields={activeGroup.fields}
+        onEventClick={onEventClick}
+        onAddClick={onAddClick}
+      />
+    </div>
   );
 }

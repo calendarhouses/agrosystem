@@ -82,20 +82,18 @@ export function OperationsMatrixView() {
   return (
     <section className="flex h-full min-h-0 flex-1 flex-col bg-zinc-950 text-zinc-50">
       <header className="shrink-0 border-b border-white/5 px-4 pt-[max(0.75rem,var(--safe-top))] pb-3">
-        <div className="mb-3 flex items-center gap-2">
+        <div className="relative mb-3 flex h-10 items-center justify-center">
           <button
             type="button"
             onClick={handleExit}
-            className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 text-sm font-medium text-zinc-200 transition hover:bg-white/10"
+            className="absolute left-0 inline-flex h-10 shrink-0 items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 text-sm font-medium text-zinc-200 transition hover:bg-white/10"
           >
             <ArrowLeft className="size-4" />
             На карту
           </button>
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate text-base font-semibold tracking-tight text-zinc-50">
-              Хронологія полів
-            </h1>
-          </div>
+          <h1 className="px-24 text-center text-base font-semibold tracking-tight text-zinc-50">
+            Хронологія полів
+          </h1>
         </div>
 
         <div className="relative mb-3">
@@ -127,7 +125,7 @@ export function OperationsMatrixView() {
 
       <div
         className={cn(
-          "min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 py-4",
+          "min-h-0 flex-1 overflow-y-auto overscroll-y-auto px-4 py-4 touch-pan-y",
           "pb-[calc(var(--bottom-nav-height)+1rem)] md:pb-6"
         )}
       >
@@ -147,6 +145,7 @@ export function OperationsMatrixView() {
           <OperationsMetroMap
             fields={visibleFields}
             isLoading={isLoading}
+            searchQuery={searchQuery}
             onEventClick={(field, event) => setSelectedEvent({ field, event })}
             onAddClick={(field) => setAddField(field)}
           />

@@ -7,6 +7,7 @@ import {
   useTransition,
   type FormEvent,
 } from "react";
+import { format } from "date-fns";
 import { toast } from "sonner";
 import {
   AlertCircle,
@@ -41,8 +42,13 @@ import {
   fuelSelectTriggerClass,
 } from "@/components/dashboard/fuel-sheet-chrome";
 import {
+  OperationsDatePicker,
   OperationsSheetHeader,
+  opsCommandInputClass,
+  opsCommandItemClass,
+  opsCommandListClass,
   opsFieldLabelClass,
+  opsPopoverContentClass,
   opsPrimaryBtnClass,
   opsSelectTriggerClass,
   opsSheetBodyClass,
@@ -144,6 +150,7 @@ export function QuickIssueSheet({
   const [itemKey, setItemKey] = useState<string | null>(null);
   const [fieldId, setFieldId] = useState<string | null>(null);
   const [qty, setQty] = useState("");
+  const [moveDate, setMoveDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
   const [itemOpen, setItemOpen] = useState(false);
   const [itemSearch, setItemSearch] = useState("");
   const [fieldOpen, setFieldOpen] = useState(false);
@@ -294,6 +301,7 @@ export function QuickIssueSheet({
     setItemKey(null);
     setFieldId(null);
     setQty("");
+    setMoveDate(format(new Date(), "yyyy-MM-dd"));
     setItemOpen(false);
     setFieldOpen(false);
     setFormError(null);
@@ -341,6 +349,7 @@ export function QuickIssueSheet({
         fieldId: fieldId,
         qty: parsedQty,
         season: activeSeason,
+        date: moveDate,
       });
       if (!res.ok) {
         setFormError(res.error);
@@ -470,6 +479,27 @@ export function QuickIssueSheet({
             <section className="space-y-2.5">
               <div>
                 <p className={cn(isDark ? opsFieldLabelClass : "text-[11px] font-semibold tracking-[0.08em] text-zinc-500 uppercase")}>
+                  Дата списання
+                </p>
+                <p className="mt-0.5 text-xs text-zinc-400">
+                  Можна вказати заднім числом
+                </p>
+              </div>
+              {isDark ? (
+                <OperationsDatePicker value={moveDate} onChange={setMoveDate} />
+              ) : (
+                <input
+                  type="date"
+                  value={moveDate}
+                  onChange={(e) => setMoveDate(e.target.value)}
+                  className="h-12 w-full rounded-2xl border border-[#E5DFD3]/90 bg-white px-4 text-sm font-semibold text-zinc-900"
+                />
+              )}
+            </section>
+
+            <section className="space-y-2.5">
+              <div>
+                <p className={cn(isDark ? opsFieldLabelClass : "text-[11px] font-semibold tracking-[0.08em] text-zinc-500 uppercase")}>
                   Категорія
                 </p>
                 <p className="mt-0.5 text-xs text-zinc-400">
@@ -535,7 +565,7 @@ export function QuickIssueSheet({
 
             <section className="space-y-2.5">
               <div>
-                <p className="text-[11px] font-semibold tracking-[0.08em] text-zinc-500 uppercase">
+                <p className={cn(isDark ? opsFieldLabelClass : "text-[11px] font-semibold tracking-[0.08em] text-zinc-500 uppercase")}>
                   Товар
                 </p>
                 <p className="mt-0.5 text-xs text-zinc-400">
@@ -575,20 +605,38 @@ export function QuickIssueSheet({
                   </span>
                   <ChevronDown className="h-4 w-4 shrink-0 text-zinc-400" />
                 </PopoverTrigger>
-                <PopoverContent sheetOnMobile={false}
+                <PopoverContent
+                  sheetOnMobile={false}
                   align="start"
                   sideOffset={6}
-                  className="w-[min(calc(100vw-2.5rem),22rem)] rounded-2xl border border-zinc-200 bg-white p-0 text-zinc-900 shadow-xl"
+                  className={cn(
+                    isDark
+                      ? opsPopoverContentClass
+                      : "w-[min(calc(100vw-2.5rem),22rem)] rounded-2xl border border-zinc-200 bg-white p-0 text-zinc-900 shadow-xl"
+                  )}
                 >
-                  <Command className="rounded-2xl bg-white" shouldFilter={false}>
+                  <Command
+                    className={cn("rounded-2xl", isDark ? "bg-zinc-900" : "bg-white")}
+                    shouldFilter={false}
+                  >
                     <CommandInput
                       placeholder="Пошук товару…"
                       value={itemSearch}
                       onValueChange={setItemSearch}
-                      className="h-11 text-sm"
+                      className={cn(
+                        "h-11 text-sm",
+                        isDark ? opsCommandInputClass : undefined
+                      )}
                     />
-                    <CommandList className="max-h-64 bg-white">
-                      <CommandEmpty>Нічого не знайдено</CommandEmpty>
+                    <CommandList
+                      className={cn(
+                        "max-h-64",
+                        isDark ? opsCommandListClass : "bg-white"
+                      )}
+                    >
+                      <CommandEmpty className={isDark ? "text-zinc-400" : undefined}>
+                        Нічого не знайдено
+                      </CommandEmpty>
                       <CommandGroup>
                         {filteredItems.map((item) => {
                           const outOfStock = item.virtualBalance <= 0;
@@ -606,7 +654,12 @@ export function QuickIssueSheet({
                                 setItemSearch("");
                                 setFormError(null);
                               }}
-                              className="cursor-pointer gap-3 rounded-xl px-3 py-2.5 data-[selected=true]:bg-zinc-100 data-[selected=true]:text-zinc-900"
+                              className={cn(
+                                "cursor-pointer gap-3 rounded-xl px-3 py-2.5",
+                                isDark
+                                  ? opsCommandItemClass
+                                  : "data-[selected=true]:bg-zinc-100 data-[selected=true]:text-zinc-900"
+                              )}
                             >
                               <span className="min-w-0 flex-1 truncate font-medium">
                                 {item.name}
@@ -616,7 +669,9 @@ export function QuickIssueSheet({
                                   "shrink-0 text-xs tabular-nums",
                                   outOfStock
                                     ? "font-semibold text-red-500"
-                                    : "text-zinc-400"
+                                    : isDark
+                                      ? "text-zinc-400"
+                                      : "text-zinc-400"
                                 )}
                               >
                                 {formatQtyLabel(
@@ -625,7 +680,12 @@ export function QuickIssueSheet({
                                 )}
                               </span>
                               {itemKey === item.basRefKey ? (
-                                <Check className="h-4 w-4 shrink-0 text-emerald-600" />
+                                <Check
+                                  className={cn(
+                                    "h-4 w-4 shrink-0",
+                                    isDark ? "text-emerald-400" : "text-emerald-600"
+                                  )}
+                                />
                               ) : null}
                             </CommandItem>
                           );

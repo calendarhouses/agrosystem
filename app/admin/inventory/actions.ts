@@ -337,12 +337,21 @@ export async function createLocalOutboundMove(input: {
   /** Агросезон ('2026'); якщо не передано — DEFAULT_SEASON */
   season?: string;
   note?: string | null;
+  /** YYYY-MM-DD або ISO; за замовчуванням — зараз */
+  date?: string | null;
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   const itemRefKey = input.itemRefKey?.trim().toLowerCase();
   const fieldId = input.fieldId?.trim().toLowerCase() || null;
   const qty = Number(input.qty);
   const season = String(input.season ?? "2026").trim() || "2026";
   const note = input.note?.trim() || null;
+  const moveDate = (() => {
+    const raw = input.date?.trim();
+    if (!raw) return new Date().toISOString();
+    const d =
+      raw.length <= 10 ? new Date(`${raw.slice(0, 10)}T12:00:00`) : new Date(raw);
+    return Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+  })();
 
   if (!itemRefKey) return { ok: false, error: "Оберіть ТМЦ" };
   if (!Number.isFinite(qty) || qty <= 0) {
@@ -384,7 +393,7 @@ export async function createLocalOutboundMove(input: {
       field_id: fieldId,
       type: "outbound",
       qty,
-      date: new Date().toISOString(),
+      date: moveDate,
       status: "draft",
       season,
       note,
