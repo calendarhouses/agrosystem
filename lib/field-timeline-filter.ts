@@ -1,8 +1,41 @@
+import type { DateRange } from "react-day-picker";
+
 import {
   computeCostPerHectare,
+  isFutureTimelineOperation,
   type FieldWithTimeline,
   timelineEventDateIso,
 } from "@/lib/field-timeline";
+import {
+  getFinancePeriodRange,
+  getFullSeasonIsoRange,
+  toIsoRange,
+  type FinancePeriod,
+} from "@/lib/finance-period";
+
+function sumFactTimelineCost(events: FieldWithTimeline["events"]): number {
+  return events.reduce(
+    (sum, event) =>
+      sum + (isFutureTimelineOperation(event) ? 0 : event.cost),
+    0
+  );
+}
+
+/**
+ * Діапазон для хронології: у режимі «Сезон» показуємо весь агросезон,
+ * включно з майбутніми запланованими нарядами (на відміну від фінансів).
+ */
+export function getChroniclePeriodIsoRange(
+  period: FinancePeriod,
+  seasonYear: number,
+  customRange?: DateRange,
+  now = new Date()
+): { startIso: string; endIso: string } {
+  if (period === "Сезон") {
+    return getFullSeasonIsoRange(seasonYear);
+  }
+  return toIsoRange(getFinancePeriodRange(period, seasonYear, customRange, now));
+}
 
 export function filterTimelineByIsoRange(
   fields: FieldWithTimeline[],
@@ -14,7 +47,7 @@ export function filterTimelineByIsoRange(
       const iso = timelineEventDateIso(event.date);
       return iso >= startIso && iso <= endIso;
     });
-    const totalCost = events.reduce((sum, event) => sum + event.cost, 0);
+    const totalCost = sumFactTimelineCost(events);
     return {
       ...item,
       events,

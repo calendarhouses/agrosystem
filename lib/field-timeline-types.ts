@@ -5,6 +5,8 @@
 
 export type UnifiedTimelineEventType = "equipment" | "inventory" | "scouting";
 
+export type TimelineOperationStatus = "planned" | "in_progress" | "completed";
+
 /** Погодний штамп з БД (weather_context JSONB). */
 export type WeatherContext = {
   temp: number;
@@ -37,6 +39,8 @@ export type UnifiedTimelineEvent = {
   notes: string | null;
   /** weather_context з БД; null якщо не збережено */
   weatherContext: WeatherContext | null;
+  /** Статус наряду (лише для type === "equipment") */
+  operationStatus?: TimelineOperationStatus | null;
 };
 
 export type FieldWithTimeline = {
@@ -126,6 +130,22 @@ export function deriveTimelineIcon(
   if (event.subtitle === "Насіння") return "wheat";
   if (event.subtitle === "Добрива") return "flask";
   return "package";
+}
+
+export function isFutureTimelineOperation(event: UnifiedTimelineEvent): boolean {
+  return (
+    event.type === "equipment" &&
+    (event.operationStatus === "planned" ||
+      event.operationStatus === "in_progress")
+  );
+}
+
+export function timelineOperationStatusLabel(
+  status: TimelineOperationStatus | null | undefined
+): string | null {
+  if (status === "planned") return "Заплановано";
+  if (status === "in_progress") return "В роботі";
+  return null;
 }
 
 /** Прямий pass-through weather_context → weatherContext (без генерації). */

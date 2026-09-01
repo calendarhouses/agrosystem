@@ -11,6 +11,7 @@ export type {
   FieldWithTimeline,
   FieldWithTimelineWire,
   UnifiedTimelineEvent,
+  TimelineOperationStatus,
   UnifiedTimelineEventType,
   UnifiedTimelineEventWire,
   UnifiedTimelineIcon,
@@ -19,11 +20,13 @@ export type {
 
 export {
   deriveTimelineIcon,
+  isFutureTimelineOperation,
   mapWeatherContext,
   parseTimelineDate,
   reviveFieldWithTimeline,
   reviveUnifiedTimelineEvent,
   timelineEventDateIso,
+  timelineOperationStatusLabel,
   toTimelineField,
 } from "@/lib/field-timeline-types";
 

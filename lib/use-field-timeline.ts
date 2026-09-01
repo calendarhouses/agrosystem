@@ -127,6 +127,16 @@ export function useFieldTimeline(season?: string) {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    function onVisible() {
+      if (document.visibilityState === "visible") {
+        void load({ force: true });
+      }
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [load]);
+
   const refresh = useCallback(() => {
     timelineCache.delete(resolvedSeason);
     void load({ force: true });

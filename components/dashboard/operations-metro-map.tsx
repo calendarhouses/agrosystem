@@ -34,7 +34,9 @@ import type {
 } from "@/lib/field-timeline";
 import {
   deriveTimelineIcon,
+  isFutureTimelineOperation,
   timelineEventDateIso,
+  timelineOperationStatusLabel,
   toTimelineField,
 } from "@/lib/field-timeline";
 import {
@@ -52,13 +54,13 @@ const STATION_CARD_WIDTH = 216;
 const STATION_STEP = 252;
 const TRACK_PAD_X = STATION_CARD_WIDTH / 2 + 24;
 const METRO_TRACK_END_PAD = 24;
-const METRO_TRACK_MIN_HEIGHT = 300;
-const METRO_CARD_GAP = 10;
+const METRO_TRACK_MIN_HEIGHT = 220;
+const METRO_CARD_GAP = 6;
 const METRO_NODE_RADIUS = 10;
-const METRO_LINE_GAP = 68;
-const METRO_TRACK_PADDING_Y = 6;
-const METRO_STANDARD_CARD_H = 130;
-const METRO_SCOUTING_CARD_H = 240;
+const METRO_LINE_GAP = 46;
+const METRO_TRACK_PADDING_Y = 2;
+const METRO_STANDARD_CARD_H = 112;
+const METRO_SCOUTING_CARD_H = 196;
 
 const METRO_LINE_COLORS = [
   {
@@ -195,10 +197,11 @@ function eventIcon(
 function estimateStationCardHeight(event: UnifiedTimelineEvent): number {
   if (event.type !== "scouting") return METRO_STANDARD_CARD_H;
 
-  let height = 96;
-  height += 96;
-  if (event.notes?.trim()) height += 36;
-  else height += 18;
+  let height = 18;
+  height += 80;
+  if (event.notes?.trim()) height += 30;
+  else height += 14;
+  height += 24;
   return Math.max(height, METRO_SCOUTING_CARD_H);
 }
 
@@ -264,22 +267,28 @@ function computeMetroTrackLayout(events: UnifiedTimelineEvent[]): {
   return { trackHeight, trackWidth, yPositions, stationXs, fullWidthLine: false };
 }
 
-function buildMetroPath(
+function buildMetroPathSegments(
   yPositions: number[],
   stationXs: number[],
-  trackWidth: number
-): string {
+  trackWidth: number,
+  events: UnifiedTimelineEvent[]
+): { d: string; planned: boolean }[] {
   const count = stationXs.length;
-  if (count === 0) return "";
+  if (count === 0) return [];
+
+  const isFutureAt = (index: number) =>
+    isFutureTimelineOperation(events[index]!);
 
   const y0 = yPositions[0] ?? 0;
   const x0 = stationXs[0] ?? 0;
 
   if (count === 1) {
-    return `M 0 ${y0} H ${trackWidth}`;
+    return [{ d: `M 0 ${y0} H ${trackWidth}`, planned: isFutureAt(0) }];
   }
 
-  const parts = [`M 0 ${y0}`, `H ${x0}`];
+  const segments: { d: string; planned: boolean }[] = [
+    { d: `M 0 ${y0} H ${x0}`, planned: isFutureAt(0) },
+  ];
 
   for (let i = 1; i < count; i++) {
     const xPrev = stationXs[i - 1] ?? x0;
@@ -287,13 +296,20 @@ function buildMetroPath(
     const yPrev = yPositions[i - 1] ?? y0;
     const y1 = yPositions[i] ?? y0;
     const midX = (xPrev + x1) / 2;
-    parts.push(
-      `H ${midX - 10} Q ${midX} ${yPrev} ${midX} ${(yPrev + y1) / 2} Q ${midX} ${y1} ${midX + 10} ${y1} H ${x1}`
-    );
+    segments.push({
+      d: `M ${xPrev} ${yPrev} H ${midX - 10} Q ${midX} ${yPrev} ${midX} ${(yPrev + y1) / 2} Q ${midX} ${y1} ${midX + 10} ${y1} H ${x1}`,
+      planned: isFutureAt(i),
+    });
   }
 
-  parts.push(`H ${trackWidth}`);
-  return parts.join(" ");
+  const xLast = stationXs[count - 1] ?? x0;
+  const yLast = yPositions[count - 1] ?? y0;
+  segments.push({
+    d: `M ${xLast} ${yLast} H ${trackWidth}`,
+    planned: isFutureAt(count - 1),
+  });
+
+  return segments;
 }
 
 function MetroStationDateRow({
@@ -332,6 +348,8 @@ function MetroStationCard({
   desktop?: boolean;
 }) {
   const icon = deriveTimelineIcon(event);
+  const isFuture = isFutureTimelineOperation(event);
+  const statusLabel = timelineOperationStatusLabel(event.operationStatus);
 
   if (event.type === "scouting") {
     return (
@@ -346,7 +364,7 @@ function MetroStationCard({
           }
         }}
         className={cn(
-          "relative z-10 w-[13.5rem] cursor-pointer touch-pan-xy rounded-2xl border p-3 text-left backdrop-blur-md transition active:scale-[0.98]",
+          "relative z-10 w-[13.5rem] cursor-pointer touch-pan-xy rounded-2xl border p-2.5 text-left backdrop-blur-md transition active:scale-[0.98]",
           desktop
             ? "border-[#E5DFD3]/90 bg-white/95 shadow-sm hover:border-blue-200 hover:shadow-md"
             : "border-white/10 bg-white/[0.07] shadow-[0_12px_40px_-20px_rgba(0,0,0,0.85)] hover:border-white/20 hover:bg-white/[0.12]"
@@ -357,13 +375,17 @@ function MetroStationCard({
         <OperationsTimelineImageThumb
           src={event.imageUrl}
           variant={desktop ? "light" : "dark"}
-          onBeforeExpand={(e) => e.stopPropagation()}
+          compact
+          onBeforeExpand={(e) => {
+            e.stopPropagation();
+            if ("preventDefault" in e) e.preventDefault();
+          }}
         />
 
         {event.notes ? (
           <p
             className={cn(
-              "mt-2 line-clamp-2 text-[11px] leading-relaxed",
+              "mt-1.5 line-clamp-2 text-[11px] leading-snug",
               desktop ? "text-zinc-600" : "text-zinc-300"
             )}
           >
@@ -372,7 +394,7 @@ function MetroStationCard({
         ) : (
           <p
             className={cn(
-              "mt-2 truncate text-sm font-semibold",
+              "mt-1.5 truncate text-sm font-semibold",
               desktop ? "text-zinc-900" : "text-zinc-50"
             )}
           >
@@ -382,7 +404,7 @@ function MetroStationCard({
 
         <p
           className={cn(
-            "mt-2 text-[10px] font-bold tracking-[0.14em] uppercase",
+            "mt-1.5 text-[10px] font-bold tracking-[0.14em] uppercase",
             eventTypeTone(event.type, desktop)
           )}
         >
@@ -397,15 +419,33 @@ function MetroStationCard({
       type="button"
       onClick={onClick}
       className={cn(
-        "relative z-10 w-[13.5rem] touch-pan-xy rounded-2xl border p-3 text-left backdrop-blur-md transition active:scale-[0.98]",
-        desktop
-          ? "border-[#E5DFD3]/90 bg-white/95 shadow-sm hover:border-[#276749]/20 hover:shadow-md"
-          : "border-white/10 bg-white/[0.07] shadow-[0_12px_40px_-20px_rgba(0,0,0,0.85)] hover:border-white/20 hover:bg-white/[0.12]"
+        "relative z-10 w-[13.5rem] touch-pan-xy rounded-2xl border p-2.5 text-left backdrop-blur-md transition active:scale-[0.98]",
+        isFuture &&
+          (desktop
+            ? "border-dashed border-sky-300/90 bg-sky-50/70 shadow-sm ring-1 ring-sky-100/80"
+            : "border-dashed border-sky-400/45 bg-sky-500/[0.08] shadow-[0_12px_40px_-20px_rgba(14,116,144,0.45)] ring-1 ring-sky-400/15"),
+        !isFuture &&
+          (desktop
+            ? "border-[#E5DFD3]/90 bg-white/95 shadow-sm hover:border-[#276749]/20 hover:shadow-md"
+            : "border-white/10 bg-white/[0.07] shadow-[0_12px_40px_-20px_rgba(0,0,0,0.85)] hover:border-white/20 hover:bg-white/[0.12]")
       )}
     >
       <MetroStationDateRow event={event} desktop={desktop} />
 
-      <div className="mt-2 flex items-start justify-between gap-2">
+      {statusLabel ? (
+        <p
+          className={cn(
+            "mt-1.5 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold tracking-[0.12em] uppercase",
+            desktop
+              ? "border-sky-200 bg-sky-100 text-sky-700"
+              : "border-sky-400/30 bg-sky-500/15 text-sky-200"
+          )}
+        >
+          {statusLabel}
+        </p>
+      ) : null}
+
+      <div className={cn(statusLabel ? "mt-1.5" : "mt-1.5", "flex items-start justify-between gap-2")}>
         <div className="flex min-w-0 items-start gap-2">
           {eventIcon(icon, event.type, desktop)}
           <div className="min-w-0">
@@ -437,7 +477,7 @@ function MetroStationCard({
         </p>
       </div>
 
-      <div className="mt-2 flex items-center justify-between gap-2">
+      <div className="mt-1.5 flex items-center justify-between gap-2">
         <p
           className={cn(
             "text-[10px] font-bold tracking-[0.14em] uppercase",
@@ -449,10 +489,16 @@ function MetroStationCard({
         <p
           className={cn(
             "text-[10px] font-semibold tabular-nums",
-            desktop ? "text-red-600/80" : "text-red-400/80"
+            isFuture
+              ? desktop
+                ? "text-sky-600/80"
+                : "text-sky-300/80"
+              : desktop
+                ? "text-red-600/80"
+                : "text-red-400/80"
           )}
         >
-          {formatCostUah(event.cost)}
+          {isFuture ? "план" : formatCostUah(event.cost)}
         </p>
       </div>
     </button>
@@ -484,13 +530,18 @@ function MetroFieldLine({
 
   const { trackHeight, trackWidth, yPositions, stationXs, fullWidthLine } =
     useMemo(() => computeMetroTrackLayout(events), [events]);
-  const metroPath = buildMetroPath(yPositions, stationXs, trackWidth);
+  const metroSegments = buildMetroPathSegments(
+    yPositions,
+    stationXs,
+    trackWidth,
+    events
+  );
 
   return (
     <AccordionItem
       value={item.fieldId}
       className={cn(
-        "overflow-visible rounded-3xl border",
+        "overflow-hidden rounded-3xl border",
         desktop
           ? "border-[#E5DFD3]/90 bg-white/80 shadow-sm"
           : "border-white/8 bg-gradient-to-br from-white/[0.06] via-white/[0.03] to-transparent"
@@ -593,7 +644,7 @@ function MetroFieldLine({
         </div>
       </AccordionTrigger>
 
-      <AccordionContent className="overflow-visible pb-0 touch-pan-y">
+      <AccordionContent className="pb-0 touch-pan-y [&>div]:pb-1">
         {events.length === 0 ? (
           <div className="px-4 py-10 text-center">
             <p
@@ -620,16 +671,16 @@ function MetroFieldLine({
           </div>
         ) : (
           <div
-            className="relative overflow-visible py-1"
+            className="relative overflow-hidden"
             style={{ overscrollBehaviorX: "contain" }}
           >
             <div
-              className="ops-track-scroll overflow-x-auto overflow-y-hidden overscroll-x-contain touch-pan-xy px-1 pb-1.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              className="ops-track-scroll overflow-x-auto overflow-y-hidden overscroll-x-contain touch-pan-xy px-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
               aria-label={`Хронологія поля ${item.fieldName}`}
             >
               <div
                 className={cn(
-                  "relative overflow-visible",
+                  "relative",
                   fullWidthLine ? "w-full" : "mx-auto"
                 )}
                 style={{
@@ -657,18 +708,20 @@ function MetroFieldLine({
                       </feMerge>
                     </filter>
                   </defs>
-                  {metroPath ? (
+                  {metroSegments.map((segment, index) => (
                     <path
-                      d={metroPath}
+                      key={index}
+                      d={segment.d}
                       fill="none"
                       stroke={line.stroke}
                       strokeWidth={7}
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      opacity={0.95}
+                      strokeDasharray={segment.planned ? "12 9" : undefined}
+                      opacity={segment.planned ? 0.72 : 0.95}
                       filter={`url(#glow-${line.id}-${lineIndex})`}
                     />
-                  ) : null}
+                  ))}
                 </svg>
 
                 {events.map((event, index) => {
@@ -676,6 +729,7 @@ function MetroFieldLine({
                   const y = yPositions[index] ?? 0;
                   const cardAbove = index % 2 === 0;
                   const stationLeft = fullWidthLine ? "50%" : x;
+                  const isFuture = isFutureTimelineOperation(event);
 
                   return (
                     <div
@@ -691,9 +745,16 @@ function MetroFieldLine({
                       <span
                         className={cn(
                           "absolute left-1/2 size-5 -translate-x-1/2 rounded-full border-[3px] shadow-lg",
-                          desktop ? "bg-white" : "bg-zinc-950",
-                          line.ring,
-                          line.glow
+                          isFuture && "border-dashed",
+                          isFuture
+                            ? desktop
+                              ? "border-sky-400 bg-sky-50"
+                              : "border-sky-400/80 bg-sky-500/10"
+                            : desktop
+                              ? "bg-white"
+                              : "bg-zinc-950",
+                          !isFuture && line.ring,
+                          !isFuture && line.glow
                         )}
                         style={{ top: y - METRO_NODE_RADIUS }}
                       />

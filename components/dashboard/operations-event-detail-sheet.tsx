@@ -36,6 +36,10 @@ import { OperationsWeatherBadge } from "@/components/dashboard/operations-weathe
 import { deleteFieldOperation, type FieldOperation } from "@/lib/field-operations";
 import type { FieldTimelineField, UnifiedTimelineEvent } from "@/lib/field-timeline";
 import {
+  isFutureTimelineOperation,
+  timelineOperationStatusLabel,
+} from "@/lib/field-timeline";
+import {
   fieldOperationsKeyFromFarmId,
   parseTimelineEventId,
 } from "@/lib/field-timeline-ids";
@@ -210,22 +214,29 @@ function EventDetailHero({
   operation: FieldOperation | null;
   inventoryMove: LocalMoveRow | null;
 }) {
-  const accent = isEquipment ? "orange" : "emerald";
+  const isFuture = isFutureTimelineOperation(event);
+  const statusLabel = timelineOperationStatusLabel(event.operationStatus);
 
   return (
     <div
       className={cn(
         "relative overflow-hidden rounded-3xl border p-5",
-        isEquipment
-          ? "border-orange-500/20 bg-gradient-to-br from-orange-500/10 via-white/[0.04] to-transparent"
-          : "border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 via-white/[0.04] to-transparent"
+        isEquipment && isFuture
+          ? "border-sky-500/25 border-dashed bg-gradient-to-br from-sky-500/10 via-white/[0.04] to-transparent"
+          : isEquipment
+            ? "border-orange-500/20 bg-gradient-to-br from-orange-500/10 via-white/[0.04] to-transparent"
+            : "border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 via-white/[0.04] to-transparent"
       )}
     >
       <div
         aria-hidden
         className={cn(
           "pointer-events-none absolute -top-12 -right-8 size-32 rounded-full blur-3xl",
-          isEquipment ? "bg-orange-500/15" : "bg-emerald-500/15"
+          isEquipment && isFuture
+            ? "bg-sky-500/15"
+            : isEquipment
+              ? "bg-orange-500/15"
+              : "bg-emerald-500/15"
         )}
       />
 
@@ -233,9 +244,11 @@ function EventDetailHero({
         <div
           className={cn(
             "flex size-10 shrink-0 items-center justify-center rounded-2xl ring-1",
-            isEquipment
-              ? "bg-orange-500/20 text-orange-300 ring-orange-500/25"
-              : "bg-emerald-500/20 text-emerald-300 ring-emerald-500/25"
+            isEquipment && isFuture
+              ? "bg-sky-500/20 text-sky-300 ring-sky-500/25"
+              : isEquipment
+                ? "bg-orange-500/20 text-orange-300 ring-orange-500/25"
+                : "bg-emerald-500/20 text-emerald-300 ring-emerald-500/25"
           )}
         >
           {isEquipment ? (
@@ -247,12 +260,14 @@ function EventDetailHero({
         <span
           className={cn(
             "rounded-full px-2.5 py-1 text-[10px] font-bold tracking-[0.12em] uppercase",
-            isEquipment
-              ? "bg-orange-500/15 text-orange-300"
-              : "bg-emerald-500/15 text-emerald-300"
+            isEquipment && isFuture
+              ? "bg-sky-500/15 text-sky-300"
+              : isEquipment
+                ? "bg-orange-500/15 text-orange-300"
+                : "bg-emerald-500/15 text-emerald-300"
           )}
         >
-          {isEquipment ? "Техніка" : "ТМЦ"}
+          {statusLabel ?? (isEquipment ? "Техніка" : "ТМЦ")}
         </span>
       </div>
 
@@ -281,7 +296,7 @@ function EventDetailHero({
         <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-zinc-400">
           {formatDetailDate(event.date)}
         </span>
-        {accent === "orange" && operation?.areaDone ? (
+        {isEquipment && !isFuture && operation?.areaDone ? (
           <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-zinc-400">
             {operation.areaDone} га
           </span>

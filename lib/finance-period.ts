@@ -75,6 +75,17 @@ function maxIso(a: string, b: string): string {
   return compareIso(a, b) >= 0 ? a : b;
 }
 
+/** Повний агросезон без обрізання «сьогодні» — для хронології та запланованих нарядів. */
+export function getFullSeasonIsoRange(seasonYear: number): {
+  startIso: string;
+  endIso: string;
+} {
+  const startIso = `${seasonYear}-03-01`;
+  const febEnd = new Date(Date.UTC(seasonYear + 1, 2, 0));
+  const endIso = format(febEnd, "yyyy-MM-dd");
+  return { startIso, endIso };
+}
+
 /** Агросезон: 1 березня year → кінець лютого year+1 (або «сьогодні» в Києві, якщо сезон триває). */
 export function getSeasonRange(
   seasonYear: number,

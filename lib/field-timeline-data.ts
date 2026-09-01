@@ -12,6 +12,7 @@ import {
   equipmentFuelLiters,
   type TimelineScoutingSourceRow,
 } from "@/lib/field-timeline-cost";
+import { isFutureTimelineOperation } from "@/lib/field-timeline-types";
 import {
   mapWeatherContext,
   parseTimelineDate,
@@ -166,12 +167,21 @@ export function mapOperationToTimelineEvent(
   row: TimelineOperationRow,
   fieldId: string
 ): UnifiedTimelineEvent | null {
-  if (String(row.status ?? "") !== "completed") return null;
+  const statusRaw = String(row.status ?? "planned").trim();
+  if (statusRaw === "cancelled") return null;
+
+  const status: "planned" | "in_progress" | "completed" =
+    statusRaw === "completed" || statusRaw === "in_progress"
+      ? statusRaw
+      : "planned";
 
   const workType = String(row.work_type ?? "").trim();
   const machinery = cleanMachinery(row.machinery);
   const title = workType || machinery || "Наряд";
-  const fuelUsedL = equipmentFuelLiters(row);
+  const fuelLiters =
+    status === "completed"
+      ? equipmentFuelLiters(row)
+      : Math.max(0, num(row.fuel_plan)) || equipmentFuelLiters(row);
 
   const dateRaw =
     String(row.occurred_at ?? "").slice(0, 10) ||
@@ -180,6 +190,13 @@ export function mapOperationToTimelineEvent(
   if (!dateRaw) return null;
 
   const notes = String(row.agronomist_comment ?? "").trim() || null;
+  const equipmentLine = equipmentSubtitle(row);
+  const statusLabel =
+    status === "planned"
+      ? "Заплановано"
+      : status === "in_progress"
+        ? "В роботі"
+        : null;
 
   return {
     id: `equipment:${String(row.client_key ?? row.id)}`,
@@ -187,12 +204,13 @@ export function mapOperationToTimelineEvent(
     date: parseTimelineDate(dateRaw),
     type: "equipment",
     title,
-    subtitle: equipmentSubtitle(row),
-    metric: formatLiters(fuelUsedL),
+    subtitle: statusLabel ? `${statusLabel} · ${equipmentLine}` : equipmentLine,
+    metric: formatLiters(fuelLiters),
     cost: computeEquipmentTimelineCost(row),
     imageUrl: null,
     notes,
     weatherContext: mapWeatherContext(row.weather_context),
+    operationStatus: status,
   };
 }
 
@@ -360,7 +378,11 @@ export function groupFieldsWithTimeline(
     });
 
     const sliced = fieldEvents.slice(0, limitPerField);
-    const totalCost = sliced.reduce((sum, event) => sum + num(event.cost), 0);
+    const totalCost = sliced.reduce(
+      (sum, event) =>
+        sum + (isFutureTimelineOperation(event) ? 0 : num(event.cost)),
+      0
+    );
 
     return {
       fieldId: field.id,
@@ -472,14 +494,16 @@ async function fetchActiveFields(
   throw new Error(withFlag.error.message);
 }
 
-async function fetchCompletedOperations(
+async function fetchTimelineOperations(
   supabase: SupabaseClient,
   season: string
 ): Promise<TimelineOperationRow[]> {
+  const statuses = ["planned", "in_progress", "completed"] as const;
+
   const { data, error } = await supabase
     .from("field_operations")
     .select(OP_SELECT)
-    .eq("status", "completed")
+    .in("status", [...statuses])
     .eq("season", season)
     .order("occurred_at", { ascending: false });
 
@@ -489,7 +513,7 @@ async function fetchCompletedOperations(
     const legacy = await supabase
       .from("field_operations")
       .select(OP_SELECT.replace(/\s+/g, " ").trim())
-      .eq("status", "completed")
+      .in("status", [...statuses])
       .order("occurred_at", { ascending: false });
     if (legacy.error) {
       if (legacy.error.code === "PGRST205" || legacy.error.code === "42P01") {
@@ -516,7 +540,7 @@ async function fetchCompletedOperations(
     const legacy = await supabase
       .from("field_operations")
       .select(legacySelect)
-      .eq("status", "completed")
+      .in("status", [...statuses])
       .eq("season", season)
       .order("occurred_at", { ascending: false });
     if (legacy.error) throw new Error(legacy.error.message);
@@ -679,7 +703,7 @@ export async function fetchTimelineRawBundle(
   const [fieldRows, operations, inventoryMoves, scoutingReports] =
     await Promise.all([
       fetchActiveFields(supabase),
-      fetchCompletedOperations(supabase, season),
+      fetchTimelineOperations(supabase, season),
       fetchOutboundMoves(supabase, season),
       fetchScoutingReports(supabase, season),
     ]);

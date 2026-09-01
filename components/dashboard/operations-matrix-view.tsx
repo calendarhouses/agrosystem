@@ -14,7 +14,10 @@ import { OperationsScoutingFormSheet } from "@/components/dashboard/operations-s
 import { OperationsPanelShell } from "@/components/dashboard/operations-sheet-chrome";
 import { QuickIssueSheet } from "@/components/dashboard/quick-issue-sheet";
 import { Input } from "@/components/ui/input";
-import { filterTimelineByIsoRange } from "@/lib/field-timeline-filter";
+import {
+  filterTimelineByIsoRange,
+  getChroniclePeriodIsoRange,
+} from "@/lib/field-timeline-filter";
 import type { FieldTimelineField, FieldWithTimeline, UnifiedTimelineEvent } from "@/lib/field-timeline";
 import { useFieldTimeline } from "@/lib/use-field-timeline";
 import { ukFieldLabel, ukStationLabel } from "@/lib/uk-plural";
@@ -157,7 +160,7 @@ export function OperationsMatrixView() {
   const router = useRouter();
   const isMobile = useIsMobile();
   const periodFilter = useFinancePeriodFilter("Сезон");
-  const { isoRange, seasonYear } = periodFilter;
+  const { period, customRange, seasonYear } = periodFilter;
   const { fieldsWithTimeline, isLoading, error, refresh, season } =
     useFieldTimeline(String(seasonYear));
 
@@ -177,14 +180,19 @@ export function OperationsMatrixView() {
 
   const searchQuery = normalizeSearch(search);
 
+  const chronicleIsoRange = useMemo(
+    () => getChroniclePeriodIsoRange(period, seasonYear, customRange),
+    [period, seasonYear, customRange]
+  );
+
   const filteredFields = useMemo(
     () =>
       filterTimelineByIsoRange(
         fieldsWithTimeline,
-        isoRange.startIso,
-        isoRange.endIso
+        chronicleIsoRange.startIso,
+        chronicleIsoRange.endIso
       ),
-    [fieldsWithTimeline, isoRange.endIso, isoRange.startIso]
+    [fieldsWithTimeline, chronicleIsoRange.endIso, chronicleIsoRange.startIso]
   );
 
   const visibleFields = useMemo(() => {
