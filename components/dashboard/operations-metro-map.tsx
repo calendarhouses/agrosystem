@@ -13,7 +13,7 @@ import {
   Sprout,
   Tractor,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { normalizeFieldCrop } from "@/components/dashboard/field-passport-form";
 import { OperationsTimelineImageThumb } from "@/components/dashboard/operations-timeline-image";
@@ -908,9 +908,9 @@ function scrollChronicleFieldHeaderIntoView(fieldId: string) {
     trigger.closest<HTMLElement>("[data-chronicle-scroll]") ??
     document.querySelector<HTMLElement>("[data-chronicle-scroll]");
 
-  const alignToScrollTop = () => {
+  const alignToScrollTop = (behavior: ScrollBehavior = "smooth") => {
     if (!scrollContainer) {
-      trigger.scrollIntoView({ behavior: "smooth", block: "start", inline: "nearest" });
+      trigger.scrollIntoView({ behavior, block: "start", inline: "nearest" });
       return;
     }
 
@@ -921,13 +921,15 @@ function scrollChronicleFieldHeaderIntoView(fieldId: string) {
 
     scrollContainer.scrollTo({
       top: Math.max(0, targetTop),
-      behavior: "smooth",
+      behavior,
     });
   };
 
+  alignToScrollTop("auto");
   window.requestAnimationFrame(() => {
-    alignToScrollTop();
-    window.setTimeout(alignToScrollTop, 220);
+    alignToScrollTop("smooth");
+    window.setTimeout(() => alignToScrollTop("smooth"), 120);
+    window.setTimeout(() => alignToScrollTop("smooth"), 320);
   });
 }
 
@@ -944,20 +946,25 @@ function MetroFieldsAccordion({
 }) {
   const desktop = variant === "desktop";
   const [openIds, setOpenIds] = useState<string[]>([]);
+  const openIdsRef = useRef(openIds);
+  const pendingScrollFieldIdRef = useRef<string | null>(null);
+
+  openIdsRef.current = openIds;
 
   const handleOpenChange = useCallback((next: string[]) => {
-    let openedFieldId: string | null = null;
-    setOpenIds((prev) => {
-      const opened = next.filter((id) => !prev.includes(id));
-      if (opened.length > 0) {
-        openedFieldId = opened[opened.length - 1]!;
-      }
-      return next;
-    });
-    if (openedFieldId) {
-      scrollChronicleFieldHeaderIntoView(openedFieldId);
+    const opened = next.filter((id) => !openIdsRef.current.includes(id));
+    setOpenIds(next);
+    if (opened.length > 0) {
+      pendingScrollFieldIdRef.current = opened[opened.length - 1]!;
     }
   }, []);
+
+  useLayoutEffect(() => {
+    const fieldId = pendingScrollFieldIdRef.current;
+    if (!fieldId || !openIds.includes(fieldId)) return;
+    pendingScrollFieldIdRef.current = null;
+    scrollChronicleFieldHeaderIntoView(fieldId);
+  }, [openIds]);
 
   useEffect(() => {
     if (fields.length === 0) {

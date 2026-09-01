@@ -1,9 +1,17 @@
 "use client";
 
-import { AnimatePresence, motion, useDragControls, type PanInfo } from "framer-motion";
+import {
+  AnimatePresence,
+  motion,
+  useAnimation,
+  useDragControls,
+  type PanInfo,
+} from "framer-motion";
 import { X } from "lucide-react";
 import {
+  useCallback,
   useEffect,
+  useRef,
   useState,
   type PointerEvent,
   type ReactNode,
@@ -23,6 +31,9 @@ type MobileBottomDrawerProps = {
   showCloseButton?: boolean;
 };
 
+const SHEET_OPEN_TRANSITION = { type: "spring" as const, stiffness: 440, damping: 40 };
+const SHEET_CLOSE_TRANSITION = { duration: 0.24, ease: [0.4, 0, 1, 1] as const };
+
 /** Нативна мобільна шторка знизу (поверх контенту, над bottom nav). */
 export function MobileBottomDrawer({
   open,
@@ -33,20 +44,49 @@ export function MobileBottomDrawer({
   showCloseButton = true,
 }: MobileBottomDrawerProps) {
   const [mounted, setMounted] = useState(false);
+  const [visible, setVisible] = useState(false);
+  const closingRef = useRef(false);
+  const sheetControls = useAnimation();
   const dragControls = useDragControls();
 
   useEffect(() => setMounted(true), []);
 
   useEffect(() => {
-    if (!open) return;
+    if (!visible) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = prev;
     };
-  }, [open]);
+  }, [visible]);
+
+  const animateOpen = useCallback(async () => {
+    closingRef.current = false;
+    setVisible(true);
+    await sheetControls.set({ y: "100%" });
+    await sheetControls.start({ y: 0 }, SHEET_OPEN_TRANSITION);
+  }, [sheetControls]);
+
+  const animateClose = useCallback(async () => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    await sheetControls.start({ y: "100%" }, SHEET_CLOSE_TRANSITION);
+    setVisible(false);
+    closingRef.current = false;
+  }, [sheetControls]);
+
+  useEffect(() => {
+    if (open && !visible) {
+      void animateOpen();
+      return;
+    }
+    if (!open && visible) {
+      void animateClose();
+    }
+  }, [open, visible, animateOpen, animateClose]);
 
   function requestClose() {
+    if (!open) return;
     onOpenChange(false);
   }
 
@@ -56,7 +96,11 @@ export function MobileBottomDrawer({
 
   function handleDragEnd(_event: unknown, info: PanInfo) {
     const shouldClose = info.offset.y > 72 || info.velocity.y > 450;
-    if (shouldClose) requestClose();
+    if (shouldClose) {
+      onOpenChange(false);
+      return;
+    }
+    void sheetControls.start({ y: 0 }, SHEET_OPEN_TRANSITION);
   }
 
   if (!mounted) return null;
@@ -65,7 +109,7 @@ export function MobileBottomDrawer({
 
   return createPortal(
     <AnimatePresence>
-      {open ? (
+      {visible ? (
         <>
           <motion.button
             key="mobile-bottom-drawer-overlay"
@@ -79,49 +123,52 @@ export function MobileBottomDrawer({
             transition={{ duration: 0.18 }}
             onClick={requestClose}
           />
-          <motion.div
-            key="mobile-bottom-drawer-sheet"
-            role="dialog"
-            aria-modal="true"
-            className={cn(
-              "fixed inset-x-0 z-[260] flex max-h-[min(88dvh,calc(100dvh-var(--app-bottom-inset)))] flex-col overflow-hidden rounded-t-3xl border border-b-0 border-zinc-800 bg-zinc-950 shadow-[0_-24px_64px_-12px_rgba(0,0,0,0.65)]",
-              className
-            )}
+          <div
+            key="mobile-bottom-drawer-clip"
+            className="pointer-events-none fixed inset-x-0 top-0 z-[260] overflow-hidden"
             style={{ bottom: navOffset }}
-            initial={{ y: "100%" }}
-            animate={{ y: 0 }}
-            exit={{ y: "100%" }}
-            transition={{ type: "spring", stiffness: 440, damping: 40 }}
-            drag="y"
-            dragControls={dragControls}
-            dragListener={false}
-            dragConstraints={{ top: 0, bottom: 0 }}
-            dragElastic={{ top: 0.05, bottom: 0.55 }}
-            dragMomentum={false}
-            onDragEnd={handleDragEnd}
           >
-            {showCloseButton ? (
-              <button
-                type="button"
-                aria-label="Закрити"
-                onClick={requestClose}
-                className="absolute top-2.5 right-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full bg-zinc-800 text-zinc-300 ring-1 ring-zinc-700 transition-colors hover:bg-zinc-700 hover:text-white touch-manipulation"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            ) : null}
+            <motion.div
+              role="dialog"
+              aria-modal="true"
+              animate={sheetControls}
+              initial={{ y: "100%" }}
+              className={cn(
+                "pointer-events-auto absolute inset-x-0 bottom-0 flex max-h-[min(88dvh,calc(100dvh-var(--app-bottom-inset)))] flex-col overflow-hidden rounded-t-3xl border border-b-0 border-zinc-800 bg-zinc-950 shadow-[0_-24px_64px_-12px_rgba(0,0,0,0.65)]",
+                className
+              )}
+              transition={SHEET_OPEN_TRANSITION}
+              drag="y"
+              dragControls={dragControls}
+              dragListener={false}
+              dragConstraints={{ top: 0, bottom: 0 }}
+              dragElastic={{ top: 0.05, bottom: 0.35 }}
+              dragMomentum={false}
+              onDragEnd={handleDragEnd}
+            >
+              {showCloseButton ? (
+                <button
+                  type="button"
+                  aria-label="Закрити"
+                  onClick={requestClose}
+                  className="absolute top-2.5 right-3 z-20 inline-flex h-9 w-9 touch-manipulation items-center justify-center rounded-full bg-zinc-800 text-zinc-300 ring-1 ring-zinc-700 transition-colors hover:bg-zinc-700 hover:text-white"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              ) : null}
 
-            <div className="relative z-10 shrink-0">
-              <SheetDragHandle
-                className="min-h-11 cursor-grab pt-3 pb-2 active:cursor-grabbing"
-                onPointerDown={startDrag}
-              />
-            </div>
+              <div className="relative z-10 shrink-0">
+                <SheetDragHandle
+                  className="min-h-11 cursor-grab pt-3 pb-2 active:cursor-grabbing"
+                  onPointerDown={startDrag}
+                />
+              </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-none">
-              {children}
-            </div>
-          </motion.div>
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-none">
+                {children}
+              </div>
+            </motion.div>
+          </div>
         </>
       ) : null}
     </AnimatePresence>,
