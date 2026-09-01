@@ -1265,7 +1265,7 @@ export function FinanceView({
             onClick={() =>
               openDrill({
                 kind: "expense",
-                title: "Витрати",
+                title: "Витрати на поля",
                 subtitle: "ТМЦ · паливо · ЗП · топ поля",
               })
             }
@@ -1284,7 +1284,7 @@ export function FinanceView({
               aria-hidden
             />
             <div className="relative">
-              <p className={kpiLabelClass}>Витрати</p>
+              <p className={kpiLabelClass}>Витрати на поля</p>
               {overviewLoading || !overview ? (
                 <div className="flex items-center gap-2 text-sm text-zinc-400">
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -1297,7 +1297,7 @@ export function FinanceView({
                   />
                   <p className="mt-1 line-clamp-2 text-[10px] leading-snug text-orange-900/55 sm:mt-1.5 sm:text-[11px]">
                     {opsCostUah <= 0
-                      ? "Немає витрат"
+                      ? "Немає витрат на поля"
                       : [
                           overview.inventorySpentUah > 0
                             ? `ТМЦ ${formatHeroUah(overview.inventorySpentUah)}`
@@ -1326,7 +1326,7 @@ export function FinanceView({
               openDrill({
                 kind: "result",
                 title: "Результат",
-                subtitle: "P&L · виручка мінус операційні витрати",
+                subtitle: "P&L · виручка мінус витрати на поля",
               })
             }
             className={cn(
@@ -1490,7 +1490,7 @@ export function FinanceView({
                         Економіка культур
                       </p>
                       <p className="text-[11px] text-zinc-500 md:text-xs">
-                        Витрати ₴/га
+                        Витрати на поля ₴/га
                       </p>
                     </div>
                   </div>
@@ -1535,7 +1535,7 @@ export function FinanceView({
                         Економіка культур
                       </span>
                       <span className="mt-0.5 block text-[11px] leading-snug text-zinc-500">
-                        {cropEconomics.length} культур · витрати ₴/га
+                        {cropEconomics.length} культур · витрати на поля ₴/га
                       </span>
                     </span>
                     <ChevronDown
@@ -1551,7 +1551,7 @@ export function FinanceView({
                       Економіка культур
                     </h3>
                     <p className="mt-0.5 text-xs text-zinc-500">
-                      {cropEconomics.length} культур · витрати ₴/га
+                      {cropEconomics.length} культур · витрати на поля ₴/га
                     </p>
                   </div>
                 )}

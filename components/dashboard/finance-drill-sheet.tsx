@@ -471,7 +471,7 @@ function ExpensePanel({
     <div className="space-y-4">
       <div className="rounded-2xl border border-[#E5DFD3]/80 bg-white/50 p-4 backdrop-blur-md">
         <p className="text-[11px] font-semibold tracking-wider text-zinc-400 uppercase">
-          Операційні витрати
+          Витрати на поля
         </p>
         <p className="mt-1 text-3xl font-light tracking-tight text-orange-600 tabular-nums">
           {formatUah(opsCostUah)}{" "}
@@ -734,7 +734,7 @@ function ResultPanel({
           </span>
           <div>
             <p className="text-sm font-semibold text-zinc-800">Результат</p>
-            <p className="text-[11px] text-zinc-400">Виручка − операційні витрати</p>
+            <p className="text-[11px] text-zinc-400">Виручка − витрати на поля</p>
           </div>
         </div>
         <p

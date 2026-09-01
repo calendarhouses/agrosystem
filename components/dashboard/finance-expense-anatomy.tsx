@@ -66,7 +66,7 @@ export function FinanceExpenseAnatomy({
       : null;
 
   const centerAmount = selected ? selected.amountUah : total;
-  const centerLabel = selected ? selected.label : "Витрати";
+  const centerLabel = selected ? selected.label : "Витрати на поля";
   const centerFmt = formatDonutCenter(centerAmount);
   const breakdown = selected?.breakdown ?? [];
 
