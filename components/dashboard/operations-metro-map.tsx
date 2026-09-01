@@ -51,13 +51,14 @@ export type OperationsMetroVariant = "mobile" | "desktop";
 const STATION_CARD_WIDTH = 216;
 const STATION_STEP = 252;
 const TRACK_PAD_X = STATION_CARD_WIDTH / 2 + 24;
-const METRO_TRACK_MIN_HEIGHT = 420;
-const METRO_CARD_GAP = 20;
+const METRO_TRACK_END_PAD = 24;
+const METRO_TRACK_MIN_HEIGHT = 300;
+const METRO_CARD_GAP = 10;
 const METRO_NODE_RADIUS = 10;
-const METRO_LINE_GAP = 88;
-const METRO_TRACK_PADDING_Y = 16;
-const METRO_STANDARD_CARD_H = 148;
-const METRO_SCOUTING_CARD_H = 268;
+const METRO_LINE_GAP = 68;
+const METRO_TRACK_PADDING_Y = 6;
+const METRO_STANDARD_CARD_H = 130;
+const METRO_SCOUTING_CARD_H = 240;
 
 const METRO_LINE_COLORS = [
   {
@@ -194,19 +195,42 @@ function eventIcon(
 function estimateStationCardHeight(event: UnifiedTimelineEvent): number {
   if (event.type !== "scouting") return METRO_STANDARD_CARD_H;
 
-  let height = 108;
-  height += 104;
-  if (event.notes?.trim()) height += 40;
-  else height += 22;
+  let height = 96;
+  height += 96;
+  if (event.notes?.trim()) height += 36;
+  else height += 18;
   return Math.max(height, METRO_SCOUTING_CARD_H);
 }
 
 function computeMetroTrackLayout(events: UnifiedTimelineEvent[]): {
   trackHeight: number;
+  trackWidth: number;
   yPositions: number[];
+  stationXs: number[];
+  fullWidthLine: boolean;
 } {
   if (events.length === 0) {
-    return { trackHeight: METRO_TRACK_MIN_HEIGHT, yPositions: [] };
+    return {
+      trackHeight: METRO_TRACK_MIN_HEIGHT,
+      trackWidth: STATION_CARD_WIDTH + METRO_TRACK_END_PAD * 2,
+      yPositions: [],
+      stationXs: [],
+      fullWidthLine: false,
+    };
+  }
+
+  if (events.length === 1) {
+    const cardHeight = estimateStationCardHeight(events[0]!);
+    const y =
+      METRO_TRACK_PADDING_Y + cardHeight + METRO_CARD_GAP + METRO_NODE_RADIUS;
+    const normalizedWidth = 1000;
+    return {
+      trackHeight: y + METRO_NODE_RADIUS + METRO_TRACK_PADDING_Y,
+      trackWidth: normalizedWidth,
+      yPositions: [y],
+      stationXs: [normalizedWidth / 2],
+      fullWidthLine: true,
+    };
   }
 
   let maxAbove = 0;
@@ -227,31 +251,29 @@ function computeMetroTrackLayout(events: UnifiedTimelineEvent[]): {
     METRO_CARD_GAP +
     METRO_NODE_RADIUS;
   const lineYBottom = lineYTop + METRO_LINE_GAP;
-  const trackHeight = Math.max(
-    METRO_TRACK_MIN_HEIGHT,
-    lineYBottom + METRO_CARD_GAP + maxBelow + METRO_TRACK_PADDING_Y
-  );
+  const trackHeight =
+    lineYBottom + METRO_CARD_GAP + maxBelow + METRO_TRACK_PADDING_Y;
+  const stationXs = events.map((_, index) => TRACK_PAD_X + index * STATION_STEP);
+  const lastStationX = stationXs[stationXs.length - 1] ?? TRACK_PAD_X;
+  const trackWidth = lastStationX + STATION_CARD_WIDTH / 2 + METRO_TRACK_END_PAD;
 
   const yPositions = events.map((_, index) =>
     index % 2 === 0 ? lineYTop : lineYBottom
   );
 
-  return { trackHeight, yPositions };
-}
-
-function metroStationX(index: number): number {
-  return TRACK_PAD_X + index * STATION_STEP;
+  return { trackHeight, trackWidth, yPositions, stationXs, fullWidthLine: false };
 }
 
 function buildMetroPath(
-  count: number,
   yPositions: number[],
+  stationXs: number[],
   trackWidth: number
 ): string {
+  const count = stationXs.length;
   if (count === 0) return "";
 
   const y0 = yPositions[0] ?? 0;
-  const x0 = metroStationX(0);
+  const x0 = stationXs[0] ?? 0;
 
   if (count === 1) {
     return `M 0 ${y0} H ${trackWidth}`;
@@ -260,8 +282,8 @@ function buildMetroPath(
   const parts = [`M 0 ${y0}`, `H ${x0}`];
 
   for (let i = 1; i < count; i++) {
-    const xPrev = metroStationX(i - 1);
-    const x1 = metroStationX(i);
+    const xPrev = stationXs[i - 1] ?? x0;
+    const x1 = stationXs[i] ?? x0;
     const yPrev = yPositions[i - 1] ?? y0;
     const y1 = yPositions[i] ?? y0;
     const midX = (xPrev + x1) / 2;
@@ -313,11 +335,18 @@ function MetroStationCard({
 
   if (event.type === "scouting") {
     return (
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         onClick={onClick}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onClick?.();
+          }
+        }}
         className={cn(
-          "relative z-10 w-[13.5rem] touch-pan-xy rounded-2xl border p-3 text-left backdrop-blur-md transition active:scale-[0.98]",
+          "relative z-10 w-[13.5rem] cursor-pointer touch-pan-xy rounded-2xl border p-3 text-left backdrop-blur-md transition active:scale-[0.98]",
           desktop
             ? "border-[#E5DFD3]/90 bg-white/95 shadow-sm hover:border-blue-200 hover:shadow-md"
             : "border-white/10 bg-white/[0.07] shadow-[0_12px_40px_-20px_rgba(0,0,0,0.85)] hover:border-white/20 hover:bg-white/[0.12]"
@@ -328,6 +357,7 @@ function MetroStationCard({
         <OperationsTimelineImageThumb
           src={event.imageUrl}
           variant={desktop ? "light" : "dark"}
+          onBeforeExpand={(e) => e.stopPropagation()}
         />
 
         {event.notes ? (
@@ -358,7 +388,7 @@ function MetroStationCard({
         >
           {eventTypeLabel(event.type)}
         </p>
-      </button>
+      </div>
     );
   }
 
@@ -452,15 +482,9 @@ function MetroFieldLine({
     [item.events]
   );
 
-  const { trackHeight, yPositions } = useMemo(
-    () => computeMetroTrackLayout(events),
-    [events]
-  );
-  const trackWidth = Math.max(
-    STATION_STEP * Math.max(events.length - 1, 0) + TRACK_PAD_X * 2,
-    STATION_CARD_WIDTH + TRACK_PAD_X * 2
-  );
-  const metroPath = buildMetroPath(events.length, yPositions, trackWidth);
+  const { trackHeight, trackWidth, yPositions, stationXs, fullWidthLine } =
+    useMemo(() => computeMetroTrackLayout(events), [events]);
+  const metroPath = buildMetroPath(yPositions, stationXs, trackWidth);
 
   return (
     <AccordionItem
@@ -596,25 +620,32 @@ function MetroFieldLine({
           </div>
         ) : (
           <div
-            className="relative overflow-visible py-2"
+            className="relative overflow-visible py-1"
             style={{ overscrollBehaviorX: "contain" }}
           >
             <div
-              className="ops-track-scroll overflow-x-auto overflow-y-hidden overscroll-x-contain touch-pan-xy px-1 pb-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              className="ops-track-scroll overflow-x-auto overflow-y-hidden overscroll-x-contain touch-pan-xy px-1 pb-1.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
               aria-label={`Хронологія поля ${item.fieldName}`}
             >
               <div
-                className="relative mx-auto overflow-visible"
+                className={cn(
+                  "relative overflow-visible",
+                  fullWidthLine ? "w-full" : "mx-auto"
+                )}
                 style={{
-                  width: trackWidth,
+                  width: fullWidthLine ? "100%" : trackWidth,
                   height: trackHeight,
                   minHeight: trackHeight,
                 }}
               >
                 <svg
                   className="pointer-events-none absolute inset-0"
-                  width={trackWidth}
+                  width={fullWidthLine ? "100%" : trackWidth}
                   height={trackHeight}
+                  viewBox={
+                    fullWidthLine ? `0 0 ${trackWidth} ${trackHeight}` : undefined
+                  }
+                  preserveAspectRatio={fullWidthLine ? "none" : undefined}
                   aria-hidden
                 >
                   <defs>
@@ -641,16 +672,17 @@ function MetroFieldLine({
                 </svg>
 
                 {events.map((event, index) => {
-                  const x = metroStationX(index);
+                  const x = stationXs[index] ?? 0;
                   const y = yPositions[index] ?? 0;
                   const cardAbove = index % 2 === 0;
+                  const stationLeft = fullWidthLine ? "50%" : x;
 
                   return (
                     <div
                       key={event.id}
                       className="absolute top-0 left-0"
                       style={{
-                        left: x,
+                        left: stationLeft,
                         transform: "translateX(-50%)",
                         width: 0,
                         height: trackHeight,
@@ -686,6 +718,13 @@ function MetroFieldLine({
               </div>
             </div>
 
+            <div
+              className={cn(
+                "pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r to-transparent",
+                desktop ? "from-[#F4F1EA]/95" : "from-zinc-950/90"
+              )}
+              aria-hidden
+            />
             <div
               className={cn(
                 "pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l to-transparent",

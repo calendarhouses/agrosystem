@@ -186,6 +186,8 @@ function ScoutingDetailHero({ event }: { event: UnifiedTimelineEvent }) {
         src={event.imageUrl}
         variant="dark"
         aspectClassName="aspect-[4/3] w-full"
+        expandable
+        alt="Фото скаутингу"
       />
 
       {event.notes ? (
