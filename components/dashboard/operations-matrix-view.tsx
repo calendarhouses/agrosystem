@@ -1,203 +1,141 @@
 "use client";
 
-import { format, isToday, isYesterday } from "date-fns";
-import { uk } from "date-fns/locale";
-import {
-  FlaskConical,
-  Fuel,
-  Package,
-  Sprout,
-  Tractor,
-} from "lucide-react";
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, Search, X } from "lucide-react";
 
+import { FinancePeriodToolbar } from "@/components/dashboard/finance-period-toolbar";
+import { OperationsEventDetailSheet } from "@/components/dashboard/operations-event-detail-sheet";
+import { OperationsFieldAddSheet } from "@/components/dashboard/operations-field-add-sheet";
+import { OperationsMetroMap } from "@/components/dashboard/operations-metro-map";
+import { OperationsOperationFormSheet } from "@/components/dashboard/operations-operation-form-sheet";
+import { QuickIssueSheet } from "@/components/dashboard/quick-issue-sheet";
+import { Input } from "@/components/ui/input";
 import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-  ChevronDown,
-} from "@/components/ui/accordion";
-import { Skeleton } from "@/components/ui/skeleton";
-import { normalizeFieldCrop } from "@/components/dashboard/field-passport-form";
-import type {
-  FieldWithTimeline,
-  UnifiedTimelineEvent,
-  UnifiedTimelineIcon,
-} from "@/lib/field-timeline";
+  countTimelineEvents,
+  filterTimelineByIsoRange,
+} from "@/lib/field-timeline-filter";
+import type { FieldTimelineField, UnifiedTimelineEvent } from "@/lib/field-timeline";
 import { useFieldTimeline } from "@/lib/use-field-timeline";
+import { useFinancePeriodFilter } from "@/lib/use-finance-period-filter";
 import { cn } from "@/lib/utils";
 
-function formatAreaHa(areaHa: number): string {
-  const value = new Intl.NumberFormat("uk-UA", {
-    maximumFractionDigits: areaHa >= 100 ? 0 : 1,
-  }).format(areaHa);
-  return `${value} га`;
+function normalizeSearch(value: string): string {
+  return value.trim().toLowerCase();
 }
 
-function formatEventDate(iso: string): string {
-  const d = new Date(`${iso.slice(0, 10)}T12:00:00`);
-  if (Number.isNaN(d.getTime())) return iso;
-  return format(d, "d MMM yyyy", { locale: uk });
-}
-
-function lastActionLabel(events: UnifiedTimelineEvent[]): string {
-  if (events.length === 0) return "Немає подій за сезон";
-
-  const latest = events[0];
-  const d = new Date(`${latest.date.slice(0, 10)}T12:00:00`);
-  if (Number.isNaN(d.getTime())) return "Остання дія: —";
-  if (isToday(d)) return "Остання дія: Сьогодні";
-  if (isYesterday(d)) return "Остання дія: Вчора";
-  return `Остання дія: ${format(d, "d MMM", { locale: uk })}`;
-}
-
-function timelineIcon(icon: UnifiedTimelineIcon, type: UnifiedTimelineEvent["type"]) {
-  if (type === "equipment") {
-    return <Tractor className="size-4 shrink-0 text-orange-400" aria-hidden />;
-  }
-
-  switch (icon) {
-    case "wheat":
-      return <Sprout className="size-4 shrink-0 text-emerald-400" aria-hidden />;
-    case "flask":
-      return (
-        <FlaskConical className="size-4 shrink-0 text-emerald-400" aria-hidden />
-      );
-    case "fuel":
-      return <Fuel className="size-4 shrink-0 text-emerald-400" aria-hidden />;
-    case "package":
-    default:
-      return <Package className="size-4 shrink-0 text-emerald-400" aria-hidden />;
-  }
-}
-
-function TimelineEventRow({ event }: { event: UnifiedTimelineEvent }) {
-  const dotClass =
-    event.type === "equipment"
-      ? "border-orange-500"
-      : "border-emerald-500";
-
+function fieldMatchesSearch(field: FieldTimelineField, query: string): boolean {
+  if (!query) return true;
   return (
-    <li className="relative">
-      <span
-        aria-hidden
-        className={cn(
-          "absolute -left-[9px] mt-1.5 size-4 rounded-full bg-zinc-950 border-2",
-          dotClass
-        )}
-      />
-      <div className="flex flex-col gap-1">
-        <time
-          className="text-xs text-muted-foreground"
-          dateTime={event.date}
-        >
-          {formatEventDate(event.date)}
-        </time>
-        <div className="flex items-center justify-between gap-3 rounded-xl border border-white/5 bg-white/5 p-3">
-          <div className="flex min-w-0 items-start gap-2.5">
-            {timelineIcon(event.icon, event.type)}
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-zinc-100">
-                {event.title}
-              </p>
-              <p className="truncate text-xs text-zinc-400">{event.subtitle}</p>
-            </div>
-          </div>
-          <p className="shrink-0 text-sm font-semibold tabular-nums text-zinc-50">
-            {event.metric}
-          </p>
-        </div>
-      </div>
-    </li>
-  );
-}
-
-function FieldTimelineAccordionItem({ item }: { item: FieldWithTimeline }) {
-  const { field, events } = item;
-  const crop = normalizeFieldCrop(field.crop);
-
-  return (
-    <AccordionItem value={field.id} className="border-0">
-      <AccordionTrigger
-        className={cn(
-          "group mb-3 w-full rounded-2xl border border-white/10 bg-white/5 px-5 py-4 backdrop-blur-md",
-          "flex flex-col items-stretch gap-0 hover:no-underline",
-          "data-[state=open]:border-white/15 data-[state=open]:bg-white/[0.07]"
-        )}
-      >
-        <div className="flex w-full items-start justify-between gap-3">
-          <div className="min-w-0 flex-1 text-left">
-            <div className="flex items-baseline justify-between gap-3">
-              <h3 className="truncate text-lg font-semibold tracking-tight text-zinc-50">
-                {field.name}
-              </h3>
-              <span className="shrink-0 text-sm text-zinc-400">
-                {formatAreaHa(field.areaHa)}
-              </span>
-            </div>
-            <div className="mt-1.5 flex items-center justify-between gap-3">
-              <p className="truncate text-sm text-zinc-300">{crop}</p>
-              <p className="shrink-0 text-xs text-zinc-500">
-                {lastActionLabel(events)}
-              </p>
-            </div>
-          </div>
-          <ChevronDown
-            className="mt-1 size-4 shrink-0 text-zinc-500 transition-transform duration-300 ease-out group-data-[state=open]:text-zinc-300"
-            aria-hidden
-          />
-        </div>
-      </AccordionTrigger>
-
-      <AccordionContent className="px-1">
-        {events.length === 0 ? (
-          <p className="ml-4 border-l-2 border-zinc-800 py-2 pl-6 text-sm text-zinc-500 italic">
-            Історія операцій порожня
-          </p>
-        ) : (
-          <ol className="relative mt-2 ml-4 space-y-6 border-l-2 border-zinc-800 pb-4 pl-6">
-            {events.map((event) => (
-              <TimelineEventRow key={event.id} event={event} />
-            ))}
-          </ol>
-        )}
-      </AccordionContent>
-    </AccordionItem>
-  );
-}
-
-function OperationsMatrixSkeleton() {
-  return (
-    <div
-      className="space-y-3"
-      aria-busy="true"
-      aria-label="Завантаження хронології"
-    >
-      {[0, 1, 2, 3].map((i) => (
-        <Skeleton
-          key={i}
-          className="h-[5.25rem] w-full animate-pulse rounded-2xl border border-white/5 bg-white/10"
-        />
-      ))}
-    </div>
+    field.name.toLowerCase().includes(query) ||
+    field.crop.toLowerCase().includes(query)
   );
 }
 
 export function OperationsMatrixView() {
-  const { fieldsWithTimeline, isLoading, error, season } = useFieldTimeline();
+  const router = useRouter();
+  const periodFilter = useFinancePeriodFilter("Сезон");
+  const { isoRange, seasonYear } = periodFilter;
+  const { fieldsWithTimeline, isLoading, error, refresh, season } =
+    useFieldTimeline(String(seasonYear));
+
+  const [search, setSearch] = useState("");
+  const [selectedEvent, setSelectedEvent] = useState<{
+    event: UnifiedTimelineEvent;
+    field: FieldTimelineField;
+  } | null>(null);
+  const [addField, setAddField] = useState<FieldTimelineField | null>(null);
+  const [addOperationField, setAddOperationField] =
+    useState<FieldTimelineField | null>(null);
+  const [addIssueField, setAddIssueField] = useState<FieldTimelineField | null>(
+    null
+  );
+
+  const searchQuery = normalizeSearch(search);
+
+  const filteredFields = useMemo(
+    () =>
+      filterTimelineByIsoRange(
+        fieldsWithTimeline,
+        isoRange.startIso,
+        isoRange.endIso
+      ),
+    [fieldsWithTimeline, isoRange.endIso, isoRange.startIso]
+  );
+
+  const visibleFields = useMemo(() => {
+    const bySearch = filteredFields.filter((item) =>
+      fieldMatchesSearch(item.field, searchQuery)
+    );
+    if (searchQuery) return bySearch;
+    return bySearch.filter((item) => item.events.length > 0);
+  }, [filteredFields, searchQuery]);
+
+  const eventCount = useMemo(
+    () => countTimelineEvents(visibleFields),
+    [visibleFields]
+  );
+
+  function handleExit() {
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+      return;
+    }
+    router.push("/");
+  }
 
   return (
     <section className="flex h-full min-h-0 flex-1 flex-col bg-zinc-950 text-zinc-50">
       <header className="shrink-0 border-b border-white/5 px-4 pt-[max(0.75rem,var(--safe-top))] pb-3">
-        <p className="text-[11px] font-medium tracking-[0.18em] text-zinc-500 uppercase">
-          Field Operations Matrix
-        </p>
-        <h1 className="mt-1 text-xl font-semibold tracking-tight text-zinc-50">
-          Операційна хронологія
-        </h1>
-        <p className="mt-1 text-sm text-zinc-400">
-          Сезон {season} · техніка та списання ТМЦ
-        </p>
+        <div className="mb-3 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleExit}
+            className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 text-sm font-medium text-zinc-200 transition hover:bg-white/10"
+          >
+            <ArrowLeft className="size-4" />
+            На карту
+          </button>
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-base font-semibold tracking-tight text-zinc-50">
+              Операційна хронологія
+            </h1>
+            <p className="truncate text-xs text-zinc-500">
+              Техніка та ТМЦ по полях
+            </p>
+          </div>
+        </div>
+
+        <div className="relative mb-3">
+          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-zinc-500" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Пошук поля…"
+            className="h-11 border-white/10 bg-white/5 pl-10 pr-10 text-zinc-50 placeholder:text-zinc-500 focus-visible:border-emerald-500/40 focus-visible:ring-emerald-500/20"
+          />
+          {search ? (
+            <button
+              type="button"
+              onClick={() => setSearch("")}
+              className="absolute top-1/2 right-2 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-lg text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+              aria-label="Очистити пошук"
+            >
+              <X className="size-4" />
+            </button>
+          ) : null}
+        </div>
+
+        <FinancePeriodToolbar
+          {...periodFilter}
+          theme="dark"
+          loading={isLoading}
+          trailing={
+            <span className="shrink-0 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-zinc-300 tabular-nums">
+              {eventCount}
+            </span>
+          }
+        />
       </header>
 
       <div
@@ -206,32 +144,77 @@ export function OperationsMatrixView() {
           "pb-[calc(var(--bottom-nav-height)+1rem)] md:pb-6"
         )}
       >
-        {isLoading ? <OperationsMatrixSkeleton /> : null}
-
         {!isLoading && error ? (
-          <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+          <div className="mb-4 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
             {error}
           </div>
         ) : null}
 
-        {!isLoading && !error ? (
-          <Accordion
-            type="single"
-            collapsible
-            className="w-full"
-          >
-            {fieldsWithTimeline.map((item) => (
-              <FieldTimelineAccordionItem key={item.field.id} item={item} />
-            ))}
-          </Accordion>
-        ) : null}
-
-        {!isLoading && !error && fieldsWithTimeline.length === 0 ? (
-          <p className="rounded-2xl border border-white/10 bg-white/5 px-4 py-6 text-center text-sm text-zinc-400">
-            Активних полів не знайдено.
+        {!isLoading && !error && visibleFields.length === 0 ? (
+          <p className="rounded-3xl border border-white/10 bg-white/5 px-4 py-12 text-center text-sm text-zinc-500">
+            {searchQuery
+              ? "Полів за запитом не знайдено."
+              : "За обраний період подій немає. Спробуйте інший діапазон або додайте операцію через пошук поля."}
           </p>
-        ) : null}
+        ) : (
+          <OperationsMetroMap
+            fields={visibleFields}
+            isLoading={isLoading}
+            onEventClick={(field, event) => setSelectedEvent({ field, event })}
+            onAddClick={(field) => setAddField(field)}
+          />
+        )}
       </div>
+
+      <OperationsEventDetailSheet
+        open={Boolean(selectedEvent)}
+        onOpenChange={(open) => {
+          if (!open) setSelectedEvent(null);
+        }}
+        event={selectedEvent?.event ?? null}
+        field={selectedEvent?.field ?? null}
+        season={season}
+        onChanged={refresh}
+      />
+
+      <OperationsFieldAddSheet
+        open={Boolean(addField)}
+        onOpenChange={(open) => {
+          if (!open) setAddField(null);
+        }}
+        field={addField}
+        onAddOperation={() => {
+          setAddOperationField(addField);
+          setAddField(null);
+        }}
+        onAddInventory={() => {
+          setAddIssueField(addField);
+          setAddField(null);
+        }}
+      />
+
+      <OperationsOperationFormSheet
+        open={Boolean(addOperationField)}
+        onOpenChange={(open) => {
+          if (!open) setAddOperationField(null);
+        }}
+        field={addOperationField}
+        seasonYear={seasonYear}
+        onSaved={refresh}
+      />
+
+      <QuickIssueSheet
+        open={Boolean(addIssueField)}
+        onOpenChange={(open) => {
+          if (!open) setAddIssueField(null);
+        }}
+        presetFieldId={addIssueField?.id ?? null}
+        lockField={Boolean(addIssueField)}
+        onSuccess={() => {
+          refresh();
+          setAddIssueField(null);
+        }}
+      />
     </section>
   );
 }

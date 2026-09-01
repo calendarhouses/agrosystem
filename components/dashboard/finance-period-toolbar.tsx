@@ -22,6 +22,7 @@ const SEASON_OPTIONS = [2024, 2025, 2026, 2027];
 
 type FinancePeriodToolbarProps = FinancePeriodFilter & {
   variant?: "mobile" | "desktop";
+  theme?: "light" | "dark";
   seasonHint?: string;
   loading?: boolean;
   trailing?: ReactNode;
@@ -42,12 +43,14 @@ export function FinancePeriodToolbar({
   selectSeason,
   applyPeriod,
   variant = "mobile",
+  theme = "light",
   seasonHint = "Фільтр за агросезоном (березень–лютий).",
   loading = false,
   trailing,
   className,
 }: FinancePeriodToolbarProps) {
   const desktop = variant === "desktop";
+  const dark = theme === "dark";
   const seasonYears =
     availableSeasons.length > 0
       ? availableSeasons.map(Number)
@@ -78,8 +81,12 @@ export function FinancePeriodToolbar({
                 ? "h-9 min-w-0 flex-1 text-xs"
                 : "h-11 min-w-0 flex-1 text-sm md:h-9 md:flex-none md:text-xs",
               period === "Сезон"
-                ? "border-[#276749] bg-[#276749] text-white shadow-[0_6px_16px_-6px_rgba(39,103,73,0.55)]"
-                : "border-[#E0DBD0] bg-white text-zinc-700 hover:border-[#276749]/35"
+                ? dark
+                  ? "border-orange-500/60 bg-orange-500/15 text-orange-50 shadow-[0_6px_20px_-8px_rgba(249,115,22,0.55)]"
+                  : "border-[#276749] bg-[#276749] text-white shadow-[0_6px_16px_-6px_rgba(39,103,73,0.55)]"
+                : dark
+                  ? "border-white/10 bg-white/5 text-zinc-200 hover:border-white/20"
+                  : "border-[#E0DBD0] bg-white text-zinc-700 hover:border-[#276749]/35"
             )}
             aria-label="Обрати агросезон"
           >
@@ -87,8 +94,12 @@ export function FinancePeriodToolbar({
               className={cn(
                 "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg",
                 period === "Сезон"
-                  ? "bg-white/15 text-white"
-                  : "bg-[#276749]/12 text-[#276749]"
+                  ? dark
+                    ? "bg-orange-500/20 text-orange-300"
+                    : "bg-white/15 text-white"
+                  : dark
+                    ? "bg-white/10 text-orange-400"
+                    : "bg-[#276749]/12 text-[#276749]"
               )}
             >
               <Sprout className="h-3.5 w-3.5" />
@@ -97,7 +108,11 @@ export function FinancePeriodToolbar({
             <ChevronDown
               className={cn(
                 "ml-auto h-3.5 w-3.5 shrink-0",
-                period === "Сезон" ? "text-white/80" : "text-zinc-400"
+                period === "Сезон"
+                  ? dark
+                    ? "text-orange-200/80"
+                    : "text-white/80"
+                  : "text-zinc-400"
               )}
             />
           </PopoverTrigger>
@@ -159,15 +174,21 @@ export function FinancePeriodToolbar({
               "inline-flex shrink-0 items-center gap-1.5 rounded-xl border font-semibold transition-all",
               desktop ? "h-9 px-3 text-xs" : "h-11 px-3 text-sm md:h-9 md:text-xs",
               period === "Діапазон"
-                ? "border-[#276749] bg-[#276749] text-white shadow-[0_6px_16px_-6px_rgba(39,103,73,0.55)]"
-                : "border-[#E0DBD0] bg-white text-zinc-700 hover:border-[#276749]/35"
+                ? dark
+                  ? "border-orange-500/60 bg-orange-500/15 text-orange-50 shadow-[0_6px_20px_-8px_rgba(249,115,22,0.55)]"
+                  : "border-[#276749] bg-[#276749] text-white shadow-[0_6px_16px_-6px_rgba(39,103,73,0.55)]"
+                : dark
+                  ? "border-white/10 bg-white/5 text-zinc-200 hover:border-white/20"
+                  : "border-[#E0DBD0] bg-white text-zinc-700 hover:border-[#276749]/35"
             )}
           >
             <CalendarIcon
               className={cn(
                 "h-3.5 w-3.5 shrink-0",
                 period === "Діапазон"
-                  ? "text-white/90"
+                  ? dark
+                    ? "text-orange-200/90"
+                    : "text-white/90"
                   : desktop
                     ? "text-zinc-500"
                     : "opacity-70"
@@ -260,7 +281,12 @@ export function FinancePeriodToolbar({
       </div>
 
       <div className={cn("flex items-center", trailing ? "gap-2" : "gap-1.5")}>
-        <div className="flex min-w-0 flex-1 items-center gap-0.5 rounded-xl bg-[#EDE8DF] p-0.5">
+        <div
+          className={cn(
+            "flex min-w-0 flex-1 items-center gap-0.5 rounded-xl p-0.5",
+            dark ? "bg-white/5" : "bg-[#EDE8DF]"
+          )}
+        >
           {FINANCE_QUICK_PERIODS.map((option) => (
             <button
               key={option}
@@ -272,8 +298,12 @@ export function FinancePeriodToolbar({
                   ? "h-8 px-2 text-xs"
                   : "h-11 px-1 text-[11px] sm:px-2 sm:text-xs md:h-8",
                 period === option
-                  ? "bg-[#276749] text-white shadow-[0_4px_12px_-4px_rgba(39,103,73,0.55)]"
-                  : "text-zinc-500 hover:bg-white/70 hover:text-zinc-800"
+                  ? dark
+                    ? "bg-orange-500/90 text-white shadow-[0_4px_14px_-4px_rgba(249,115,22,0.65)]"
+                    : "bg-[#276749] text-white shadow-[0_4px_12px_-4px_rgba(39,103,73,0.55)]"
+                  : dark
+                    ? "text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+                    : "text-zinc-500 hover:bg-white/70 hover:text-zinc-800"
               )}
             >
               {option}
