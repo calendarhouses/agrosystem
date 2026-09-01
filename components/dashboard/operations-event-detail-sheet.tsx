@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { format } from "date-fns";
 import { uk } from "date-fns/locale";
 import {
+  Camera,
   Loader2,
   PackageMinus,
   Pencil,
@@ -45,6 +46,7 @@ import {
   parseTimelineEventId,
 } from "@/lib/field-timeline-ids";
 import { suppressLocalInventoryMovesRealtimeToast } from "@/lib/realtime-toast-guard";
+import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
 
 type OperationsEventDetailSheetProps = {
@@ -174,32 +176,112 @@ function OperationsInventoryEditForm({
   );
 }
 
-function ScoutingDetailHero({ event }: { event: UnifiedTimelineEvent }) {
+function ScoutingDetailHero({
+  event,
+  fieldName,
+}: {
+  event: UnifiedTimelineEvent;
+  fieldName?: string;
+}) {
+  const isMobile = useIsMobile();
+  const notes = event.notes?.trim() ?? "";
+  const hasPhoto = Boolean(event.imageUrl?.trim());
+
+  if (isMobile) {
+    return (
+      <div className="relative overflow-hidden rounded-3xl border border-sky-500/20 bg-gradient-to-br from-sky-500/10 via-white/[0.04] to-transparent p-5">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <span className="rounded-full border border-sky-500/20 bg-sky-500/10 px-2.5 py-1 text-[10px] font-bold tracking-[0.12em] text-sky-300 uppercase">
+            Скаутинг
+          </span>
+          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-zinc-400">
+            {formatDetailDate(event.date)}
+          </span>
+          <OperationsWeatherBadge weatherContext={event.weatherContext} />
+        </div>
+
+        {hasPhoto ? (
+          <OperationsTimelineImage
+            src={event.imageUrl}
+            variant="dark"
+            aspectClassName="aspect-[4/3] w-full"
+            expandable
+            alt="Фото скаутингу"
+          />
+        ) : (
+          <div className="flex aspect-[4/3] w-full items-center justify-center rounded-xl border border-dashed border-white/15 bg-white/[0.02]">
+            <Camera className="size-8 text-zinc-600" strokeWidth={1.5} />
+          </div>
+        )}
+
+        {notes ? (
+          <p className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-zinc-300">
+            {notes}
+          </p>
+        ) : (
+          <p className="mt-4 text-sm text-zinc-500">Без нотаток</p>
+        )}
+      </div>
+    );
+  }
+
   return (
-    <div className="relative overflow-hidden rounded-3xl border border-sky-500/20 bg-gradient-to-br from-sky-500/10 via-white/[0.04] to-transparent p-5">
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <span className="rounded-full border border-sky-500/20 bg-sky-500/10 px-2.5 py-1 text-[10px] font-bold tracking-[0.12em] text-sky-300 uppercase">
-          Скаутинг
-        </span>
-        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-zinc-400">
+    <div className="space-y-5">
+      {hasPhoto ? (
+        <div className="group relative overflow-hidden rounded-[1.35rem] border border-sky-500/25 bg-gradient-to-b from-sky-500/[0.08] to-transparent p-1.5 shadow-[0_20px_50px_-24px_rgba(14,165,233,0.35)]">
+          <OperationsTimelineImage
+            src={event.imageUrl}
+            variant="dark"
+            aspectClassName="aspect-[5/4] w-full rounded-[1.15rem]"
+            frameClassName="rounded-[1.15rem]"
+            expandable
+            alt="Фото скаутингу"
+          />
+          <div className="pointer-events-none absolute top-4 left-4">
+            <span className="rounded-full border border-sky-400/30 bg-sky-950/85 px-3 py-1 text-[10px] font-bold tracking-[0.14em] text-sky-200 uppercase backdrop-blur-md">
+              Польовий огляд
+            </span>
+          </div>
+        </div>
+      ) : (
+        <div className="flex aspect-[5/4] w-full flex-col items-center justify-center gap-3 rounded-[1.35rem] border border-dashed border-white/15 bg-white/[0.03]">
+          <div className="flex size-14 items-center justify-center rounded-2xl bg-white/[0.05] ring-1 ring-white/10">
+            <Camera className="size-7 text-zinc-500" strokeWidth={1.5} />
+          </div>
+          <p className="text-sm text-zinc-500">Фото не додано</p>
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-zinc-300">
           {formatDetailDate(event.date)}
         </span>
         <OperationsWeatherBadge weatherContext={event.weatherContext} />
+        {fieldName ? (
+          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-zinc-400">
+            {fieldName}
+          </span>
+        ) : null}
       </div>
 
-      <OperationsTimelineImage
-        src={event.imageUrl}
-        variant="dark"
-        aspectClassName="aspect-[4/3] w-full"
-        expandable
-        alt="Фото скаутингу"
-      />
-
-      {event.notes ? (
-        <p className="mt-4 text-sm leading-relaxed text-zinc-300">{event.notes}</p>
-      ) : (
-        <p className="mt-4 text-sm text-zinc-500">Без нотаток</p>
-      )}
+      <section className="relative overflow-hidden rounded-[1.35rem] border border-white/10 bg-gradient-to-br from-white/[0.06] via-white/[0.03] to-transparent p-5">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -top-10 -right-8 size-32 rounded-full bg-sky-500/10 blur-3xl"
+        />
+        <p className="text-[11px] font-bold tracking-[0.12em] text-sky-400/90 uppercase">
+          Звіт агронома
+        </p>
+        {notes ? (
+          <p className="relative mt-3 whitespace-pre-wrap text-[15px] leading-[1.7] text-zinc-100">
+            {notes}
+          </p>
+        ) : (
+          <p className="relative mt-3 text-sm italic text-zinc-500">
+            Агроном не залишив текстового коментаря
+          </p>
+        )}
+      </section>
     </div>
   );
 }
@@ -325,6 +407,7 @@ export function OperationsEventDetailSheet({
   onChanged,
 }: OperationsEventDetailSheetProps) {
   const chrome = useOpsChrome();
+  const isMobile = useIsMobile();
   const [view, setView] = useState<DetailView>("detail");
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -455,7 +538,18 @@ export function OperationsEventDetailSheet({
       ? "Редагувати наряд"
       : view === "edit-inventory"
         ? "Редагувати списання"
-        : (event?.title ?? "Деталі");
+        : isScouting
+          ? "Скаутинг"
+          : (event?.title ?? "Деталі");
+
+  const detailHeaderTitle = isScouting ? "Польовий звіт" : (event?.title ?? "Деталі");
+  const detailHeaderDescription = isScouting ? (
+    field?.name ?? "Поле"
+  ) : (
+    <>
+      {field?.name ?? "Поле"} · {event ? formatDetailDate(event.date) : ""}
+    </>
+  );
 
   return (
     <>
@@ -463,6 +557,7 @@ export function OperationsEventDetailSheet({
         open={open}
         onOpenChange={onOpenChange}
         title={shellTitle}
+        className={isScouting && !isMobile ? "sm:max-w-[32rem]" : undefined}
       >
         {view === "edit-equipment" && field && operation ? (
           <OperationsOperationForm
@@ -489,13 +584,8 @@ export function OperationsEventDetailSheet({
             <OperationsSheetHeader
               icon={isScouting ? Search : isEquipment ? Tractor : PackageMinus}
               accent={isScouting ? "sky" : isEquipment ? "orange" : "emerald"}
-              title={event?.title ?? "Деталі"}
-              description={
-                <>
-                  {field?.name ?? "Поле"} ·{" "}
-                  {event ? formatDetailDate(event.date) : ""}
-                </>
-              }
+              title={detailHeaderTitle}
+              description={detailHeaderDescription}
             />
 
             <div className={chrome.body}>
@@ -506,7 +596,7 @@ export function OperationsEventDetailSheet({
                 </div>
               ) : event ? (
                 isScouting ? (
-                  <ScoutingDetailHero event={event} />
+                  <ScoutingDetailHero event={event} fieldName={field?.name} />
                 ) : (
                   <EventDetailHero
                     event={event}
