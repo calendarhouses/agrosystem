@@ -11,8 +11,10 @@ import { getMyProfileAction } from "@/app/team/actions";
 import { MobileBottomDrawer } from "@/components/layout/mobile-bottom-drawer";
 import { MobileProfilePanel } from "@/components/layout/mobile-profile-panel";
 import {
-  BOTTOM_NAV_ITEMS,
+  BOTTOM_NAV_OPS_PRIMARY,
+  BOTTOM_NAV_OPS_SECONDARY,
   DOCK_BUSINESS_ITEMS,
+  bottomNavPageForPath,
   isNavItemActive,
   PROFILE_DOCK_ITEM,
 } from "@/lib/navigation";
@@ -21,7 +23,6 @@ import type { AppActor } from "@/lib/app-actor-shared";
 import { cn } from "@/lib/utils";
 
 const DOCK_SPRING = { type: "spring" as const, stiffness: 300, damping: 30 };
-/** Поріг зміщення / швидкості для зміни сторінки dock */
 const SWIPE_OFFSET_PX = 56;
 const SWIPE_VELOCITY = 450;
 
@@ -30,12 +31,6 @@ const NAV_TEXT_CLASS =
 
 const NAV_ITEM_CLASS =
   "flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center gap-1 self-stretch px-0.5 pt-1.5 pb-[max(0.25rem,env(safe-area-inset-bottom,0px))] transition-colors duration-200 touch-manipulation";
-
-const slideVariants = {
-  center: { x: "0%" },
-  offLeft: { x: "-100%" },
-  offRight: { x: "100%" },
-};
 
 function shouldGoNext(info: PanInfo): boolean {
   return info.offset.x < -SWIPE_OFFSET_PX || info.velocity.x < -SWIPE_VELOCITY;
@@ -75,54 +70,69 @@ function NavLinkItem({
   );
 }
 
-function DockPage({
-  page,
-  activePage,
-  onSwipeNext,
-  onSwipePrev,
-  children,
+function DockPagerButton({
+  label,
+  ariaLabel,
+  icon: Icon,
+  active,
+  onClick,
 }: {
-  page: 0 | 1;
-  activePage: 0 | 1;
-  onSwipeNext?: () => void;
-  onSwipePrev?: () => void;
-  children: React.ReactNode;
+  label: string;
+  ariaLabel: string;
+  icon: typeof ChevronRight;
+  active?: boolean;
+  onClick: () => void;
 }) {
-  const isActive = activePage === page;
-
-  function handleDragEnd(_event: unknown, info: PanInfo) {
-    if (!isActive) return;
-    if (shouldGoNext(info)) onSwipeNext?.();
-    else if (shouldGoPrev(info)) onSwipePrev?.();
-  }
-
   return (
-    <motion.div
-      variants={slideVariants}
-      initial={false}
-      animate={isActive ? "center" : page === 0 ? "offLeft" : "offRight"}
-      transition={DOCK_SPRING}
-      drag={isActive ? "x" : false}
-      dragConstraints={{ left: 0, right: 0 }}
-      dragElastic={0.18}
-      dragMomentum={false}
-      dragDirectionLock
-      onDragEnd={handleDragEnd}
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      onClick={onClick}
       className={cn(
-        "absolute inset-0 flex items-stretch justify-around px-1",
-        !isActive && "pointer-events-none"
+        NAV_ITEM_CLASS,
+        active ? "text-[#E8A87C]" : "text-zinc-500 active:text-zinc-300"
       )}
-      aria-hidden={!isActive}
     >
-      {children}
-    </motion.div>
+      <Icon className="h-6 w-6" strokeWidth={active ? 2.1 : 1.85} />
+      <span className={NAV_TEXT_CLASS}>{label}</span>
+    </button>
+  );
+}
+
+function DockPageIndicators({
+  activePage,
+  onSelect,
+}: {
+  activePage: 0 | 1 | 2;
+  onSelect: (page: 0 | 1 | 2) => void;
+}) {
+  return (
+    <div
+      className="pointer-events-auto absolute inset-x-0 top-1.5 z-10 flex items-center justify-center gap-1.5"
+      aria-hidden
+    >
+      {([0, 1, 2] as const).map((page) => (
+        <button
+          key={page}
+          type="button"
+          aria-label={`Сторінка меню ${page + 1}`}
+          onClick={() => onSelect(page)}
+          className={cn(
+            "h-1 rounded-full transition-all duration-200",
+            activePage === page
+              ? "w-4 bg-[#E8A87C]"
+              : "w-1 bg-zinc-600 hover:bg-zinc-500"
+          )}
+        />
+      ))}
+    </div>
   );
 }
 
 export function BottomNav() {
   const pathname = usePathname();
   const { revealChrome } = useAppBoot();
-  const [activePage, setActivePage] = useState<0 | 1>(0);
+  const [activePage, setActivePage] = useState<0 | 1 | 2>(0);
   const [profileOpen, setProfileOpen] = useState(false);
   const [me, setMe] = useState<AppActor | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
@@ -151,11 +161,7 @@ export function BottomNav() {
   }, []);
 
   useEffect(() => {
-    if (
-      DOCK_BUSINESS_ITEMS.some((item) => isNavItemActive(pathname, item.href))
-    ) {
-      setActivePage(1);
-    }
+    setActivePage(bottomNavPageForPath(pathname));
   }, [pathname]);
 
   const businessActive = DOCK_BUSINESS_ITEMS.some((item) =>
@@ -163,13 +169,19 @@ export function BottomNav() {
   );
   const profileActive = profileOpen;
 
-  function goToPage(page: 0 | 1) {
+  function goToPage(page: 0 | 1 | 2) {
     if (page === activePage) return;
     setActivePage(page);
   }
 
-  function handleOperationalNavigate() {
-    if (activePage === 1) goToPage(0);
+  function handleDragEnd(_event: unknown, info: PanInfo) {
+    if (shouldGoNext(info) && activePage < 2) {
+      goToPage((activePage + 1) as 1 | 2);
+      return;
+    }
+    if (shouldGoPrev(info) && activePage > 0) {
+      goToPage((activePage - 1) as 0 | 1);
+    }
   }
 
   return (
@@ -189,87 +201,97 @@ export function BottomNav() {
         }}
         style={{ pointerEvents: revealChrome ? "auto" : "none" }}
       >
-        <DockPage
-          page={0}
-          activePage={activePage}
-          onSwipeNext={() => goToPage(1)}
+        <DockPageIndicators activePage={activePage} onSelect={goToPage} />
+
+        <motion.div
+          className="flex h-full w-[300%] touch-pan-y"
+          drag="x"
+          dragConstraints={{ left: 0, right: 0 }}
+          dragElastic={0.12}
+          dragMomentum={false}
+          onDragEnd={handleDragEnd}
+          animate={{ x: `-${activePage * (100 / 3)}%` }}
+          transition={DOCK_SPRING}
         >
-          {BOTTOM_NAV_ITEMS.map((item) => (
-            <NavLinkItem
-              key={item.href}
-              href={item.href}
-              label={item.label}
-              icon={item.icon}
-              active={isNavItemActive(pathname, item.href)}
-              onNavigate={handleOperationalNavigate}
+          <div className="flex w-1/3 shrink-0 items-stretch justify-around px-1 pt-3">
+            {BOTTOM_NAV_OPS_PRIMARY.map((item) => (
+              <NavLinkItem
+                key={item.href}
+                href={item.href}
+                label={item.label}
+                icon={item.icon}
+                active={isNavItemActive(pathname, item.href)}
+              />
+            ))}
+            <DockPagerButton
+              label="Далі"
+              ariaLabel="Ще розділи"
+              icon={ChevronRight}
+              active={activePage > 0 || businessActive}
+              onClick={() => goToPage(1)}
             />
-          ))}
+          </div>
 
-          <button
-            type="button"
-            aria-label="Далі"
-            onClick={() => goToPage(1)}
-            className={cn(
-              NAV_ITEM_CLASS,
-              activePage === 1 || businessActive
-                ? "text-[#E8A87C]"
-                : "text-zinc-500 active:text-zinc-300"
-            )}
-          >
-            <ChevronRight
-              className="h-6 w-6"
-              strokeWidth={activePage === 1 || businessActive ? 2.1 : 1.85}
+          <div className="flex w-1/3 shrink-0 items-stretch justify-around px-1 pt-3">
+            <DockPagerButton
+              label="Назад"
+              ariaLabel="Попередні розділи"
+              icon={ChevronLeft}
+              onClick={() => goToPage(0)}
             />
-            <span className={NAV_TEXT_CLASS}>Далі</span>
-          </button>
-        </DockPage>
-
-        <DockPage
-          page={1}
-          activePage={activePage}
-          onSwipePrev={() => goToPage(0)}
-        >
-          <button
-            type="button"
-            aria-label="Назад"
-            onClick={() => goToPage(0)}
-            className={cn(
-              NAV_ITEM_CLASS,
-              "text-zinc-500 active:text-zinc-300"
-            )}
-          >
-            <ChevronLeft className="h-6 w-6" strokeWidth={1.85} />
-            <span className={NAV_TEXT_CLASS}>Назад</span>
-          </button>
-
-          {DOCK_BUSINESS_ITEMS.map((item) => (
-            <NavLinkItem
-              key={item.href}
-              href={item.href}
-              label={item.label}
-              icon={item.icon}
-              active={isNavItemActive(pathname, item.href)}
+            {BOTTOM_NAV_OPS_SECONDARY.map((item) => (
+              <NavLinkItem
+                key={item.href}
+                href={item.href}
+                label={item.label}
+                icon={item.icon}
+                active={isNavItemActive(pathname, item.href)}
+              />
+            ))}
+            <DockPagerButton
+              label="Далі"
+              ariaLabel="Фінанси та бухгалтерія"
+              icon={ChevronRight}
+              active={activePage === 2 || businessActive}
+              onClick={() => goToPage(2)}
             />
-          ))}
+          </div>
 
-          <button
-            type="button"
-            aria-label={PROFILE_DOCK_ITEM.label}
-            onClick={() => setProfileOpen(true)}
-            className={cn(
-              NAV_ITEM_CLASS,
-              profileActive
-                ? "text-[#E8A87C]"
-                : "text-zinc-500 active:text-zinc-300"
-            )}
-          >
-            <PROFILE_DOCK_ITEM.icon
-              className="h-6 w-6"
-              strokeWidth={profileActive ? 2.1 : 1.85}
+          <div className="flex w-1/3 shrink-0 items-stretch justify-around px-1 pt-3">
+            <DockPagerButton
+              label="Назад"
+              ariaLabel="Операційні розділи"
+              icon={ChevronLeft}
+              onClick={() => goToPage(1)}
             />
-            <span className={NAV_TEXT_CLASS}>{PROFILE_DOCK_ITEM.label}</span>
-          </button>
-        </DockPage>
+            {DOCK_BUSINESS_ITEMS.map((item) => (
+              <NavLinkItem
+                key={item.href}
+                href={item.href}
+                label={item.label}
+                icon={item.icon}
+                active={isNavItemActive(pathname, item.href)}
+              />
+            ))}
+            <button
+              type="button"
+              aria-label={PROFILE_DOCK_ITEM.label}
+              onClick={() => setProfileOpen(true)}
+              className={cn(
+                NAV_ITEM_CLASS,
+                profileActive
+                  ? "text-[#E8A87C]"
+                  : "text-zinc-500 active:text-zinc-300"
+              )}
+            >
+              <PROFILE_DOCK_ITEM.icon
+                className="h-6 w-6"
+                strokeWidth={profileActive ? 2.1 : 1.85}
+              />
+              <span className={NAV_TEXT_CLASS}>{PROFILE_DOCK_ITEM.label}</span>
+            </button>
+          </div>
+        </motion.div>
       </motion.nav>
 
       <MobileBottomDrawer
