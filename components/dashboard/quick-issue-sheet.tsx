@@ -55,6 +55,7 @@ import {
   opsSheetFooterClass,
 } from "@/components/dashboard/operations-sheet-chrome";
 import { Button } from "@/components/ui/button";
+import { DrawerHeaderHandle } from "@/components/ui/drawer";
 import {
   Command,
   CommandEmpty,
@@ -409,7 +410,9 @@ export function QuickIssueSheet({
           }}
         />
       ) : (
-      <div className="shrink-0 bg-[#F4F1EA] px-4 pb-3 pt-1 text-left md:px-5">
+      <div className="relative shrink-0 overflow-hidden border-b border-[#E5DFD3]/80 bg-[#F4F1EA]">
+        {variant === "panel" ? <DrawerHeaderHandle theme="light" className="md:hidden" /> : null}
+        <div className="px-4 pb-3 pt-0 text-left md:px-5">
         <button
           type="button"
           onClick={() => {
@@ -443,6 +446,7 @@ export function QuickIssueSheet({
               </p>
             )}
           </div>
+        </div>
         </div>
       </div>
       )

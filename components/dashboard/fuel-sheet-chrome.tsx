@@ -5,8 +5,9 @@ import { createPortal } from "react-dom";
 import {
   Drawer,
   DrawerContent,
-  DrawerHandle,
+  DrawerHeaderHandle,
   DrawerTitle,
+  DRAWER_CLOSE_BELOW_HANDLE_CLASS,
 } from "@/components/ui/drawer";
 import {
   Sheet,
@@ -161,11 +162,11 @@ export function FuelPanelShell({
             className={cn(
               FUEL_MOBILE_DRAWER_SIZE,
               "flex flex-col overflow-hidden border-[#E5DFD3]/90 bg-[#F4F1EA] pb-0",
+              DRAWER_CLOSE_BELOW_HANDLE_CLASS,
               className
             )}
             showCloseButton
           >
-            <DrawerHandle />
             <DrawerTitle className="sr-only">{title}</DrawerTitle>
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
               {children}
@@ -208,10 +209,12 @@ export function FuelSheetHeader({
   meta,
   className,
 }: FuelSheetHeaderProps) {
+  const isMobile = useIsMobile();
+
   return (
     <div
       className={cn(
-        "relative shrink-0 overflow-hidden border-b border-[#E5DFD3]/80 px-5 py-5 pr-14 sm:px-6",
+        "relative shrink-0 overflow-hidden border-b border-[#E5DFD3]/80",
         className
       )}
     >
@@ -227,25 +230,34 @@ export function FuelSheetHeader({
         className="pointer-events-none absolute -top-16 -right-10 h-40 w-40 rounded-full bg-white/50 blur-3xl"
       />
 
-      <div className="relative flex items-start gap-3.5">
-        <div
-          className={cn(
-            "flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl shadow-lg",
-            accentWell[accent]
-          )}
-        >
-          <Icon className="h-[18px] w-[18px]" strokeWidth={1.9} />
-        </div>
-        <div className="min-w-0 flex-1 pt-0.5">
-          <h2 className="text-[1.05rem] font-bold tracking-tight text-zinc-900 sm:text-lg">
-            {title}
-          </h2>
-          {description ? (
-            <p className="mt-1 text-[13px] leading-snug text-zinc-500">
-              {description}
-            </p>
-          ) : null}
-          {meta ? <div className="mt-2.5">{meta}</div> : null}
+      {isMobile ? <DrawerHeaderHandle theme="light" /> : null}
+
+      <div
+        className={cn(
+          "relative px-5 pb-5 pr-14 sm:px-6",
+          isMobile ? "pt-0" : "pt-5"
+        )}
+      >
+        <div className="flex items-start gap-3.5">
+          <div
+            className={cn(
+              "flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl shadow-lg",
+              accentWell[accent]
+            )}
+          >
+            <Icon className="h-[18px] w-[18px]" strokeWidth={1.9} />
+          </div>
+          <div className="min-w-0 flex-1 pt-0.5">
+            <h2 className="text-[1.05rem] font-bold tracking-tight text-zinc-900 sm:text-lg">
+              {title}
+            </h2>
+            {description ? (
+              <p className="mt-1 text-[13px] leading-snug text-zinc-500">
+                {description}
+              </p>
+            ) : null}
+            {meta ? <div className="mt-2.5">{meta}</div> : null}
+          </div>
         </div>
       </div>
     </div>

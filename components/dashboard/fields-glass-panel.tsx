@@ -22,7 +22,7 @@ import { useAppBoot } from "@/lib/app-boot";
 import {
   Drawer,
   DrawerContent,
-  DrawerHandle,
+  DrawerHeaderHandle,
   DrawerTitle,
   NonModalDrawerBackdrop,
 } from "@/components/ui/drawer";
@@ -394,7 +394,9 @@ export function FieldsGlassPanel({
   const list = (
     <div className="flex h-full min-h-0 flex-col">
       {/* Верх шторки — без data-vaul-no-drag, щоб свайп вниз закривав */}
-      <div className="shrink-0 border-b border-white/30 px-3 py-3 pr-14">
+      <div className="relative shrink-0 border-b border-white/30">
+        <DrawerHeaderHandle theme="light" className="md:hidden" />
+        <div className="px-3 py-3 pr-14 md:py-3">
         <div
           className={cn(
             "items-center gap-2",
@@ -466,6 +468,7 @@ export function FieldsGlassPanel({
             enterKeyHint="search"
             autoComplete="off"
           />
+        </div>
         </div>
       </div>
 
@@ -674,7 +677,6 @@ export function FieldsGlassPanel({
             <DrawerTitle className="sr-only">
               {mobileDetailOpen ? "Деталі поля" : "Список полів"}
             </DrawerTitle>
-            <DrawerHandle />
             <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
               <motion.div
                 className="flex h-full min-h-0 min-w-0"

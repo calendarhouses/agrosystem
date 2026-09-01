@@ -81,7 +81,7 @@ export function OperationsMatrixView() {
 
   return (
     <section className="flex h-full min-h-0 flex-1 flex-col bg-zinc-950 text-zinc-50">
-      <header className="shrink-0 border-b border-white/5 px-4 pt-[max(0.75rem,var(--safe-top))] pb-3">
+      <header className="shrink-0 border-b border-white/5 px-4 pt-[max(0.75rem,var(--safe-top))] pb-2">
         <div className="relative mb-3 flex h-10 items-center justify-center">
           <button
             type="button"
@@ -120,15 +120,18 @@ export function OperationsMatrixView() {
           {...periodFilter}
           theme="dark"
           loading={isLoading}
+          className="space-y-2"
         />
       </header>
 
       <div
         className={cn(
-          "min-h-0 flex-1 overflow-y-auto overscroll-y-auto px-4 py-4",
-          "[touch-action:pan-y] [-webkit-overflow-scrolling:touch]",
+          "min-h-0 flex-1 overflow-y-auto overscroll-y-auto px-4 pt-1.5 pb-4",
+          "touch-pan-y [-webkit-overflow-scrolling:touch]",
           "pb-[calc(var(--bottom-nav-height)+1rem)] md:pb-6"
         )}
+        data-allow-pan="true"
+        data-vaul-no-drag=""
       >
         {!isLoading && error ? (
           <div className="mb-4 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">

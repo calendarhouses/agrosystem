@@ -487,7 +487,7 @@ export function EquipmentAdmin({ equipment, implements_, wialonUnits }: Props) {
           side="right"
           className="w-full max-w-md gap-0 sm:max-w-md"
         >
-          <SheetHeader className="border-b border-border/60">
+          <SheetHeader className="border-b border-border/60 p-4">
             <SheetTitle>Ширина захвату</SheetTitle>
             <SheetDescription>
               {editImpl?.name ?? "Знаряддя"}

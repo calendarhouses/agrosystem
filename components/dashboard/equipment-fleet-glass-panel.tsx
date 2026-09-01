@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import {
   Drawer,
   DrawerContent,
-  DrawerHandle,
+  DrawerHeaderHandle,
   DrawerTitle,
   NonModalDrawerBackdrop,
 } from "@/components/ui/drawer";
@@ -338,7 +338,9 @@ export function EquipmentFleetGlassPanel({
 
   const listView = (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="border-b border-white/30 px-4 py-3 pr-14">
+      <div className="relative shrink-0 border-b border-white/30">
+        <DrawerHeaderHandle theme="light" />
+        <div className="px-4 py-3 pr-14">
         <div className="flex items-center gap-2">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-600/90 text-white shadow-md">
             <Radar className="h-4 w-4" />
@@ -356,6 +358,7 @@ export function EquipmentFleetGlassPanel({
               · GPS наживо
             </p>
           </div>
+        </div>
         </div>
       </div>
 
@@ -487,7 +490,9 @@ export function EquipmentFleetGlassPanel({
 
   const detailView = (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="border-b border-white/30 px-3 py-2.5 pr-14">
+      <div className="relative shrink-0 border-b border-white/30">
+        <DrawerHeaderHandle theme="light" />
+        <div className="px-3 py-2.5 pr-14">
         <div className="flex items-center gap-2">
           <Button
             type="button"
@@ -516,6 +521,7 @@ export function EquipmentFleetGlassPanel({
             {selectedUnitName}
           </p>
         ) : null}
+        </div>
       </div>
       <div
         className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-3 py-3"
@@ -648,7 +654,6 @@ export function EquipmentFleetGlassPanel({
                 "flex flex-col border-[#E5DFD3]/90 bg-[#F4F1EA] pb-3"
               )}
             >
-              <DrawerHandle />
               <DrawerTitle className="sr-only">
                 {showDetail
                   ? selectedUnitName || "Картка техніки"
@@ -660,7 +665,7 @@ export function EquipmentFleetGlassPanel({
                   aria-label="Закрити"
                   onClick={() => onMobileExpandedChange(false)}
                   className={cn(
-                    "absolute top-0.5 right-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full",
+                    "absolute top-10 right-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full",
                     "bg-white/80 text-zinc-500 shadow-sm ring-1 ring-zinc-200/80",
                     "transition-colors hover:bg-white hover:text-zinc-800",
                     "touch-manipulation"

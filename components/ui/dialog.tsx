@@ -3,7 +3,7 @@
 import * as React from "react"
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog"
 
-import { SwipeableSheet } from "@/components/ui/swipe-sheet"
+import { SwipeableSheet, SheetDragHandle, useSwipeSheetDrag } from "@/components/ui/swipe-sheet"
 import { useIsMobile } from "@/lib/use-mobile"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -80,6 +80,7 @@ function DialogContent({
         {useSheet ? (
           <SwipeableSheet
             className="max-h-[var(--app-sheet-max)]"
+            showHandle={false}
             onSwipeDown={() => closeRef.current?.click()}
           >
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-none p-4">
@@ -114,13 +115,24 @@ function DialogContent({
   )
 }
 
-function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
+function DialogHeader({ className, children, ...props }: React.ComponentProps<"div">) {
+  const isMobile = useIsMobile()
+  const startDrag = useSwipeSheetDrag()
+
   return (
     <div
       data-slot="dialog-header"
-      className={cn("flex flex-col gap-2", className)}
+      className={cn("relative flex flex-col gap-2", className)}
       {...props}
-    />
+    >
+      {isMobile && startDrag ? (
+        <SheetDragHandle
+          className="pt-1.5 pb-0"
+          onPointerDown={startDrag}
+        />
+      ) : null}
+      {children}
+    </div>
   )
 }
 

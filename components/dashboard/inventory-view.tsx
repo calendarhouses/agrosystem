@@ -64,6 +64,7 @@ import {
   fuelSheetBodyClass,
 } from "@/components/dashboard/fuel-sheet-chrome";
 import { Button } from "@/components/ui/button";
+import { DrawerHeaderHandle } from "@/components/ui/drawer";
 import { Calendar } from "@/components/ui/calendar";
 import {
   DropdownMenu,
@@ -2136,6 +2137,9 @@ function ItemDocumentsSheet({
   if (!item) {
     return (
       <FuelPanelShell open={open} onOpenChange={onOpenChange} title="Позиція">
+        <div className="relative shrink-0 overflow-hidden border-b border-[#E5DFD3]/80">
+          <DrawerHeaderHandle theme="light" className="md:hidden" />
+        </div>
         <div className="px-5 py-10 text-center text-sm text-zinc-500">
           Позицію не знайдено
         </div>

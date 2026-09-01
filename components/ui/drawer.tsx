@@ -194,6 +194,33 @@ function DrawerHandle({
   )
 }
 
+export type DrawerHandleTheme = "light" | "dark"
+
+/** Ручка свайпу всередині кольорового заголовка шторки (не окремою смугою). */
+export function DrawerHeaderHandle({
+  theme = "light",
+  className,
+  ...props
+}: React.ComponentProps<typeof DrawerPrimitive.Handle> & {
+  theme?: DrawerHandleTheme
+}) {
+  return (
+    <DrawerHandle
+      className={cn(
+        "relative z-10 mb-0 h-9 shrink-0 bg-transparent",
+        "before:h-1 before:w-10",
+        theme === "dark" ? "before:bg-white/35" : "before:bg-zinc-400/80",
+        className
+      )}
+      {...props}
+    />
+  )
+}
+
+/** Зсув кнопки закриття під ручку в заголовку. */
+export const DRAWER_CLOSE_BELOW_HANDLE_CLASS =
+  "[&_[data-slot=drawer-close]]:top-10"
+
 function DrawerHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div

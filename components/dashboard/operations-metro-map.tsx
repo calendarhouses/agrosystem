@@ -47,20 +47,21 @@ import { cn } from "@/lib/utils";
 
 const STATION_CARD_WIDTH = 216;
 const STATION_STEP = 252;
-const STATION_HALF = STATION_CARD_WIDTH / 2;
+const TRACK_PAD_X = STATION_CARD_WIDTH / 2 + 24;
 const TRACK_HEIGHT = 392;
 const LINE_Y_TOP = 156;
 const LINE_Y_BOTTOM = 248;
 
-function stationX(index: number, count: number, trackWidth: number): number {
-  if (count <= 1) return trackWidth / 2;
-  const span = Math.max(trackWidth - STATION_CARD_WIDTH, 0);
-  return STATION_HALF + (index / (count - 1)) * span;
+/** Фіксована позиція станції — картки лишаються як раніше */
+function stationX(index: number): number {
+  return TRACK_PAD_X + index * STATION_STEP;
 }
 
 function minTrackWidth(count: number): number {
-  if (count <= 1) return STATION_CARD_WIDTH;
-  return STATION_CARD_WIDTH + (count - 1) * STATION_STEP;
+  if (count <= 1) {
+    return STATION_CARD_WIDTH + TRACK_PAD_X * 2;
+  }
+  return STATION_STEP * Math.max(count - 1, 0) + TRACK_PAD_X * 2;
 }
 
 function useContainerWidth(ref: RefObject<HTMLElement | null>) {
@@ -129,16 +130,16 @@ function buildMetroSegments(
   yPositions: number[],
   trackWidth: number
 ): string[] {
-  if (count < 1) return [];
+  if (count < 2) return [];
 
   const segments: string[] = [];
-  const firstX = stationX(0, count, trackWidth);
+  const firstX = stationX(0);
   const firstY = yPositions[0] ?? LINE_Y_TOP;
   segments.push(`M 0 ${firstY} H ${firstX}`);
 
   for (let i = 1; i < count; i++) {
-    const x0 = stationX(i - 1, count, trackWidth);
-    const x1 = stationX(i, count, trackWidth);
+    const x0 = stationX(i - 1);
+    const x1 = stationX(i);
     const y0 = yPositions[i - 1] ?? LINE_Y_TOP;
     const y1 = yPositions[i] ?? LINE_Y_BOTTOM;
     const midX = (x0 + x1) / 2;
@@ -147,7 +148,7 @@ function buildMetroSegments(
     );
   }
 
-  const lastX = stationX(count - 1, count, trackWidth);
+  const lastX = stationX(count - 1);
   const lastY = yPositions[count - 1] ?? LINE_Y_BOTTOM;
   segments.push(`M ${lastX} ${lastY} H ${trackWidth}`);
 
@@ -168,6 +169,7 @@ function MetroStationCard({
       className={cn(
         "relative z-10 w-[13.5rem] rounded-2xl border border-white/10 bg-white/[0.07] p-3 text-left backdrop-blur-md",
         "shadow-[0_12px_40px_-20px_rgba(0,0,0,0.85)] transition",
+        "touch-pan-xy",
         "hover:border-white/20 hover:bg-white/[0.12] active:scale-[0.98]"
       )}
     >
@@ -239,15 +241,17 @@ function MetroSingleStationTrack({
   field: FieldTimelineField;
 }) {
   return (
-    <div className="py-3">
-      <div className="mb-3 flex justify-center px-4">
-        <MetroStationCard
-          event={event}
-          onClick={() => onEventClick?.(field, event)}
-        />
+    <div className="touch-pan-xy py-3">
+      <div className="relative mx-auto mb-3 max-w-sm px-4">
+        <div className="flex justify-center">
+          <MetroStationCard
+            event={event}
+            onClick={() => onEventClick?.(field, event)}
+          />
+        </div>
       </div>
 
-      <div className="relative h-5 w-full">
+      <div className="relative h-5 w-full touch-pan-y">
         <svg
           className="absolute inset-0 h-full w-full overflow-visible"
           preserveAspectRatio="none"
@@ -352,7 +356,10 @@ function MetroFieldLine({
         </div>
       </AccordionTrigger>
 
-      <AccordionContent className="overflow-visible pb-0 touch-pan-y">
+      <AccordionContent
+        className="overflow-visible pb-0 touch-pan-xy"
+        data-allow-pan="true"
+      >
         {events.length === 0 ? (
           <div className="px-4 py-10 text-center">
             <p className="text-sm text-zinc-500 italic">
@@ -377,15 +384,16 @@ function MetroFieldLine({
         ) : (
           <div
             ref={trackContainerRef}
-            className="relative py-2"
+            className="relative touch-pan-xy py-2"
+            data-allow-pan="true"
             style={{ overscrollBehaviorX: "contain" }}
           >
             <div
-              className="overflow-x-auto overscroll-x-contain pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              className="touch-pan-xy overflow-x-auto overscroll-x-contain overscroll-y-auto pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
               aria-label={`Хронологія поля ${item.field.name}`}
             >
               <div
-                className="relative"
+                className="relative touch-pan-xy"
                 style={{ width: trackWidth, height: TRACK_HEIGHT }}
               >
                 <svg
@@ -419,7 +427,7 @@ function MetroFieldLine({
                 </svg>
 
                 {events.map((event, index) => {
-                  const x = stationX(index, events.length, trackWidth);
+                  const x = stationX(index);
                   const y = yPositions[index] ?? LINE_Y_TOP;
                   const cardAbove = y === LINE_Y_TOP;
 
@@ -641,11 +649,11 @@ export function OperationsMetroMap({
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       <button
         type="button"
         onClick={() => setSelectedCropId(null)}
-        className="inline-flex min-h-10 items-center gap-1.5 rounded-xl px-1 text-sm font-medium text-zinc-400 transition hover:text-zinc-100"
+        className="inline-flex min-h-8 items-center gap-1.5 rounded-xl px-1 text-sm font-medium text-zinc-400 transition hover:text-zinc-100"
       >
         <ChevronLeft className="size-4" />
         Усі культури

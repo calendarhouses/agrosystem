@@ -69,8 +69,9 @@ import {
 import {
   Drawer,
   DrawerContent,
-  DrawerHandle,
+  DrawerHeaderHandle,
   DrawerTitle,
+  DRAWER_CLOSE_BELOW_HANDLE_CLASS,
   NonModalDrawerBackdrop,
 } from "@/components/ui/drawer";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -1938,6 +1939,9 @@ export function FieldDetailSheet({
                   : "border-[#E5DFD3] bg-gradient-to-br from-[#E8F0EA] via-[#F4F1EA] to-[#EDE8DF]"
               )}
             >
+                {isMobile && (embeddedInMobileDrawer || variant === "sheet") ? (
+                  <DrawerHeaderHandle theme="light" className="-mt-1" />
+                ) : null}
                 <div
                   className="pointer-events-none absolute -top-14 -right-8 h-32 w-32 rounded-full bg-[#276749]/10 blur-3xl"
                   aria-hidden
@@ -2678,11 +2682,11 @@ export function FieldDetailSheet({
           showOverlay={false}
           className={cn(
             FIELDS_MOBILE_DRAWER_SIZE,
-            "flex flex-col overflow-hidden border-[#E5DFD3]/90 bg-[#F4F1EA] pb-0"
+            "flex flex-col overflow-hidden border-[#E5DFD3]/90 bg-[#F4F1EA] pb-0",
+            DRAWER_CLOSE_BELOW_HANDLE_CLASS
           )}
           showCloseButton
         >
-        <DrawerHandle />
         <DrawerTitle className="sr-only">
           {field?.name ? `Поле ${field.name}` : "Деталі поля"}
         </DrawerTitle>

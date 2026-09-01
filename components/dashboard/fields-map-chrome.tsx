@@ -19,8 +19,8 @@ import { Label } from "@/components/ui/label";
 import {
   Drawer,
   DrawerContent,
-  DrawerHandle,
   DrawerHeader,
+  DrawerHeaderHandle,
   DrawerTitle,
 } from "@/components/ui/drawer";
 import {
@@ -404,21 +404,23 @@ export function FieldsMapChrome({ align = "end" }: FieldsMapChromeProps) {
             >
               <DrawerContent
                 overlayClassName="bg-black/70"
-                className="max-h-[calc(92dvh-var(--app-bottom-inset))] gap-0 border-[#E5DFD3]/90 bg-[#F4F1EA] pb-3"
+                className="max-h-[calc(92dvh-var(--app-bottom-inset))] gap-0 border-[#E5DFD3]/90 bg-[#F4F1EA] pb-3 [&_[data-slot=drawer-close]]:top-10"
               >
                 <DrawerTitle className="sr-only">Локація погоди</DrawerTitle>
-                <DrawerHandle />
-                <DrawerHeader className="gap-1 border-b border-[#E5DFD3]/80 pb-3 pt-0">
-                  <DrawerTitle className="flex items-center gap-2 text-base font-bold text-zinc-900">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-700/10">
-                      <MapPin className="h-4 w-4 text-emerald-700" />
-                    </span>
-                    Локація погоди
-                  </DrawerTitle>
-                  <p className="pl-10 text-[12px] leading-snug text-zinc-500">
-                    Джерело прогнозу для карти та полів
-                  </p>
-                </DrawerHeader>
+                <div className="relative shrink-0 overflow-hidden border-b border-[#E5DFD3]/80 bg-[#F4F1EA]">
+                  <DrawerHeaderHandle theme="light" />
+                  <DrawerHeader className="gap-1 px-4 pb-3 pt-0">
+                    <DrawerTitle className="flex items-center gap-2 text-base font-bold text-zinc-900">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-700/10">
+                        <MapPin className="h-4 w-4 text-emerald-700" />
+                      </span>
+                      Локація погоди
+                    </DrawerTitle>
+                    <p className="pl-10 text-[12px] leading-snug text-zinc-500">
+                      Джерело прогнозу для карти та полів
+                    </p>
+                  </DrawerHeader>
+                </div>
                 <div
                   className="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y px-4 py-4"
                   data-allow-pan="true"

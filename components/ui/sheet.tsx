@@ -6,7 +6,7 @@ import { Dialog as SheetPrimitive } from "@base-ui/react/dialog"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { XIcon } from "lucide-react"
-import { SwipeableSheet } from "@/components/ui/swipe-sheet"
+import { SwipeableSheet, SheetDragHandle, useSwipeSheetDrag } from "@/components/ui/swipe-sheet"
 import { useIsMobile } from "@/lib/use-mobile"
 
 const OVERLAY_Z = "z-[260]"
@@ -91,6 +91,7 @@ function SheetContent({
           <>
             <SwipeableSheet
               className="min-h-0 flex-1"
+              showHandle={false}
               onSwipeDown={() => closeRef.current?.click()}
             >
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -124,13 +125,24 @@ function SheetContent({
   )
 }
 
-function SheetHeader({ className, ...props }: React.ComponentProps<"div">) {
+function SheetHeader({ className, children, ...props }: React.ComponentProps<"div">) {
+  const isMobile = useIsMobile()
+  const startDrag = useSwipeSheetDrag()
+
   return (
     <div
       data-slot="sheet-header"
-      className={cn("flex flex-col gap-0.5 p-4", className)}
+      className={cn("relative flex flex-col gap-0.5", className)}
       {...props}
-    />
+    >
+      {isMobile && startDrag ? (
+        <SheetDragHandle
+          className="pt-1.5 pb-0"
+          onPointerDown={startDrag}
+        />
+      ) : null}
+      {children}
+    </div>
   )
 }
 

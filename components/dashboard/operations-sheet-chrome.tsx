@@ -18,8 +18,9 @@ import {
 import {
   Drawer,
   DrawerContent,
-  DrawerHandle,
+  DrawerHeaderHandle,
   DrawerTitle,
+  DRAWER_CLOSE_BELOW_HANDLE_CLASS,
 } from "@/components/ui/drawer";
 import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
@@ -241,15 +242,13 @@ export function OperationsPanelShell({
           className={cn(
             OPS_MOBILE_DRAWER_SIZE,
             "flex flex-col overflow-hidden !border-white/10 !bg-zinc-950 pb-0 text-zinc-50",
-            "[&_[data-slot=drawer-handle]]:bg-zinc-950",
-            "[&_[data-slot=drawer-handle]]:before:bg-zinc-600/70",
+            DRAWER_CLOSE_BELOW_HANDLE_CLASS,
             "[&_[data-slot=drawer-close]]:bg-white/10 [&_[data-slot=drawer-close]]:text-zinc-300 [&_[data-slot=drawer-close]]:ring-white/10",
             "[&_[data-slot=drawer-close]]:hover:bg-white/15 [&_[data-slot=drawer-close]]:hover:text-zinc-50",
             className
           )}
           showCloseButton
         >
-          <DrawerHandle className="mb-0 shrink-0 bg-zinc-950 before:bg-zinc-600/70" />
           <DrawerTitle className="sr-only">{title}</DrawerTitle>
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             {children}
@@ -277,10 +276,12 @@ export function OperationsSheetHeader({
   meta?: ReactNode;
   className?: string;
 }) {
+  const isMobile = useIsMobile();
+
   return (
     <div
       className={cn(
-        "relative shrink-0 overflow-hidden border-b border-white/10 px-4 py-4 pr-14 md:px-5",
+        "relative shrink-0 overflow-hidden border-b border-white/10",
         className
       )}
     >
@@ -296,36 +297,45 @@ export function OperationsSheetHeader({
         className="pointer-events-none absolute -top-16 -right-10 h-40 w-40 rounded-full bg-emerald-500/10 blur-3xl"
       />
 
-      {onBack ? (
-        <button
-          type="button"
-          onClick={onBack}
-          className="relative mb-3 inline-flex min-h-10 items-center gap-1.5 rounded-lg px-1 text-sm font-medium text-zinc-400 transition-colors hover:text-zinc-100"
-        >
-          <ChevronLeft className="size-4" />
-          Назад
-        </button>
-      ) : null}
+      {isMobile ? <DrawerHeaderHandle theme="dark" /> : null}
 
-      <div className="relative flex items-start gap-3.5">
-        <div
-          className={cn(
-            "flex size-11 shrink-0 items-center justify-center rounded-2xl shadow-lg",
-            accentWell[accent]
-          )}
-        >
-          <Icon className="size-[18px]" strokeWidth={1.9} />
-        </div>
-        <div className="min-w-0 flex-1 pt-0.5">
-          <h2 className="text-[1.15rem] font-bold tracking-tight text-zinc-50 sm:text-lg">
-            {title}
-          </h2>
-          {description ? (
-            <p className="mt-1 text-[13px] leading-snug text-zinc-400">
-              {description}
-            </p>
-          ) : null}
-          {meta ? <div className="mt-2.5">{meta}</div> : null}
+      <div
+        className={cn(
+          "relative px-4 pb-4 pr-14 md:px-5",
+          isMobile ? "pt-0" : "pt-4"
+        )}
+      >
+        {onBack ? (
+          <button
+            type="button"
+            onClick={onBack}
+            className="relative mb-3 inline-flex min-h-10 items-center gap-1.5 rounded-lg px-1 text-sm font-medium text-zinc-400 transition-colors hover:text-zinc-100"
+          >
+            <ChevronLeft className="size-4" />
+            Назад
+          </button>
+        ) : null}
+
+        <div className="relative flex items-start gap-3.5">
+          <div
+            className={cn(
+              "flex size-11 shrink-0 items-center justify-center rounded-2xl shadow-lg",
+              accentWell[accent]
+            )}
+          >
+            <Icon className="size-[18px]" strokeWidth={1.9} />
+          </div>
+          <div className="min-w-0 flex-1 pt-0.5">
+            <h2 className="text-[1.15rem] font-bold tracking-tight text-zinc-50 sm:text-lg">
+              {title}
+            </h2>
+            {description ? (
+              <p className="mt-1 text-[13px] leading-snug text-zinc-400">
+                {description}
+              </p>
+            ) : null}
+            {meta ? <div className="mt-2.5">{meta}</div> : null}
+          </div>
         </div>
       </div>
     </div>

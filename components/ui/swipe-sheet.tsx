@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  createContext,
+  useContext,
   useRef,
   type PointerEvent,
   type ReactNode,
@@ -9,6 +11,14 @@ import {
 import { motion, useDragControls, type PanInfo } from "framer-motion";
 
 import { cn } from "@/lib/utils";
+
+type SwipeSheetDragStart = (event: PointerEvent<HTMLElement>) => void;
+
+const SwipeSheetDragContext = createContext<SwipeSheetDragStart | null>(null);
+
+export function useSwipeSheetDrag() {
+  return useContext(SwipeSheetDragContext);
+}
 
 export function SheetDragHandle({
   className,
@@ -95,35 +105,37 @@ export function SwipeableSheet({
   }
 
   return (
-    <motion.div
-      className={cn("flex h-full min-h-0 flex-col", className)}
-      drag={disabled ? false : "y"}
-      dragControls={dragControls}
-      dragListener={false}
-      dragConstraints={{ top: 0, bottom: 0 }}
-      dragElastic={{ top: 0.18, bottom: 0.35 }}
-      dragMomentum={false}
-      dragPropagation={false}
-      onDragEnd={handleDragEnd}
-    >
-      {showHandle && !disabled ? (
-        <SheetDragHandle
-          className={handleClassName}
-          onPointerDown={startDrag}
-        />
-      ) : null}
-      {dragHandle ? (
-        <div className="shrink-0 touch-none" onPointerDown={startDrag}>
-          {dragHandle}
-        </div>
-      ) : null}
-      <div
-        ref={scrollRef}
-        className="flex min-h-0 flex-1 flex-col overflow-hidden overscroll-none"
-        onTouchStart={lockDragWhenScrolled ? handleTouchStart : undefined}
+    <SwipeSheetDragContext.Provider value={startDrag}>
+      <motion.div
+        className={cn("flex h-full min-h-0 flex-col", className)}
+        drag={disabled ? false : "y"}
+        dragControls={dragControls}
+        dragListener={false}
+        dragConstraints={{ top: 0, bottom: 0 }}
+        dragElastic={{ top: 0.18, bottom: 0.35 }}
+        dragMomentum={false}
+        dragPropagation={false}
+        onDragEnd={handleDragEnd}
       >
-        {children}
-      </div>
-    </motion.div>
+        {showHandle && !disabled ? (
+          <SheetDragHandle
+            className={handleClassName}
+            onPointerDown={startDrag}
+          />
+        ) : null}
+        {dragHandle ? (
+          <div className="shrink-0 touch-none" onPointerDown={startDrag}>
+            {dragHandle}
+          </div>
+        ) : null}
+        <div
+          ref={scrollRef}
+          className="flex min-h-0 flex-1 flex-col overflow-hidden overscroll-none"
+          onTouchStart={lockDragWhenScrolled ? handleTouchStart : undefined}
+        >
+          {children}
+        </div>
+      </motion.div>
+    </SwipeSheetDragContext.Provider>
   );
 }

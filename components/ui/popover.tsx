@@ -4,7 +4,7 @@ import * as React from "react"
 import { XIcon } from "lucide-react"
 import { Popover as PopoverPrimitive } from "@base-ui/react/popover"
 
-import { SwipeableSheet } from "@/components/ui/swipe-sheet"
+import { SwipeableSheet, SheetDragHandle, useSwipeSheetDrag } from "@/components/ui/swipe-sheet"
 import { useInsideDrawer, useDrawerOpenInDom } from "@/components/ui/drawer"
 import { useIsMobile } from "@/lib/use-mobile"
 import { cn } from "@/lib/utils"
@@ -77,6 +77,7 @@ function PopoverContent({
         <>
           <SwipeableSheet
             className="max-h-[var(--app-sheet-max)]"
+            showHandle={false}
             onSwipeDown={() => closeRef.current?.click()}
           >
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-none p-4 pr-12 pt-2">
@@ -147,13 +148,24 @@ function PopoverContent({
   )
 }
 
-function PopoverHeader({ className, ...props }: React.ComponentProps<"div">) {
+function PopoverHeader({ className, children, ...props }: React.ComponentProps<"div">) {
+  const isMobile = useIsMobile()
+  const startDrag = useSwipeSheetDrag()
+
   return (
     <div
       data-slot="popover-header"
-      className={cn("flex flex-col gap-0.5 text-sm", className)}
+      className={cn("relative flex flex-col gap-0.5 text-sm", className)}
       {...props}
-    />
+    >
+      {isMobile && startDrag ? (
+        <SheetDragHandle
+          className="pt-1.5 pb-0"
+          onPointerDown={startDrag}
+        />
+      ) : null}
+      {children}
+    </div>
   )
 }
 

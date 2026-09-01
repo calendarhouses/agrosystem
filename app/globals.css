@@ -277,6 +277,13 @@ html[data-app-nav="1"] {
   overscroll-behavior: none;
 }
 
+/* Горизонтальний скрол всередині вертикального: не блокувати pan-y батьківського контейнера */
+.overflow-x-auto.touch-pan-xy,
+.overflow-x-scroll.touch-pan-xy,
+.touch-pan-xy {
+  touch-action: pan-x pan-y;
+}
+
 @utility safe-top-notch {
   padding-top: env(safe-area-inset-top);
 }
