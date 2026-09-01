@@ -19,7 +19,8 @@ import type {
   Geometry,
   Polygon,
 } from "geojson";
-import { Focus, Landmark, Map as MapIcon, Pentagon, Save, Search, Tractor, X } from "lucide-react";
+import { Focus, Activity, Landmark, Map as MapIcon, Pentagon, Save, Search, Tractor, X } from "lucide-react";
+import { useRouter } from "next/navigation";
 import Map, { Layer, Marker, Source } from "react-map-gl/mapbox";
 import type {
   MapMouseEvent,
@@ -624,6 +625,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
     const [hasSelection, setHasSelection] = useState(false);
     const [zoom, setZoom] = useState<number>(mountBootView.zoom);
     const isMobile = useIsMobile();
+    const router = useRouter();
     const [hover, setHover] = useState<FieldHoverInfo | null>(null);
     const [touchPreviewFieldId, setTouchPreviewFieldId] = useState<
       string | null
@@ -2008,6 +2010,24 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
             "right-3 bottom-[var(--map-float-bottom)] md:bottom-3"
           )}
         >
+          {isMobile ? (
+            <button
+              type="button"
+              onClick={() => router.push("/operations")}
+              aria-label="Операційна хронологія"
+              className={cn(
+                "inline-flex h-11 items-center gap-2 rounded-2xl border border-white/15",
+                "bg-zinc-950/88 px-3.5 text-sm font-semibold text-zinc-50 shadow-lg backdrop-blur-xl",
+                "transition-transform active:scale-[0.98]"
+              )}
+            >
+              <Activity
+                className="h-4 w-4 shrink-0 text-orange-400"
+                strokeWidth={2.2}
+              />
+              Операції
+            </button>
+          ) : null}
           <div
             className={FLOAT_BAR_CLASS}
             role="toolbar"
