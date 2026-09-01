@@ -19,8 +19,7 @@ import type {
   Geometry,
   Polygon,
 } from "geojson";
-import { Focus, Activity, Landmark, Map as MapIcon, Pentagon, Save, Search, Tractor, X } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { Focus, Landmark, Map as MapIcon, Pentagon, Save, Search, Tractor, X } from "lucide-react";
 import Map, { Layer, Marker, Source } from "react-map-gl/mapbox";
 import type {
   MapMouseEvent,
@@ -625,7 +624,6 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
     const [hasSelection, setHasSelection] = useState(false);
     const [zoom, setZoom] = useState<number>(mountBootView.zoom);
     const isMobile = useIsMobile();
-    const router = useRouter();
     const [hover, setHover] = useState<FieldHoverInfo | null>(null);
     const [touchPreviewFieldId, setTouchPreviewFieldId] = useState<
       string | null
@@ -2010,21 +2008,6 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
             "right-3 bottom-[var(--map-float-bottom)] md:bottom-3"
           )}
         >
-          <button
-            type="button"
-            onClick={() => router.push("/operations")}
-            aria-label="Хронологія полів"
-            className={cn(
-              "hidden h-11 items-center gap-2 rounded-2xl border px-3.5 text-sm font-semibold shadow-lg backdrop-blur-xl transition-transform active:scale-[0.98] md:inline-flex",
-              "border-[#E5DFD3]/90 bg-[#F4F1EA]/95 text-zinc-800 hover:bg-white"
-            )}
-          >
-            <Activity
-              className="h-4 w-4 shrink-0 text-[#C05621]"
-              strokeWidth={2.2}
-            />
-            Хронологія
-          </button>
           <div
             className={FLOAT_BAR_CLASS}
             role="toolbar"
