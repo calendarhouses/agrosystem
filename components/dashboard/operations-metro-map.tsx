@@ -30,8 +30,10 @@ import type {
   FieldWithTimeline,
   UnifiedTimelineEvent,
   UnifiedTimelineEventType,
+  UnifiedTimelineIcon,
 } from "@/lib/field-timeline";
 import {
+  deriveTimelineIcon,
   timelineEventDateIso,
   toTimelineField,
 } from "@/lib/field-timeline";
@@ -44,6 +46,51 @@ import {
 import { cn } from "@/lib/utils";
 
 export type OperationsMetroVariant = "mobile" | "desktop";
+
+const STATION_CARD_WIDTH = 216;
+const STATION_STEP = 252;
+const TRACK_PAD_X = STATION_CARD_WIDTH / 2 + 24;
+const TRACK_HEIGHT = 420;
+const LINE_Y_TOP = 168;
+const LINE_Y_BOTTOM = 264;
+
+const METRO_LINE_COLORS = [
+  {
+    id: "amber",
+    stroke: "#f97316",
+    ring: "border-orange-500",
+    glow: "shadow-orange-500/30",
+    fill: "bg-orange-500",
+  },
+  {
+    id: "emerald",
+    stroke: "#34d399",
+    ring: "border-emerald-500",
+    glow: "shadow-emerald-500/30",
+    fill: "bg-emerald-500",
+  },
+  {
+    id: "sky",
+    stroke: "#38bdf8",
+    ring: "border-sky-500",
+    glow: "shadow-sky-500/30",
+    fill: "bg-sky-500",
+  },
+  {
+    id: "violet",
+    stroke: "#a78bfa",
+    ring: "border-violet-500",
+    glow: "shadow-violet-500/30",
+    fill: "bg-violet-500",
+  },
+  {
+    id: "rose",
+    stroke: "#fb7185",
+    ring: "border-rose-500",
+    glow: "shadow-rose-500/30",
+    fill: "bg-rose-500",
+  },
+] as const;
 
 const uahFormatter = new Intl.NumberFormat("uk-UA", {
   style: "currency",
@@ -65,7 +112,7 @@ function formatAreaHa(areaHa: number): string {
 
 function formatStationDate(date: Date): string {
   if (Number.isNaN(date.getTime())) return "—";
-  return format(date, "d MMM yyyy", { locale: uk });
+  return format(date, "d MMM", { locale: uk });
 }
 
 function formatUah(value: number): string {
@@ -76,17 +123,6 @@ function formatUah(value: number): string {
 function formatCostUah(value: number): string {
   if (!Number.isFinite(value) || value <= 0) return "—";
   return uahFormatterPrecise.format(value);
-}
-
-function nodeBorderClass(type: UnifiedTimelineEventType): string {
-  switch (type) {
-    case "equipment":
-      return "border-orange-400";
-    case "inventory":
-      return "border-emerald-400";
-    case "scouting":
-      return "border-blue-400";
-  }
 }
 
 function eventTypeLabel(type: UnifiedTimelineEventType): string {
@@ -100,69 +136,73 @@ function eventTypeLabel(type: UnifiedTimelineEventType): string {
   }
 }
 
-function EventTypeIcon({
-  event,
-  desktop,
-}: {
-  event: UnifiedTimelineEvent;
-  desktop?: boolean;
-}) {
-  const box = cn(
-    "flex size-9 shrink-0 items-center justify-center rounded-xl border",
-    desktop ? "border-zinc-200/80 bg-zinc-50" : "border-white/10 bg-white/[0.04]"
-  );
-
-  if (event.type === "equipment") {
-    return (
-      <div className={box}>
-        <Tractor
-          className={cn("size-4", desktop ? "text-orange-600" : "text-orange-400")}
-          aria-hidden
-        />
-      </div>
-    );
+function eventTypeTone(
+  type: UnifiedTimelineEventType,
+  desktop: boolean
+): string {
+  switch (type) {
+    case "equipment":
+      return desktop ? "text-orange-600" : "text-orange-400/90";
+    case "scouting":
+      return desktop ? "text-blue-600" : "text-blue-400/90";
+    case "inventory":
+      return desktop ? "text-emerald-700" : "text-emerald-400/90";
   }
-  if (event.type === "scouting") {
-    return (
-      <div className={box}>
-        <Search
-          className={cn("size-4", desktop ? "text-blue-600" : "text-blue-400")}
-          aria-hidden
-        />
-      </div>
-    );
-  }
-  if (event.subtitle === "Насіння") {
-    return (
-      <div className={box}>
-        <Sprout
-          className={cn("size-4", desktop ? "text-emerald-700" : "text-emerald-400")}
-          aria-hidden
-        />
-      </div>
-    );
-  }
-  if (event.subtitle === "Добрива") {
-    return (
-      <div className={box}>
-        <FlaskConical
-          className={cn("size-4", desktop ? "text-emerald-700" : "text-emerald-400")}
-          aria-hidden
-        />
-      </div>
-    );
-  }
-  return (
-    <div className={box}>
-      <Package
-        className={cn("size-4", desktop ? "text-emerald-700" : "text-emerald-400")}
-        aria-hidden
-      />
-    </div>
-  );
 }
 
-function TimelineEventDateRow({
+function eventIcon(
+  icon: UnifiedTimelineIcon,
+  type: UnifiedTimelineEventType,
+  desktop: boolean
+) {
+  const tone =
+    type === "equipment"
+      ? desktop
+        ? "text-orange-600"
+        : "text-orange-400"
+      : type === "scouting"
+        ? desktop
+          ? "text-blue-600"
+          : "text-blue-400"
+        : desktop
+          ? "text-emerald-700"
+          : "text-emerald-400";
+
+  if (type === "equipment") {
+    return <Tractor className={cn("size-3.5 shrink-0", tone)} aria-hidden />;
+  }
+  if (type === "scouting") {
+    return <Search className={cn("size-3.5 shrink-0", tone)} aria-hidden />;
+  }
+  switch (icon) {
+    case "wheat":
+      return <Sprout className={cn("size-3.5 shrink-0", tone)} aria-hidden />;
+    case "flask":
+      return (
+        <FlaskConical className={cn("size-3.5 shrink-0", tone)} aria-hidden />
+      );
+    default:
+      return <Package className={cn("size-3.5 shrink-0", tone)} aria-hidden />;
+  }
+}
+
+function buildMetroSegments(count: number, yPositions: number[]): string[] {
+  if (count < 2) return [];
+  const segments: string[] = [];
+  for (let i = 1; i < count; i++) {
+    const x0 = TRACK_PAD_X + (i - 1) * STATION_STEP;
+    const x1 = TRACK_PAD_X + i * STATION_STEP;
+    const y0 = yPositions[i - 1] ?? LINE_Y_TOP;
+    const y1 = yPositions[i] ?? LINE_Y_BOTTOM;
+    const midX = (x0 + x1) / 2;
+    segments.push(
+      `M ${x0} ${y0} H ${midX - 10} Q ${midX} ${y0} ${midX} ${(y0 + y1) / 2} Q ${midX} ${y1} ${midX + 10} ${y1} H ${x1}`
+    );
+  }
+  return segments;
+}
+
+function MetroStationDateRow({
   event,
   desktop,
 }: {
@@ -170,10 +210,10 @@ function TimelineEventDateRow({
   desktop?: boolean;
 }) {
   return (
-    <div className="mb-2 flex flex-wrap items-center gap-x-1 gap-y-1">
+    <div className="flex flex-wrap items-center gap-x-1 gap-y-1">
       <time
         className={cn(
-          "text-[10px] font-semibold tracking-[0.14em] uppercase",
+          "text-[10px] font-semibold tracking-wide uppercase",
           desktop ? "text-zinc-400" : "text-zinc-500"
         )}
         dateTime={timelineEventDateIso(event.date)}
@@ -188,324 +228,215 @@ function TimelineEventDateRow({
   );
 }
 
-function TimelineStandardEventCard({
+function MetroStationCard({
   event,
   onClick,
-  desktop,
+  desktop = false,
 }: {
   event: UnifiedTimelineEvent;
   onClick?: () => void;
   desktop?: boolean;
 }) {
+  const icon = deriveTimelineIcon(event);
+
+  if (event.type === "scouting") {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={cn(
+          "relative z-10 w-[13.5rem] rounded-2xl border p-3 text-left backdrop-blur-md transition active:scale-[0.98]",
+          desktop
+            ? "border-[#E5DFD3]/90 bg-white/95 shadow-sm hover:border-blue-200 hover:shadow-md"
+            : "border-white/10 bg-white/[0.07] shadow-[0_12px_40px_-20px_rgba(0,0,0,0.85)] hover:border-white/20 hover:bg-white/[0.12]"
+        )}
+      >
+        <MetroStationDateRow event={event} desktop={desktop} />
+
+        {event.imageUrl ? (
+          <img
+            src={event.imageUrl}
+            alt=""
+            loading="lazy"
+            className={cn(
+              "mt-2 h-24 w-full rounded-xl border object-cover",
+              desktop ? "border-zinc-200/80" : "border-white/10"
+            )}
+          />
+        ) : (
+          <div
+            className={cn(
+              "mt-2 flex h-24 w-full items-center justify-center rounded-xl border border-dashed",
+              desktop
+                ? "border-zinc-200 bg-zinc-50 text-zinc-400"
+                : "border-white/10 bg-white/[0.02] text-zinc-500"
+            )}
+          >
+            <Wheat className="size-6 opacity-40" aria-hidden />
+          </div>
+        )}
+
+        {event.notes ? (
+          <p
+            className={cn(
+              "mt-2 line-clamp-2 text-[11px] leading-relaxed",
+              desktop ? "text-zinc-600" : "text-zinc-300"
+            )}
+          >
+            {event.notes}
+          </p>
+        ) : (
+          <p
+            className={cn(
+              "mt-2 truncate text-sm font-semibold",
+              desktop ? "text-zinc-900" : "text-zinc-50"
+            )}
+          >
+            {event.title}
+          </p>
+        )}
+
+        <p
+          className={cn(
+            "mt-2 text-[10px] font-bold tracking-[0.14em] uppercase",
+            eventTypeTone(event.type, desktop)
+          )}
+        >
+          {eventTypeLabel(event.type)}
+        </p>
+      </button>
+    );
+  }
+
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        "w-full rounded-xl p-3 text-left transition active:scale-[0.99]",
+        "relative z-10 w-[13.5rem] rounded-2xl border p-3 text-left backdrop-blur-md transition active:scale-[0.98]",
         desktop
-          ? "border border-[#E5DFD3]/90 bg-white/90 shadow-sm hover:border-[#276749]/20 hover:shadow-md"
-          : "border border-white/10 bg-white/[0.03] hover:border-white/15 hover:bg-white/[0.05]"
+          ? "border-[#E5DFD3]/90 bg-white/95 shadow-sm hover:border-[#276749]/20 hover:shadow-md"
+          : "border-white/10 bg-white/[0.07] shadow-[0_12px_40px_-20px_rgba(0,0,0,0.85)] hover:border-white/20 hover:bg-white/[0.12]"
       )}
     >
-      <TimelineEventDateRow event={event} desktop={desktop} />
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-3">
-          <EventTypeIcon event={event} desktop={desktop} />
+      <MetroStationDateRow event={event} desktop={desktop} />
+
+      <div className="mt-2 flex items-start justify-between gap-2">
+        <div className="flex min-w-0 items-start gap-2">
+          {eventIcon(icon, event.type, desktop)}
           <div className="min-w-0">
             <p
               className={cn(
-                "truncate text-sm font-semibold tracking-tight",
-                desktop ? "text-zinc-900" : "text-zinc-100"
+                "truncate text-sm font-semibold",
+                desktop ? "text-zinc-900" : "text-zinc-50"
               )}
             >
               {event.title}
             </p>
             <p
               className={cn(
-                "mt-0.5 truncate text-xs",
+                "truncate text-[11px]",
                 desktop ? "text-zinc-500" : "text-zinc-400"
               )}
             >
               {event.subtitle}
             </p>
-            <p
-              className={cn(
-                "mt-1.5 text-[10px] font-semibold tracking-[0.12em] uppercase",
-                event.type === "equipment"
-                  ? desktop
-                    ? "text-orange-600"
-                    : "text-orange-400/90"
-                  : desktop
-                    ? "text-emerald-700"
-                    : "text-emerald-400/90"
-              )}
-            >
-              {eventTypeLabel(event.type)}
-            </p>
           </div>
         </div>
-        <div className="shrink-0 text-right">
-          <p
-            className={cn(
-              "text-sm font-bold tabular-nums tracking-tight",
-              desktop ? "text-zinc-900" : "text-zinc-50"
-            )}
-          >
-            {event.metric ?? "—"}
-          </p>
-          <p
-            className={cn(
-              "mt-1 text-xs tabular-nums",
-              desktop ? "text-red-600/80" : "text-red-400/80"
-            )}
-          >
-            {formatCostUah(event.cost)}
-          </p>
-        </div>
-      </div>
-    </button>
-  );
-}
-
-function TimelineScoutingEventCard({
-  event,
-  onClick,
-  desktop,
-}: {
-  event: UnifiedTimelineEvent;
-  onClick?: () => void;
-  desktop?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "w-full rounded-xl p-3 text-left transition active:scale-[0.99]",
-        desktop
-          ? "border border-[#E5DFD3]/90 bg-white/90 shadow-sm hover:border-blue-200 hover:shadow-md"
-          : "border border-white/10 bg-white/[0.03] hover:border-white/15 hover:bg-white/[0.05]"
-      )}
-    >
-      <TimelineEventDateRow event={event} desktop={desktop} />
-
-      {event.imageUrl ? (
-        <img
-          src={event.imageUrl}
-          alt=""
-          loading="lazy"
-          className={cn(
-            "mt-2 h-40 w-full rounded-xl border object-cover shadow-sm",
-            desktop ? "border-zinc-200/80" : "border-white/10"
-          )}
-        />
-      ) : (
-        <div
-          className={cn(
-            "mt-2 flex h-40 w-full items-center justify-center rounded-xl border border-dashed",
-            desktop
-              ? "border-zinc-200 bg-zinc-50 text-zinc-400"
-              : "border-white/10 bg-white/[0.02] text-zinc-500"
-          )}
-        >
-          <Wheat className="size-8 opacity-40" aria-hidden />
-        </div>
-      )}
-
-      {event.notes ? (
         <p
           className={cn(
-            "mt-2 text-sm leading-relaxed",
-            desktop ? "text-zinc-600" : "text-zinc-300"
+            "shrink-0 text-sm font-bold tabular-nums",
+            desktop ? "text-zinc-900" : "text-zinc-100"
           )}
         >
-          {event.notes}
+          {event.metric ?? "—"}
         </p>
-      ) : null}
-    </button>
-  );
-}
-
-function TimelineEventCard({
-  event,
-  onClick,
-  desktop,
-}: {
-  event: UnifiedTimelineEvent;
-  onClick?: () => void;
-  desktop?: boolean;
-}) {
-  if (event.type === "scouting") {
-    return (
-      <TimelineScoutingEventCard event={event} onClick={onClick} desktop={desktop} />
-    );
-  }
-  return (
-    <TimelineStandardEventCard event={event} onClick={onClick} desktop={desktop} />
-  );
-}
-
-function TimelineEmptyState({
-  onAdd,
-  desktop,
-}: {
-  onAdd?: () => void;
-  desktop?: boolean;
-}) {
-  return (
-    <div className="flex flex-col items-center px-4 py-12 text-center">
-      <div
-        className={cn(
-          "mb-4 flex size-14 items-center justify-center rounded-2xl border",
-          desktop
-            ? "border-[#E5DFD3] bg-[#F4F1EA]"
-            : "border-white/10 bg-white/[0.04]"
-        )}
-      >
-        <Package
-          className={cn("size-6", desktop ? "text-zinc-400" : "text-zinc-500")}
-          aria-hidden
-        />
       </div>
-      <p
-        className={cn(
-          "text-sm font-medium",
-          desktop ? "text-zinc-700" : "text-zinc-300"
-        )}
-      >
-        Історія операцій порожня
-      </p>
-      <p
-        className={cn(
-          "mt-1 max-w-[16rem] text-xs leading-relaxed",
-          desktop ? "text-zinc-500" : "text-zinc-500"
-        )}
-      >
-        Додайте наряд техніки, списання ТМЦ або звіт скаутингу
-      </p>
-      {onAdd ? (
-        <button
-          type="button"
-          onClick={onAdd}
+
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <p
           className={cn(
-            "mt-5 inline-flex items-center gap-2 rounded-full border px-4 py-2.5 text-sm font-medium transition",
-            desktop
-              ? "border-[#E5DFD3] bg-white text-zinc-700 hover:bg-[#F4F1EA]"
-              : "border-white/10 bg-white/5 text-zinc-200 hover:bg-white/10"
+            "text-[10px] font-bold tracking-[0.14em] uppercase",
+            eventTypeTone(event.type, desktop)
           )}
         >
-          <Plus className="size-4" />
-          Додати першу позицію
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-function VerticalFieldTimeline({
-  events,
-  field,
-  onEventClick,
-  onAddClick,
-  desktop,
-}: {
-  events: UnifiedTimelineEvent[];
-  field: FieldTimelineField;
-  onEventClick?: (field: FieldTimelineField, event: UnifiedTimelineEvent) => void;
-  onAddClick?: () => void;
-  desktop?: boolean;
-}) {
-  if (events.length === 0) {
-    return <TimelineEmptyState onAdd={onAddClick} desktop={desktop} />;
-  }
-
-  return (
-    <div
-      className={cn("relative", desktop ? "px-1 pb-1" : "px-0 pb-1")}
-      data-allow-pan="true"
-    >
-      {/* Лінія від верху блоку до низу останньої події */}
-      <div
-        className={cn(
-          "absolute top-0 bottom-0 left-[7px] w-0 border-l-2",
-          desktop ? "border-zinc-200" : "border-white/10"
-        )}
-        aria-hidden
-      />
-
-      <ul className="relative space-y-4">
-        {events.map((event) => (
-          <li key={event.id} className="relative pl-6">
-            <span
-              className={cn(
-                "absolute top-5 -left-[9px] size-4 rounded-full border-2",
-                desktop ? "bg-white" : "bg-zinc-950",
-                nodeBorderClass(event.type)
-              )}
-              aria-hidden
-            />
-            <TimelineEventCard
-              event={event}
-              desktop={desktop}
-              onClick={() => onEventClick?.(field, event)}
-            />
-          </li>
-        ))}
-      </ul>
-    </div>
+          {eventTypeLabel(event.type)}
+        </p>
+        <p
+          className={cn(
+            "text-[10px] font-semibold tabular-nums",
+            desktop ? "text-red-600/80" : "text-red-400/80"
+          )}
+        >
+          {formatCostUah(event.cost)}
+        </p>
+      </div>
+    </button>
   );
 }
 
 function MetroFieldLine({
   item,
+  lineIndex,
   onEventClick,
   onAddClick,
   variant = "mobile",
 }: {
   item: FieldWithTimeline;
+  lineIndex: number;
   onEventClick?: (field: FieldTimelineField, event: UnifiedTimelineEvent) => void;
   onAddClick?: (field: FieldTimelineField) => void;
   variant?: OperationsMetroVariant;
 }) {
   const desktop = variant === "desktop";
   const field = toTimelineField(item);
-  const accent = normalizeFieldLineColor(item.color);
+  const fieldAccent = normalizeFieldLineColor(item.color);
+  const line = METRO_LINE_COLORS[lineIndex % METRO_LINE_COLORS.length]!;
 
   const events = useMemo(
-    () =>
-      [...item.events].sort((a, b) => b.date.getTime() - a.date.getTime()),
+    () => [...item.events].sort((a, b) => a.date.getTime() - b.date.getTime()),
     [item.events]
   );
+
+  const yPositions = events.map((_, index) =>
+    index % 2 === 0 ? LINE_Y_TOP : LINE_Y_BOTTOM
+  );
+  const trackWidth = Math.max(
+    STATION_STEP * Math.max(events.length - 1, 0) + TRACK_PAD_X * 2,
+    STATION_CARD_WIDTH + TRACK_PAD_X * 2
+  );
+  const segments = buildMetroSegments(events.length, yPositions);
 
   return (
     <AccordionItem
       value={item.fieldId}
       className={cn(
-        "overflow-hidden rounded-2xl border",
+        "overflow-hidden rounded-3xl border",
         desktop
           ? "border-[#E5DFD3]/90 bg-white/80 shadow-sm"
-          : "border-white/10 bg-white/5 backdrop-blur-md"
+          : "border-white/8 bg-gradient-to-br from-white/[0.06] via-white/[0.03] to-transparent"
       )}
     >
       <AccordionTrigger
         className={cn(
-          "group w-full p-4 hover:no-underline [&>svg]:hidden",
-          desktop ? "hover:bg-white/60" : "hover:bg-white/[0.03]"
+          "group w-full px-4 py-3 hover:no-underline [&>svg]:hidden",
+          desktop
+            ? "border-b border-[#E5DFD3]/80 hover:bg-white/60"
+            : "border-b border-white/5 hover:bg-white/[0.03]"
         )}
       >
-        <div className="flex min-w-0 flex-1 items-start justify-between gap-4 pr-1">
+        <div className="flex min-w-0 flex-1 items-start justify-between gap-3 pr-2">
           <div className="min-w-0 text-left">
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2">
               <span
-                className="inline-flex h-2 w-8 shrink-0 rounded-full"
-                style={{ backgroundColor: accent }}
+                className="inline-flex h-2.5 w-8 shrink-0 rounded-full"
+                style={{ backgroundColor: fieldAccent }}
                 aria-hidden
               />
               <h3
                 className={cn(
-                  "truncate text-lg font-medium tracking-tight",
-                  desktop ? "text-zinc-900" : "text-zinc-100"
+                  "truncate text-base font-semibold tracking-tight",
+                  desktop ? "text-zinc-900" : "text-zinc-50"
                 )}
               >
                 {item.fieldName}
@@ -513,7 +444,7 @@ function MetroFieldLine({
             </div>
             <p
               className={cn(
-                "mt-1 text-sm",
+                "mt-1 text-xs",
                 desktop ? "text-zinc-500" : "text-zinc-400"
               )}
             >
@@ -523,11 +454,11 @@ function MetroFieldLine({
             </p>
           </div>
 
-          <div className="flex shrink-0 items-start gap-2">
-            <div className="text-right">
+          <div className="flex shrink-0 items-center gap-2">
+            <div className="hidden text-right sm:block">
               <p
                 className={cn(
-                  "text-base font-semibold tabular-nums tracking-tight",
+                  "text-sm font-semibold tabular-nums",
                   desktop ? "text-red-600/90" : "text-red-400/90"
                 )}
               >
@@ -535,7 +466,7 @@ function MetroFieldLine({
               </p>
               <p
                 className={cn(
-                  "mt-0.5 text-[10px] tabular-nums",
+                  "text-[10px] tabular-nums",
                   desktop ? "text-zinc-400" : "text-zinc-500"
                 )}
               >
@@ -544,6 +475,18 @@ function MetroFieldLine({
                   : "—/га"}
               </p>
             </div>
+
+            <span
+              className={cn(
+                "rounded-full border px-2.5 py-1 text-[11px] font-semibold tabular-nums",
+                desktop
+                  ? "border-[#E5DFD3] bg-[#F4F1EA] text-zinc-600"
+                  : "border-white/10 bg-black/20 text-zinc-300"
+              )}
+            >
+              {events.length}{" "}
+              {events.length === 1 ? "станція" : "станцій"}
+            </span>
 
             <button
               type="button"
@@ -555,7 +498,7 @@ function MetroFieldLine({
                 "inline-flex size-9 items-center justify-center rounded-full border transition",
                 desktop
                   ? "border-emerald-600/20 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                  : "border-emerald-500/25 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20"
+                  : "border-emerald-500/30 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25"
               )}
               aria-label={`Додати позицію для ${item.fieldName}`}
             >
@@ -564,7 +507,7 @@ function MetroFieldLine({
 
             <ChevronDown
               className={cn(
-                "mt-1 size-5 shrink-0 transition-transform duration-300 group-data-[state=open]:rotate-180",
+                "size-5 shrink-0 transition-transform duration-200 group-data-[state=open]:rotate-180",
                 desktop ? "text-zinc-400" : "text-zinc-500"
               )}
             />
@@ -572,17 +515,127 @@ function MetroFieldLine({
         </div>
       </AccordionTrigger>
 
-      <AccordionContent
-        className={cn("px-4 pb-4 pt-1", !desktop && "touch-pan-xy")}
-        data-allow-pan="true"
-      >
-        <VerticalFieldTimeline
-          events={events}
-          field={field}
-          desktop={desktop}
-          onEventClick={onEventClick}
-          onAddClick={() => onAddClick?.(field)}
-        />
+      <AccordionContent className={cn("pb-0", !desktop && "touch-pan-xy")}>
+        {events.length === 0 ? (
+          <div className="px-4 py-10 text-center">
+            <p
+              className={cn(
+                "text-sm italic",
+                desktop ? "text-zinc-500" : "text-zinc-500"
+              )}
+            >
+              Історія операцій порожня
+            </p>
+            <button
+              type="button"
+              onClick={() => onAddClick?.(field)}
+              className={cn(
+                "mt-4 inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition",
+                desktop
+                  ? "border-[#E5DFD3] bg-white text-zinc-700 hover:bg-[#F4F1EA]"
+                  : "border-white/10 bg-white/5 text-zinc-200 hover:bg-white/10"
+              )}
+            >
+              <Plus className="size-4" />
+              Додати першу позицію
+            </button>
+          </div>
+        ) : (
+          <div className="relative py-2">
+            <div
+              className="overflow-x-auto overscroll-x-contain px-1 pb-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              aria-label={`Хронологія поля ${item.fieldName}`}
+              data-allow-pan="true"
+            >
+              <div
+                className="relative mx-auto"
+                style={{ width: trackWidth, height: TRACK_HEIGHT }}
+              >
+                <svg
+                  className="pointer-events-none absolute inset-0"
+                  width={trackWidth}
+                  height={TRACK_HEIGHT}
+                  aria-hidden
+                >
+                  <defs>
+                    <filter id={`glow-${line.id}-${lineIndex}`}>
+                      <feGaussianBlur stdDeviation="3" result="blur" />
+                      <feMerge>
+                        <feMergeNode in="blur" />
+                        <feMergeNode in="SourceGraphic" />
+                      </feMerge>
+                    </filter>
+                  </defs>
+                  {segments.map((d, index) => (
+                    <path
+                      key={index}
+                      d={d}
+                      fill="none"
+                      stroke={line.stroke}
+                      strokeWidth={7}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      opacity={0.95}
+                      filter={`url(#glow-${line.id}-${lineIndex})`}
+                    />
+                  ))}
+                </svg>
+
+                {events.map((event, index) => {
+                  const x = TRACK_PAD_X + index * STATION_STEP;
+                  const y = yPositions[index] ?? LINE_Y_TOP;
+                  const cardAbove = y === LINE_Y_TOP;
+
+                  return (
+                    <div
+                      key={event.id}
+                      className="absolute top-0 left-0"
+                      style={{
+                        left: x,
+                        transform: "translateX(-50%)",
+                        width: 0,
+                        height: TRACK_HEIGHT,
+                      }}
+                    >
+                      <span
+                        className={cn(
+                          "absolute left-1/2 size-5 -translate-x-1/2 rounded-full border-[3px] shadow-lg",
+                          desktop ? "bg-white" : "bg-zinc-950",
+                          line.ring,
+                          line.glow
+                        )}
+                        style={{ top: y - 10 }}
+                      />
+
+                      <div
+                        className="absolute left-1/2 -translate-x-1/2"
+                        style={
+                          cardAbove
+                            ? { bottom: TRACK_HEIGHT - y + 20 }
+                            : { top: y + 20 }
+                        }
+                      >
+                        <MetroStationCard
+                          event={event}
+                          desktop={desktop}
+                          onClick={() => onEventClick?.(field, event)}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div
+              className={cn(
+                "pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l to-transparent",
+                desktop ? "from-[#F4F1EA]/95" : "from-zinc-950/90"
+              )}
+              aria-hidden
+            />
+          </div>
+        )}
       </AccordionContent>
     </AccordionItem>
   );
@@ -708,10 +761,11 @@ function MetroFieldsAccordion({
       onValueChange={setOpenIds}
       className={cn(desktop ? "space-y-4" : "space-y-3")}
     >
-      {fields.map((item) => (
+      {fields.map((item, index) => (
         <MetroFieldLine
           key={item.fieldId}
           item={item}
+          lineIndex={index}
           variant={variant}
           onEventClick={onEventClick}
           onAddClick={onAddClick}
@@ -724,15 +778,15 @@ function MetroFieldsAccordion({
 function MetroMapSkeleton({ variant = "mobile" }: { variant?: OperationsMetroVariant }) {
   const desktop = variant === "desktop";
   return (
-    <div className="space-y-3" aria-busy="true" aria-label="Завантаження хронології">
+    <div className="space-y-4" aria-busy="true" aria-label="Завантаження карти">
       {[0, 1, 2].map((i) => (
         <Skeleton
           key={i}
           className={cn(
-            "h-28 w-full animate-pulse rounded-2xl border",
+            "h-56 w-full animate-pulse rounded-3xl border",
             desktop
               ? "border-[#E5DFD3]/80 bg-white/60"
-              : "border-white/10 bg-white/5"
+              : "border-white/5 bg-white/10"
           )}
         />
       ))}

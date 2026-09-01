@@ -21,6 +21,7 @@ import {
   type WeatherContext,
 } from "@/lib/field-timeline-types";
 import { DEFAULT_SEASON, normalizeSeason } from "@/lib/season";
+import { OPERATION_DOCS_BUCKET } from "@/lib/operation-attachments";
 
 export const TIMELINE_EVENTS_PER_FIELD = 20;
 
@@ -146,11 +147,9 @@ function cleanMachinery(value: string | null | undefined): string {
 }
 
 function equipmentSubtitle(row: TimelineOperationRow): string {
-  const driver =
-    String(row.closed_by_name ?? "").trim() ||
-    String(row.actor_name ?? "").trim();
+  const machinery = cleanMachinery(row.machinery);
   const implement = cleanMachinery(row.implement);
-  const parts = [driver, implement].filter(Boolean);
+  const parts = [machinery, implement].filter(Boolean);
   return parts.join(" · ") || "—";
 }
 
@@ -590,6 +589,35 @@ async function fetchOutboundMoves(
   throw new Error(error.message);
 }
 
+async function resolveScoutingImageUrl(
+  supabase: SupabaseClient,
+  imageUrl: string | null | undefined
+): Promise<string | null> {
+  const raw = String(imageUrl ?? "").trim();
+  if (!raw) return null;
+  if (raw.startsWith("http://") || raw.startsWith("https://")) return raw;
+  if (!raw.startsWith("scouting/")) return raw;
+
+  const { data, error } = await supabase.storage
+    .from(OPERATION_DOCS_BUCKET)
+    .createSignedUrl(raw, 60 * 60 * 24);
+
+  if (error || !data?.signedUrl) return null;
+  return data.signedUrl;
+}
+
+async function enrichScoutingReports(
+  supabase: SupabaseClient,
+  rows: TimelineScoutingSourceRow[]
+): Promise<TimelineScoutingSourceRow[]> {
+  return Promise.all(
+    rows.map(async (row) => ({
+      ...row,
+      image_url: await resolveScoutingImageUrl(supabase, row.image_url),
+    }))
+  );
+}
+
 async function fetchScoutingReports(
   supabase: SupabaseClient,
   season: string
@@ -607,7 +635,12 @@ async function fetchScoutingReports(
     .lt("date", end)
     .order("date", { ascending: false });
 
-  if (!error) return (data ?? []) as TimelineScoutingSourceRow[];
+  if (!error) {
+    return enrichScoutingReports(
+      supabase,
+      (data ?? []) as TimelineScoutingSourceRow[]
+    );
+  }
 
   if (error.message?.includes("weather_context") || error.code === "42703") {
     const legacy = await supabase
@@ -624,7 +657,12 @@ async function fetchScoutingReports(
       .gte("date", start)
       .lt("date", end)
       .order("date", { ascending: false });
-    if (!legacy.error) return (legacy.data ?? []) as TimelineScoutingSourceRow[];
+    if (!legacy.error) {
+      return enrichScoutingReports(
+        supabase,
+        (legacy.data ?? []) as TimelineScoutingSourceRow[]
+      );
+    }
   }
 
   if (error.code === "PGRST205" || error.code === "42P01") return [];

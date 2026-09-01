@@ -7,6 +7,7 @@ import {
   Loader2,
   PackageMinus,
   Pencil,
+  Search,
   Tractor,
   Trash2,
 } from "lucide-react";
@@ -18,6 +19,7 @@ import {
   updateLocalMove,
   type LocalMoveRow,
 } from "@/app/admin/inventory/actions";
+import { deleteScoutingReport } from "@/app/admin/scouting/actions";
 import {
   loadFieldOperationByClientKey,
   OperationsOperationForm,
@@ -29,6 +31,7 @@ import {
   OperationsSheetHeader,
   useOpsChrome,
 } from "@/components/dashboard/operations-sheet-chrome";
+import { OperationsWeatherBadge } from "@/components/dashboard/operations-weather-badge";
 import { deleteFieldOperation, type FieldOperation } from "@/lib/field-operations";
 import type { FieldTimelineField, UnifiedTimelineEvent } from "@/lib/field-timeline";
 import {
@@ -165,6 +168,36 @@ function OperationsInventoryEditForm({
   );
 }
 
+function ScoutingDetailHero({ event }: { event: UnifiedTimelineEvent }) {
+  return (
+    <div className="relative overflow-hidden rounded-3xl border border-sky-500/20 bg-gradient-to-br from-sky-500/10 via-white/[0.04] to-transparent p-5">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <span className="rounded-full border border-sky-500/20 bg-sky-500/10 px-2.5 py-1 text-[10px] font-bold tracking-[0.12em] text-sky-300 uppercase">
+          Скаутинг
+        </span>
+        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-zinc-400">
+          {formatDetailDate(event.date)}
+        </span>
+        <OperationsWeatherBadge weatherContext={event.weatherContext} />
+      </div>
+
+      {event.imageUrl ? (
+        <img
+          src={event.imageUrl}
+          alt=""
+          className="w-full rounded-2xl border border-white/10 object-cover"
+        />
+      ) : null}
+
+      {event.notes ? (
+        <p className="mt-4 text-sm leading-relaxed text-zinc-300">{event.notes}</p>
+      ) : (
+        <p className="mt-4 text-sm text-zinc-500">Без нотаток</p>
+      )}
+    </div>
+  );
+}
+
 function EventDetailHero({
   event,
   isEquipment,
@@ -276,6 +309,7 @@ export function OperationsEventDetailSheet({
   const eventId = event?.id ?? null;
   const fieldId = field?.id ?? null;
   const isEquipment = event?.type === "equipment";
+  const isScouting = event?.type === "scouting";
 
   useEffect(() => {
     if (!open) {
@@ -356,8 +390,12 @@ export function OperationsEventDetailSheet({
         const res = await deleteLocalMove(parsed.moveId);
         if (!res.ok) throw new Error(res.error);
         toast.success("Списання видалено");
+      } else if (parsed.kind === "scouting") {
+        const res = await deleteScoutingReport(parsed.reportId);
+        if (!res.ok) throw new Error(res.error);
+        toast.success("Звіт скаутингу видалено");
       } else {
-        toast.error("Видалення скаутингу ще не підключено");
+        toast.error("Невідомий тип події");
         return;
       }
       setDeleteOpen(false);
@@ -371,6 +409,10 @@ export function OperationsEventDetailSheet({
   }
 
   function handleEdit() {
+    if (isScouting) {
+      toast.message("Редагування скаутингу поки недоступне");
+      return;
+    }
     const parsed = eventId ? parseTimelineEventId(eventId) : null;
     if (parsed?.kind === "equipment") {
       if (operation) setView("edit-equipment");
@@ -419,8 +461,8 @@ export function OperationsEventDetailSheet({
         ) : (
           <div className="flex min-h-0 flex-1 flex-col">
             <OperationsSheetHeader
-              icon={isEquipment ? Tractor : PackageMinus}
-              accent={isEquipment ? "orange" : "emerald"}
+              icon={isScouting ? Search : isEquipment ? Tractor : PackageMinus}
+              accent={isScouting ? "sky" : isEquipment ? "orange" : "emerald"}
               title={event?.title ?? "Деталі"}
               description={
                 <>
@@ -437,30 +479,36 @@ export function OperationsEventDetailSheet({
                   Завантаження…
                 </div>
               ) : event ? (
-                <EventDetailHero
-                  event={event}
-                  isEquipment={isEquipment}
-                  operation={operation}
-                  inventoryMove={inventoryMove}
-                />
+                isScouting ? (
+                  <ScoutingDetailHero event={event} />
+                ) : (
+                  <EventDetailHero
+                    event={event}
+                    isEquipment={isEquipment}
+                    operation={operation}
+                    inventoryMove={inventoryMove}
+                  />
+                )
               ) : null}
             </div>
 
             {!loading && event ? (
               <OperationsSheetFooter>
-                <button
-                  type="button"
-                  onClick={handleEdit}
-                  className={cn(
-                    chrome.primaryBtn,
-                    isEquipment
-                      ? "bg-orange-600 shadow-[0_8px_24px_-10px_rgba(234,88,12,0.55)] hover:bg-orange-500"
-                      : undefined
-                  )}
-                >
-                  <Pencil className="mr-2 inline size-4" />
-                  Редагувати
-                </button>
+                {!isScouting ? (
+                  <button
+                    type="button"
+                    onClick={handleEdit}
+                    className={cn(
+                      chrome.primaryBtn,
+                      isEquipment
+                        ? "bg-orange-600 shadow-[0_8px_24px_-10px_rgba(234,88,12,0.55)] hover:bg-orange-500"
+                        : undefined
+                    )}
+                  >
+                    <Pencil className="mr-2 inline size-4" />
+                    Редагувати
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => setDeleteOpen(true)}

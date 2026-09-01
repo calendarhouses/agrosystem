@@ -10,6 +10,7 @@ import { OperationsEventDetailSheet } from "@/components/dashboard/operations-ev
 import { OperationsFieldAddSheet } from "@/components/dashboard/operations-field-add-sheet";
 import { OperationsMetroMap } from "@/components/dashboard/operations-metro-map";
 import { OperationsOperationFormSheet } from "@/components/dashboard/operations-operation-form-sheet";
+import { OperationsScoutingFormSheet } from "@/components/dashboard/operations-scouting-form-sheet";
 import { OperationsPanelShell } from "@/components/dashboard/operations-sheet-chrome";
 import { QuickIssueSheet } from "@/components/dashboard/quick-issue-sheet";
 import { Input } from "@/components/ui/input";
@@ -41,6 +42,8 @@ function OperationsSheets({
   setAddOperationField,
   addIssueField,
   setAddIssueField,
+  addScoutingField,
+  setAddScoutingField,
   season,
   seasonYear,
   refresh,
@@ -62,6 +65,8 @@ function OperationsSheets({
   setAddOperationField: (value: FieldTimelineField | null) => void;
   addIssueField: FieldTimelineField | null;
   setAddIssueField: (value: FieldTimelineField | null) => void;
+  addScoutingField: FieldTimelineField | null;
+  setAddScoutingField: (value: FieldTimelineField | null) => void;
   season: string;
   seasonYear: number;
   refresh: () => void;
@@ -94,6 +99,19 @@ function OperationsSheets({
           setAddIssueField(addField);
           setAddField(null);
         }}
+        onAddScouting={() => {
+          setAddScoutingField(addField);
+          setAddField(null);
+        }}
+      />
+
+      <OperationsScoutingFormSheet
+        open={Boolean(addScoutingField)}
+        onOpenChange={(open) => {
+          if (!open) setAddScoutingField(null);
+        }}
+        field={addScoutingField}
+        onSaved={refresh}
       />
 
       <OperationsOperationFormSheet
@@ -153,6 +171,8 @@ export function OperationsMatrixView() {
   const [addIssueField, setAddIssueField] = useState<FieldTimelineField | null>(
     null
   );
+  const [addScoutingField, setAddScoutingField] =
+    useState<FieldTimelineField | null>(null);
 
   const searchQuery = normalizeSearch(search);
 
@@ -200,6 +220,8 @@ export function OperationsMatrixView() {
       setAddOperationField={setAddOperationField}
       addIssueField={addIssueField}
       setAddIssueField={setAddIssueField}
+      addScoutingField={addScoutingField}
+      setAddScoutingField={setAddScoutingField}
       season={season}
       seasonYear={seasonYear}
       refresh={refresh}

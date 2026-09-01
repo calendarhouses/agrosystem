@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight, PackageMinus, Plus, Tractor } from "lucide-react";
+import { ChevronRight, PackageMinus, Plus, Search, Tractor } from "lucide-react";
 
 import {
   OperationsPanelShell,
@@ -16,6 +16,7 @@ type OperationsFieldAddSheetProps = {
   field: FieldTimelineField | null;
   onAddOperation: () => void;
   onAddInventory: () => void;
+  onAddScouting: () => void;
 };
 
 function ActionCard({
@@ -28,7 +29,7 @@ function ActionCard({
   title: string;
   description: string;
   icon: typeof Tractor;
-  accent: "orange" | "emerald";
+  accent: "orange" | "emerald" | "sky";
   onClick: () => void;
 }) {
   const light = useOpsSurface() === "light";
@@ -40,12 +41,19 @@ function ActionCard({
           icon: "bg-orange-500/20 text-orange-300 ring-orange-500/25",
           hover: "hover:border-orange-500/35 hover:bg-orange-500/[0.08]",
         }
-      : {
-          border: "border-emerald-500/20",
-          glow: "from-emerald-500/15 via-emerald-500/5",
-          icon: "bg-emerald-500/20 text-emerald-300 ring-emerald-500/25",
-          hover: "hover:border-emerald-500/35 hover:bg-emerald-500/[0.08]",
-        };
+      : accent === "sky"
+        ? {
+            border: "border-sky-500/20",
+            glow: "from-sky-500/15 via-sky-500/5",
+            icon: "bg-sky-500/20 text-sky-300 ring-sky-500/25",
+            hover: "hover:border-sky-500/35 hover:bg-sky-500/[0.08]",
+          }
+        : {
+            border: "border-emerald-500/20",
+            glow: "from-emerald-500/15 via-emerald-500/5",
+            icon: "bg-emerald-500/20 text-emerald-300 ring-emerald-500/25",
+            hover: "hover:border-emerald-500/35 hover:bg-emerald-500/[0.08]",
+          };
 
   return (
     <button
@@ -102,6 +110,7 @@ export function OperationsFieldAddSheet({
   field,
   onAddOperation,
   onAddInventory,
+  onAddScouting,
 }: OperationsFieldAddSheetProps) {
   return (
     <OperationsPanelShell
@@ -144,6 +153,16 @@ export function OperationsFieldAddSheet({
           onClick={() => {
             onOpenChange(false);
             onAddInventory();
+          }}
+        />
+        <ActionCard
+          accent="sky"
+          icon={Search}
+          title="Скаутинг"
+          description="Фото з поля та нотатки агронома для хронології"
+          onClick={() => {
+            onOpenChange(false);
+            onAddScouting();
           }}
         />
       </div>
