@@ -54,21 +54,15 @@ const TRACK_PAD_X = STATION_CARD_WIDTH / 2 + 24;
 const METRO_TRACK_MIN_HEIGHT = 420;
 const METRO_CARD_GAP = 20;
 const METRO_NODE_RADIUS = 10;
-const METRO_NODE_OUTER_RADIUS = 13;
 const METRO_LINE_GAP = 88;
 const METRO_TRACK_PADDING_Y = 16;
 const METRO_STANDARD_CARD_H = 148;
 const METRO_SCOUTING_CARD_H = 268;
-const METRO_CURVE_BEND = 0.52;
-const METRO_VERTICAL_BEND = 0.42;
 
 const METRO_LINE_COLORS = [
   {
     id: "amber",
     stroke: "#f97316",
-    strokeBright: "#fdba74",
-    strokeDim: "#c2410c",
-    glowRgb: "249, 115, 22",
     ring: "border-orange-500",
     glow: "shadow-orange-500/30",
     fill: "bg-orange-500",
@@ -76,9 +70,6 @@ const METRO_LINE_COLORS = [
   {
     id: "emerald",
     stroke: "#34d399",
-    strokeBright: "#6ee7b7",
-    strokeDim: "#059669",
-    glowRgb: "52, 211, 153",
     ring: "border-emerald-500",
     glow: "shadow-emerald-500/30",
     fill: "bg-emerald-500",
@@ -86,9 +77,6 @@ const METRO_LINE_COLORS = [
   {
     id: "sky",
     stroke: "#38bdf8",
-    strokeBright: "#7dd3fc",
-    strokeDim: "#0284c7",
-    glowRgb: "56, 189, 248",
     ring: "border-sky-500",
     glow: "shadow-sky-500/30",
     fill: "bg-sky-500",
@@ -96,9 +84,6 @@ const METRO_LINE_COLORS = [
   {
     id: "violet",
     stroke: "#a78bfa",
-    strokeBright: "#c4b5fd",
-    strokeDim: "#7c3aed",
-    glowRgb: "167, 139, 250",
     ring: "border-violet-500",
     glow: "shadow-violet-500/30",
     fill: "bg-violet-500",
@@ -106,16 +91,11 @@ const METRO_LINE_COLORS = [
   {
     id: "rose",
     stroke: "#fb7185",
-    strokeBright: "#fda4af",
-    strokeDim: "#e11d48",
-    glowRgb: "251, 113, 133",
     ring: "border-rose-500",
     glow: "shadow-rose-500/30",
     fill: "bg-rose-500",
   },
 ] as const;
-
-type MetroLineColor = (typeof METRO_LINE_COLORS)[number];
 
 const uahFormatter = new Intl.NumberFormat("uk-UA", {
   style: "currency",
@@ -263,163 +243,35 @@ function metroStationX(index: number): number {
   return TRACK_PAD_X + index * STATION_STEP;
 }
 
-function cubicBezierSegment(
-  x0: number,
-  y0: number,
-  x1: number,
-  y1: number,
-  bend = METRO_CURVE_BEND
-): string {
-  const dx = (x1 - x0) * bend;
-  return `C ${x0 + dx} ${y0}, ${x1 - dx} ${y1}, ${x1} ${y1}`;
-}
-
-function verticalBezierSegment(
-  x: number,
-  y0: number,
-  y1: number,
-  bend = METRO_VERTICAL_BEND
-): string {
-  const dy = (y1 - y0) * bend;
-  return `C ${x} ${y0 + dy}, ${x} ${y1 - dy}, ${x} ${y1}`;
-}
-
 function buildMetroPath(
   count: number,
   yPositions: number[],
-  trackHeight: number
+  trackWidth: number
 ): string {
   if (count === 0) return "";
 
-  const x0 = metroStationX(0);
   const y0 = yPositions[0] ?? 0;
-  const parts: string[] = [`M ${x0} 0`, verticalBezierSegment(x0, 0, y0)];
+  const x0 = metroStationX(0);
+
+  if (count === 1) {
+    return `M 0 ${y0} H ${trackWidth}`;
+  }
+
+  const parts = [`M 0 ${y0}`, `H ${x0}`];
 
   for (let i = 1; i < count; i++) {
+    const xPrev = metroStationX(i - 1);
+    const x1 = metroStationX(i);
+    const yPrev = yPositions[i - 1] ?? y0;
+    const y1 = yPositions[i] ?? y0;
+    const midX = (xPrev + x1) / 2;
     parts.push(
-      cubicBezierSegment(
-        metroStationX(i - 1),
-        yPositions[i - 1] ?? y0,
-        metroStationX(i),
-        yPositions[i] ?? y0
-      )
+      `H ${midX - 10} Q ${midX} ${yPrev} ${midX} ${(yPrev + y1) / 2} Q ${midX} ${y1} ${midX + 10} ${y1} H ${x1}`
     );
   }
 
-  const xLast = metroStationX(count - 1);
-  const yLast = yPositions[count - 1] ?? y0;
-  parts.push(verticalBezierSegment(xLast, yLast, trackHeight));
-
+  parts.push(`H ${trackWidth}`);
   return parts.join(" ");
-}
-
-function MetroTrackSvg({
-  line,
-  lineIndex,
-  trackWidth,
-  trackHeight,
-  metroPath,
-  stationCount,
-}: {
-  line: MetroLineColor;
-  lineIndex: number;
-  trackWidth: number;
-  trackHeight: number;
-  metroPath: string;
-  stationCount: number;
-}) {
-  const gradId = `metro-grad-${line.id}-${lineIndex}`;
-  const bloomId = `metro-bloom-${line.id}-${lineIndex}`;
-  const xEnd = metroStationX(Math.max(stationCount - 1, 0));
-
-  if (!metroPath) return null;
-
-  return (
-    <svg
-      className="pointer-events-none absolute inset-0"
-      width={trackWidth}
-      height={trackHeight}
-      aria-hidden
-    >
-      <defs>
-        <linearGradient
-          id={gradId}
-          gradientUnits="userSpaceOnUse"
-          x1={metroStationX(0)}
-          y1={0}
-          x2={xEnd || metroStationX(0)}
-          y2={trackHeight}
-        >
-          <stop offset="0%" stopColor={line.strokeDim} stopOpacity={0.2} />
-          <stop offset="8%" stopColor={line.strokeBright} stopOpacity={0.95} />
-          <stop offset="45%" stopColor={line.stroke} stopOpacity={1} />
-          <stop offset="55%" stopColor="#ffffff" stopOpacity={0.92} />
-          <stop offset="92%" stopColor={line.strokeBright} stopOpacity={0.95} />
-          <stop offset="100%" stopColor={line.strokeDim} stopOpacity={0.2} />
-        </linearGradient>
-
-        <filter
-          id={bloomId}
-          x="-60%"
-          y="-40%"
-          width="220%"
-          height="180%"
-          colorInterpolationFilters="sRGB"
-        >
-          <feGaussianBlur stdDeviation="10" result="bloomWide" />
-          <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="bloomMid" />
-          <feMerge>
-            <feMergeNode in="bloomWide" />
-            <feMergeNode in="bloomMid" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-      </defs>
-
-      <g
-        style={{
-          filter: `drop-shadow(0 0 10px rgba(${line.glowRgb}, 0.75)) drop-shadow(0 0 22px rgba(${line.glowRgb}, 0.4)) drop-shadow(0 0 40px rgba(${line.glowRgb}, 0.18))`,
-        }}
-      >
-        <path
-          d={metroPath}
-          fill="none"
-          stroke={line.stroke}
-          strokeWidth={22}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          opacity={0.1}
-        />
-        <path
-          d={metroPath}
-          fill="none"
-          stroke={line.strokeBright}
-          strokeWidth={14}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          opacity={0.22}
-        />
-        <path
-          d={metroPath}
-          fill="none"
-          stroke={`url(#${gradId})`}
-          strokeWidth={6}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          filter={`url(#${bloomId})`}
-        />
-        <path
-          d={metroPath}
-          fill="none"
-          stroke="#ffffff"
-          strokeWidth={1.75}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          opacity={0.55}
-        />
-      </g>
-    </svg>
-  );
 }
 
 function MetroStationDateRow({
@@ -608,7 +460,7 @@ function MetroFieldLine({
     STATION_STEP * Math.max(events.length - 1, 0) + TRACK_PAD_X * 2,
     STATION_CARD_WIDTH + TRACK_PAD_X * 2
   );
-  const metroPath = buildMetroPath(events.length, yPositions, trackHeight);
+  const metroPath = buildMetroPath(events.length, yPositions, trackWidth);
 
   return (
     <AccordionItem
@@ -759,14 +611,34 @@ function MetroFieldLine({
                   minHeight: trackHeight,
                 }}
               >
-                <MetroTrackSvg
-                  line={line}
-                  lineIndex={lineIndex}
-                  trackWidth={trackWidth}
-                  trackHeight={trackHeight}
-                  metroPath={metroPath}
-                  stationCount={events.length}
-                />
+                <svg
+                  className="pointer-events-none absolute inset-0"
+                  width={trackWidth}
+                  height={trackHeight}
+                  aria-hidden
+                >
+                  <defs>
+                    <filter id={`glow-${line.id}-${lineIndex}`}>
+                      <feGaussianBlur stdDeviation="3" result="blur" />
+                      <feMerge>
+                        <feMergeNode in="blur" />
+                        <feMergeNode in="SourceGraphic" />
+                      </feMerge>
+                    </filter>
+                  </defs>
+                  {metroPath ? (
+                    <path
+                      d={metroPath}
+                      fill="none"
+                      stroke={line.stroke}
+                      strokeWidth={7}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      opacity={0.95}
+                      filter={`url(#glow-${line.id}-${lineIndex})`}
+                    />
+                  ) : null}
+                </svg>
 
                 {events.map((event, index) => {
                   const x = metroStationX(index);
@@ -785,54 +657,14 @@ function MetroFieldLine({
                       }}
                     >
                       <span
-                        className="absolute left-1/2 z-10 -translate-x-1/2"
+                        className={cn(
+                          "absolute left-1/2 size-5 -translate-x-1/2 rounded-full border-[3px] shadow-lg",
+                          desktop ? "bg-white" : "bg-zinc-950",
+                          line.ring,
+                          line.glow
+                        )}
                         style={{ top: y - METRO_NODE_RADIUS }}
-                        aria-hidden
-                      >
-                        <span
-                          className="relative flex items-center justify-center"
-                          style={{
-                            width: METRO_NODE_OUTER_RADIUS * 2 + 8,
-                            height: METRO_NODE_OUTER_RADIUS * 2 + 8,
-                          }}
-                        >
-                          <span
-                            className="absolute inset-0 rounded-full"
-                            style={{
-                              background: `radial-gradient(circle, rgba(${line.glowRgb}, 0.55) 0%, rgba(${line.glowRgb}, 0.12) 55%, transparent 72%)`,
-                            }}
-                          />
-                          <span
-                            className={cn(
-                              "relative block rounded-full border-[2.5px]",
-                              desktop ? "bg-white" : "bg-zinc-950",
-                              line.ring
-                            )}
-                            style={{
-                              width: METRO_NODE_OUTER_RADIUS * 2,
-                              height: METRO_NODE_OUTER_RADIUS * 2,
-                              boxShadow: `0 0 10px rgba(${line.glowRgb}, 0.65), 0 0 20px rgba(${line.glowRgb}, 0.3), inset 0 0 6px rgba(255,255,255,0.25)`,
-                            }}
-                          >
-                            <span
-                              className="absolute inset-1 rounded-full"
-                              style={{
-                                background: `linear-gradient(145deg, ${line.strokeBright}, ${line.stroke})`,
-                              }}
-                            />
-                            <span
-                              className="absolute rounded-full bg-white"
-                              style={{
-                                width: 4,
-                                height: 4,
-                                top: 5,
-                                left: 5,
-                                opacity: 0.6,
-                              }}
-                            />
-                          </span>
-                        </span>
-                      </span>
+                      />
 
                       <div
                         className="absolute left-1/2 -translate-x-1/2"
