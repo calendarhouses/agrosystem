@@ -13,7 +13,7 @@ import {
   Sprout,
   Tractor,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { normalizeFieldCrop } from "@/components/dashboard/field-passport-form";
 import { OperationsTimelineImageThumb } from "@/components/dashboard/operations-timeline-image";
@@ -62,6 +62,7 @@ const METRO_TRACK_PADDING_Y = 4;
 const METRO_STANDARD_CARD_H = 142;
 const METRO_SCOUTING_CARD_H = 214;
 const METRO_PLANNED_LINE_STROKE = "#38bdf8";
+const METRO_NORMALIZED_TRACK_WIDTH = 1000;
 
 const METRO_LINE_COLORS = [
   {
@@ -209,6 +210,12 @@ function estimateStationCardHeight(event: UnifiedTimelineEvent): number {
   return Math.max(height, METRO_SCOUTING_CARD_H);
 }
 
+function shouldExtendMetroLineToBlockEnd(events: UnifiedTimelineEvent[]): boolean {
+  if (events.length === 0) return false;
+  if (events.length === 1) return true;
+  return isFutureTimelineOperation(events[events.length - 1]!);
+}
+
 function computeMetroTrackLayout(events: UnifiedTimelineEvent[]): {
   trackHeight: number;
   trackWidth: number;
@@ -230,12 +237,11 @@ function computeMetroTrackLayout(events: UnifiedTimelineEvent[]): {
     const cardHeight = estimateStationCardHeight(events[0]!);
     const y =
       METRO_TRACK_PADDING_Y + cardHeight + METRO_CARD_GAP + METRO_NODE_RADIUS;
-    const normalizedWidth = 1000;
     return {
       trackHeight: y + METRO_NODE_RADIUS + METRO_TRACK_PADDING_Y,
-      trackWidth: normalizedWidth,
+      trackWidth: METRO_NORMALIZED_TRACK_WIDTH,
       yPositions: [y],
-      stationXs: [normalizedWidth / 2],
+      stationXs: [METRO_NORMALIZED_TRACK_WIDTH / 2],
       fullWidthLine: true,
     };
   }
@@ -260,13 +266,30 @@ function computeMetroTrackLayout(events: UnifiedTimelineEvent[]): {
   const lineYBottom = lineYTop + METRO_LINE_GAP;
   const trackHeight =
     lineYBottom + METRO_CARD_GAP + maxBelow + METRO_TRACK_PADDING_Y;
-  const stationXs = events.map((_, index) => TRACK_PAD_X + index * STATION_STEP);
-  const lastStationX = stationXs[stationXs.length - 1] ?? TRACK_PAD_X;
-  const trackWidth = lastStationX + STATION_CARD_WIDTH / 2 + METRO_TRACK_END_PAD;
-
   const yPositions = events.map((_, index) =>
     index % 2 === 0 ? lineYTop : lineYBottom
   );
+
+  const extendToBlockEnd = shouldExtendMetroLineToBlockEnd(events);
+  if (extendToBlockEnd) {
+    const spanStart = METRO_NORMALIZED_TRACK_WIDTH * 0.1;
+    const spanEnd = METRO_NORMALIZED_TRACK_WIDTH * 0.45;
+    const stationXs = events.map(
+      (_, index) =>
+        spanStart + ((spanEnd - spanStart) * index) / (events.length - 1)
+    );
+    return {
+      trackHeight,
+      trackWidth: METRO_NORMALIZED_TRACK_WIDTH,
+      yPositions,
+      stationXs,
+      fullWidthLine: true,
+    };
+  }
+
+  const stationXs = events.map((_, index) => TRACK_PAD_X + index * STATION_STEP);
+  const lastStationX = stationXs[stationXs.length - 1] ?? TRACK_PAD_X;
+  const trackWidth = lastStationX + STATION_CARD_WIDTH / 2 + METRO_TRACK_END_PAD;
 
   return { trackHeight, trackWidth, yPositions, stationXs, fullWidthLine: false };
 }
@@ -543,6 +566,7 @@ function MetroFieldLine({
 
   return (
     <AccordionItem
+      id={`metro-field-${item.fieldId}`}
       value={item.fieldId}
       className={cn(
         "overflow-hidden rounded-3xl border",
@@ -552,8 +576,9 @@ function MetroFieldLine({
       )}
     >
       <AccordionTrigger
+        id={`metro-field-trigger-${item.fieldId}`}
         className={cn(
-          "group w-full px-4 py-3 hover:no-underline [&>svg]:hidden",
+          "group w-full scroll-mt-1.5 px-4 py-3 hover:no-underline [&>svg]:hidden",
           desktop
             ? "border-b border-[#E5DFD3]/80 hover:bg-white/60"
             : "border-b border-white/5 hover:bg-white/[0.03]"
@@ -733,7 +758,11 @@ function MetroFieldLine({
                   const x = stationXs[index] ?? 0;
                   const y = yPositions[index] ?? 0;
                   const cardAbove = index % 2 === 0;
-                  const stationLeft = fullWidthLine ? "50%" : x;
+                  const stationLeft = fullWidthLine
+                    ? events.length === 1
+                      ? "50%"
+                      : `${((stationXs[index] ?? 0) / trackWidth) * 100}%`
+                    : x;
                   const isFuture = isFutureTimelineOperation(event);
 
                   return (
@@ -912,24 +941,42 @@ function MetroFieldsAccordion({
   const desktop = variant === "desktop";
   const [openIds, setOpenIds] = useState<string[]>([]);
 
+  const scrollFieldHeaderIntoView = useCallback((fieldId: string) => {
+    window.requestAnimationFrame(() => {
+      window.setTimeout(() => {
+        document
+          .getElementById(`metro-field-trigger-${fieldId}`)
+          ?.scrollIntoView({ behavior: "smooth", block: "start", inline: "nearest" });
+      }, 80);
+    });
+  }, []);
+
+  const handleOpenChange = useCallback(
+    (next: string[]) => {
+      setOpenIds((prev) => {
+        const opened = next.filter((id) => !prev.includes(id));
+        if (opened.length > 0) {
+          scrollFieldHeaderIntoView(opened[opened.length - 1]!);
+        }
+        return next;
+      });
+    },
+    [scrollFieldHeaderIntoView]
+  );
+
   useEffect(() => {
     if (fields.length === 0) {
       setOpenIds([]);
       return;
     }
-    setOpenIds((prev) => {
-      const valid = prev.filter((id) => fields.some((item) => item.fieldId === id));
-      if (valid.length > 0) return valid;
-      if (desktop) return fields.map((item) => item.fieldId);
-      return [fields[0]!.fieldId];
-    });
-  }, [fields, desktop]);
+    setOpenIds((prev) => prev.filter((id) => fields.some((item) => item.fieldId === id)));
+  }, [fields]);
 
   return (
     <Accordion
       type="multiple"
       value={openIds}
-      onValueChange={setOpenIds}
+      onValueChange={handleOpenChange}
       className={cn(desktop ? "space-y-4" : "space-y-3")}
     >
       {fields.map((item, index) => (

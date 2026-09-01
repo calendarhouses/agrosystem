@@ -472,13 +472,13 @@ export function FieldsMapChrome({ align = "end" }: FieldsMapChromeProps) {
         <Link
           href="/operations"
           aria-label="Хронологія полів"
-          className="flex min-h-11 min-w-0 flex-1 items-center justify-center gap-2 rounded-2xl border border-white/40 bg-background/75 px-3 shadow-lg backdrop-blur-xl transition active:scale-[0.98]"
+          className="flex min-h-11 min-w-0 flex-1 items-center justify-center gap-2 rounded-2xl border border-white/15 bg-zinc-950/88 px-3 shadow-lg backdrop-blur-xl transition active:scale-[0.98]"
         >
           <Activity
-            className="h-4 w-4 shrink-0 text-orange-500"
+            className="h-4 w-4 shrink-0 text-orange-400"
             strokeWidth={2.2}
           />
-          <span className="truncate text-sm font-semibold text-zinc-900">
+          <span className="truncate text-sm font-semibold text-zinc-50">
             Хронологія
           </span>
         </Link>
