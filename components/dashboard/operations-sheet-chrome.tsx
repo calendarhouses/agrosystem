@@ -9,7 +9,7 @@ import {
 import { createPortal } from "react-dom";
 import { format } from "date-fns";
 import { uk } from "date-fns/locale";
-import { Calendar as CalendarIcon, ChevronLeft, Loader2, Trash2 } from "lucide-react";
+import { Calendar as CalendarIcon, ChevronLeft, Loader2, Trash2, X } from "lucide-react";
 import { useState } from "react";
 
 import { Calendar } from "@/components/ui/calendar";
@@ -262,20 +262,37 @@ export function OperationsPanelShell({
       <>
         {dim}
         {open ? (
-          <OpsSurfaceContext.Provider value="light">
-            <div
-              className={cn(
-                "fixed inset-y-0 right-0 z-[150] flex w-full max-w-lg flex-col overflow-hidden",
-                "border-l border-[#E5DFD3]/80 text-zinc-900",
-                "bg-[linear-gradient(180deg,#ffffff_0%,#F4F1EA_55%,#EDE8DF_100%)]",
-                "shadow-[-12px_0_40px_-12px_rgba(39,33,24,0.16)]",
-                className
-              )}
-            >
-              <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-                {children}
-              </div>
-            </div>
+          <OpsSurfaceContext.Provider value="dark">
+            {typeof document !== "undefined"
+              ? createPortal(
+                  <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 sm:p-6">
+                    <div
+                      role="dialog"
+                      aria-modal="true"
+                      aria-label={title}
+                      className={cn(
+                        "relative flex w-full max-w-md flex-col overflow-hidden",
+                        "max-h-[min(88vh,820px)] rounded-3xl border border-white/10",
+                        "bg-zinc-950 text-zinc-50 shadow-[0_24px_80px_-20px_rgba(0,0,0,0.85)]",
+                        className
+                      )}
+                    >
+                      <button
+                        type="button"
+                        aria-label="Закрити"
+                        onClick={() => onOpenChange(false)}
+                        className="absolute top-2.5 right-3 z-30 inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-zinc-300 ring-1 ring-white/10 transition-colors hover:bg-white/15 hover:text-zinc-50"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+                        {children}
+                      </div>
+                    </div>
+                  </div>,
+                  document.body
+                )
+              : null}
           </OpsSurfaceContext.Provider>
         ) : null}
       </>

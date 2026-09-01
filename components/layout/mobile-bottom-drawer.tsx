@@ -1,21 +1,8 @@
 "use client";
 
-import {
-  AnimatePresence,
-  motion,
-  useAnimation,
-  useDragControls,
-  type PanInfo,
-} from "framer-motion";
+import { AnimatePresence, motion, useDragControls, type PanInfo } from "framer-motion";
 import { X } from "lucide-react";
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type PointerEvent,
-  type ReactNode,
-} from "react";
+import { useEffect, useState, type PointerEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { SheetDragHandle } from "@/components/ui/swipe-sheet";
@@ -31,8 +18,8 @@ type MobileBottomDrawerProps = {
   showCloseButton?: boolean;
 };
 
-const SHEET_OPEN_TRANSITION = { type: "spring" as const, stiffness: 440, damping: 40 };
-const SHEET_CLOSE_TRANSITION = { duration: 0.24, ease: [0.4, 0, 1, 1] as const };
+const SHEET_SPRING = { type: "spring" as const, stiffness: 440, damping: 40 };
+const SHEET_CLOSE_EASE = { duration: 0.24, ease: [0.4, 0, 1, 1] as const };
 
 /** Нативна мобільна шторка знизу (поверх контенту, над bottom nav). */
 export function MobileBottomDrawer({
@@ -44,49 +31,20 @@ export function MobileBottomDrawer({
   showCloseButton = true,
 }: MobileBottomDrawerProps) {
   const [mounted, setMounted] = useState(false);
-  const [visible, setVisible] = useState(false);
-  const closingRef = useRef(false);
-  const sheetControls = useAnimation();
   const dragControls = useDragControls();
 
   useEffect(() => setMounted(true), []);
 
   useEffect(() => {
-    if (!visible) return;
+    if (!open) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = prev;
     };
-  }, [visible]);
-
-  const animateOpen = useCallback(async () => {
-    closingRef.current = false;
-    setVisible(true);
-    await sheetControls.set({ y: "100%" });
-    await sheetControls.start({ y: 0 }, SHEET_OPEN_TRANSITION);
-  }, [sheetControls]);
-
-  const animateClose = useCallback(async () => {
-    if (closingRef.current) return;
-    closingRef.current = true;
-    await sheetControls.start({ y: "100%" }, SHEET_CLOSE_TRANSITION);
-    setVisible(false);
-    closingRef.current = false;
-  }, [sheetControls]);
-
-  useEffect(() => {
-    if (open && !visible) {
-      void animateOpen();
-      return;
-    }
-    if (!open && visible) {
-      void animateClose();
-    }
-  }, [open, visible, animateOpen, animateClose]);
+  }, [open]);
 
   function requestClose() {
-    if (!open) return;
     onOpenChange(false);
   }
 
@@ -98,9 +56,7 @@ export function MobileBottomDrawer({
     const shouldClose = info.offset.y > 72 || info.velocity.y > 450;
     if (shouldClose) {
       onOpenChange(false);
-      return;
     }
-    void sheetControls.start({ y: 0 }, SHEET_OPEN_TRANSITION);
   }
 
   if (!mounted) return null;
@@ -109,7 +65,7 @@ export function MobileBottomDrawer({
 
   return createPortal(
     <AnimatePresence>
-      {visible ? (
+      {open ? (
         <>
           <motion.button
             key="mobile-bottom-drawer-overlay"
@@ -129,15 +85,16 @@ export function MobileBottomDrawer({
             style={{ bottom: navOffset }}
           >
             <motion.div
+              key="mobile-bottom-drawer-sheet"
               role="dialog"
               aria-modal="true"
-              animate={sheetControls}
               initial={{ y: "100%" }}
+              animate={{ y: 0, transition: SHEET_SPRING }}
+              exit={{ y: "100%", transition: SHEET_CLOSE_EASE }}
               className={cn(
                 "pointer-events-auto absolute inset-x-0 bottom-0 flex max-h-[min(88dvh,calc(100dvh-var(--app-bottom-inset)))] flex-col overflow-hidden rounded-t-3xl border border-b-0 border-zinc-800 bg-zinc-950 shadow-[0_-24px_64px_-12px_rgba(0,0,0,0.65)]",
                 className
               )}
-              transition={SHEET_OPEN_TRANSITION}
               drag="y"
               dragControls={dragControls}
               dragListener={false}

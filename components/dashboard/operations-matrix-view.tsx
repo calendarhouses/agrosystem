@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, ChevronRight, Search, X } from "lucide-react";
 
 import { FinancePeriodToolbar } from "@/components/dashboard/finance-period-toolbar";
+import { allowHistoryBack } from "@/components/layout/prevent-edge-swipe-back";
 import { OperationsEventDetailSheet } from "@/components/dashboard/operations-event-detail-sheet";
 import { OperationsFieldAddSheet } from "@/components/dashboard/operations-field-add-sheet";
 import { OperationsMetroMap } from "@/components/dashboard/operations-metro-map";
@@ -213,6 +214,7 @@ export function OperationsMatrixView() {
 
   function handleExit() {
     if (typeof window !== "undefined" && window.history.length > 1) {
+      allowHistoryBack();
       router.back();
       return;
     }
@@ -234,7 +236,7 @@ export function OperationsMatrixView() {
       season={season}
       seasonYear={seasonYear}
       refresh={refresh}
-      issueTheme={isMobile ? "dark" : "light"}
+      issueTheme="dark"
     />
   );
 
@@ -253,93 +255,91 @@ export function OperationsMatrixView() {
 
   if (!isMobile) {
     return (
-      <div className="relative flex h-full min-h-0 flex-col bg-gradient-to-br from-[#E8F0EA] via-[#F4F1EA] to-[#EDE8DF]">
-        <header className="sticky top-0 z-30 shrink-0 border-b border-[#E5DFD3]/80 bg-[#F4F1EA]/92 px-6 py-5 backdrop-blur-xl">
-          <div className="mx-auto flex w-full max-w-7xl flex-col gap-4">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-              <div className="min-w-0">
-                <nav
-                  aria-label="Навігація"
-                  className="mb-2 flex items-center gap-1.5 text-sm text-zinc-500"
-                >
-                  <Link
-                    href="/"
-                    className="font-medium transition-colors hover:text-[#276749]"
-                  >
-                    Поля
-                  </Link>
-                  <ChevronRight className="size-3.5 shrink-0 opacity-60" />
-                  <span className="font-semibold text-zinc-800">
-                    Хронологія
+      <section className="flex h-full min-h-0 flex-1 flex-col bg-zinc-950 text-zinc-50">
+        <header className="shrink-0 border-b border-white/5 px-6 pt-5 pb-3">
+          <nav
+            aria-label="Навігація"
+            className="mb-3 flex items-center gap-1.5 text-sm text-zinc-500"
+          >
+            <Link
+              href="/"
+              className="font-medium transition-colors hover:text-zinc-200"
+            >
+              Поля
+            </Link>
+            <ChevronRight className="size-3.5 shrink-0 opacity-60" />
+            <span className="font-semibold text-zinc-300">Хронологія</span>
+          </nav>
+
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+            <div className="min-w-0">
+              <h1 className="text-xl font-semibold tracking-tight text-zinc-50 sm:text-2xl">
+                Хронологія полів
+              </h1>
+              <p className="mt-1 text-sm text-zinc-400">
+                Наряди техніки та списання ТМЦ по полях обраного сезону.
+                {!isLoading && !error ? (
+                  <span className="ml-1 font-medium text-zinc-300">
+                    {ukFieldLabel(summary.fieldCount)} ·{" "}
+                    {ukStationLabel(summary.stationCount)}
                   </span>
-                </nav>
-                <h1 className="text-2xl font-extrabold tracking-tight text-zinc-900 sm:text-3xl">
-                  Хронологія полів
-                </h1>
-                <p className="mt-1 max-w-2xl text-sm leading-relaxed text-zinc-500">
-                  Наряди техніки та списання ТМЦ по полях обраного сезону.
-                  {!isLoading && !error ? (
-                    <span className="ml-1 font-medium text-zinc-600">
-                      {ukFieldLabel(summary.fieldCount)} ·{" "}
-                      {ukStationLabel(summary.stationCount)}
-                    </span>
-                  ) : null}
-                </p>
-              </div>
-
-              <FinancePeriodToolbar
-                {...periodFilter}
-                variant="desktop"
-                theme="light"
-                loading={isLoading}
-                className="w-full max-w-none shrink-0 xl:w-auto"
-              />
+                ) : null}
+              </p>
             </div>
 
-            <div className="relative max-w-md">
-              <Search className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-zinc-400" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Пошук поля або культури…"
-                className="h-11 rounded-xl border-[#E0DBD0] bg-white pl-10 pr-10 text-zinc-900 shadow-sm placeholder:text-zinc-400 focus-visible:border-[#276749]/40 focus-visible:ring-[#276749]/15"
-              />
-              {search ? (
-                <button
-                  type="button"
-                  onClick={() => setSearch("")}
-                  className="absolute top-1/2 right-2 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700"
-                  aria-label="Очистити пошук"
-                >
-                  <X className="size-4" />
-                </button>
-              ) : null}
-            </div>
+            <FinancePeriodToolbar
+              {...periodFilter}
+              variant="desktop"
+              theme="dark"
+              loading={isLoading}
+              className="w-full shrink-0 xl:w-auto"
+            />
+          </div>
+
+          <div className="relative mt-3 max-w-md">
+            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-zinc-500" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Пошук поля або культури…"
+              className="h-11 border-white/10 bg-white/5 pl-10 pr-10 text-zinc-50 placeholder:text-zinc-500 focus-visible:border-emerald-500/40 focus-visible:ring-emerald-500/20"
+            />
+            {search ? (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                className="absolute top-1/2 right-2 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-white/10 hover:text-zinc-100"
+                aria-label="Очистити пошук"
+              >
+                <X className="size-4" />
+              </button>
+            ) : null}
           </div>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-hidden">
-          <div className="mx-auto flex h-full w-full max-w-7xl flex-col px-6 py-5">
-            {!isLoading && error ? (
-              <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-                {error}
-              </div>
-            ) : null}
+        <div
+          className="min-h-0 flex-1 overflow-y-auto overscroll-y-auto px-6 py-4"
+          data-chronicle-scroll
+        >
+          {!isLoading && error ? (
+            <div className="mb-4 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+              {error}
+            </div>
+          ) : null}
 
-            {emptyState ? (
-              <p className="rounded-3xl border border-[#E5DFD3]/90 bg-white/70 px-6 py-16 text-center text-sm text-zinc-500 shadow-sm">
-                {searchQuery
-                  ? "Полів за запитом не знайдено."
-                  : "За обраний період подій немає. Спробуйте інший діапазон або додайте операцію через пошук поля."}
-              </p>
-            ) : (
-              <div className="min-h-0 flex-1 overflow-hidden">{metroMap}</div>
-            )}
-          </div>
-        </main>
+          {emptyState ? (
+            <p className="rounded-3xl border border-white/10 bg-white/5 px-6 py-16 text-center text-sm text-zinc-500">
+              {searchQuery
+                ? "Полів за запитом не знайдено."
+                : "За обраний період подій немає. Спробуйте інший діапазон або додайте операцію через пошук поля."}
+            </p>
+          ) : (
+            <div className="min-h-0 flex-1">{metroMap}</div>
+          )}
+        </div>
 
         {sheets}
-      </div>
+      </section>
     );
   }
 

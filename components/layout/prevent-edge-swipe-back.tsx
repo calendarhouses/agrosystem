@@ -4,24 +4,78 @@ import { useEffect } from "react";
 
 import { useIsMobile } from "@/lib/use-mobile";
 
+let allowHistoryBackUntil = 0;
+
+/** Дозволити один програмний крок назад (кнопка «Назад» в UI). */
+export function allowHistoryBack(ms = 2000) {
+  allowHistoryBackUntil = Date.now() + ms;
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  if (target.closest("[data-allow-select='true']")) return true;
+  return (
+    target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement
+  );
+}
+
 /**
- * Блокує iOS/Android edge-swipe «назад» (від лівого краю вправо).
- * Не чіпаємо вертикальний скрол і жести всередині екрана.
+ * Блокує виділення/копіювання та iOS/Android edge-swipe «назад».
  */
 export function PreventEdgeSwipeBack() {
   const isMobile = useIsMobile();
 
   useEffect(() => {
+    const onCopy = (event: ClipboardEvent) => {
+      if (isEditableTarget(event.target)) return;
+      event.preventDefault();
+    };
+
+    const onCut = (event: ClipboardEvent) => {
+      if (isEditableTarget(event.target)) return;
+      event.preventDefault();
+    };
+
+    const onContextMenu = (event: Event) => {
+      if (isEditableTarget(event.target)) return;
+      event.preventDefault();
+    };
+
+    const onSelectStart = (event: Event) => {
+      if (isEditableTarget(event.target)) return;
+      event.preventDefault();
+    };
+
+    const onDragStart = (event: DragEvent) => {
+      if (isEditableTarget(event.target)) return;
+      event.preventDefault();
+    };
+
+    document.addEventListener("copy", onCopy);
+    document.addEventListener("cut", onCut);
+    document.addEventListener("contextmenu", onContextMenu);
+    document.addEventListener("selectstart", onSelectStart);
+    document.addEventListener("dragstart", onDragStart);
+
+    return () => {
+      document.removeEventListener("copy", onCopy);
+      document.removeEventListener("cut", onCut);
+      document.removeEventListener("contextmenu", onContextMenu);
+      document.removeEventListener("selectstart", onSelectStart);
+      document.removeEventListener("dragstart", onDragStart);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!isMobile) return;
 
-    const EDGE_PX = 36;
-    const MIN_DX = 8;
-    const SWIPE_GUARD_MS = 500;
+    const EDGE_PX = 56;
+    const MIN_DX = 6;
 
     let startX = -1;
     let startY = -1;
     let tracking = false;
-    let lastEdgeSwipeAt = 0;
 
     const anchorHistory = () => {
       try {
@@ -34,9 +88,8 @@ export function PreventEdgeSwipeBack() {
     anchorHistory();
 
     const onPopState = () => {
-      if (Date.now() - lastEdgeSwipeAt < SWIPE_GUARD_MS) {
-        anchorHistory();
-      }
+      if (Date.now() < allowHistoryBackUntil) return;
+      anchorHistory();
     };
 
     const onTouchStart = (event: TouchEvent) => {
@@ -44,7 +97,7 @@ export function PreventEdgeSwipeBack() {
       if (!t) return;
       startX = t.clientX;
       startY = t.clientY;
-      tracking = startX >= 0 && startX < EDGE_PX;
+      tracking = startX < EDGE_PX;
     };
 
     const onTouchMove = (event: TouchEvent) => {
@@ -53,8 +106,7 @@ export function PreventEdgeSwipeBack() {
       if (!t) return;
       const dx = t.clientX - startX;
       const dy = Math.abs(t.clientY - startY);
-      if (dx > MIN_DX && dx > dy * 1.2) {
-        lastEdgeSwipeAt = Date.now();
+      if (dx > MIN_DX && dx > dy) {
         event.preventDefault();
         event.stopPropagation();
       }
