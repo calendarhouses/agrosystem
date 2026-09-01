@@ -7,16 +7,13 @@ import {
   ChevronLeft,
   ChevronRight,
   FlaskConical,
-  Maximize2,
-  Minimize2,
   Package,
   Plus,
   Search,
   Sprout,
   Tractor,
 } from "lucide-react";
-import { motion } from "framer-motion";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { normalizeFieldCrop } from "@/components/dashboard/field-passport-form";
 import { OperationsTimelineImageThumb } from "@/components/dashboard/operations-timeline-image";
@@ -62,9 +59,6 @@ const METRO_LINE_GAP = 88;
 const METRO_TRACK_PADDING_Y = 16;
 const METRO_STANDARD_CARD_H = 148;
 const METRO_SCOUTING_CARD_H = 268;
-const METRO_OVERVIEW_SPRING = { type: "spring" as const, damping: 25, stiffness: 120 };
-const METRO_OVERVIEW_VIEWPORT_OFFSET = 200;
-const METRO_CINEMATIC_NODE_SCALE = 1.35;
 const METRO_CURVE_BEND = 0.52;
 const METRO_VERTICAL_BEND = 0.42;
 
@@ -319,40 +313,26 @@ function buildMetroPath(
   return parts.join(" ");
 }
 
-function computeOverviewScale(
-  scrollHeight: number,
-  scrollWidth: number
-): number {
-  if (scrollHeight <= 0 || scrollWidth <= 0) return 1;
-  const scaleY =
-    (window.innerHeight - METRO_OVERVIEW_VIEWPORT_OFFSET) / scrollHeight;
-  const scaleX = (window.innerWidth - 80) / scrollWidth;
-  return Math.min(1, scaleY, scaleX);
-}
-
 function MetroTrackSvg({
   line,
   lineIndex,
   trackWidth,
   trackHeight,
   metroPath,
-  yPositions,
-  desktop,
-  cinematic = false,
+  stationCount,
 }: {
   line: MetroLineColor;
   lineIndex: number;
   trackWidth: number;
   trackHeight: number;
   metroPath: string;
-  yPositions: number[];
-  desktop: boolean;
-  cinematic?: boolean;
+  stationCount: number;
 }) {
   const gradId = `metro-grad-${line.id}-${lineIndex}`;
-  const glowFilterId = `metro-glow-${line.id}-${lineIndex}`;
-  const nodeGlowId = `metro-node-glow-${line.id}-${lineIndex}`;
-  const xEnd = metroStationX(Math.max(yPositions.length - 1, 0));
+  const bloomId = `metro-bloom-${line.id}-${lineIndex}`;
+  const xEnd = metroStationX(Math.max(stationCount - 1, 0));
+
+  if (!metroPath) return null;
 
   return (
     <svg
@@ -367,37 +347,30 @@ function MetroTrackSvg({
           gradientUnits="userSpaceOnUse"
           x1={metroStationX(0)}
           y1={0}
-          x2={xEnd}
+          x2={xEnd || metroStationX(0)}
           y2={trackHeight}
         >
-          <stop offset="0%" stopColor={line.strokeDim} stopOpacity={0.45} />
-          <stop offset="12%" stopColor={line.strokeBright} stopOpacity={1} />
-          <stop offset="50%" stopColor={line.stroke} stopOpacity={1} />
-          <stop offset="88%" stopColor={line.strokeBright} stopOpacity={1} />
-          <stop offset="100%" stopColor={line.strokeDim} stopOpacity={0.45} />
+          <stop offset="0%" stopColor={line.strokeDim} stopOpacity={0.2} />
+          <stop offset="8%" stopColor={line.strokeBright} stopOpacity={0.95} />
+          <stop offset="45%" stopColor={line.stroke} stopOpacity={1} />
+          <stop offset="55%" stopColor="#ffffff" stopOpacity={0.92} />
+          <stop offset="92%" stopColor={line.strokeBright} stopOpacity={0.95} />
+          <stop offset="100%" stopColor={line.strokeDim} stopOpacity={0.2} />
         </linearGradient>
 
         <filter
-          id={glowFilterId}
-          x="-40%"
-          y="-20%"
-          width="180%"
-          height="140%"
+          id={bloomId}
+          x="-60%"
+          y="-40%"
+          width="220%"
+          height="180%"
           colorInterpolationFilters="sRGB"
         >
-          <feGaussianBlur stdDeviation="5" result="blurWide" />
-          <feGaussianBlur in="SourceGraphic" stdDeviation="2.5" result="blurMid" />
+          <feGaussianBlur stdDeviation="10" result="bloomWide" />
+          <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="bloomMid" />
           <feMerge>
-            <feMergeNode in="blurWide" />
-            <feMergeNode in="blurMid" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-
-        <filter id={nodeGlowId} x="-100%" y="-100%" width="300%" height="300%">
-          <feGaussianBlur stdDeviation="3.5" result="nodeBlur" />
-          <feMerge>
-            <feMergeNode in="nodeBlur" />
+            <feMergeNode in="bloomWide" />
+            <feMergeNode in="bloomMid" />
             <feMergeNode in="SourceGraphic" />
           </feMerge>
         </filter>
@@ -405,90 +378,46 @@ function MetroTrackSvg({
 
       <g
         style={{
-          filter: cinematic
-            ? `drop-shadow(0 0 12px rgba(${line.glowRgb}, 0.8)) drop-shadow(0 0 28px rgba(${line.glowRgb}, 0.45))`
-            : `drop-shadow(0 0 8px rgba(${line.glowRgb}, 0.6)) drop-shadow(0 0 18px rgba(${line.glowRgb}, 0.28))`,
+          filter: `drop-shadow(0 0 10px rgba(${line.glowRgb}, 0.75)) drop-shadow(0 0 22px rgba(${line.glowRgb}, 0.4)) drop-shadow(0 0 40px rgba(${line.glowRgb}, 0.18))`,
         }}
       >
-        {metroPath ? (
-          <>
-            <path
-              d={metroPath}
-              fill="none"
-              stroke={line.stroke}
-              strokeWidth={16}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              opacity={0.14}
-            />
-            <path
-              d={metroPath}
-              fill="none"
-              stroke={line.strokeBright}
-              strokeWidth={10}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              opacity={0.28}
-            />
-            <path
-              d={metroPath}
-              fill="none"
-              stroke={`url(#${gradId})`}
-              strokeWidth={5.5}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              filter={`url(#${glowFilterId})`}
-            />
-          </>
-        ) : null}
+        <path
+          d={metroPath}
+          fill="none"
+          stroke={line.stroke}
+          strokeWidth={22}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          opacity={0.1}
+        />
+        <path
+          d={metroPath}
+          fill="none"
+          stroke={line.strokeBright}
+          strokeWidth={14}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          opacity={0.22}
+        />
+        <path
+          d={metroPath}
+          fill="none"
+          stroke={`url(#${gradId})`}
+          strokeWidth={6}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          filter={`url(#${bloomId})`}
+        />
+        <path
+          d={metroPath}
+          fill="none"
+          stroke="#ffffff"
+          strokeWidth={1.75}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          opacity={0.55}
+        />
       </g>
-
-      {yPositions.map((y, index) => {
-        const x = metroStationX(index);
-        const nodeFill = desktop ? "#fafafa" : "#09090b";
-        const outerR = METRO_NODE_OUTER_RADIUS * (cinematic ? METRO_CINEMATIC_NODE_SCALE : 1);
-        const midR = METRO_NODE_RADIUS * (cinematic ? METRO_CINEMATIC_NODE_SCALE : 1);
-        const coreR = (METRO_NODE_RADIUS - 3) * (cinematic ? METRO_CINEMATIC_NODE_SCALE : 1);
-        const haloR = (METRO_NODE_OUTER_RADIUS + 4) * (cinematic ? METRO_CINEMATIC_NODE_SCALE : 1);
-        const specR = 2.5 * (cinematic ? METRO_CINEMATIC_NODE_SCALE : 1);
-
-        return (
-          <g key={index} filter={`url(#${nodeGlowId})`}>
-            <circle
-              cx={x}
-              cy={y}
-              r={haloR}
-              fill={`rgba(${line.glowRgb}, ${cinematic ? 0.28 : 0.16})`}
-            />
-            <circle
-              cx={x}
-              cy={y}
-              r={outerR}
-              fill={nodeFill}
-              fillOpacity={desktop ? 0.92 : 0.88}
-              stroke={`rgba(${line.glowRgb}, ${cinematic ? 0.55 : 0.35})`}
-              strokeWidth={cinematic ? 2.5 : 2}
-            />
-            <circle
-              cx={x}
-              cy={y}
-              r={midR}
-              fill="none"
-              stroke={line.stroke}
-              strokeWidth={cinematic ? 3 : 2.5}
-              opacity={0.9}
-            />
-            <circle cx={x} cy={y} r={coreR} fill={line.strokeBright} />
-            <circle
-              cx={x - 1.5}
-              cy={y - 1.5}
-              r={specR}
-              fill="#ffffff"
-              fillOpacity={cinematic ? 0.7 : 0.55}
-            />
-          </g>
-        );
-      })}
     </svg>
   );
 }
@@ -523,17 +452,12 @@ function MetroStationCard({
   event,
   onClick,
   desktop = false,
-  cinematic = false,
 }: {
   event: UnifiedTimelineEvent;
   onClick?: () => void;
   desktop?: boolean;
-  cinematic?: boolean;
 }) {
   const icon = deriveTimelineIcon(event);
-  const cinematicText = cinematic
-    ? "[&_p]:opacity-50 [&_time]:opacity-50 [&_span]:opacity-50"
-    : "";
 
   if (event.type === "scouting") {
     return (
@@ -541,9 +465,7 @@ function MetroStationCard({
         type="button"
         onClick={onClick}
         className={cn(
-          "relative z-10 w-full touch-pan-xy rounded-2xl border p-3 text-left backdrop-blur-md transition active:scale-[0.98]",
-          cinematic && "transition-opacity duration-300",
-          cinematicText,
+          "relative z-10 w-[13.5rem] touch-pan-xy rounded-2xl border p-3 text-left backdrop-blur-md transition active:scale-[0.98]",
           desktop
             ? "border-[#E5DFD3]/90 bg-white/95 shadow-sm hover:border-blue-200 hover:shadow-md"
             : "border-white/10 bg-white/[0.07] shadow-[0_12px_40px_-20px_rgba(0,0,0,0.85)] hover:border-white/20 hover:bg-white/[0.12]"
@@ -593,9 +515,7 @@ function MetroStationCard({
       type="button"
       onClick={onClick}
       className={cn(
-        "relative z-10 w-full touch-pan-xy rounded-2xl border p-3 text-left backdrop-blur-md transition active:scale-[0.98]",
-        cinematic && "transition-opacity duration-300",
-        cinematicText,
+        "relative z-10 w-[13.5rem] touch-pan-xy rounded-2xl border p-3 text-left backdrop-blur-md transition active:scale-[0.98]",
         desktop
           ? "border-[#E5DFD3]/90 bg-white/95 shadow-sm hover:border-[#276749]/20 hover:shadow-md"
           : "border-white/10 bg-white/[0.07] shadow-[0_12px_40px_-20px_rgba(0,0,0,0.85)] hover:border-white/20 hover:bg-white/[0.12]"
@@ -690,35 +610,6 @@ function MetroFieldLine({
   );
   const metroPath = buildMetroPath(events.length, yPositions, trackHeight);
 
-  const [isZoomedOut, setIsZoomedOut] = useState(false);
-  const [overviewScale, setOverviewScale] = useState(1);
-  const timelineContentRef = useRef<HTMLDivElement>(null);
-
-  const refreshOverviewScale = useCallback(() => {
-    const el = timelineContentRef.current;
-    if (!el) return;
-    setOverviewScale(
-      computeOverviewScale(el.scrollHeight, el.scrollWidth)
-    );
-  }, []);
-
-  useLayoutEffect(() => {
-    if (!isZoomedOut) return;
-    refreshOverviewScale();
-    const raf = requestAnimationFrame(refreshOverviewScale);
-    return () => cancelAnimationFrame(raf);
-  }, [isZoomedOut, refreshOverviewScale, trackWidth, trackHeight, events.length]);
-
-  useEffect(() => {
-    if (!isZoomedOut) return;
-    refreshOverviewScale();
-    window.addEventListener("resize", refreshOverviewScale);
-    return () => window.removeEventListener("resize", refreshOverviewScale);
-  }, [isZoomedOut, refreshOverviewScale, trackWidth, trackHeight, events.length]);
-
-  const activeScale = isZoomedOut ? overviewScale : 1;
-  const scaledTrackHeight = trackHeight * activeScale;
-
   return (
     <AccordionItem
       value={item.fieldId}
@@ -799,36 +690,6 @@ function MetroFieldLine({
               {ukStationLabel(events.length)}
             </span>
 
-            {events.length > 0 ? (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsZoomedOut((prev) => !prev);
-                }}
-                aria-label={
-                  isZoomedOut ? "Звичайний вигляд таймлайну" : "Огляд маршруту"
-                }
-                aria-pressed={isZoomedOut}
-                className={cn(
-                  "hidden size-8 items-center justify-center rounded-full border backdrop-blur-md transition-all group-data-[state=open]:inline-flex",
-                  isZoomedOut
-                    ? desktop
-                      ? "border-[#C05621]/30 bg-[#C05621]/10 text-[#C05621]"
-                      : "border-orange-400/40 bg-orange-500/15 text-orange-300"
-                    : desktop
-                      ? "border-[#E5DFD3]/80 bg-white/70 text-zinc-600 hover:bg-white"
-                      : "border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10"
-                )}
-              >
-                {isZoomedOut ? (
-                  <Minimize2 className="size-3.5" strokeWidth={2.2} />
-                ) : (
-                  <Maximize2 className="size-3.5" strokeWidth={2.2} />
-                )}
-              </button>
-            ) : null}
-
             <button
               type="button"
               onClick={(e) => {
@@ -883,86 +744,113 @@ function MetroFieldLine({
           </div>
         ) : (
           <div
-            className="relative overflow-visible"
+            className="relative overflow-visible py-2"
             style={{ overscrollBehaviorX: "contain" }}
           >
             <div
-              className={cn(
-                "ops-track-scroll overscroll-x-contain touch-pan-xy px-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
-                isZoomedOut
-                  ? "overflow-hidden"
-                  : "overflow-x-auto overflow-y-visible"
-              )}
+              className="ops-track-scroll overflow-x-auto overflow-y-hidden overscroll-x-contain touch-pan-xy px-1 pb-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
               aria-label={`Хронологія поля ${item.fieldName}`}
             >
               <div
-                className={cn(
-                  "mx-auto overflow-visible transition-[height] duration-300",
-                  isZoomedOut && "flex justify-center"
-                )}
+                className="relative mx-auto overflow-visible"
                 style={{
-                  height: isZoomedOut ? scaledTrackHeight : trackHeight,
-                  width: isZoomedOut ? "100%" : trackWidth,
+                  width: trackWidth,
+                  height: trackHeight,
+                  minHeight: trackHeight,
                 }}
               >
-                <motion.div
-                  ref={timelineContentRef}
-                  className="relative overflow-visible"
-                  style={{
-                    width: trackWidth,
-                    height: trackHeight,
-                    minHeight: trackHeight,
-                    transformOrigin: "top center",
-                  }}
-                  animate={{ scale: activeScale }}
-                  transition={METRO_OVERVIEW_SPRING}
-                >
-                  <MetroTrackSvg
-                    line={line}
-                    lineIndex={lineIndex}
-                    trackWidth={trackWidth}
-                    trackHeight={trackHeight}
-                    metroPath={metroPath}
-                    yPositions={yPositions}
-                    desktop={desktop}
-                    cinematic={isZoomedOut}
-                  />
+                <MetroTrackSvg
+                  line={line}
+                  lineIndex={lineIndex}
+                  trackWidth={trackWidth}
+                  trackHeight={trackHeight}
+                  metroPath={metroPath}
+                  stationCount={events.length}
+                />
 
-                  {events.map((event, index) => {
-                    const x = metroStationX(index);
-                    const y = yPositions[index] ?? 0;
-                    const cardAbove = index % 2 === 0;
+                {events.map((event, index) => {
+                  const x = metroStationX(index);
+                  const y = yPositions[index] ?? 0;
+                  const cardAbove = index % 2 === 0;
 
-                    return (
-                      <div
-                        key={event.id}
-                        className="absolute top-0 flex flex-col items-center"
-                        style={{
-                          left: x,
-                          width: STATION_CARD_WIDTH,
-                          marginLeft: -STATION_CARD_WIDTH / 2,
-                          height: trackHeight,
-                        }}
+                  return (
+                    <div
+                      key={event.id}
+                      className="absolute top-0 left-0"
+                      style={{
+                        left: x,
+                        transform: "translateX(-50%)",
+                        width: 0,
+                        height: trackHeight,
+                      }}
+                    >
+                      <span
+                        className="absolute left-1/2 z-10 -translate-x-1/2"
+                        style={{ top: y - METRO_NODE_RADIUS }}
+                        aria-hidden
                       >
-                        <div
-                          className="absolute left-0 w-full"
-                          style={
-                            cardAbove
-                              ? { bottom: trackHeight - y + METRO_CARD_GAP }
-                              : { top: y + METRO_CARD_GAP }
-                          }
+                        <span
+                          className="relative flex items-center justify-center"
+                          style={{
+                            width: METRO_NODE_OUTER_RADIUS * 2 + 8,
+                            height: METRO_NODE_OUTER_RADIUS * 2 + 8,
+                          }}
                         >
-                          <MetroStationCard
-                            event={event}
-                            desktop={desktop}
-                            cinematic={isZoomedOut}
-                            onClick={() => onEventClick?.(field, event)}
+                          <span
+                            className="absolute inset-0 rounded-full"
+                            style={{
+                              background: `radial-gradient(circle, rgba(${line.glowRgb}, 0.55) 0%, rgba(${line.glowRgb}, 0.12) 55%, transparent 72%)`,
+                            }}
                           />
-                        </div>
+                          <span
+                            className={cn(
+                              "relative block rounded-full border-[2.5px]",
+                              desktop ? "bg-white" : "bg-zinc-950",
+                              line.ring
+                            )}
+                            style={{
+                              width: METRO_NODE_OUTER_RADIUS * 2,
+                              height: METRO_NODE_OUTER_RADIUS * 2,
+                              boxShadow: `0 0 10px rgba(${line.glowRgb}, 0.65), 0 0 20px rgba(${line.glowRgb}, 0.3), inset 0 0 6px rgba(255,255,255,0.25)`,
+                            }}
+                          >
+                            <span
+                              className="absolute inset-1 rounded-full"
+                              style={{
+                                background: `linear-gradient(145deg, ${line.strokeBright}, ${line.stroke})`,
+                              }}
+                            />
+                            <span
+                              className="absolute rounded-full bg-white"
+                              style={{
+                                width: 4,
+                                height: 4,
+                                top: 5,
+                                left: 5,
+                                opacity: 0.6,
+                              }}
+                            />
+                          </span>
+                        </span>
+                      </span>
+
+                      <div
+                        className="absolute left-1/2 -translate-x-1/2"
+                        style={
+                          cardAbove
+                            ? { bottom: trackHeight - y + METRO_CARD_GAP }
+                            : { top: y + METRO_CARD_GAP }
+                        }
+                      >
+                        <MetroStationCard
+                          event={event}
+                          desktop={desktop}
+                          onClick={() => onEventClick?.(field, event)}
+                        />
                       </div>
-                    );
-                  })}
-                </motion.div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
