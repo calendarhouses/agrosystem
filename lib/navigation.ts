@@ -1,6 +1,5 @@
 import type { LucideIcon } from "lucide-react";
 import {
-  Activity,
   FileSpreadsheet,
   Fuel,
   History,
@@ -29,13 +28,6 @@ export const APP_NAV_ITEMS: AppNavItem[] = [
     label: "Поля",
     hint: "Поля, контури та погода",
     icon: MapIcon,
-    bottomNav: true,
-  },
-  {
-    href: "/operations",
-    label: "Операції",
-    hint: "Хронологія робіт і списань ТМЦ по полях",
-    icon: Activity,
     bottomNav: true,
   },
   {
@@ -84,12 +76,6 @@ export const APP_NAV_ITEMS: AppNavItem[] = [
 
 export const BOTTOM_NAV_ITEMS = APP_NAV_ITEMS.filter((item) => item.bottomNav);
 
-/** Сторінка 0 каруселі: поля, хронологія, техніка */
-export const BOTTOM_NAV_OPS_PRIMARY = BOTTOM_NAV_ITEMS.slice(0, 3);
-
-/** Сторінка 1 каруселі: паливо та склад */
-export const BOTTOM_NAV_OPS_SECONDARY = BOTTOM_NAV_ITEMS.slice(3);
-
 export const MORE_MENU_ITEMS = APP_NAV_ITEMS.filter((item) => item.moreMenu);
 
 /** Сторінка 1 sliding dock: Фінанси → Бухгалтерія → Журнал (Профіль окремо) */
@@ -116,19 +102,4 @@ export function isNavItemActive(
     return pathname === "/" || pathname.startsWith("/fields");
   }
   return pathname === href || pathname.startsWith(`${href}/`);
-}
-
-export function bottomNavPageForPath(pathname: string | null): 0 | 1 | 2 {
-  if (!pathname) return 0;
-  if (
-    DOCK_BUSINESS_ITEMS.some((item) => isNavItemActive(pathname, item.href))
-  ) {
-    return 2;
-  }
-  if (
-    BOTTOM_NAV_OPS_SECONDARY.some((item) => isNavItemActive(pathname, item.href))
-  ) {
-    return 1;
-  }
-  return 0;
 }
