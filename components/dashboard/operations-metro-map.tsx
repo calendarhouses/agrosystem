@@ -13,7 +13,7 @@ import {
   Sprout,
   Tractor,
 } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { normalizeFieldCrop } from "@/components/dashboard/field-passport-form";
 import { OperationsTimelineImageThumb } from "@/components/dashboard/operations-timeline-image";
@@ -50,18 +50,54 @@ import { cn } from "@/lib/utils";
 
 export type OperationsMetroVariant = "mobile" | "desktop";
 
-const STATION_CARD_WIDTH = 216;
-const STATION_STEP = 252;
-const TRACK_PAD_X = STATION_CARD_WIDTH / 2 + 24;
-const METRO_TRACK_END_PAD = 24;
-const METRO_TRACK_MIN_HEIGHT = 240;
-const METRO_CARD_GAP = 10;
-const METRO_NODE_RADIUS = 10;
-const METRO_LINE_GAP = 56;
-const METRO_TRACK_PADDING_Y = 4;
-const METRO_STANDARD_CARD_H = 142;
-const METRO_SCOUTING_CARD_H = 214;
-const METRO_PLANNED_LINE_STROKE = "#38bdf8";
+type MetroLayoutMetrics = {
+  stationCardWidth: number;
+  stationStep: number;
+  trackPadX: number;
+  trackEndPad: number;
+  trackMinHeight: number;
+  cardGap: number;
+  nodeRadius: number;
+  lineGap: number;
+  trackPaddingY: number;
+  standardCardH: number;
+  scoutingCardH: number;
+  strokeWidth: number;
+};
+
+const MOBILE_METRO_METRICS: MetroLayoutMetrics = {
+  stationCardWidth: 216,
+  stationStep: 252,
+  trackPadX: 216 / 2 + 24,
+  trackEndPad: 24,
+  trackMinHeight: 240,
+  cardGap: 10,
+  nodeRadius: 10,
+  lineGap: 56,
+  trackPaddingY: 4,
+  standardCardH: 142,
+  scoutingCardH: 214,
+  strokeWidth: 7,
+};
+
+const DESKTOP_METRO_METRICS: MetroLayoutMetrics = {
+  stationCardWidth: 168,
+  stationStep: 184,
+  trackPadX: 168 / 2 + 16,
+  trackEndPad: 16,
+  trackMinHeight: 168,
+  cardGap: 6,
+  nodeRadius: 7,
+  lineGap: 40,
+  trackPaddingY: 2,
+  standardCardH: 100,
+  scoutingCardH: 156,
+  strokeWidth: 5,
+};
+
+function metroMetricsFor(variant: OperationsMetroVariant): MetroLayoutMetrics {
+  return variant === "desktop" ? DESKTOP_METRO_METRICS : MOBILE_METRO_METRICS;
+}
 
 const METRO_LINE_COLORS = [
   {
@@ -100,6 +136,8 @@ const METRO_LINE_COLORS = [
     fill: "bg-rose-500",
   },
 ] as const;
+
+const METRO_PLANNED_LINE_STROKE = "#38bdf8";
 
 const uahFormatter = new Intl.NumberFormat("uk-UA", {
   style: "currency",
@@ -185,48 +223,69 @@ function eventIcon(
   }
 }
 
-function estimateStationCardHeight(event: UnifiedTimelineEvent): number {
+function estimateStationCardHeight(
+  event: UnifiedTimelineEvent,
+  metrics: MetroLayoutMetrics
+): number {
   if (event.type !== "scouting") {
-    const withStatus = isFutureTimelineOperation(event) ? 24 : 0;
-    return METRO_STANDARD_CARD_H + withStatus;
+    const withStatus = isFutureTimelineOperation(event) ? 20 : 0;
+    return metrics.standardCardH + withStatus;
   }
 
-  let height = 20;
-  height += 86;
-  if (event.notes?.trim()) height += 34;
-  else height += 16;
-  height += 26;
-  return Math.max(height, METRO_SCOUTING_CARD_H);
+  let height = 16;
+  height += metrics === DESKTOP_METRO_METRICS ? 64 : 86;
+  if (event.notes?.trim()) height += metrics === DESKTOP_METRO_METRICS ? 28 : 34;
+  else height += metrics === DESKTOP_METRO_METRICS ? 12 : 16;
+  height += metrics === DESKTOP_METRO_METRICS ? 20 : 26;
+  return Math.max(height, metrics.scoutingCardH);
 }
 
-function computeMetroTrackLayout(events: UnifiedTimelineEvent[]): {
+function computeMetroTrackLayout(
+  events: UnifiedTimelineEvent[],
+  variant: OperationsMetroVariant = "mobile"
+): {
   trackHeight: number;
   trackWidth: number;
   yPositions: number[];
   stationXs: number[];
   fullWidthLine: boolean;
+  metrics: MetroLayoutMetrics;
 } {
+  const metrics = metroMetricsFor(variant);
+  const {
+    stationCardWidth,
+    stationStep,
+    trackPadX,
+    trackEndPad,
+    trackMinHeight,
+    cardGap,
+    nodeRadius,
+    lineGap,
+    trackPaddingY,
+  } = metrics;
+
   if (events.length === 0) {
     return {
-      trackHeight: METRO_TRACK_MIN_HEIGHT,
-      trackWidth: STATION_CARD_WIDTH + METRO_TRACK_END_PAD * 2,
+      trackHeight: trackMinHeight,
+      trackWidth: stationCardWidth + trackEndPad * 2,
       yPositions: [],
       stationXs: [],
       fullWidthLine: false,
+      metrics,
     };
   }
 
   if (events.length === 1) {
-    const cardHeight = estimateStationCardHeight(events[0]!);
-    const y =
-      METRO_TRACK_PADDING_Y + cardHeight + METRO_CARD_GAP + METRO_NODE_RADIUS;
+    const cardHeight = estimateStationCardHeight(events[0]!, metrics);
+    const y = trackPaddingY + cardHeight + cardGap + nodeRadius;
     const normalizedWidth = 1000;
     return {
-      trackHeight: y + METRO_NODE_RADIUS + METRO_TRACK_PADDING_Y,
+      trackHeight: y + nodeRadius + trackPaddingY,
       trackWidth: normalizedWidth,
       yPositions: [y],
       stationXs: [normalizedWidth / 2],
       fullWidthLine: true,
+      metrics,
     };
   }
 
@@ -234,7 +293,7 @@ function computeMetroTrackLayout(events: UnifiedTimelineEvent[]): {
   let maxBelow = 0;
 
   for (let index = 0; index < events.length; index++) {
-    const height = estimateStationCardHeight(events[index]!);
+    const height = estimateStationCardHeight(events[index]!, metrics);
     if (index % 2 === 0) {
       maxAbove = Math.max(maxAbove, height);
     } else {
@@ -242,23 +301,19 @@ function computeMetroTrackLayout(events: UnifiedTimelineEvent[]): {
     }
   }
 
-  const lineYTop =
-    METRO_TRACK_PADDING_Y +
-    maxAbove +
-    METRO_CARD_GAP +
-    METRO_NODE_RADIUS;
-  const lineYBottom = lineYTop + METRO_LINE_GAP;
-  const trackHeight =
-    lineYBottom + METRO_CARD_GAP + maxBelow + METRO_TRACK_PADDING_Y;
-  const stationXs = events.map((_, index) => TRACK_PAD_X + index * STATION_STEP);
-  const lastStationX = stationXs[stationXs.length - 1] ?? TRACK_PAD_X;
-  const trackWidth = lastStationX + STATION_CARD_WIDTH / 2 + METRO_TRACK_END_PAD;
+  const lineYTop = trackPaddingY + maxAbove + cardGap + nodeRadius;
+  const lineYBottom = lineYTop + lineGap;
+  const trackHeight = lineYBottom + cardGap + maxBelow + trackPaddingY;
+  const stationXs = events.map((_, index) => trackPadX + index * stationStep);
+  const lastStationX = stationXs[stationXs.length - 1] ?? trackPadX;
+  const trackWidth =
+    lastStationX + stationCardWidth / 2 + trackEndPad;
 
   const yPositions = events.map((_, index) =>
     index % 2 === 0 ? lineYTop : lineYBottom
   );
 
-  return { trackHeight, trackWidth, yPositions, stationXs, fullWidthLine: false };
+  return { trackHeight, trackWidth, yPositions, stationXs, fullWidthLine: false, metrics };
 }
 
 function buildMetroPathSegments(
@@ -323,13 +378,18 @@ function MetroStationDateRow({ event }: { event: UnifiedTimelineEvent }) {
 function MetroStationCard({
   event,
   onClick,
+  compact = false,
 }: {
   event: UnifiedTimelineEvent;
   onClick?: () => void;
+  compact?: boolean;
 }) {
   const icon = deriveTimelineIcon(event);
   const isFuture = isFutureTimelineOperation(event);
   const statusLabel = timelineOperationStatusLabel(event.operationStatus);
+  const cardWidth = compact ? "w-[10.5rem]" : "w-[13.5rem]";
+  const cardPad = compact ? "p-2" : "p-2.5";
+  const cardRadius = compact ? "rounded-xl" : "rounded-2xl";
 
   if (event.type === "scouting") {
     return (
@@ -344,7 +404,10 @@ function MetroStationCard({
           }
         }}
         className={cn(
-          "relative z-10 w-[13.5rem] cursor-pointer touch-pan-xy rounded-2xl border border-white/10 bg-white/[0.07] p-2.5 text-left shadow-[0_12px_40px_-20px_rgba(0,0,0,0.85)] backdrop-blur-md transition hover:border-white/20 hover:bg-white/[0.12] active:scale-[0.98]"
+          "relative z-10 cursor-pointer touch-pan-xy border border-white/10 bg-white/[0.07] text-left shadow-[0_12px_40px_-20px_rgba(0,0,0,0.85)] backdrop-blur-md transition hover:border-white/20 hover:bg-white/[0.12] active:scale-[0.98]",
+          cardWidth,
+          cardPad,
+          cardRadius
         )}
       >
         <MetroStationDateRow event={event} />
@@ -360,18 +423,29 @@ function MetroStationCard({
         />
 
         {event.notes ? (
-          <p className="mt-1.5 line-clamp-2 text-[11px] leading-snug text-zinc-300">
+          <p
+            className={cn(
+              "line-clamp-2 leading-snug text-zinc-300",
+              compact ? "mt-1 text-[10px]" : "mt-1.5 text-[11px]"
+            )}
+          >
             {event.notes}
           </p>
         ) : (
-          <p className="mt-1.5 truncate text-sm font-semibold text-zinc-50">
+          <p
+            className={cn(
+              "truncate font-semibold text-zinc-50",
+              compact ? "mt-1 text-xs" : "mt-1.5 text-sm"
+            )}
+          >
             {event.title}
           </p>
         )}
 
         <p
           className={cn(
-            "mt-1.5 text-[10px] font-bold tracking-[0.14em] uppercase",
+            "font-bold tracking-[0.14em] uppercase",
+            compact ? "mt-1 text-[9px]" : "mt-1.5 text-[10px]",
             eventTypeTone(event.type)
           )}
         >
@@ -386,40 +460,78 @@ function MetroStationCard({
       type="button"
       onClick={onClick}
       className={cn(
-        "relative z-10 w-[13.5rem] touch-pan-xy rounded-2xl border p-2.5 text-left backdrop-blur-md transition active:scale-[0.98]",
+        "relative z-10 touch-pan-xy text-left backdrop-blur-md transition active:scale-[0.98]",
+        cardWidth,
+        cardPad,
+        cardRadius,
         isFuture &&
           "border-dashed border-sky-400/45 bg-sky-500/[0.08] shadow-[0_12px_40px_-20px_rgba(14,116,144,0.45)] ring-1 ring-sky-400/15",
         !isFuture &&
-          "border-white/10 bg-white/[0.07] shadow-[0_12px_40px_-20px_rgba(0,0,0,0.85)] hover:border-white/20 hover:bg-white/[0.12]"
+          "border border-white/10 bg-white/[0.07] shadow-[0_12px_40px_-20px_rgba(0,0,0,0.85)] hover:border-white/20 hover:bg-white/[0.12]"
       )}
     >
       <MetroStationDateRow event={event} />
 
       {statusLabel ? (
-        <p className="mt-1.5 inline-flex rounded-full border border-sky-400/30 bg-sky-500/15 px-2 py-0.5 text-[10px] font-bold tracking-[0.12em] text-sky-200 uppercase">
+        <p
+          className={cn(
+            "inline-flex rounded-full border border-sky-400/30 bg-sky-500/15 font-bold tracking-[0.12em] text-sky-200 uppercase",
+            compact
+              ? "mt-1 px-1.5 py-0 text-[9px]"
+              : "mt-1.5 px-2 py-0.5 text-[10px]"
+          )}
+        >
           {statusLabel}
         </p>
       ) : null}
 
-      <div className={cn(statusLabel ? "mt-1.5" : "mt-1.5", "flex items-start justify-between gap-2")}>
-        <div className="flex min-w-0 items-start gap-2">
+      <div
+        className={cn(
+          "flex items-start justify-between gap-2",
+          statusLabel ? (compact ? "mt-1" : "mt-1.5") : compact ? "mt-1" : "mt-1.5"
+        )}
+      >
+        <div className="flex min-w-0 items-start gap-1.5">
           {eventIcon(icon, event.type)}
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-zinc-50">
+            <p
+              className={cn(
+                "truncate font-semibold text-zinc-50",
+                compact ? "text-xs" : "text-sm"
+              )}
+            >
               {event.title}
             </p>
-            <p className="truncate text-[11px] text-zinc-400">{event.subtitle}</p>
+            <p
+              className={cn(
+                "truncate text-zinc-400",
+                compact ? "text-[10px]" : "text-[11px]"
+              )}
+            >
+              {event.subtitle}
+            </p>
           </div>
         </div>
-        <p className="shrink-0 text-sm font-bold text-zinc-100 tabular-nums">
+        <p
+          className={cn(
+            "shrink-0 font-bold text-zinc-100 tabular-nums",
+            compact ? "text-xs" : "text-sm"
+          )}
+        >
           {event.metric ?? "—"}
         </p>
       </div>
 
-      <div className="mt-1.5 flex items-center justify-between gap-2">
+      <div
+        className={cn(
+          "flex items-center justify-between gap-2",
+          compact ? "mt-1" : "mt-1.5"
+        )}
+      >
         <p
           className={cn(
-            "text-[10px] font-bold tracking-[0.14em] uppercase",
+            "font-bold tracking-[0.14em] uppercase",
+            compact ? "text-[9px]" : "text-[10px]",
             eventTypeTone(event.type)
           )}
         >
@@ -427,7 +539,8 @@ function MetroStationCard({
         </p>
         <p
           className={cn(
-            "text-[10px] font-semibold tabular-nums",
+            "font-semibold tabular-nums",
+            compact ? "text-[9px]" : "text-[10px]",
             isFuture ? "text-sky-300/80" : "text-red-400/80"
           )}
         >
@@ -435,6 +548,44 @@ function MetroStationCard({
         </p>
       </div>
     </button>
+  );
+}
+
+function MetroTrackScroll({
+  className,
+  children,
+  "aria-label": ariaLabel,
+}: {
+  className?: string;
+  children: ReactNode;
+  "aria-label"?: string;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const onWheel = (event: WheelEvent) => {
+      if (el.scrollWidth <= el.clientWidth + 1) return;
+
+      const { deltaY, deltaX } = event;
+      const dominantVertical = Math.abs(deltaY) >= Math.abs(deltaX);
+      if (!dominantVertical || deltaY === 0) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      el.scrollLeft += deltaY;
+    };
+
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
+  return (
+    <div ref={scrollRef} className={className} aria-label={ariaLabel}>
+      {children}
+    </div>
   );
 }
 
@@ -454,14 +605,15 @@ function MetroFieldLine({
   const field = toTimelineField(item);
   const fieldAccent = normalizeFieldLineColor(item.color);
   const line = METRO_LINE_COLORS[lineIndex % METRO_LINE_COLORS.length]!;
+  const compact = variant === "desktop";
 
   const events = useMemo(
     () => [...item.events].sort((a, b) => a.date.getTime() - b.date.getTime()),
     [item.events]
   );
 
-  const { trackHeight, trackWidth, yPositions, stationXs, fullWidthLine } =
-    useMemo(() => computeMetroTrackLayout(events), [events]);
+  const { trackHeight, trackWidth, yPositions, stationXs, fullWidthLine, metrics } =
+    useMemo(() => computeMetroTrackLayout(events, variant), [events, variant]);
   const metroSegments = buildMetroPathSegments(
     yPositions,
     stationXs,
@@ -473,34 +625,53 @@ function MetroFieldLine({
     <AccordionItem
       id={`metro-field-${item.fieldId}`}
       value={item.fieldId}
-      className="overflow-hidden rounded-3xl border border-white/8 bg-gradient-to-br from-white/[0.06] via-white/[0.03] to-transparent"
+      className={cn(
+        "overflow-hidden border border-white/8 bg-gradient-to-br from-white/[0.06] via-white/[0.03] to-transparent",
+        compact ? "rounded-2xl" : "rounded-3xl"
+      )}
     >
       <AccordionTrigger
         id={`metro-field-trigger-${item.fieldId}`}
-        className="group w-full border-b border-white/5 px-4 py-3 hover:bg-white/[0.03] hover:no-underline [&>svg]:hidden"
+        className={cn(
+          "group w-full border-b border-white/5 hover:bg-white/[0.03] hover:no-underline [&>svg]:hidden",
+          compact ? "px-3 py-2" : "px-4 py-3"
+        )}
       >
-        <div className="flex min-w-0 flex-1 items-start justify-between gap-3 pr-2">
+        <div className="flex min-w-0 flex-1 items-start justify-between gap-2 pr-2 sm:gap-3">
           <div className="min-w-0 text-left">
             <div className="flex items-center gap-2">
               <span
-                className="inline-flex h-2.5 w-8 shrink-0 rounded-full"
+                className={cn(
+                  "inline-flex shrink-0 rounded-full",
+                  compact ? "h-2 w-6" : "h-2.5 w-8"
+                )}
                 style={{ backgroundColor: fieldAccent }}
                 aria-hidden
               />
-              <h3 className="truncate text-base font-semibold tracking-tight text-zinc-50">
+              <h3
+                className={cn(
+                  "truncate font-semibold tracking-tight text-zinc-50",
+                  compact ? "text-sm" : "text-base"
+                )}
+              >
                 {item.fieldName}
               </h3>
             </div>
-            <p className="mt-1 text-xs text-zinc-400">
+            <p className={cn("text-zinc-400", compact ? "mt-0.5 text-[11px]" : "mt-1 text-xs")}>
               {normalizeFieldCrop(item.cropName) || TIMELINE_NO_CROP_LABEL}
               <span className="mx-1.5 opacity-40">·</span>
               {formatAreaHa(item.area)}
             </p>
           </div>
 
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
             <div className="hidden text-right sm:block">
-              <p className="text-sm font-semibold text-red-400/90 tabular-nums">
+              <p
+                className={cn(
+                  "font-semibold text-red-400/90 tabular-nums",
+                  compact ? "text-xs" : "text-sm"
+                )}
+              >
                 {formatUah(item.totalCost)}
               </p>
               <p className="text-[10px] text-zinc-500 tabular-nums">
@@ -510,7 +681,12 @@ function MetroFieldLine({
               </p>
             </div>
 
-            <span className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-[11px] font-semibold text-zinc-300 tabular-nums">
+            <span
+              className={cn(
+                "rounded-full border border-white/10 bg-black/20 font-semibold text-zinc-300 tabular-nums",
+                compact ? "px-2 py-0.5 text-[10px]" : "px-2.5 py-1 text-[11px]"
+              )}
+            >
               {ukStationLabel(events.length)}
             </span>
 
@@ -520,13 +696,21 @@ function MetroFieldLine({
                 e.stopPropagation();
                 onAddClick?.(field);
               }}
-              className="inline-flex size-9 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/15 text-emerald-200 transition hover:bg-emerald-500/25"
+              className={cn(
+                "inline-flex items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/15 text-emerald-200 transition hover:bg-emerald-500/25",
+                compact ? "size-8" : "size-9"
+              )}
               aria-label={`Додати позицію для ${item.fieldName}`}
             >
-              <Plus className="size-4" />
+              <Plus className={compact ? "size-3.5" : "size-4"} />
             </button>
 
-            <ChevronDown className="size-5 shrink-0 text-zinc-500 transition-transform duration-200 group-data-[state=open]:rotate-180" />
+            <ChevronDown
+              className={cn(
+                "shrink-0 text-zinc-500 transition-transform duration-200 group-data-[state=open]:rotate-180",
+                compact ? "size-4" : "size-5"
+              )}
+            />
           </div>
         </div>
       </AccordionTrigger>
@@ -551,7 +735,7 @@ function MetroFieldLine({
             className="relative overflow-hidden"
             style={{ overscrollBehaviorX: "contain" }}
           >
-            <div
+            <MetroTrackScroll
               className="ops-track-scroll overflow-x-auto overflow-y-hidden overscroll-x-contain touch-pan-xy px-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
               aria-label={`Хронологія поля ${item.fieldName}`}
             >
@@ -593,7 +777,7 @@ function MetroFieldLine({
                       stroke={
                         segment.sky ? METRO_PLANNED_LINE_STROKE : line.stroke
                       }
-                      strokeWidth={7}
+                      strokeWidth={metrics.strokeWidth}
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       opacity={0.95}
@@ -622,14 +806,15 @@ function MetroFieldLine({
                     >
                       <span
                         className={cn(
-                          "absolute left-1/2 z-10 size-5 -translate-x-1/2 rounded-full border-[3px] shadow-lg",
+                          "absolute left-1/2 z-10 -translate-x-1/2 rounded-full border-[3px] shadow-lg",
+                          compact ? "size-3.5" : "size-5",
                           isFuture
                             ? "border-sky-400 bg-zinc-950"
                             : "bg-zinc-950",
                           !isFuture && line.ring,
                           !isFuture && line.glow
                         )}
-                        style={{ top: y - METRO_NODE_RADIUS }}
+                        style={{ top: y - metrics.nodeRadius }}
                       />
 
                       <div
@@ -640,16 +825,17 @@ function MetroFieldLine({
                                 bottom:
                                   trackHeight -
                                   y +
-                                  METRO_CARD_GAP +
-                                  METRO_NODE_RADIUS,
+                                  metrics.cardGap +
+                                  metrics.nodeRadius,
                               }
                             : {
-                                top: y + METRO_CARD_GAP + METRO_NODE_RADIUS,
+                                top: y + metrics.cardGap + metrics.nodeRadius,
                               }
                         }
                       >
                         <MetroStationCard
                           event={event}
+                          compact={compact}
                           onClick={() => onEventClick?.(field, event)}
                         />
                       </div>
@@ -657,7 +843,7 @@ function MetroFieldLine({
                   );
                 })}
               </div>
-            </div>
+            </MetroTrackScroll>
 
             <div
               className="pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-zinc-950/90 to-transparent"
@@ -835,7 +1021,7 @@ function MetroFieldsAccordion({
       type="multiple"
       value={openIds}
       onValueChange={handleOpenChange}
-      className="space-y-3"
+      className={cn("space-y-3", variant === "desktop" && "space-y-2")}
     >
       {fields.map((item, index) => (
         <MetroFieldLine
@@ -908,6 +1094,22 @@ export function OperationsMetroMap({
   }
 
   if (isSearchMode) {
+    if (desktop) {
+      return (
+        <div
+          className="min-h-0 flex-1 overflow-y-auto overscroll-y-auto"
+          data-chronicle-scroll
+        >
+          <MetroFieldsAccordion
+            fields={fields}
+            variant={variant}
+            onEventClick={onEventClick}
+            onAddClick={onAddClick}
+          />
+        </div>
+      );
+    }
+
     return (
       <MetroFieldsAccordion
         fields={fields}
@@ -932,12 +1134,12 @@ export function OperationsMetroMap({
 
   if (desktop) {
     return (
-      <div className="flex min-h-0 gap-4">
-        <aside className="flex w-56 shrink-0 flex-col gap-2 border-r border-white/5 pr-4">
-          <p className="px-1 text-[11px] font-semibold tracking-[0.14em] text-zinc-500 uppercase">
+      <div className="flex min-h-0 flex-1 gap-4 overflow-hidden">
+        <aside className="flex w-56 shrink-0 flex-col gap-2 self-stretch border-r border-white/5 bg-zinc-950 pr-4">
+          <p className="shrink-0 px-1 text-[11px] font-semibold tracking-[0.14em] text-zinc-500 uppercase">
             Культури
           </p>
-          <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto">
+          <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto overscroll-y-contain">
             {cropGroups.map((group) => (
               <CropCategoryCard
                 key={group.id}
@@ -950,34 +1152,11 @@ export function OperationsMetroMap({
           </div>
         </aside>
 
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-hidden">
-          {activeGroup ? (
-            <div
-              className="shrink-0 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur-md"
-              style={{
-                background: `linear-gradient(135deg, ${activeGroup.accentColor}18 0%, rgba(255,255,255,0.03) 70%)`,
-              }}
-            >
-              <div className="flex items-center gap-3">
-                <span
-                  className="h-10 w-1.5 shrink-0 rounded-full"
-                  style={{ backgroundColor: activeGroup.accentColor }}
-                />
-                <div>
-                  <h2 className="text-base font-medium text-zinc-100">
-                    {activeGroup.label}
-                  </h2>
-                  <p className="mt-0.5 text-xs text-zinc-400">
-                    {ukFieldLabel(activeGroup.fieldCount)} ·{" "}
-                    {ukStationLabel(activeGroup.stationCount)} ·{" "}
-                    {formatAreaHa(activeGroup.totalAreaHa)}
-                  </p>
-                </div>
-              </div>
-            </div>
-          ) : null}
-
-          <div className="min-h-0 flex-1">{fieldsPanel}</div>
+        <div
+          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-y-auto"
+          data-chronicle-scroll
+        >
+          {fieldsPanel}
         </div>
       </div>
     );

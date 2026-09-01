@@ -9,7 +9,7 @@ import {
 import { createPortal } from "react-dom";
 import { format } from "date-fns";
 import { uk } from "date-fns/locale";
-import { Calendar as CalendarIcon, ChevronLeft, Loader2, Trash2, X } from "lucide-react";
+import { Calendar as CalendarIcon, ChevronLeft, Loader2, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { Calendar } from "@/components/ui/calendar";
@@ -26,6 +26,7 @@ import {
   DrawerTitle,
   DRAWER_CLOSE_BELOW_HANDLE_CLASS,
 } from "@/components/ui/drawer";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 import {
   fuelFieldLabelClass,
   fuelInputClass,
@@ -105,6 +106,18 @@ const accentGlow: Record<OperationsSheetAccent, string> = {
 
 export const OPS_MOBILE_DRAWER_SIZE =
   "h-[calc(88dvh-var(--app-bottom-inset))] max-h-[calc(88dvh-var(--app-bottom-inset))]";
+
+/** Права панель хронології / операцій на ПК */
+export const opsSheetContentClass = cn(
+  "w-full gap-0 overflow-hidden border-l border-white/10",
+  "bg-zinc-950 p-0 text-zinc-50",
+  "shadow-[-12px_0_48px_-12px_rgba(0,0,0,0.55)]",
+  "sm:max-w-[26rem]",
+  "[&_[data-slot=sheet-close]]:top-4 [&_[data-slot=sheet-close]]:right-4",
+  "[&_[data-slot=sheet-close]]:rounded-full [&_[data-slot=sheet-close]]:bg-white/10",
+  "[&_[data-slot=sheet-close]]:text-zinc-300 [&_[data-slot=sheet-close]]:ring-1 [&_[data-slot=sheet-close]]:ring-white/10",
+  "[&_[data-slot=sheet-close]]:hover:bg-white/15 [&_[data-slot=sheet-close]]:hover:text-zinc-50"
+);
 
 export const opsSheetBodyClass = cn(
   "flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto overscroll-contain touch-pan-y",
@@ -246,56 +259,21 @@ export function OperationsPanelShell({
   const isMobile = useIsMobile();
 
   if (!isMobile) {
-    const dim =
-      open && typeof document !== "undefined"
-        ? createPortal(
-            <div
-              aria-hidden
-              className="fixed inset-0 z-[149] bg-black/75 supports-backdrop-filter:backdrop-blur-[4px]"
-              onClick={() => onOpenChange(false)}
-            />,
-            document.body
-          )
-        : null;
-
     return (
-      <>
-        {dim}
-        {open ? (
-          <OpsSurfaceContext.Provider value="dark">
-            {typeof document !== "undefined"
-              ? createPortal(
-                  <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 sm:p-6">
-                    <div
-                      role="dialog"
-                      aria-modal="true"
-                      aria-label={title}
-                      className={cn(
-                        "relative flex w-full max-w-md flex-col overflow-hidden",
-                        "max-h-[min(88vh,820px)] rounded-3xl border border-white/10",
-                        "bg-zinc-950 text-zinc-50 shadow-[0_24px_80px_-20px_rgba(0,0,0,0.85)]",
-                        className
-                      )}
-                    >
-                      <button
-                        type="button"
-                        aria-label="Закрити"
-                        onClick={() => onOpenChange(false)}
-                        className="absolute top-2.5 right-3 z-30 inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-zinc-300 ring-1 ring-white/10 transition-colors hover:bg-white/15 hover:text-zinc-50"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-                        {children}
-                      </div>
-                    </div>
-                  </div>,
-                  document.body
-                )
-              : null}
-          </OpsSurfaceContext.Provider>
-        ) : null}
-      </>
+      <OpsSurfaceContext.Provider value="dark">
+        <Sheet open={open} onOpenChange={onOpenChange} modal={false}>
+          <SheetContent
+            side="right"
+            showOverlay
+            overlayClassName="bg-black/75 supports-backdrop-filter:backdrop-blur-[4px]"
+            className={cn(opsSheetContentClass, className)}
+          >
+            <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+              {children}
+            </div>
+          </SheetContent>
+        </Sheet>
+      </OpsSurfaceContext.Provider>
     );
   }
 

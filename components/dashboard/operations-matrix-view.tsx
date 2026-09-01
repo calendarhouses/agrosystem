@@ -1,9 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ChevronRight, Search, X } from "lucide-react";
+import { ArrowLeft, Search, X } from "lucide-react";
 
 import { FinancePeriodToolbar } from "@/components/dashboard/finance-period-toolbar";
 import { allowHistoryBack } from "@/components/layout/prevent-edge-swipe-back";
@@ -256,27 +255,13 @@ export function OperationsMatrixView() {
   if (!isMobile) {
     return (
       <section className="flex h-full min-h-0 flex-1 flex-col bg-zinc-950 text-zinc-50">
-        <header className="shrink-0 border-b border-white/5 px-6 pt-5 pb-3">
-          <nav
-            aria-label="Навігація"
-            className="mb-3 flex items-center gap-1.5 text-sm text-zinc-500"
-          >
-            <Link
-              href="/"
-              className="font-medium transition-colors hover:text-zinc-200"
-            >
-              Поля
-            </Link>
-            <ChevronRight className="size-3.5 shrink-0 opacity-60" />
-            <span className="font-semibold text-zinc-300">Хронологія</span>
-          </nav>
-
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+        <header className="shrink-0 border-b border-white/5 px-6 pt-4 pb-3">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0">
-              <h1 className="text-xl font-semibold tracking-tight text-zinc-50 sm:text-2xl">
+              <h1 className="text-xl font-semibold tracking-tight text-zinc-50">
                 Хронологія полів
               </h1>
-              <p className="mt-1 text-sm text-zinc-400">
+              <p className="mt-0.5 text-xs text-zinc-400 sm:text-sm">
                 Наряди техніки та списання ТМЦ по полях обраного сезону.
                 {!isLoading && !error ? (
                   <span className="ml-1 font-medium text-zinc-300">
@@ -292,11 +277,11 @@ export function OperationsMatrixView() {
               variant="desktop"
               theme="dark"
               loading={isLoading}
-              className="w-full shrink-0 xl:w-auto"
+              className="w-full shrink-0 lg:w-auto"
             />
           </div>
 
-          <div className="relative mt-3 max-w-md">
+          <div className="relative mt-2.5 max-w-md">
             <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-zinc-500" />
             <Input
               value={search}
@@ -317,12 +302,9 @@ export function OperationsMatrixView() {
           </div>
         </header>
 
-        <div
-          className="min-h-0 flex-1 overflow-y-auto overscroll-y-auto px-6 py-4"
-          data-chronicle-scroll
-        >
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-6 py-3">
           {!isLoading && error ? (
-            <div className="mb-4 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+            <div className="mb-4 shrink-0 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
               {error}
             </div>
           ) : null}
@@ -334,7 +316,7 @@ export function OperationsMatrixView() {
                 : "За обраний період подій немає. Спробуйте інший діапазон або додайте операцію через пошук поля."}
             </p>
           ) : (
-            <div className="min-h-0 flex-1">{metroMap}</div>
+            <div className="flex min-h-0 flex-1 flex-col">{metroMap}</div>
           )}
         </div>
 
