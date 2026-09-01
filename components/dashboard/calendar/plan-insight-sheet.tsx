@@ -27,8 +27,10 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import {
-  mapDictionaryOpToWorkType,
-} from "@/lib/agronomy-dictionary";
+  OperationMaterialsPicker,
+  type OperationMaterialDraft,
+} from "@/components/dashboard/operation-materials-picker";
+import { mapDictionaryOpToWorkType } from "@/lib/agronomy-dictionary";
 import type { InsightCardData } from "@/lib/agronomy-engine";
 import type { EquipmentForOpsRow } from "@/lib/equipment-ops-options";
 import {
@@ -37,6 +39,7 @@ import {
   estimatePlanFuelLiters,
   estimatePlanWageUah,
 } from "@/lib/field-operation-norms";
+import { operationRequiresMaterial } from "@/lib/operation-material-categories";
 import {
   upsertFieldOperation,
   type FieldOperationInput,
@@ -108,6 +111,7 @@ export function PlanInsightSheet({
   const [normPerHa, setNormPerHa] = useState("");
   const [equipmentId, setEquipmentId] = useState<string>("");
   const [equipment, setEquipment] = useState<EquipmentForOpsRow[]>([]);
+  const [material, setMaterial] = useState<OperationMaterialDraft | null>(null);
   const [pending, startTransition] = useTransition();
 
   const isScout = insight?.kind === "anomaly";
@@ -125,6 +129,7 @@ export function PlanInsightSheet({
     );
     setNormPerHa("");
     setEquipmentId("");
+    setMaterial(null);
   }, [open, insight]);
 
   useEffect(() => {
@@ -139,6 +144,26 @@ export function PlanInsightSheet({
     [equipment, equipmentId]
   );
 
+  const selectedFields = useMemo(() => {
+    if (!insight) return [];
+    return insight.fields.filter((f) => selectedFieldIds.includes(f.id));
+  }, [insight, selectedFieldIds]);
+
+  const totalSelectedAreaHa = useMemo(
+    () =>
+      selectedFields.reduce(
+        (sum, field) =>
+          sum +
+          (field.areaHa != null && Number.isFinite(field.areaHa)
+            ? field.areaHa
+            : 0),
+        0
+      ),
+    [selectedFields]
+  );
+
+  const needsMaterial = !isScout && operationRequiresMaterial(workType);
+
   function toggleField(id: string) {
     setSelectedFieldIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
@@ -151,10 +176,15 @@ export function PlanInsightSheet({
       toast.error("Оберіть хоча б одне поле");
       return;
     }
+    if (
+      needsMaterial &&
+      (!material?.basRefKey || !(material.qty > 0))
+    ) {
+      toast.error("Оберіть матеріал зі складу та кількість");
+      return;
+    }
 
-    const fields = insight.fields.filter((f) =>
-      selectedFieldIds.includes(f.id)
-    );
+    const fields = selectedFields;
     const implement = IMPLEMENT_PRESETS[workType] ?? "";
     const implementWidth = IMPLEMENT_WIDTH_DEFAULTS[workType] ?? null;
     const dateLabel = (() => {
@@ -224,6 +254,20 @@ export function PlanInsightSheet({
           wialonUnitId: selectedEquipment?.wialonId ?? null,
           implementWidthM: implementWidth,
           exportStatus: "none",
+          materials:
+            material && area > 0
+              ? [
+                  {
+                    ...material,
+                    qty:
+                      fields.length > 1 && totalSelectedAreaHa > 0
+                        ? Math.round(
+                            (material.qty * area) / totalSelectedAreaHa * 1000
+                          ) / 1000
+                        : material.qty,
+                  },
+                ]
+              : [],
         };
 
         try {
@@ -400,6 +444,18 @@ export function PlanInsightSheet({
                   </SelectContent>
                 </Select>
               </div>
+
+              {needsMaterial ? (
+                <OperationMaterialsPicker
+                  workType={workType}
+                  areaHa={totalSelectedAreaHa || 1}
+                  crop={insight.crop}
+                  value={material}
+                  onChange={setMaterial}
+                  theme="light"
+                  required
+                />
+              ) : null}
             </>
           )}
         </div>

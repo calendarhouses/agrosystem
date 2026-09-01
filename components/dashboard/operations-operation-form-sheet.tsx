@@ -15,6 +15,10 @@ import {
   OperationsSheetHeader,
   useOpsChrome,
 } from "@/components/dashboard/operations-sheet-chrome";
+import {
+  OperationMaterialsPicker,
+  type OperationMaterialDraft,
+} from "@/components/dashboard/operation-materials-picker";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -36,6 +40,7 @@ import {
   IMPLEMENT_WIDTH_DEFAULTS,
   OPERATION_TYPES,
 } from "@/lib/field-operation-norms";
+import { operationRequiresMaterial } from "@/lib/operation-material-categories";
 import {
   listFieldOperations,
   upsertFieldOperation,
@@ -85,6 +90,7 @@ export function OperationsOperationForm({
   const [fuelUsed, setFuelUsed] = useState("");
   const [wage, setWage] = useState("");
   const [comment, setComment] = useState("");
+  const [material, setMaterial] = useState<OperationMaterialDraft | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -135,6 +141,7 @@ export function OperationsOperationForm({
       );
       setWage(String(initial.wage ?? estimatePlanWageUah(initial.areaDone)));
       setComment(initial.agronomistComment ?? "");
+      setMaterial(initial.materials?.[0] ?? null);
       const match = findEquipmentOpsOption(unitOptions, {
         equipmentId: initial.equipmentId,
         wialonUnitId: initial.wialonUnitId,
@@ -150,6 +157,7 @@ export function OperationsOperationForm({
     setFuelUsed(String(estimatePlanFuelLiters(OPERATION_TYPES[0], areaDefault)));
     setWage(String(estimatePlanWageUah(areaDefault)));
     setComment("");
+    setMaterial(null);
     setUnitKey(unitOptions[0]?.key ?? null);
   }, [field, initial, unitOptions]);
 
@@ -209,6 +217,13 @@ export function OperationsOperationForm({
       setError("Перевірте паливо та оплату");
       return;
     }
+    if (
+      operationRequiresMaterial(type) &&
+      (!material?.basRefKey || !(material.qty > 0))
+    ) {
+      setError("Оберіть матеріал зі складу та кількість");
+      return;
+    }
 
     const occurred = new Date(`${date}T12:00:00`);
     const opSeason = Number.isNaN(occurred.getTime())
@@ -237,6 +252,7 @@ export function OperationsOperationForm({
       wialonUnitId: selectedUnit.wialonUnitId,
       implementWidthM: width,
       exportStatus: initial?.exportStatus ?? "none",
+      materials: material ? [material] : [],
     };
 
     setSaving(true);
@@ -379,6 +395,15 @@ export function OperationsOperationForm({
             />
           )}
         </section>
+
+        <OperationMaterialsPicker
+          workType={type}
+          areaHa={Number(String(areaDone).replace(",", ".")) || Number(field.areaHa) || 0}
+          crop={field.crop}
+          value={material}
+          onChange={setMaterial}
+          theme="dark"
+        />
 
         <section className="grid grid-cols-2 gap-3">
           <div className="space-y-2">

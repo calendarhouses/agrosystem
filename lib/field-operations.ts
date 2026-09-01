@@ -6,6 +6,14 @@ export type FieldOperationStatus =
 
 export type FieldOperationExportStatus = "none" | "pending" | "synced";
 
+export type FieldOperationMaterial = {
+  basRefKey: string;
+  itemName: string;
+  category: string;
+  unit: string;
+  qty: number;
+};
+
 /** Операція в UI історії поля */
 export type FieldOperation = {
   /** Стабільний client_key (також ключ у localStorage) */
@@ -36,6 +44,8 @@ export type FieldOperation = {
   trackerWorkHours?: number | null;
   trackerFuelL?: number | null;
   exportStatus?: FieldOperationExportStatus;
+  /** Планові ТМЦ зі складу (насіння, добрива, ЗЗР) */
+  materials?: FieldOperationMaterial[];
   /** Локально збережено, на сервер ще не потрапило (мережа / API) */
   pendingSync?: boolean;
 };
@@ -201,6 +211,9 @@ export function mapOperationRow(row: DbRow): FieldOperation {
     trackerWorkHours: optionalNum(row.tracker_work_hours),
     trackerFuelL: optionalNum(row.tracker_fuel_l),
     exportStatus: mapExportStatus(row.export_status),
+    materials: Array.isArray((row as { materials?: FieldOperationMaterial[] }).materials)
+      ? ((row as { materials: FieldOperationMaterial[] }).materials)
+      : undefined,
   };
 }
 
@@ -392,6 +405,13 @@ export async function upsertFieldOperation(
     trackerWorkHours: input.trackerWorkHours ?? null,
     trackerFuelL: input.trackerFuelL ?? null,
     exportStatus: input.exportStatus ?? "none",
+    materials: (input.materials ?? []).map((m) => ({
+      basRefKey: m.basRefKey,
+      itemName: m.itemName,
+      category: m.category,
+      unit: m.unit,
+      qty: m.qty,
+    })),
   };
 
   const localDraft: FieldOperation = {

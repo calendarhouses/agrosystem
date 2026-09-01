@@ -34,6 +34,7 @@ import {
 import { OperationsTimelineImage } from "@/components/dashboard/operations-timeline-image";
 import { OperationsWeatherBadge } from "@/components/dashboard/operations-weather-badge";
 import { deleteFieldOperation, type FieldOperation } from "@/lib/field-operations";
+import { formatOperationMaterialsLine } from "@/lib/field-operation-materials";
 import type { FieldTimelineField, UnifiedTimelineEvent } from "@/lib/field-timeline";
 import {
   isFutureTimelineOperation,
@@ -216,6 +217,7 @@ function EventDetailHero({
 }) {
   const isFuture = isFutureTimelineOperation(event);
   const statusLabel = timelineOperationStatusLabel(event.operationStatus);
+  const materialLine = formatOperationMaterialsLine(operation?.materials);
 
   return (
     <div
@@ -279,6 +281,12 @@ function EventDetailHero({
       </p>
       {!isEquipment || !operation?.machinery ? (
         <p className="relative mt-0.5 text-sm text-zinc-400">{event.subtitle}</p>
+      ) : null}
+
+      {materialLine ? (
+        <p className="relative mt-3 rounded-2xl bg-black/25 px-3.5 py-2.5 text-sm text-emerald-200/90">
+          {materialLine}
+        </p>
       ) : null}
 
       {operation?.machinery ? (

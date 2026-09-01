@@ -166,6 +166,7 @@ function FieldRow({
   hovered,
   editing,
   budgetPct,
+  showCrop,
   onOpen,
   onHover,
 }: {
@@ -174,11 +175,12 @@ function FieldRow({
   hovered: boolean;
   editing: boolean;
   budgetPct: number | null;
+  showCrop: boolean;
   onOpen: () => void;
   onHover: (id: string | null) => void;
 }) {
   const tone = budgetTone(budgetPct);
-  const crop = field.crop?.trim();
+  const crop = showCrop ? field.crop?.trim() : "";
 
   return (
     <button
@@ -217,30 +219,32 @@ function FieldRow({
             <span className="ml-0.5 font-medium text-zinc-400">га</span>
           </p>
         </div>
-        <div className="mt-1 flex items-center gap-2">
-          <p className="min-w-0 flex-1 truncate text-[10px] font-medium text-zinc-500">
-            {crop && crop !== "—" ? crop : "Без культури"}
-          </p>
-          <div className="h-[3px] w-16 shrink-0 overflow-hidden rounded-full bg-zinc-200/80">
-            <div
-              className={cn("h-full rounded-full", tone.bar)}
-              style={{ width: `${tone.fill}%` }}
-            />
+        {showCrop ? (
+          <div className="mt-1 flex items-center gap-2">
+            <p className="min-w-0 flex-1 truncate text-[10px] font-medium text-zinc-500">
+              {crop && crop !== "—" ? crop : "Без культури"}
+            </p>
+            <div className="h-[3px] w-16 shrink-0 overflow-hidden rounded-full bg-zinc-200/80">
+              <div
+                className={cn("h-full rounded-full", tone.bar)}
+                style={{ width: `${tone.fill}%` }}
+              />
+            </div>
+            <span
+              className={cn(
+                "w-8 shrink-0 text-right text-[10px] font-bold tabular-nums",
+                tone.text
+              )}
+              title={
+                budgetPct == null
+                  ? "Бюджет не задано"
+                  : `Витрачено ${tone.label} бюджету`
+              }
+            >
+              {tone.label}
+            </span>
           </div>
-          <span
-            className={cn(
-              "w-8 shrink-0 text-right text-[10px] font-bold tabular-nums",
-              tone.text
-            )}
-            title={
-              budgetPct == null
-                ? "Бюджет не задано"
-                : `Витрачено ${tone.label} бюджету`
-            }
-          >
-            {tone.label}
-          </span>
-        </div>
+        ) : null}
       </div>
       <span
         className={cn("h-1.5 w-1.5 shrink-0 rounded-full", tone.bar)}
@@ -380,6 +384,7 @@ export function FieldsGlassPanel({
                   hovered={hoveredId === field.id}
                   editing={editingFieldId === field.id}
                   budgetPct={budgetFor(field)}
+                  showCrop={group.id === "fields"}
                   onOpen={() => onSelect(field)}
                   onHover={onHover}
                 />

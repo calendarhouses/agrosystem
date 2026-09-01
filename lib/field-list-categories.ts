@@ -32,28 +32,60 @@ export const FIELD_LIST_CATEGORIES: FieldListCategory[] = [
   },
 ];
 
-/** Визначає категорію ділянки за назвою (Wialon або паспорт). */
-export function fieldListCategory(name: string): FieldListCategoryId {
-  const lower = name.trim().toLowerCase();
+export type FieldListCategoryInput = {
+  name: string;
+  canonicalName?: string | null;
+  isField?: boolean | null;
+};
 
-  if (/^город/.test(lower)) return "gardens";
+function nameHints(input: FieldListCategoryInput): string[] {
+  return [input.canonicalName, input.name]
+    .map((value) => value?.trim().toLowerCase() ?? "")
+    .filter(Boolean);
+}
 
-  if (
+function isGardenName(lower: string): boolean {
+  return /^город/.test(lower);
+}
+
+function isBaseName(lower: string): boolean {
+  return (
     lower.includes("база") ||
     /\bлевада\b/.test(lower) ||
     lower.includes("кафе") ||
     lower.includes("магазин") ||
-    lower.includes("чайна")
-  ) {
+    lower.includes("чайна") ||
+    lower.includes("соцсфера")
+  );
+}
+
+/** Визначає категорію ділянки за паспортом / назвою Wialon. */
+export function resolveFieldListCategory(
+  input: FieldListCategoryInput
+): FieldListCategoryId {
+  const hints = nameHints(input);
+
+  if (input.isField === false) {
+    if (hints.some(isGardenName)) return "gardens";
     return "bases";
+  }
+
+  for (const lower of hints) {
+    if (isGardenName(lower)) return "gardens";
+    if (isBaseName(lower)) return "bases";
   }
 
   return "fields";
 }
 
-export function groupFieldsByListCategory<T extends { name: string }>(
-  items: T[]
-): Array<FieldListCategory & { items: T[] }> {
+/** @deprecated Використовуйте resolveFieldListCategory */
+export function fieldListCategory(name: string): FieldListCategoryId {
+  return resolveFieldListCategory({ name });
+}
+
+export function groupFieldsByListCategory<
+  T extends FieldListCategoryInput,
+>(items: T[]): Array<FieldListCategory & { items: T[] }> {
   const buckets: Record<FieldListCategoryId, T[]> = {
     fields: [],
     gardens: [],
@@ -61,7 +93,7 @@ export function groupFieldsByListCategory<T extends { name: string }>(
   };
 
   for (const item of items) {
-    buckets[fieldListCategory(item.name)].push(item);
+    buckets[resolveFieldListCategory(item)].push(item);
   }
 
   return FIELD_LIST_CATEGORIES.map((category) => ({

@@ -12,8 +12,13 @@ import {
   equipmentFuelLiters,
   type TimelineScoutingSourceRow,
 } from "@/lib/field-timeline-cost";
-import { isFutureTimelineOperation } from "@/lib/field-timeline-types";
 import {
+  formatOperationMaterialsLine,
+  fetchMaterialsByClientKeys,
+  type FieldOperationMaterial,
+} from "@/lib/field-operation-materials";
+import {
+  isFutureTimelineOperation,
   mapWeatherContext,
   parseTimelineDate,
   type FieldTimelineField,
@@ -64,6 +69,7 @@ export type TimelineOperationRow = {
   actor_name?: string | null;
   closed_by_name?: string | null;
   weather_context?: WeatherContext | null;
+  materials?: FieldOperationMaterial[];
 };
 
 export type TimelineInventoryRow = {
@@ -191,6 +197,7 @@ export function mapOperationToTimelineEvent(
 
   const notes = String(row.agronomist_comment ?? "").trim() || null;
   const equipmentLine = equipmentSubtitle(row);
+  const materialLine = formatOperationMaterialsLine(row.materials);
   const statusLabel =
     status === "planned"
       ? "Заплановано"
@@ -204,7 +211,9 @@ export function mapOperationToTimelineEvent(
     date: parseTimelineDate(dateRaw),
     type: "equipment",
     title,
-    subtitle: statusLabel ? `${statusLabel} · ${equipmentLine}` : equipmentLine,
+    subtitle: [materialLine, statusLabel, equipmentLine]
+      .filter(Boolean)
+      .join(" · "),
     metric: formatLiters(fuelLiters),
     cost: computeEquipmentTimelineCost(row),
     imageUrl: null,
@@ -700,13 +709,22 @@ export async function fetchTimelineRawBundle(
 ): Promise<TimelineRawBundle> {
   const season = normalizeSeason(activeSeason);
 
-  const [fieldRows, operations, inventoryMoves, scoutingReports] =
+  const [fieldRows, operationsRaw, inventoryMoves, scoutingReports] =
     await Promise.all([
       fetchActiveFields(supabase),
       fetchTimelineOperations(supabase, season),
       fetchOutboundMoves(supabase, season),
       fetchScoutingReports(supabase, season),
     ]);
+
+  const clientKeys = operationsRaw
+    .map((row) => String(row.client_key ?? "").trim())
+    .filter(Boolean);
+  const materialsMap = await fetchMaterialsByClientKeys(supabase, clientKeys);
+  const operations = operationsRaw.map((row) => ({
+    ...row,
+    materials: materialsMap.get(String(row.client_key ?? "").trim()) ?? [],
+  }));
 
   return { fieldRows, operations, inventoryMoves, scoutingReports };
 }

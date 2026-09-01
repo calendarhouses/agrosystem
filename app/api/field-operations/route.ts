@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 
 import { logActivity } from "@/lib/activity-log";
 import { actorCloseColumns, actorCreateColumns, getCurrentActor } from "@/lib/app-actor";
+import {
+  fetchMaterialsByClientKeys,
+  replaceOperationMaterials,
+  type FieldOperationMaterialInput,
+} from "@/lib/field-operation-materials";
 import { mapOperationRow } from "@/lib/field-operations";
 import { upsertFieldOperationRow } from "@/lib/field-operations-db";
 import { captureWeatherContextForField } from "@/lib/field-weather-context";
@@ -43,6 +48,7 @@ type UpsertBody = {
   trackerWorkHours?: number | null;
   trackerFuelL?: number | null;
   exportStatus?: string | null;
+  materials?: FieldOperationMaterialInput[];
 };
 
 /** GET /api/field-operations?fieldKey=…&also=wialon:1,wialon:2 */
@@ -84,6 +90,17 @@ export async function GET(request: Request) {
     for (const row of data ?? []) {
       const op = mapOperationRow(row as Record<string, unknown>);
       byKey.set(op.id, op);
+    }
+
+    const materialsMap = await fetchMaterialsByClientKeys(
+      supabase,
+      [...byKey.keys()]
+    );
+    for (const [key, op] of byKey.entries()) {
+      const materials = materialsMap.get(key);
+      if (materials?.length) {
+        byKey.set(key, { ...op, materials });
+      }
     }
 
     // Якщо є legacy keys — переносимо на primary fieldKey
@@ -251,6 +268,28 @@ export async function POST(request: Request) {
       );
     }
 
+    if (Array.isArray(body.materials)) {
+      try {
+        await replaceOperationMaterials(supabase, clientKey, body.materials);
+      } catch (materialError) {
+        return NextResponse.json(
+          {
+            error:
+              materialError instanceof Error
+                ? materialError.message
+                : "Наряд збережено, але ТМЦ не привʼязано",
+          },
+          { status: 500 }
+        );
+      }
+    }
+
+    const materialsMap = await fetchMaterialsByClientKeys(supabase, [clientKey]);
+    const operation = {
+      ...result.operation,
+      materials: materialsMap.get(clientKey) ?? [],
+    };
+
     if (isNew) {
       void logActivity({
         actor,
@@ -263,7 +302,7 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({
-      operation: result.operation,
+      operation,
     });
   } catch (error) {
     return NextResponse.json(

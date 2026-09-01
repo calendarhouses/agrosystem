@@ -91,6 +91,11 @@ import { FIELDS_MOBILE_DRAWER_SIZE } from "@/components/dashboard/fields-glass-p
 import { OperationClosePanel } from "@/components/dashboard/operation-close-modal";
 import type { CloseableOperation } from "@/components/dashboard/operation-close-modal";
 import {
+  OperationMaterialsPicker,
+  type OperationMaterialDraft,
+} from "@/components/dashboard/operation-materials-picker";
+import { formatOperationMaterialsLine } from "@/lib/field-operation-materials";
+import {
   listEquipmentForOps,
   listImplementsForOps,
   type ImplementOption,
@@ -111,6 +116,7 @@ import {
   WAGE_UAH_PER_HA,
   isSowingOperationType,
 } from "@/lib/field-operation-norms";
+import { operationRequiresMaterial } from "@/lib/operation-material-categories";
 import { formatUahCurrency } from "@/lib/fuel-price";
 import { isFieldPassportComplete } from "@/lib/field-passport";
 import { formatVisitClockHm } from "@/lib/field-tech-history";
@@ -351,6 +357,7 @@ function OperationCard({
   const isPlanned = op.status === "planned";
   const isInProgress = op.status === "in_progress";
   const isCompleted = op.status === "completed";
+  const materialLine = formatOperationMaterialsLine(op.materials);
 
   return (
     <article
@@ -413,6 +420,12 @@ function OperationCard({
             {op.implement}
           </p>
         </div>
+
+        {materialLine ? (
+          <p className="mt-2 truncate text-sm font-medium text-emerald-800">
+            {materialLine}
+          </p>
+        ) : null}
 
         <div className="mt-3 grid grid-cols-3 gap-2">
           <div className="rounded-xl border border-zinc-100 bg-zinc-50/80 px-2.5 py-2.5 text-center">
@@ -706,6 +719,7 @@ function PlanWorkPanel({
     String(estimatePlanFuelLiters(OPERATION_TYPES[0], areaDefault))
   );
   const [wage, setWage] = useState(() => String(estimatePlanWageUah(areaDefault)));
+  const [material, setMaterial] = useState<OperationMaterialDraft | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dieselPriceUah, setDieselPriceUah] = useState<number | null>(null);
 
@@ -775,8 +789,10 @@ function PlanWorkPanel({
       setAreaDone(String(initial.areaDone));
       setFuelUsed(String(initial.fuelUsed));
       setWage(String(initial.wage));
+      setMaterial(initial.materials?.[0] ?? null);
       return;
     }
+    setMaterial(null);
     const area = Number(field.areaHa) || 0;
     const workType = OPERATION_TYPES[0];
     setType(workType);
@@ -971,6 +987,13 @@ function PlanWorkPanel({
       setError("Перевірте паливо та оплату");
       return;
     }
+    if (
+      operationRequiresMaterial(type) &&
+      (!material?.basRefKey || !(material.qty > 0))
+    ) {
+      setError("Оберіть матеріал зі складу та кількість");
+      return;
+    }
 
     const occurred = new Date(`${date}T12:00:00`);
     const opSeason = Number.isNaN(occurred.getTime())
@@ -1006,6 +1029,7 @@ function PlanWorkPanel({
           ? Math.round(prefill.trackerDistanceKm * 10) / 10
           : initial?.trackerDistanceKm ?? null,
       exportStatus: initial?.exportStatus ?? "none",
+      materials: material ? [material] : [],
     };
 
     onSubmit(op);
@@ -1262,6 +1286,15 @@ function PlanWorkPanel({
               </div>
             </div>
           </section>
+
+          <OperationMaterialsPicker
+            workType={type}
+            areaHa={Number(areaDone.replace(",", ".")) || areaDefault}
+            crop={crop || passportCrop || field.crop}
+            value={material}
+            onChange={setMaterial}
+            theme="light"
+          />
 
           {/* План */}
           <section className="overflow-hidden rounded-2xl border border-[#E5DFD3] bg-white shadow-sm">

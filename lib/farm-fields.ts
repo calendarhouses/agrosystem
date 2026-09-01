@@ -5,6 +5,10 @@ export type FieldGeometry = Polygon | MultiPolygon;
 export type FarmField = {
   id: string;
   name: string;
+  /** Канонічна назва з паспорта (для списку / категорій) */
+  canonicalName?: string | null;
+  /** false — база, левада, магазин тощо (не польова ділянка) */
+  isField?: boolean;
   crop: string;
   areaHa: number;
   color: string;
@@ -39,9 +43,16 @@ export const FIELD_COLOR_OPTIONS = [
 const LOCAL_KEY = "agrosystem.farm_fields.v1";
 
 function mapRow(row: Record<string, unknown>): FarmField {
+  const canonicalName =
+    row.canonical_name != null && String(row.canonical_name).trim()
+      ? String(row.canonical_name).trim()
+      : null;
+
   return {
     id: String(row.id),
     name: String(row.name),
+    canonicalName,
+    isField: row.is_field !== false,
     crop: String(row.crop),
     areaHa: Number(row.area_ha),
     color: String(row.color),

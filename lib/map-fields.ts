@@ -25,6 +25,8 @@ export type MapFieldSource = "demo" | "saved" | "wialon";
 export type MapFieldItem = {
   id: string;
   name: string;
+  canonicalName?: string | null;
+  isField?: boolean;
   crop: string;
   areaHa: number;
   color: string;
@@ -69,11 +71,17 @@ export function demoToMapItem(field: Field): MapFieldItem {
   };
 }
 
+function displayFieldName(field: Pick<FarmField, "name" | "canonicalName">): string {
+  return field.canonicalName?.trim() || field.name;
+}
+
 export function farmToMapItem(field: FarmField): MapFieldItem {
   return {
     id: field.id,
-    name: field.name,
-    crop: field.crop,
+    name: displayFieldName(field),
+    canonicalName: field.canonicalName ?? null,
+    isField: field.isField !== false,
+    crop: field.isField === false ? "" : field.crop,
     areaHa: field.areaHa,
     color: field.color,
     description: "",
@@ -177,8 +185,10 @@ export function buildMapFieldList(
       if (!passport) return base;
       return {
         ...base,
-        name: passport.name,
-        crop: passport.crop,
+        name: displayFieldName(passport),
+        canonicalName: passport.canonicalName ?? null,
+        isField: passport.isField !== false,
+        crop: passport.isField === false ? "" : passport.crop,
         areaHa: passport.areaHa,
         color: passport.color,
         geometry: passport.geometry ?? base.geometry,
