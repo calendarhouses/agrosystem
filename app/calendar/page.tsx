@@ -1,11 +1,6 @@
-import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 
-import { PlanningDashboard } from "@/components/dashboard/planning/PlanningDashboard";
-
-export const metadata: Metadata = {
-  title: "Агроплан",
-};
-
+/** Колишній Агроплан — перенаправлення на Операційну хронологію */
 export default function CalendarPage() {
-  return <PlanningDashboard />;
+  redirect("/operations");
 }
