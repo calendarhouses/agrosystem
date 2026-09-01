@@ -371,10 +371,60 @@ export type FleetDaySummaryDto = {
  * Спалено самохідною технікою за період (л) — з денного кешу.
  * Бензовози / цистерни не входять: падіння бака — роздача, не ДВЗ.
  */
-export async function sumFleetFuelConsumedForPeriod(
+export type FleetFuelConsumedBreakdownRow = {
+  wialonUnitId: number;
+  equipmentName: string;
+  liters: number;
+};
+
+type FleetFuelDayStatRow = {
+  fuel_consumed: number | string | null;
+  fuel_start: number | null;
+  fuel_end: number | null;
+  fuel_filled: number | null;
+  work_hours: number | null;
+  hours_on_field: number | null;
+  wialon_unit_id: number | null;
+  equipment_id: string | null;
+};
+
+function dayBurnLitersFromStatsRow(
+  row: FleetFuelDayStatRow,
+  tankVolumeLiters: number | undefined
+): number | null {
+  const recalc = resolvePlausibleDayFuelConsumed({
+    start: row.fuel_start,
+    end: row.fuel_end,
+    filled: row.fuel_filled ?? 0,
+    tankVolumeLiters,
+    workHours: row.work_hours,
+  });
+
+  if (
+    recalc == null ||
+    !isPlausibleTractorDayBurn({
+      fuelConsumed: recalc,
+      fuelStart: row.fuel_start,
+      fuelEnd: row.fuel_end,
+      fuelFilled: row.fuel_filled,
+      workHours: row.work_hours,
+      hoursOnField: row.hours_on_field,
+    })
+  ) {
+    return null;
+  }
+
+  return recalc;
+}
+
+async function fleetFuelConsumedBucketsForPeriod(
   fromDate: string,
   toDate: string
-): Promise<{ liters: number; hasData: boolean }> {
+): Promise<{
+  byUnit: Map<number, number>;
+  hasData: boolean;
+  eqNameByWid: Map<number, string>;
+}> {
   const supabase = createServiceSupabase();
 
   const [{ data, error }, eqRes] = await Promise.all([
@@ -389,60 +439,99 @@ export async function sumFleetFuelConsumedForPeriod(
     supabase.from("equipment").select("id, wialon_id, name"),
   ]);
 
-  // Міграція 036 ще не накатана
-  if (error) return { liters: 0, hasData: false };
+  if (error) {
+    return { byUnit: new Map(), hasData: false, eqNameByWid: new Map() };
+  }
 
   const deliveryWialonIds = new Set<number>();
   const deliveryEquipmentIds = new Set<string>();
-  for (const row of eqRes.data ?? []) {
-    if (!isFuelDeliveryUnit(row.name)) continue;
-    const wid = Number(row.wialon_id);
-    if (Number.isFinite(wid) && wid > 0) deliveryWialonIds.add(wid);
-    if (row.id) deliveryEquipmentIds.add(String(row.id));
-  }
-
   const eqNameByWid = new Map<number, string>();
   for (const row of eqRes.data ?? []) {
+    if (isFuelDeliveryUnit(row.name)) {
+      const wid = Number(row.wialon_id);
+      if (Number.isFinite(wid) && wid > 0) deliveryWialonIds.add(wid);
+      if (row.id) deliveryEquipmentIds.add(String(row.id));
+    }
     const wid = Number(row.wialon_id);
     if (Number.isFinite(wid) && wid > 0 && row.name) {
       eqNameByWid.set(wid, String(row.name));
     }
   }
 
-  const liters = (data ?? []).reduce((acc, row) => {
+  const byUnit = new Map<number, number>();
+  for (const row of data ?? []) {
     const wid = Number(row.wialon_unit_id);
     const eid = row.equipment_id != null ? String(row.equipment_id) : null;
-    if (Number.isFinite(wid) && deliveryWialonIds.has(wid)) return acc;
-    if (eid && deliveryEquipmentIds.has(eid)) return acc;
+    if (!Number.isFinite(wid) || wid <= 0) continue;
+    if (deliveryWialonIds.has(wid)) continue;
+    if (eid && deliveryEquipmentIds.has(eid)) continue;
 
-    const recalc = resolvePlausibleDayFuelConsumed({
-      start: row.fuel_start,
-      end: row.fuel_end,
-      filled: row.fuel_filled,
-      tankVolumeLiters: resolveFuelTankVolumeLiters(eqNameByWid.get(wid)),
-      workHours: row.work_hours,
-    });
+    const liters = dayBurnLitersFromStatsRow(
+      row as FleetFuelDayStatRow,
+      resolveFuelTankVolumeLiters(eqNameByWid.get(wid)) ?? undefined
+    );
+    if (liters == null) continue;
 
-    if (
-      recalc == null ||
-      !isPlausibleTractorDayBurn({
-        fuelConsumed: recalc,
-        fuelStart: row.fuel_start,
-        fuelEnd: row.fuel_end,
-        fuelFilled: row.fuel_filled,
-        workHours: row.work_hours,
-        hoursOnField: row.hours_on_field,
-      })
-    ) {
-      return acc;
-    }
+    byUnit.set(wid, (byUnit.get(wid) ?? 0) + liters);
+  }
 
-    return acc + recalc;
-  }, 0);
+  return {
+    byUnit,
+    hasData: (data?.length ?? 0) > 0,
+    eqNameByWid,
+  };
+}
+
+export async function sumFleetFuelConsumedForPeriod(
+  fromDate: string,
+  toDate: string
+): Promise<{ liters: number; hasData: boolean }> {
+  const { byUnit, hasData } = await fleetFuelConsumedBucketsForPeriod(
+    fromDate,
+    toDate
+  );
+
+  const liters = [...byUnit.values()].reduce((acc, value) => acc + value, 0);
 
   return {
     liters: Math.round(liters * 10) / 10,
-    hasData: (data?.length ?? 0) > 0,
+    hasData,
+  };
+}
+
+/** Спалено по кожній одиниці техніки за період (для розшифровки «поза полями»). */
+export async function listFleetFuelConsumedBreakdownForPeriod(
+  fromDate: string,
+  toDate: string
+): Promise<{
+  liters: number;
+  hasData: boolean;
+  rows: FleetFuelConsumedBreakdownRow[];
+}> {
+  const { byUnit, hasData, eqNameByWid } =
+    await fleetFuelConsumedBucketsForPeriod(fromDate, toDate);
+
+  const unitIds = [...byUnit.keys()];
+  const displayNames = await resolveWialonUnitDisplayNames(unitIds);
+
+  const rows = unitIds
+    .map((wialonUnitId) => ({
+      wialonUnitId,
+      equipmentName:
+        displayNames.get(wialonUnitId) ??
+        eqNameByWid.get(wialonUnitId) ??
+        `Одиниця ${wialonUnitId}`,
+      liters: Math.round((byUnit.get(wialonUnitId) ?? 0) * 10) / 10,
+    }))
+    .filter((row) => row.liters > 0)
+    .sort((a, b) => b.liters - a.liters);
+
+  const liters = rows.reduce((acc, row) => acc + row.liters, 0);
+
+  return {
+    liters: Math.round(liters * 10) / 10,
+    hasData,
+    rows,
   };
 }
 

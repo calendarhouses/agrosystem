@@ -17,6 +17,7 @@ import type {
   FieldFuelBreakdownRow,
   FieldFuelPeriod,
 } from "@/app/fuel/actions";
+import type { FleetFuelConsumedBreakdownRow } from "@/lib/wialon-equipment-day-sync";
 import { FuelRefuelRadar } from "@/components/dashboard/fuel-refuel-radar";
 import { Button } from "@/components/ui/button";
 import {
@@ -82,6 +83,7 @@ type FuelDashboardHeaderProps = {
   fieldFuelLoading: boolean;
   fieldFuelPeriod: FieldFuelPeriod;
   fieldFuelBreakdown: FieldFuelBreakdownRow[];
+  fleetFuelBreakdown?: FleetFuelConsumedBreakdownRow[];
   fieldFuelCoverage?: {
     daysCovered: number;
     daysExpected: number;
@@ -373,6 +375,7 @@ export function FuelDashboardHeader({
   fieldFuelLoading,
   fieldFuelPeriod,
   fieldFuelBreakdown,
+  fleetFuelBreakdown = [],
   fieldFuelCoverage,
   kpiExpectedLoadMs = null,
   refuelLiters,
@@ -412,6 +415,47 @@ export function FuelDashboardHeader({
       ? Math.max(0, Math.round((fieldFuelTotalLiters - fieldFuelLiters) * 10) / 10)
       : null;
 
+  const onFieldByUnit = new Map<number, number>();
+  for (const row of fieldFuelBreakdown) {
+    if (row.wialonUnitId == null) continue;
+    onFieldByUnit.set(
+      row.wialonUnitId,
+      (onFieldByUnit.get(row.wialonUnitId) ?? 0) + row.liters
+    );
+  }
+
+  const offFieldRows =
+    fleetFuelBreakdown.length > 0
+      ? fleetFuelBreakdown
+          .map((unit) => {
+            const onField = onFieldByUnit.get(unit.wialonUnitId) ?? 0;
+            const off = Math.round((unit.liters - onField) * 10) / 10;
+            if (off <= 0.5) return null;
+            return {
+              title: unit.equipmentName,
+              subtitle: "поза полями · переїзди, база, холостий",
+              liters: off,
+            };
+          })
+          .filter(
+            (
+              row
+            ): row is {
+              title: string;
+              subtitle: string;
+              liters: number;
+            } => row != null
+          )
+      : offFieldLiters != null && offFieldLiters > 0.5
+        ? [
+            {
+              title: "Поза полями",
+              subtitle: "переїзди, база, холостий хід",
+              liters: offFieldLiters,
+            },
+          ]
+        : [];
+
   const burnedRows = [
     ...fieldFuelBreakdown.map((row) => ({
       title: row.equipmentName,
@@ -427,15 +471,7 @@ export function FuelDashboardHeader({
           },
         ]
       : []),
-    ...(offFieldLiters != null && offFieldLiters > 1
-      ? [
-          {
-            title: "Поза полями",
-            subtitle: "переїзди, база, холостий хід",
-            liters: offFieldLiters,
-          },
-        ]
-      : []),
+    ...offFieldRows,
   ];
   const refuelRows = refuelBreakdown.map((row) => ({
     title: row.equipmentName,

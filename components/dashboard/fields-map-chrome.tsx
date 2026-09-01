@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
+  Activity,
   Cloud,
   CloudLightning,
   CloudRain,
@@ -354,11 +356,21 @@ export function FieldsMapChrome({ align = "end" }: FieldsMapChromeProps) {
   return (
     <BootReveal
       className={cn(
-        "pointer-events-auto flex flex-wrap items-center gap-2",
-        align === "start" ? "justify-start" : "justify-end"
+        "pointer-events-auto",
+        isMobile
+          ? "flex w-full items-stretch gap-2"
+          : cn(
+              "flex flex-wrap items-center gap-2",
+              align === "start" ? "justify-start" : "justify-end"
+            )
       )}
     >
-      <div className="flex items-center gap-1 rounded-2xl border border-white/40 bg-background/75 py-1 pr-1 pl-2.5 shadow-lg backdrop-blur-xl">
+      <div
+        className={cn(
+          "flex items-center gap-1 rounded-2xl border border-white/40 bg-background/75 py-1 pr-1 pl-2.5 shadow-lg backdrop-blur-xl",
+          isMobile && "min-h-11 min-w-0 flex-1"
+        )}
+      >
         <div className="min-w-0 px-1">
           <div className="flex items-center gap-1.5">
             {loading && !weather ? (
@@ -455,6 +467,22 @@ export function FieldsMapChrome({ align = "end" }: FieldsMapChromeProps) {
           </Popover>
         )}
       </div>
+
+      {isMobile ? (
+        <Link
+          href="/operations"
+          aria-label="Хронологія полів"
+          className="flex min-h-11 min-w-0 flex-1 items-center justify-center gap-2 rounded-2xl border border-white/40 bg-background/75 px-3 shadow-lg backdrop-blur-xl transition active:scale-[0.98]"
+        >
+          <Activity
+            className="h-4 w-4 shrink-0 text-orange-500"
+            strokeWidth={2.2}
+          />
+          <span className="truncate text-sm font-semibold text-zinc-900">
+            Хронологія
+          </span>
+        </Link>
+      ) : null}
     </BootReveal>
   );
 }

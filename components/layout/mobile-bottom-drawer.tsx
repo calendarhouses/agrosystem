@@ -33,25 +33,18 @@ export function MobileBottomDrawer({
   showCloseButton = true,
 }: MobileBottomDrawerProps) {
   const [mounted, setMounted] = useState(false);
-  const [show, setShow] = useState(open);
   const dragControls = useDragControls();
 
   useEffect(() => setMounted(true), []);
 
   useEffect(() => {
-    if (open) setShow(true);
-  }, [open]);
-
-  const isExiting = show && !open;
-
-  useEffect(() => {
-    if (!show) return;
+    if (!open) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = prev;
     };
-  }, [show]);
+  }, [open]);
 
   function requestClose() {
     onOpenChange(false);
@@ -62,51 +55,43 @@ export function MobileBottomDrawer({
   }
 
   function handleDragEnd(_event: unknown, info: PanInfo) {
-    const close = info.offset.y > 72 || info.velocity.y > 450;
-    if (close) requestClose();
+    const shouldClose = info.offset.y > 72 || info.velocity.y > 450;
+    if (shouldClose) requestClose();
   }
 
   if (!mounted) return null;
 
   const navOffset = preserveNav ? "var(--app-bottom-inset)" : "0px";
-  const sheetZ = isExiting && preserveNav ? "z-[90]" : "z-[260]";
-  const overlayZ = isExiting && preserveNav ? "z-[89]" : "z-[259]";
 
   return createPortal(
-    <AnimatePresence onExitComplete={() => setShow(false)}>
-      {show ? (
+    <AnimatePresence>
+      {open ? (
         <>
           <motion.button
+            key="mobile-bottom-drawer-overlay"
             type="button"
             aria-label="Закрити меню"
-            className={cn(
-              "fixed inset-x-0 top-0 bg-black/70 backdrop-blur-[3px]",
-              overlayZ
-            )}
+            className="fixed inset-x-0 top-0 z-[259] bg-black/70 backdrop-blur-[3px]"
             style={{ bottom: navOffset }}
             initial={{ opacity: 0 }}
-            animate={{ opacity: isExiting ? 0 : 1 }}
+            animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: isExiting ? 0.16 : 0.18 }}
+            transition={{ duration: 0.18 }}
             onClick={requestClose}
           />
           <motion.div
+            key="mobile-bottom-drawer-sheet"
             role="dialog"
             aria-modal="true"
             className={cn(
-              "fixed inset-x-0 flex max-h-[min(88dvh,calc(100dvh-var(--app-bottom-inset)))] flex-col overflow-hidden rounded-t-3xl border border-b-0 border-zinc-800 bg-zinc-950 shadow-[0_-24px_64px_-12px_rgba(0,0,0,0.65)]",
-              sheetZ,
+              "fixed inset-x-0 z-[260] flex max-h-[min(88dvh,calc(100dvh-var(--app-bottom-inset)))] flex-col overflow-hidden rounded-t-3xl border border-b-0 border-zinc-800 bg-zinc-950 shadow-[0_-24px_64px_-12px_rgba(0,0,0,0.65)]",
               className
             )}
             style={{ bottom: navOffset }}
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
-            transition={
-              isExiting
-                ? { duration: 0.22, ease: [0.4, 0, 0.2, 1] }
-                : { type: "spring", stiffness: 440, damping: 40 }
-            }
+            transition={{ type: "spring", stiffness: 440, damping: 40 }}
             drag="y"
             dragControls={dragControls}
             dragListener={false}
@@ -126,7 +111,6 @@ export function MobileBottomDrawer({
               </button>
             ) : null}
 
-            {/* Велика зона свайпу: хендл + верхня смуга */}
             <div className="relative z-10 shrink-0">
               <SheetDragHandle
                 className="min-h-11 cursor-grab pt-3 pb-2 active:cursor-grabbing"

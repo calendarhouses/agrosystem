@@ -30,6 +30,7 @@ import {
   type FieldFuelBreakdownRow,
   type FieldFuelPeriod,
 } from "@/app/fuel/actions";
+import type { FleetFuelConsumedBreakdownRow } from "@/lib/wialon-equipment-day-sync";
 import { listEquipmentForOps } from "@/app/admin/equipment/actions";
 import { AttachmentViewerButton } from "@/components/dashboard/attachment-viewer";
 import {
@@ -102,6 +103,7 @@ type FuelKpisBurned = {
     coverageIncomplete: boolean;
     progressPct?: number;
     breakdown: FieldFuelBreakdownRow[];
+    fleetBreakdown?: FleetFuelConsumedBreakdownRow[];
   };
 } | { ok: false; error: string };
 
@@ -766,6 +768,9 @@ export function FuelView({
   const [fieldFuelBreakdown, setFieldFuelBreakdown] = useState<
     FieldFuelBreakdownRow[]
   >(seedBurned?.breakdown ?? []);
+  const [fleetFuelBreakdown, setFleetFuelBreakdown] = useState<
+    FleetFuelConsumedBreakdownRow[]
+  >(seedBurned?.fleetBreakdown ?? []);
   const [fieldFuelCoverage, setFieldFuelCoverage] = useState<{
     daysCovered: number;
     daysExpected: number;
@@ -1201,6 +1206,7 @@ export function FuelView({
         setFieldFuelTotal(totalLiters);
         setFieldFuelHasData(hasData);
         setFieldFuelBreakdown(burned.data.breakdown);
+        setFleetFuelBreakdown(burned.data.fleetBreakdown ?? []);
         const progressPct =
           burned.data.progressPct ??
           (burned.data.daysExpected > 0
@@ -1247,6 +1253,7 @@ export function FuelView({
         setFieldFuelTotal(null);
         setFieldFuelHasData(false);
         setFieldFuelBreakdown([]);
+        setFleetFuelBreakdown([]);
         setFieldFuelCoverage(null);
       }
       if (refueled?.ok) {
@@ -1286,6 +1293,7 @@ export function FuelView({
       setFieldFuelTotal(null);
       setFieldFuelHasData(false);
       setFieldFuelBreakdown([]);
+      setFleetFuelBreakdown([]);
       setFieldFuelCoverage(null);
       setRefuelLiters(null);
       setRefuelHasData(false);
@@ -1472,6 +1480,7 @@ export function FuelView({
         fieldFuelLoading={fieldFuelLoading}
         fieldFuelPeriod={fieldFuelPeriod}
         fieldFuelBreakdown={fieldFuelBreakdown}
+        fleetFuelBreakdown={fleetFuelBreakdown}
         fieldFuelCoverage={fieldFuelCoverage}
         kpiExpectedLoadMs={kpiExpectedLoadMs}
         refuelLiters={refuelLiters}

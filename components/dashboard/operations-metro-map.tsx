@@ -54,13 +54,14 @@ const STATION_CARD_WIDTH = 216;
 const STATION_STEP = 252;
 const TRACK_PAD_X = STATION_CARD_WIDTH / 2 + 24;
 const METRO_TRACK_END_PAD = 24;
-const METRO_TRACK_MIN_HEIGHT = 220;
-const METRO_CARD_GAP = 6;
+const METRO_TRACK_MIN_HEIGHT = 240;
+const METRO_CARD_GAP = 10;
 const METRO_NODE_RADIUS = 10;
-const METRO_LINE_GAP = 46;
-const METRO_TRACK_PADDING_Y = 2;
-const METRO_STANDARD_CARD_H = 112;
-const METRO_SCOUTING_CARD_H = 196;
+const METRO_LINE_GAP = 56;
+const METRO_TRACK_PADDING_Y = 4;
+const METRO_STANDARD_CARD_H = 142;
+const METRO_SCOUTING_CARD_H = 214;
+const METRO_PLANNED_LINE_STROKE = "#38bdf8";
 
 const METRO_LINE_COLORS = [
   {
@@ -195,13 +196,16 @@ function eventIcon(
 }
 
 function estimateStationCardHeight(event: UnifiedTimelineEvent): number {
-  if (event.type !== "scouting") return METRO_STANDARD_CARD_H;
+  if (event.type !== "scouting") {
+    const withStatus = isFutureTimelineOperation(event) ? 24 : 0;
+    return METRO_STANDARD_CARD_H + withStatus;
+  }
 
-  let height = 18;
-  height += 80;
-  if (event.notes?.trim()) height += 30;
-  else height += 14;
-  height += 24;
+  let height = 20;
+  height += 86;
+  if (event.notes?.trim()) height += 34;
+  else height += 16;
+  height += 26;
   return Math.max(height, METRO_SCOUTING_CARD_H);
 }
 
@@ -272,7 +276,7 @@ function buildMetroPathSegments(
   stationXs: number[],
   trackWidth: number,
   events: UnifiedTimelineEvent[]
-): { d: string; planned: boolean }[] {
+): { d: string; sky: boolean }[] {
   const count = stationXs.length;
   if (count === 0) return [];
 
@@ -283,11 +287,11 @@ function buildMetroPathSegments(
   const x0 = stationXs[0] ?? 0;
 
   if (count === 1) {
-    return [{ d: `M 0 ${y0} H ${trackWidth}`, planned: isFutureAt(0) }];
+    return [{ d: `M 0 ${y0} H ${trackWidth}`, sky: isFutureAt(0) }];
   }
 
-  const segments: { d: string; planned: boolean }[] = [
-    { d: `M 0 ${y0} H ${x0}`, planned: isFutureAt(0) },
+  const segments: { d: string; sky: boolean }[] = [
+    { d: `M 0 ${y0} H ${x0}`, sky: isFutureAt(0) },
   ];
 
   for (let i = 1; i < count; i++) {
@@ -298,7 +302,7 @@ function buildMetroPathSegments(
     const midX = (xPrev + x1) / 2;
     segments.push({
       d: `M ${xPrev} ${yPrev} H ${midX - 10} Q ${midX} ${yPrev} ${midX} ${(yPrev + y1) / 2} Q ${midX} ${y1} ${midX + 10} ${y1} H ${x1}`,
-      planned: isFutureAt(i),
+      sky: isFutureAt(i),
     });
   }
 
@@ -306,7 +310,7 @@ function buildMetroPathSegments(
   const yLast = yPositions[count - 1] ?? y0;
   segments.push({
     d: `M ${xLast} ${yLast} H ${trackWidth}`,
-    planned: isFutureAt(count - 1),
+    sky: isFutureAt(count - 1),
   });
 
   return segments;
@@ -713,12 +717,13 @@ function MetroFieldLine({
                       key={index}
                       d={segment.d}
                       fill="none"
-                      stroke={line.stroke}
+                      stroke={
+                        segment.sky ? METRO_PLANNED_LINE_STROKE : line.stroke
+                      }
                       strokeWidth={7}
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      strokeDasharray={segment.planned ? "12 9" : undefined}
-                      opacity={segment.planned ? 0.72 : 0.95}
+                      opacity={0.95}
                       filter={`url(#glow-${line.id}-${lineIndex})`}
                     />
                   ))}
@@ -745,7 +750,6 @@ function MetroFieldLine({
                       <span
                         className={cn(
                           "absolute left-1/2 size-5 -translate-x-1/2 rounded-full border-[3px] shadow-lg",
-                          isFuture && "border-dashed",
                           isFuture
                             ? desktop
                               ? "border-sky-400 bg-sky-50"
@@ -763,8 +767,16 @@ function MetroFieldLine({
                         className="absolute left-1/2 -translate-x-1/2"
                         style={
                           cardAbove
-                            ? { bottom: trackHeight - y + METRO_CARD_GAP }
-                            : { top: y + METRO_CARD_GAP }
+                            ? {
+                                bottom:
+                                  trackHeight -
+                                  y +
+                                  METRO_CARD_GAP +
+                                  METRO_NODE_RADIUS,
+                              }
+                            : {
+                                top: y + METRO_CARD_GAP + METRO_NODE_RADIUS,
+                              }
                         }
                       >
                         <MetroStationCard

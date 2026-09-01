@@ -1184,7 +1184,7 @@ export function FieldsView() {
         !mobileListExpanded &&
         !mapToolActive &&
         !sheetOpen ? (
-          <div className="flex justify-end">
+          <div className={cn("flex w-full", !isMobile && "justify-end")}>
             <FieldsMapChrome align="end" />
           </div>
         ) : null}

@@ -17,8 +17,10 @@ import {
 import { sumOutboundRefueledForPeriod } from "@/lib/fuel-refuel-period";
 import {
   ensureEquipmentDayStatsCoverage,
+  listFleetFuelConsumedBreakdownForPeriod,
   listUnsyncedEquipmentDayDates,
   sumFleetFuelConsumedForPeriod,
+  type FleetFuelConsumedBreakdownRow,
 } from "@/lib/wialon-equipment-day-sync";
 import {
   ensureFieldFuelPeriodCoverage,
@@ -70,6 +72,7 @@ export async function getFieldFuelConsumed(
     /** 0–100 за покриттям днів */
     progressPct: number;
     breakdown: FieldFuelBreakdownRow[];
+    fleetBreakdown: FleetFuelConsumedBreakdownRow[];
   }>
 > {
   try {
@@ -180,9 +183,10 @@ export async function getFieldFuelConsumed(
       listFieldFuelBreakdownForPeriod(safe),
     ]);
 
-    const [stillMissing, fleet] = await Promise.all([
+    const [stillMissing, fleet, fleetBreakdown] = await Promise.all([
       listUnsyncedFieldFuelDates(sum.fromDate, sum.toDate),
       sumFleetFuelConsumedForPeriod(sum.fromDate, sum.toDate),
+      listFleetFuelConsumedBreakdownForPeriod(sum.fromDate, sum.toDate),
     ]);
     const daysExpected =
       Math.round(
@@ -219,6 +223,7 @@ export async function getFieldFuelConsumed(
         coverageIncomplete: stillMissing.length > 0,
         progressPct,
         breakdown: breakdown.rows,
+        fleetBreakdown: fleetBreakdown.rows,
       },
     };
   } catch (error) {
