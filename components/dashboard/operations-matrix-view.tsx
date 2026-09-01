@@ -394,6 +394,7 @@ export function OperationsMatrixView() {
           "touch-pan-y [-webkit-overflow-scrolling:touch]",
           "pb-[calc(var(--bottom-nav-height)+1rem)]"
         )}
+        data-chronicle-scroll
         data-allow-pan="true"
         data-vaul-no-drag=""
       >
