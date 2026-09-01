@@ -2014,7 +2014,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
             <button
               type="button"
               onClick={() => router.push("/operations")}
-              aria-label="Операційна хронологія"
+              aria-label="Хронологія полів"
               className={cn(
                 "inline-flex h-11 items-center gap-2 rounded-2xl border border-white/15",
                 "bg-zinc-950/88 px-3.5 text-sm font-semibold text-zinc-50 shadow-lg backdrop-blur-xl",
@@ -2025,7 +2025,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
                 className="h-4 w-4 shrink-0 text-orange-400"
                 strokeWidth={2.2}
               />
-              Операції
+              Хронологія
             </button>
           ) : null}
           <div

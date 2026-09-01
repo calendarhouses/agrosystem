@@ -3,6 +3,7 @@
 import { format } from "date-fns";
 import { uk } from "date-fns/locale";
 import {
+  ChevronDown,
   FlaskConical,
   Fuel,
   Package,
@@ -10,9 +11,15 @@ import {
   Sprout,
   Tractor,
 } from "lucide-react";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { normalizeFieldCrop } from "@/components/dashboard/field-passport-form";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import { Skeleton } from "@/components/ui/skeleton";
 import type {
   FieldTimelineField,
@@ -22,11 +29,12 @@ import type {
 } from "@/lib/field-timeline";
 import { cn } from "@/lib/utils";
 
+const STATION_CARD_WIDTH = 216;
 const STATION_STEP = 252;
-const TRACK_PAD_X = 40;
-const TRACK_HEIGHT = 360;
-const LINE_Y_TOP = 148;
-const LINE_Y_BOTTOM = 232;
+const TRACK_PAD_X = STATION_CARD_WIDTH / 2 + 24;
+const TRACK_HEIGHT = 392;
+const LINE_Y_TOP = 156;
+const LINE_Y_BOTTOM = 248;
 
 const METRO_LINE_COLORS = [
   {
@@ -122,7 +130,7 @@ function MetroStationCard({
       type="button"
       onClick={onClick}
       className={cn(
-        "w-[13.5rem] rounded-2xl border border-white/10 bg-white/[0.07] p-3 text-left backdrop-blur-md",
+        "relative z-10 w-[13.5rem] rounded-2xl border border-white/10 bg-white/[0.07] p-3 text-left backdrop-blur-md",
         "shadow-[0_12px_40px_-20px_rgba(0,0,0,0.85)] transition",
         "hover:border-white/20 hover:bg-white/[0.12] active:scale-[0.98]"
       )}
@@ -180,149 +188,155 @@ function MetroFieldLine({
     index % 2 === 0 ? LINE_Y_TOP : LINE_Y_BOTTOM
   );
   const trackWidth = Math.max(
-    STATION_STEP * Math.max(events.length - 1, 1) + TRACK_PAD_X * 2,
-    320
+    STATION_STEP * Math.max(events.length - 1, 0) + TRACK_PAD_X * 2,
+    STATION_CARD_WIDTH + TRACK_PAD_X * 2
   );
   const segments = buildMetroSegments(events.length, yPositions);
 
   return (
-    <section className="relative overflow-hidden rounded-3xl border border-white/8 bg-gradient-to-br from-white/[0.06] via-white/[0.03] to-transparent">
-      <div className="flex items-start justify-between gap-3 border-b border-white/5 px-4 py-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span
-              className={cn("inline-flex h-2.5 w-8 shrink-0 rounded-full", line.fill)}
-              aria-hidden
-            />
-            <h3 className="truncate text-base font-semibold tracking-tight text-zinc-50">
-              {item.field.name}
-            </h3>
-          </div>
-          <p className="mt-1 text-xs text-zinc-400">
-            {normalizeFieldCrop(item.field.crop)} · {formatAreaHa(item.field.areaHa)}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <span className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-[11px] font-semibold text-zinc-300 tabular-nums">
-            {events.length}{" "}
-            {events.length === 1 ? "станція" : "станцій"}
-          </span>
-          <button
-            type="button"
-            onClick={() => onAddClick?.(item.field)}
-            className="inline-flex size-9 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/15 text-emerald-200 transition hover:bg-emerald-500/25"
-            aria-label={`Додати позицію для ${item.field.name}`}
-          >
-            <Plus className="size-4" />
-          </button>
-        </div>
-      </div>
-
-      {events.length === 0 ? (
-        <div className="px-4 py-10 text-center">
-          <p className="text-sm text-zinc-500 italic">
-            Історія операцій порожня
-          </p>
-          <button
-            type="button"
-            onClick={() => onAddClick?.(item.field)}
-            className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-zinc-200 transition hover:bg-white/10"
-          >
-            <Plus className="size-4" />
-            Додати першу позицію
-          </button>
-        </div>
-      ) : (
-        <div className="relative">
-          <div
-            className="overflow-x-auto overscroll-x-contain pb-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-            aria-label={`Хронологія поля ${item.field.name}`}
-          >
-            <div
-              className="relative"
-              style={{ width: trackWidth, height: TRACK_HEIGHT }}
-            >
-              <svg
-                className="pointer-events-none absolute inset-0"
-                width={trackWidth}
-                height={TRACK_HEIGHT}
+    <AccordionItem
+      value={item.field.id}
+      className="overflow-hidden rounded-3xl border border-white/8 bg-gradient-to-br from-white/[0.06] via-white/[0.03] to-transparent"
+    >
+      <AccordionTrigger className="group border-b border-white/5 px-4 py-3 hover:no-underline [&>svg]:hidden">
+        <div className="flex min-w-0 flex-1 items-start justify-between gap-3 pr-2">
+          <div className="min-w-0 text-left">
+            <div className="flex items-center gap-2">
+              <span
+                className={cn("inline-flex h-2.5 w-8 shrink-0 rounded-full", line.fill)}
                 aria-hidden
+              />
+              <h3 className="truncate text-base font-semibold tracking-tight text-zinc-50">
+                {item.field.name}
+              </h3>
+            </div>
+            <p className="mt-1 text-xs text-zinc-400">
+              {normalizeFieldCrop(item.field.crop)} · {formatAreaHa(item.field.areaHa)}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-[11px] font-semibold text-zinc-300 tabular-nums">
+              {events.length}{" "}
+              {events.length === 1 ? "станція" : "станцій"}
+            </span>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onAddClick?.(item.field);
+              }}
+              className="inline-flex size-9 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/15 text-emerald-200 transition hover:bg-emerald-500/25"
+              aria-label={`Додати позицію для ${item.field.name}`}
+            >
+              <Plus className="size-4" />
+            </button>
+            <ChevronDown className="size-5 shrink-0 text-zinc-500 transition-transform duration-200 group-data-[state=open]:rotate-180" />
+          </div>
+        </div>
+      </AccordionTrigger>
+
+      <AccordionContent className="pb-0">
+        {events.length === 0 ? (
+          <div className="px-4 py-10 text-center">
+            <p className="text-sm text-zinc-500 italic">
+              Історія операцій порожня
+            </p>
+            <button
+              type="button"
+              onClick={() => onAddClick?.(item.field)}
+              className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-zinc-200 transition hover:bg-white/10"
+            >
+              <Plus className="size-4" />
+              Додати першу позицію
+            </button>
+          </div>
+        ) : (
+          <div className="relative py-2">
+            <div
+              className="overflow-x-auto overscroll-x-contain px-1 pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              aria-label={`Хронологія поля ${item.field.name}`}
+            >
+              <div
+                className="relative mx-auto"
+                style={{ width: trackWidth, height: TRACK_HEIGHT }}
               >
-                <defs>
-                  <filter id={`glow-${line.id}-${lineIndex}`}>
-                    <feGaussianBlur stdDeviation="3" result="blur" />
-                    <feMerge>
-                      <feMergeNode in="blur" />
-                      <feMergeNode in="SourceGraphic" />
-                    </feMerge>
-                  </filter>
-                </defs>
-                {segments.map((d, index) => (
-                  <path
-                    key={index}
-                    d={d}
-                    fill="none"
-                    stroke={line.stroke}
-                    strokeWidth={7}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    opacity={0.95}
-                    filter={`url(#glow-${line.id}-${lineIndex})`}
-                  />
-                ))}
-              </svg>
-
-              {events.map((event, index) => {
-                const x = TRACK_PAD_X + index * STATION_STEP;
-                const y = yPositions[index] ?? LINE_Y_TOP;
-                const cardAbove = y === LINE_Y_TOP;
-
-                return (
-                  <div
-                    key={event.id}
-                    className="absolute left-0 top-0"
-                    style={{
-                      left: x,
-                      transform: "translateX(-50%)",
-                      width: 0,
-                      height: TRACK_HEIGHT,
-                    }}
-                  >
-                    <span
-                      className={cn(
-                        "absolute left-1/2 size-5 -translate-x-1/2 rounded-full border-[3px] bg-zinc-950 shadow-lg",
-                        line.ring,
-                        line.glow
-                      )}
-                      style={{ top: y - 10 }}
+                <svg
+                  className="pointer-events-none absolute inset-0"
+                  width={trackWidth}
+                  height={TRACK_HEIGHT}
+                  aria-hidden
+                >
+                  <defs>
+                    <filter id={`glow-${line.id}-${lineIndex}`}>
+                      <feGaussianBlur stdDeviation="3" result="blur" />
+                      <feMerge>
+                        <feMergeNode in="blur" />
+                        <feMergeNode in="SourceGraphic" />
+                      </feMerge>
+                    </filter>
+                  </defs>
+                  {segments.map((d, index) => (
+                    <path
+                      key={index}
+                      d={d}
+                      fill="none"
+                      stroke={line.stroke}
+                      strokeWidth={7}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      opacity={0.95}
+                      filter={`url(#glow-${line.id}-${lineIndex})`}
                     />
+                  ))}
+                </svg>
 
+                {events.map((event, index) => {
+                  const x = TRACK_PAD_X + index * STATION_STEP;
+                  const y = yPositions[index] ?? LINE_Y_TOP;
+                  const cardAbove = y === LINE_Y_TOP;
+
+                  return (
                     <div
-                      className="absolute left-1/2 -translate-x-1/2"
-                      style={
-                        cardAbove
-                          ? { bottom: TRACK_HEIGHT - y + 20 }
-                          : { top: y + 20 }
-                      }
+                      key={event.id}
+                      className="absolute left-0 top-0"
+                      style={{
+                        left: x,
+                        transform: "translateX(-50%)",
+                        width: 0,
+                        height: TRACK_HEIGHT,
+                      }}
                     >
-                      <MetroStationCard
-                        event={event}
-                        onClick={() => onEventClick?.(item.field, event)}
+                      <span
+                        className={cn(
+                          "absolute left-1/2 size-5 -translate-x-1/2 rounded-full border-[3px] bg-zinc-950 shadow-lg",
+                          line.ring,
+                          line.glow
+                        )}
+                        style={{ top: y - 10 }}
                       />
+
+                      <div
+                        className="absolute left-1/2 -translate-x-1/2"
+                        style={
+                          cardAbove
+                            ? { bottom: TRACK_HEIGHT - y + 20 }
+                            : { top: y + 20 }
+                        }
+                      >
+                        <MetroStationCard
+                          event={event}
+                          onClick={() => onEventClick?.(item.field, event)}
+                        />
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
           </div>
-
-          <div
-            className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-zinc-950/90 to-transparent"
-            aria-hidden
-          />
-        </div>
-      )}
-    </section>
+        )}
+      </AccordionContent>
+    </AccordionItem>
   );
 }
 
@@ -350,6 +364,20 @@ export function OperationsMetroMap({
   onEventClick?: (field: FieldTimelineField, event: UnifiedTimelineEvent) => void;
   onAddClick?: (field: FieldTimelineField) => void;
 }) {
+  const [openIds, setOpenIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (fields.length === 0) {
+      setOpenIds([]);
+      return;
+    }
+    setOpenIds((prev) => {
+      const valid = prev.filter((id) => fields.some((item) => item.field.id === id));
+      if (valid.length > 0) return valid;
+      return [fields[0]!.field.id];
+    });
+  }, [fields]);
+
   if (isLoading) return <MetroMapSkeleton />;
 
   if (fields.length === 0) {
@@ -361,7 +389,12 @@ export function OperationsMetroMap({
   }
 
   return (
-    <div className="space-y-4">
+    <Accordion
+      type="multiple"
+      value={openIds}
+      onValueChange={setOpenIds}
+      className="space-y-3"
+    >
       {fields.map((item, index) => (
         <MetroFieldLine
           key={item.field.id}
@@ -371,6 +404,6 @@ export function OperationsMetroMap({
           onAddClick={onAddClick}
         />
       ))}
-    </div>
+    </Accordion>
   );
 }

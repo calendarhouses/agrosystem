@@ -27,6 +27,7 @@ import {
   NonModalDrawerBackdrop,
 } from "@/components/ui/drawer";
 import type { MapFieldItem } from "@/lib/map-fields";
+import { groupFieldsByListCategory } from "@/lib/field-list-categories";
 import { formatCountPlural } from "@/lib/plural";
 import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
@@ -157,24 +158,6 @@ function budgetTone(pct: number | null) {
     text: "text-emerald-700",
     label: `${Math.round(pct)}%`,
   };
-}
-
-/** Урочище: «Василиха №1» → «Василиха» */
-function fieldGroupLabel(name: string): string {
-  const trimmed = name.trim();
-  const numbered = trimmed.match(/^(.*?)(?:\s*[№#N]\s*\d+)$/i);
-  if (numbered && numbered[1].trim().length >= 2) {
-    return numbered[1].trim();
-  }
-  const trailingDigits = trimmed.match(/^(.*?)(\d+)$/);
-  if (
-    trailingDigits &&
-    trailingDigits[1].trim().length >= 3 &&
-    trailingDigits[2].length <= 3
-  ) {
-    return trailingDigits[1].trim();
-  }
-  return trimmed;
 }
 
 function FieldRow({
@@ -348,26 +331,10 @@ export function FieldsGlassPanel({
     });
   }, [fields, query]);
 
-  const groups = useMemo(() => {
-    const order: string[] = [];
-    const map = new Map<string, MapFieldItem[]>();
-    for (const field of filtered) {
-      const label = fieldGroupLabel(field.name);
-      if (!map.has(label)) {
-        order.push(label);
-        map.set(label, []);
-      }
-      map.get(label)!.push(field);
-    }
-    const clustered = order
-      .map((label) => ({ label, items: map.get(label)! }))
-      .filter((group) => group.items.length >= 2);
-    const clusteredIds = new Set(
-      clustered.flatMap((group) => group.items.map((item) => item.id))
-    );
-    const rest = filtered.filter((field) => !clusteredIds.has(field.id));
-    return { clustered, rest };
-  }, [filtered]);
+  const groups = useMemo(
+    () => groupFieldsByListCategory(filtered),
+    [filtered]
+  );
 
   function budgetFor(field: MapFieldItem) {
     const key = (field.farmField?.id ?? field.id).toLowerCase();
@@ -376,18 +343,17 @@ export function FieldsGlassPanel({
 
   const listBody = (
     <div className="space-y-2.5">
-      {groups.clustered.map((group) => {
+      {groups.map((group) => {
         const groupHa = group.items.reduce((sum, field) => sum + field.areaHa, 0);
-        const accent = group.items[0]?.color ?? "#276749";
         return (
           <section
-            key={group.label}
+            key={group.id}
             className="overflow-hidden rounded-2xl border border-white/40 bg-white/30 shadow-[0_8px_24px_-16px_rgba(24,24,27,0.45)]"
           >
             <div className="flex items-center gap-2.5 border-b border-white/35 bg-gradient-to-r from-white/70 to-white/25 px-2.5 py-2">
               <span
                 className="h-7 w-1 shrink-0 rounded-full"
-                style={{ backgroundColor: accent }}
+                style={{ backgroundColor: group.accent }}
                 aria-hidden
               />
               <div className="min-w-0 flex-1">
@@ -422,59 +388,6 @@ export function FieldsGlassPanel({
           </section>
         );
       })}
-      {groups.rest.length > 0 ? (
-        groups.clustered.length > 0 ? (
-          <section className="overflow-hidden rounded-2xl border border-white/40 bg-white/30 shadow-[0_8px_24px_-16px_rgba(24,24,27,0.45)]">
-            <div className="flex items-center gap-2.5 border-b border-white/35 bg-gradient-to-r from-white/70 to-white/25 px-2.5 py-2">
-              <span
-                className="h-7 w-1 shrink-0 rounded-full bg-zinc-400"
-                aria-hidden
-              />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[13px] font-bold tracking-tight text-zinc-900">
-                  Інші ділянки
-                </p>
-                <p className="text-[10px] font-medium tabular-nums text-zinc-500">
-                  {formatCountPlural(groups.rest.length, [
-                    "ділянка",
-                    "ділянки",
-                    "ділянок",
-                  ])}
-                </p>
-              </div>
-            </div>
-            <div className="space-y-0.5 p-1">
-              {groups.rest.map((field) => (
-                <FieldRow
-                  key={field.id}
-                  field={field}
-                  active={selectedId === field.id || editingFieldId === field.id}
-                  hovered={hoveredId === field.id}
-                  editing={editingFieldId === field.id}
-                  budgetPct={budgetFor(field)}
-                  onOpen={() => onSelect(field)}
-                  onHover={onHover}
-                />
-              ))}
-            </div>
-          </section>
-        ) : (
-          <div className="space-y-0.5">
-            {groups.rest.map((field) => (
-              <FieldRow
-                key={field.id}
-                field={field}
-                active={selectedId === field.id || editingFieldId === field.id}
-                hovered={hoveredId === field.id}
-                editing={editingFieldId === field.id}
-                budgetPct={budgetFor(field)}
-                onOpen={() => onSelect(field)}
-                onHover={onHover}
-              />
-            ))}
-          </div>
-        )
-      ) : null}
     </div>
   );
 

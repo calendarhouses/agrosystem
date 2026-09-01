@@ -7,26 +7,25 @@ import { Loader2, PackageMinus, Pencil, Trash2, Tractor } from "lucide-react";
 import { toast } from "sonner";
 
 import { deleteLocalMove, listLocalMoves } from "@/app/admin/inventory/actions";
+import type { LocalMoveRow } from "@/app/admin/inventory/actions";
 import { EditLocalMoveInline } from "@/components/dashboard/local-moves-history-sheet";
 import {
   loadFieldOperationByClientKey,
-  OperationsOperationFormSheet,
+  OperationsOperationForm,
 } from "@/components/dashboard/operations-operation-form-sheet";
-import { Button } from "@/components/ui/button";
 import {
-  Drawer,
-  DrawerContent,
-  DrawerDescription,
-  DrawerHeader,
-  DrawerTitle,
-} from "@/components/ui/drawer";
+  OperationsPanelShell,
+  OperationsSheetHeader,
+  opsSheetBodyClass,
+} from "@/components/dashboard/operations-sheet-chrome";
+import { Button } from "@/components/ui/button";
 import { deleteFieldOperation, type FieldOperation } from "@/lib/field-operations";
 import type { FieldTimelineField, UnifiedTimelineEvent } from "@/lib/field-timeline";
 import {
   fieldOperationsKeyFromFarmId,
   parseTimelineEventId,
 } from "@/lib/field-timeline-ids";
-import type { LocalMoveRow } from "@/app/admin/inventory/actions";
+import { cn } from "@/lib/utils";
 
 type OperationsEventDetailSheetProps = {
   open: boolean;
@@ -36,6 +35,8 @@ type OperationsEventDetailSheetProps = {
   season: string;
   onChanged: () => void;
 };
+
+type DetailView = "detail" | "edit-equipment" | "edit-inventory";
 
 function formatDetailDate(iso: string): string {
   const d = new Date(`${iso.slice(0, 10)}T12:00:00`);
@@ -51,33 +52,35 @@ export function OperationsEventDetailSheet({
   season,
   onChanged,
 }: OperationsEventDetailSheetProps) {
-  const [editingEquipment, setEditingEquipment] = useState(false);
-  const [editingInventory, setEditingInventory] = useState(false);
+  const [view, setView] = useState<DetailView>("detail");
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [operation, setOperation] = useState<FieldOperation | null>(null);
   const [inventoryMove, setInventoryMove] = useState<LocalMoveRow | null>(null);
 
-  const parsed = event ? parseTimelineEventId(event.id) : null;
+  const eventId = event?.id ?? null;
+  const fieldId = field?.id ?? null;
   const isEquipment = event?.type === "equipment";
-  const detailOpen = open && !editingEquipment && !editingInventory;
 
   useEffect(() => {
     if (!open) {
-      setEditingEquipment(false);
-      setEditingInventory(false);
+      setView("detail");
       setOperation(null);
       setInventoryMove(null);
+      setLoading(false);
       return;
     }
-    if (!event || !field || !parsed) return;
+    if (!eventId || !fieldId) return;
+
+    const parsed = parseTimelineEventId(eventId);
+    if (!parsed) return;
 
     let cancelled = false;
     setLoading(true);
 
     async function load() {
       if (parsed!.kind === "equipment") {
-        const op = await loadFieldOperationByClientKey(field!.id, parsed!.clientKey);
+        const op = await loadFieldOperationByClientKey(fieldId!, parsed!.clientKey);
         if (!cancelled) {
           setOperation(op);
           setInventoryMove(null);
@@ -103,10 +106,13 @@ export function OperationsEventDetailSheet({
     return () => {
       cancelled = true;
     };
-  }, [event, field, open, parsed, season]);
+  }, [eventId, fieldId, open, season]);
 
   async function handleDelete() {
-    if (!event || !field || !parsed) return;
+    if (!eventId || !fieldId) return;
+    const parsed = parseTimelineEventId(eventId);
+    if (!parsed) return;
+
     const confirmed = window.confirm("Видалити цю позицію з хронології?");
     if (!confirmed) return;
 
@@ -114,7 +120,7 @@ export function OperationsEventDetailSheet({
     try {
       if (parsed.kind === "equipment") {
         await deleteFieldOperation(
-          fieldOperationsKeyFromFarmId(field.id),
+          fieldOperationsKeyFromFarmId(fieldId),
           parsed.clientKey
         );
         toast.success("Наряд видалено");
@@ -132,25 +138,67 @@ export function OperationsEventDetailSheet({
     }
   }
 
-  return (
-    <>
-      <Drawer open={detailOpen} onOpenChange={onOpenChange}>
-        <DrawerContent className="max-h-[92dvh] border-white/10 bg-zinc-950 text-zinc-50">
-          <DrawerHeader className="border-b border-white/5 text-left">
-            <DrawerTitle className="flex items-center gap-2 text-zinc-50">
-              {isEquipment ? (
-                <Tractor className="size-5 text-orange-400" />
-              ) : (
-                <PackageMinus className="size-5 text-emerald-400" />
-              )}
-              {event?.title ?? "Деталі"}
-            </DrawerTitle>
-            <DrawerDescription className="text-zinc-400">
-              {field?.name ?? "Поле"} · {event ? formatDetailDate(event.date) : ""}
-            </DrawerDescription>
-          </DrawerHeader>
+  const shellTitle =
+    view === "edit-equipment"
+      ? "Редагувати наряд"
+      : view === "edit-inventory"
+        ? "Редагувати списання"
+        : (event?.title ?? "Деталі");
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+  return (
+    <OperationsPanelShell
+      open={open}
+      onOpenChange={onOpenChange}
+      title={shellTitle}
+    >
+      {view === "edit-equipment" && field && operation ? (
+        <OperationsOperationForm
+          field={field}
+          seasonYear={Number(season) || new Date().getFullYear()}
+          initial={operation}
+          onBack={() => setView("detail")}
+          onSaved={() => {
+            onChanged();
+            onOpenChange(false);
+          }}
+        />
+      ) : view === "edit-inventory" && inventoryMove ? (
+        <>
+          <OperationsSheetHeader
+            icon={PackageMinus}
+            accent="emerald"
+            title="Редагувати списання"
+            description={field?.name}
+            onBack={() => setView("detail")}
+          />
+          <div className={cn(opsSheetBodyClass, "pt-0")}>
+            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+              <EditLocalMoveInline
+                move={inventoryMove}
+                onCancel={() => setView("detail")}
+                onSaved={() => {
+                  onChanged();
+                  onOpenChange(false);
+                }}
+              />
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
+          <OperationsSheetHeader
+            icon={isEquipment ? Tractor : PackageMinus}
+            accent={isEquipment ? "orange" : "emerald"}
+            title={event?.title ?? "Деталі"}
+            description={
+              <>
+                {field?.name ?? "Поле"} ·{" "}
+                {event ? formatDetailDate(event.date) : ""}
+              </>
+            }
+          />
+
+          <div className={opsSheetBodyClass}>
             {loading ? (
               <div className="flex items-center justify-center py-16 text-zinc-400">
                 <Loader2 className="mr-2 size-5 animate-spin" />
@@ -158,11 +206,11 @@ export function OperationsEventDetailSheet({
               </div>
             ) : (
               <div className="space-y-4">
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-white/[0.07] via-white/[0.03] to-transparent p-5">
                   <p className="text-[11px] font-semibold tracking-wide text-zinc-500 uppercase">
                     {isEquipment ? "Техніка" : "ТМЦ"}
                   </p>
-                  <p className="mt-2 text-2xl font-bold tabular-nums text-zinc-50">
+                  <p className="mt-2 text-3xl font-bold tabular-nums text-zinc-50">
                     {event?.metric}
                   </p>
                   <p className="mt-1 text-sm text-zinc-300">{event?.subtitle}</p>
@@ -173,12 +221,12 @@ export function OperationsEventDetailSheet({
                     </p>
                   ) : null}
                   {operation?.agronomistComment ? (
-                    <p className="mt-3 rounded-xl bg-black/20 px-3 py-2 text-sm text-zinc-300">
+                    <p className="mt-3 rounded-2xl bg-black/25 px-3 py-2 text-sm text-zinc-300">
                       {operation.agronomistComment}
                     </p>
                   ) : null}
                   {inventoryMove?.note ? (
-                    <p className="mt-3 rounded-xl bg-black/20 px-3 py-2 text-sm text-zinc-300">
+                    <p className="mt-3 rounded-2xl bg-black/25 px-3 py-2 text-sm text-zinc-300">
                       {inventoryMove.note}
                     </p>
                   ) : null}
@@ -188,13 +236,16 @@ export function OperationsEventDetailSheet({
                   <Button
                     type="button"
                     variant="outline"
-                    className="h-11 border-white/10 bg-white/5 text-zinc-100 hover:bg-white/10"
+                    className="h-12 rounded-2xl border-white/10 bg-white/5 text-zinc-100 hover:bg-white/10"
                     onClick={() => {
+                      const parsed = eventId
+                        ? parseTimelineEventId(eventId)
+                        : null;
                       if (parsed?.kind === "equipment") {
-                        if (operation) setEditingEquipment(true);
+                        if (operation) setView("edit-equipment");
                         else toast.error("Наряд не знайдено");
                       } else if (inventoryMove) {
-                        setEditingInventory(true);
+                        setView("edit-inventory");
                       } else {
                         toast.error("Списання не знайдено");
                       }
@@ -206,7 +257,7 @@ export function OperationsEventDetailSheet({
                   <Button
                     type="button"
                     variant="outline"
-                    className="h-11 border-red-500/30 bg-red-500/10 text-red-200 hover:bg-red-500/20"
+                    className="h-12 rounded-2xl border-red-500/30 bg-red-500/10 text-red-200 hover:bg-red-500/20"
                     onClick={() => void handleDelete()}
                     disabled={deleting}
                   >
@@ -221,52 +272,8 @@ export function OperationsEventDetailSheet({
               </div>
             )}
           </div>
-        </DrawerContent>
-      </Drawer>
-
-      <OperationsOperationFormSheet
-        open={Boolean(open && editingEquipment && operation && field)}
-        onOpenChange={(next) => {
-          if (!next) setEditingEquipment(false);
-        }}
-        field={field}
-        seasonYear={Number(season) || new Date().getFullYear()}
-        initial={operation}
-        onSaved={() => {
-          setEditingEquipment(false);
-          onChanged();
-          onOpenChange(false);
-        }}
-      />
-
-      <Drawer
-        open={open && editingInventory && Boolean(inventoryMove)}
-        onOpenChange={(next) => {
-          if (!next) setEditingInventory(false);
-        }}
-      >
-        <DrawerContent className="max-h-[92dvh] border-white/10 bg-zinc-950 text-zinc-50">
-          <DrawerHeader className="border-b border-white/5 text-left">
-            <DrawerTitle className="text-zinc-50">Редагувати списання</DrawerTitle>
-            <DrawerDescription className="text-zinc-400">
-              {field?.name}
-            </DrawerDescription>
-          </DrawerHeader>
-          {inventoryMove ? (
-            <div className="overflow-y-auto px-4 py-4">
-              <EditLocalMoveInline
-                move={inventoryMove}
-                onCancel={() => setEditingInventory(false)}
-                onSaved={() => {
-                  setEditingInventory(false);
-                  onChanged();
-                  onOpenChange(false);
-                }}
-              />
-            </div>
-          ) : null}
-        </DrawerContent>
-      </Drawer>
-    </>
+        </>
+      )}
+    </OperationsPanelShell>
   );
 }

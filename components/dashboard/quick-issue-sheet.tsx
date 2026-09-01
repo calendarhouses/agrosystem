@@ -40,6 +40,14 @@ import {
   fuelPrimaryBtnClass,
   fuelSelectTriggerClass,
 } from "@/components/dashboard/fuel-sheet-chrome";
+import {
+  OperationsSheetHeader,
+  opsFieldLabelClass,
+  opsPrimaryBtnClass,
+  opsSelectTriggerClass,
+  opsSheetBodyClass,
+  opsSheetFooterClass,
+} from "@/components/dashboard/operations-sheet-chrome";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -111,6 +119,7 @@ type QuickIssueSheetProps = {
   presetFieldId?: string | null;
   lockField?: boolean;
   variant?: "sheet" | "panel";
+  theme?: "light" | "dark";
   onBack?: () => void;
   onSuccess?: (payload: QuickIssueSuccessPayload) => void;
 };
@@ -122,6 +131,7 @@ export function QuickIssueSheet({
   presetFieldId = null,
   lockField = false,
   variant = "sheet",
+  theme = "light",
   onBack,
   onSuccess,
 }: QuickIssueSheetProps) {
@@ -164,6 +174,7 @@ export function QuickIssueSheet({
 
   const fieldRequired =
     CATEGORIES.find((c) => c.id === category)?.fieldRequired ?? true;
+  const isDark = theme === "dark";
 
   const isSubmitDisabled =
     isBlocked ||
@@ -365,6 +376,30 @@ export function QuickIssueSheet({
 
   const issueHeader =
     variant === "panel" ? (
+      isDark ? (
+        <OperationsSheetHeader
+          icon={PackageMinus}
+          accent="emerald"
+          title="Списати ТМЦ"
+          description={
+            selectedField ? (
+              <>
+                {selectedField.name}
+                {selectedField.crop ? ` · ${selectedField.crop}` : ""}
+                {selectedField.areaHa > 0
+                  ? ` · ${formatAreaHa(selectedField.areaHa)} га`
+                  : ""}
+              </>
+            ) : (
+              "Списання зі складу на поле"
+            )
+          }
+          onBack={() => {
+            onBack?.();
+            onOpenChange(false);
+          }}
+        />
+      ) : (
       <div className="shrink-0 bg-[#F4F1EA] px-4 pb-3 pt-1 text-left md:px-5">
         <button
           type="button"
@@ -401,6 +436,7 @@ export function QuickIssueSheet({
           </div>
         </div>
       </div>
+      )
     ) : (
       <FuelSheetHeader
         icon={PackageMinus}
@@ -412,7 +448,11 @@ export function QuickIssueSheet({
   const issueForm = (
     <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
       <div
-        className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain touch-pan-y px-4 py-4 pb-[max(2.5rem,calc(1.25rem+var(--safe-bottom)))] md:px-5"
+        className={cn(
+          isDark
+            ? opsSheetBodyClass
+            : "min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain touch-pan-y px-4 py-4 pb-[max(2.5rem,calc(1.25rem+var(--safe-bottom)))] md:px-5"
+        )}
         data-vaul-no-drag=""
         data-allow-pan="true"
       >        {loading ? (
@@ -429,7 +469,7 @@ export function QuickIssueSheet({
           <>
             <section className="space-y-2.5">
               <div>
-                <p className="text-[11px] font-semibold tracking-[0.08em] text-zinc-500 uppercase">
+                <p className={cn(isDark ? opsFieldLabelClass : "text-[11px] font-semibold tracking-[0.08em] text-zinc-500 uppercase")}>
                   Категорія
                 </p>
                 <p className="mt-0.5 text-xs text-zinc-400">
@@ -456,7 +496,9 @@ export function QuickIssueSheet({
                         "flex items-center gap-3 rounded-2xl px-3 py-3.5 text-left transition-all",
                         active
                           ? "bg-[#276749] text-white shadow-[0_12px_28px_-14px_rgba(39,103,73,0.65)]"
-                          : "bg-white text-zinc-800 shadow-sm ring-1 ring-[#E5DFD3]/90 hover:ring-[#276749]/30",
+                          : isDark
+                            ? "bg-white/[0.05] text-zinc-100 ring-1 ring-white/10 hover:ring-emerald-500/30"
+                            : "bg-white text-zinc-800 shadow-sm ring-1 ring-[#E5DFD3]/90 hover:ring-[#276749]/30",
                         disabled && "cursor-not-allowed opacity-40"
                       )}
                     >
@@ -465,7 +507,9 @@ export function QuickIssueSheet({
                           "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
                           active
                             ? "bg-white/15"
-                            : "bg-[#276749]/10 text-[#276749]"
+                            : isDark
+                              ? "bg-emerald-500/15 text-emerald-300"
+                              : "bg-[#276749]/10 text-[#276749]"
                         )}
                       >
                         <Icon className="h-4 w-4" />
@@ -508,11 +552,19 @@ export function QuickIssueSheet({
                 <PopoverTrigger
                   disabled={!category}
                   className={cn(
-                    comboboxTriggerClass,
-                    "h-14 rounded-2xl border-transparent bg-white shadow-sm ring-1 ring-[#E5DFD3]/90"
+                    isDark ? opsSelectTriggerClass : comboboxTriggerClass,
+                    "h-14 rounded-2xl",
+                    isDark
+                      ? ""
+                      : "border-transparent bg-white shadow-sm ring-1 ring-[#E5DFD3]/90"
                   )}
                 >
-                  <span className="min-w-0 flex-1 truncate text-left text-sm font-semibold text-zinc-900">
+                  <span
+                    className={cn(
+                      "min-w-0 flex-1 truncate text-left text-sm font-semibold",
+                      isDark ? "text-zinc-50" : "text-zinc-900"
+                    )}
+                  >
                     {selectedItem ? (
                       selectedItem.name
                     ) : (
@@ -584,11 +636,23 @@ export function QuickIssueSheet({
                 </PopoverContent>
               </Popover>
               {selectedItem ? (
-                <div className="flex items-center justify-between rounded-xl bg-white px-3.5 py-2.5 shadow-sm ring-1 ring-[#E5DFD3]/80">
+                <div
+                  className={cn(
+                    "flex items-center justify-between rounded-xl px-3.5 py-2.5",
+                    isDark
+                      ? "bg-white/[0.05] ring-1 ring-white/10"
+                      : "bg-white shadow-sm ring-1 ring-[#E5DFD3]/80"
+                  )}
+                >
                   <span className="text-xs font-medium text-zinc-500">
                     Доступно на складі
                   </span>
-                  <span className="text-sm font-bold tabular-nums text-zinc-900">
+                  <span
+                    className={cn(
+                      "text-sm font-bold tabular-nums",
+                      isDark ? "text-zinc-50" : "text-zinc-900"
+                    )}
+                  >
                     {formatQtyLabel(
                       selectedItem.virtualBalance,
                       selectedItem.unit
@@ -687,11 +751,21 @@ export function QuickIssueSheet({
                 </Popover>
               </section>
             ) : selectedField ? (
-              <section className="rounded-2xl bg-white px-4 py-3.5 shadow-sm ring-1 ring-[#E5DFD3]/90">
-                <p className="text-[11px] font-semibold tracking-[0.08em] text-zinc-500 uppercase">
-                  Поле
-                </p>
-                <p className="mt-1 text-base font-bold text-zinc-900">
+              <section
+                className={cn(
+                  "rounded-2xl px-4 py-3.5",
+                  isDark
+                    ? "bg-white/[0.05] ring-1 ring-white/10"
+                    : "bg-white shadow-sm ring-1 ring-[#E5DFD3]/90"
+                )}
+              >
+                <p className={opsFieldLabelClass}>Поле</p>
+                <p
+                  className={cn(
+                    "mt-1 text-base font-bold",
+                    isDark ? "text-zinc-50" : "text-zinc-900"
+                  )}
+                >
                   {selectedField.name}
                 </p>
                 <p className="mt-0.5 text-sm text-zinc-500">
@@ -725,13 +799,25 @@ export function QuickIssueSheet({
                       );
                       setFormError(null);
                     }}
-                    className="rounded-full bg-white px-3 py-1.5 text-[11px] font-bold tracking-wide text-[#276749] shadow-sm ring-1 ring-[#276749]/20"
+                    className={cn(
+                      "rounded-full px-3 py-1.5 text-[11px] font-bold tracking-wide shadow-sm ring-1",
+                      isDark
+                        ? "bg-emerald-500/15 text-emerald-300 ring-emerald-500/25"
+                        : "bg-white text-[#276749] ring-[#276749]/20"
+                    )}
                   >
                     MAX
                   </button>
                 ) : null}
               </div>
-              <div className="rounded-[1.5rem] bg-white px-4 py-5 shadow-sm ring-1 ring-[#E5DFD3]/90">
+              <div
+                className={cn(
+                  "rounded-[1.5rem] px-4 py-5",
+                  isDark
+                    ? "bg-white/[0.05] ring-1 ring-white/10"
+                    : "bg-white shadow-sm ring-1 ring-[#E5DFD3]/90"
+                )}
+              >
                 <input
                   type="number"
                   inputMode="decimal"
@@ -746,9 +832,13 @@ export function QuickIssueSheet({
                   aria-label="Кількість"
                   className={cn(
                     "w-full border-none bg-transparent text-center text-5xl font-semibold tabular-nums tracking-tight",
-                    "placeholder:text-zinc-300 focus:ring-0 focus:outline-none",
+                    "placeholder:text-zinc-500 focus:ring-0 focus:outline-none",
                     "[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none",
-                    qtyExceedsBalance ? "text-red-600" : "text-zinc-900"
+                    qtyExceedsBalance
+                      ? "text-red-500"
+                      : isDark
+                        ? "text-zinc-50"
+                        : "text-zinc-900"
                   )}
                 />
                 <p className="mt-1 text-center text-sm font-semibold text-zinc-400">
@@ -771,7 +861,14 @@ export function QuickIssueSheet({
                   Фото або файл (за бажанням)
                 </p>
               </div>
-              <div className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-[#E5DFD3]/90">
+              <div
+                className={cn(
+                  "rounded-2xl p-3",
+                  isDark
+                    ? "bg-white/[0.04] ring-1 ring-white/10"
+                    : "bg-white shadow-sm ring-1 ring-[#E5DFD3]/90"
+                )}
+              >
                 <AttachmentDropzone
                   entityType="inventory_move"
                   pending={pendingFiles}
@@ -784,13 +881,27 @@ export function QuickIssueSheet({
         )}
 
         {formError ? (
-          <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <p
+            className={cn(
+              "rounded-xl px-3 py-2 text-sm",
+              isDark
+                ? "border border-red-500/30 bg-red-500/10 text-red-200"
+                : "border border-red-200 bg-red-50 text-red-700"
+            )}
+          >
             {formError}
           </p>
         ) : null}
       </div>
 
-      <div className="shrink-0 space-y-3 border-t border-[#E5DFD3]/80 bg-[#F4F1EA] px-4 pt-3 pb-4 md:px-5">
+      <div
+        className={cn(
+          "shrink-0 space-y-3 px-4 pt-3 pb-4 md:px-5",
+          isDark
+            ? opsSheetFooterClass
+            : "border-t border-[#E5DFD3]/80 bg-[#F4F1EA]"
+        )}
+      >
         {isBlocked && selectedField ? (
           <FieldPassportQuickFix
             fieldId={selectedField.id}
@@ -812,8 +923,12 @@ export function QuickIssueSheet({
           type="submit"
           disabled={isSubmitDisabled}
           className={cn(
-            fuelPrimaryBtnClass,
-            "rounded-2xl bg-gradient-to-br from-[#1a3d2c] via-[#276749] to-[#3a8f5e] text-[15px] shadow-[0_16px_36px_-12px_rgba(39,103,73,0.65)] hover:from-[#1a3d2c] hover:via-[#1f5239] hover:to-[#276749]"
+            isDark
+              ? opsPrimaryBtnClass
+              : cn(
+                  fuelPrimaryBtnClass,
+                  "rounded-2xl bg-gradient-to-br from-[#1a3d2c] via-[#276749] to-[#3a8f5e] text-[15px] shadow-[0_16px_36px_-12px_rgba(39,103,73,0.65)] hover:from-[#1a3d2c] hover:via-[#1f5239] hover:to-[#276749]"
+                )
           )}
         >
           {pending ? (
@@ -835,7 +950,12 @@ export function QuickIssueSheet({
   if (variant === "panel") {
     if (!open) return null;
     return (
-      <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[#F4F1EA]">
+      <div
+        className={cn(
+          "flex h-full min-h-0 flex-col overflow-hidden",
+          isDark ? "bg-zinc-950 text-zinc-50" : "bg-[#F4F1EA]"
+        )}
+      >
         {issueHeader}
         {issueForm}
       </div>

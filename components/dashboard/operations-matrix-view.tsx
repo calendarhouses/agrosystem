@@ -9,10 +9,10 @@ import { OperationsEventDetailSheet } from "@/components/dashboard/operations-ev
 import { OperationsFieldAddSheet } from "@/components/dashboard/operations-field-add-sheet";
 import { OperationsMetroMap } from "@/components/dashboard/operations-metro-map";
 import { OperationsOperationFormSheet } from "@/components/dashboard/operations-operation-form-sheet";
+import { OperationsPanelShell } from "@/components/dashboard/operations-sheet-chrome";
 import { QuickIssueSheet } from "@/components/dashboard/quick-issue-sheet";
 import { Input } from "@/components/ui/input";
 import {
-  countTimelineEvents,
   filterTimelineByIsoRange,
 } from "@/lib/field-timeline-filter";
 import type { FieldTimelineField, UnifiedTimelineEvent } from "@/lib/field-timeline";
@@ -71,11 +71,6 @@ export function OperationsMatrixView() {
     return bySearch.filter((item) => item.events.length > 0);
   }, [filteredFields, searchQuery]);
 
-  const eventCount = useMemo(
-    () => countTimelineEvents(visibleFields),
-    [visibleFields]
-  );
-
   function handleExit() {
     if (typeof window !== "undefined" && window.history.length > 1) {
       router.back();
@@ -98,11 +93,8 @@ export function OperationsMatrixView() {
           </button>
           <div className="min-w-0 flex-1">
             <h1 className="truncate text-base font-semibold tracking-tight text-zinc-50">
-              Операційна хронологія
+              Хронологія полів
             </h1>
-            <p className="truncate text-xs text-zinc-500">
-              Техніка та ТМЦ по полях
-            </p>
           </div>
         </div>
 
@@ -130,11 +122,6 @@ export function OperationsMatrixView() {
           {...periodFilter}
           theme="dark"
           loading={isLoading}
-          trailing={
-            <span className="shrink-0 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-zinc-300 tabular-nums">
-              {eventCount}
-            </span>
-          }
         />
       </header>
 
@@ -203,18 +190,30 @@ export function OperationsMatrixView() {
         onSaved={refresh}
       />
 
-      <QuickIssueSheet
+      <OperationsPanelShell
         open={Boolean(addIssueField)}
         onOpenChange={(open) => {
           if (!open) setAddIssueField(null);
         }}
-        presetFieldId={addIssueField?.id ?? null}
-        lockField={Boolean(addIssueField)}
-        onSuccess={() => {
-          refresh();
-          setAddIssueField(null);
-        }}
-      />
+        title="Списати ТМЦ"
+      >
+        {addIssueField ? (
+          <QuickIssueSheet
+            variant="panel"
+            theme="dark"
+            open
+            onOpenChange={(open) => {
+              if (!open) setAddIssueField(null);
+            }}
+            presetFieldId={addIssueField.id}
+            lockField
+            onSuccess={() => {
+              refresh();
+              setAddIssueField(null);
+            }}
+          />
+        ) : null}
+      </OperationsPanelShell>
     </section>
   );
 }

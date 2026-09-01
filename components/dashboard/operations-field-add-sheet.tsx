@@ -1,16 +1,13 @@
 "use client";
 
-import { PackageMinus, Plus, Tractor } from "lucide-react";
+import { ChevronRight, PackageMinus, Plus, Tractor } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import {
-  Drawer,
-  DrawerContent,
-  DrawerDescription,
-  DrawerHeader,
-  DrawerTitle,
-} from "@/components/ui/drawer";
+  OperationsPanelShell,
+  OperationsSheetHeader,
+} from "@/components/dashboard/operations-sheet-chrome";
 import type { FieldTimelineField } from "@/lib/field-timeline";
+import { cn } from "@/lib/utils";
 
 type OperationsFieldAddSheetProps = {
   open: boolean;
@@ -20,6 +17,69 @@ type OperationsFieldAddSheetProps = {
   onAddInventory: () => void;
 };
 
+function ActionCard({
+  title,
+  description,
+  icon: Icon,
+  accent,
+  onClick,
+}: {
+  title: string;
+  description: string;
+  icon: typeof Tractor;
+  accent: "orange" | "emerald";
+  onClick: () => void;
+}) {
+  const accentStyles =
+    accent === "orange"
+      ? {
+          border: "border-orange-500/20",
+          glow: "from-orange-500/15 via-orange-500/5",
+          icon: "bg-orange-500/20 text-orange-300 ring-orange-500/25",
+          hover: "hover:border-orange-500/35 hover:bg-orange-500/[0.08]",
+        }
+      : {
+          border: "border-emerald-500/20",
+          glow: "from-emerald-500/15 via-emerald-500/5",
+          icon: "bg-emerald-500/20 text-emerald-300 ring-emerald-500/25",
+          hover: "hover:border-emerald-500/35 hover:bg-emerald-500/[0.08]",
+        };
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "group relative w-full overflow-hidden rounded-3xl border p-4 text-left transition",
+        "bg-gradient-to-br to-transparent",
+        accentStyles.border,
+        accentStyles.glow,
+        accentStyles.hover
+      )}
+    >
+      <div className="flex items-center gap-4">
+        <span
+          className={cn(
+            "flex size-14 shrink-0 items-center justify-center rounded-2xl ring-1",
+            accentStyles.icon
+          )}
+        >
+          <Icon className="size-6" strokeWidth={1.8} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-base font-bold tracking-tight text-zinc-50">
+            {title}
+          </p>
+          <p className="mt-1 text-sm leading-snug text-zinc-400">
+            {description}
+          </p>
+        </div>
+        <ChevronRight className="size-5 shrink-0 text-zinc-600 transition group-hover:translate-x-0.5 group-hover:text-zinc-300" />
+      </div>
+    </button>
+  );
+}
+
 export function OperationsFieldAddSheet({
   open,
   onOpenChange,
@@ -28,43 +88,49 @@ export function OperationsFieldAddSheet({
   onAddInventory,
 }: OperationsFieldAddSheetProps) {
   return (
-    <Drawer open={open} onOpenChange={onOpenChange}>
-      <DrawerContent className="border-white/10 bg-zinc-950 text-zinc-50">
-        <DrawerHeader className="border-b border-white/5 text-left">
-          <DrawerTitle className="flex items-center gap-2 text-zinc-50">
-            <Plus className="size-5 text-emerald-400" />
-            Додати позицію
-          </DrawerTitle>
-          <DrawerDescription className="text-zinc-400">
-            {field?.name ?? "Поле"}
-          </DrawerDescription>
-        </DrawerHeader>
+    <OperationsPanelShell
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Додати позицію"
+    >
+      <OperationsSheetHeader
+        icon={Plus}
+        accent="emerald"
+        title="Додати позицію"
+        description={
+          field ? (
+            <>
+              {field.name}
+              {field.crop ? ` · ${field.crop}` : ""}
+            </>
+          ) : (
+            "Оберіть тип запису для хронології поля"
+          )
+        }
+      />
 
-        <div className="grid gap-3 px-4 py-4">
-          <Button
-            type="button"
-            className="h-12 justify-start bg-orange-500/15 text-orange-100 hover:bg-orange-500/25"
-            onClick={() => {
-              onOpenChange(false);
-              onAddOperation();
-            }}
-          >
-            <Tractor className="mr-3 size-5" />
-            Наряд техніки
-          </Button>
-          <Button
-            type="button"
-            className="h-12 justify-start bg-emerald-500/15 text-emerald-100 hover:bg-emerald-500/25"
-            onClick={() => {
-              onOpenChange(false);
-              onAddInventory();
-            }}
-          >
-            <PackageMinus className="mr-3 size-5" />
-            Списання ТМЦ
-          </Button>
-        </div>
-      </DrawerContent>
-    </Drawer>
+      <div className="space-y-3 px-4 py-4 pb-[max(1.5rem,var(--safe-bottom))]">
+        <ActionCard
+          accent="orange"
+          icon={Tractor}
+          title="Наряд техніки"
+          description="Виконана робота: тип, техніка, площа, паливо"
+          onClick={() => {
+            onOpenChange(false);
+            onAddOperation();
+          }}
+        />
+        <ActionCard
+          accent="emerald"
+          icon={PackageMinus}
+          title="Списання ТМЦ"
+          description="ЗЗР, добрива, насіння та інші матеріали на поле"
+          onClick={() => {
+            onOpenChange(false);
+            onAddInventory();
+          }}
+        />
+      </div>
+    </OperationsPanelShell>
   );
 }
