@@ -64,7 +64,7 @@ type RefuelBreakdownRow = {
   equipmentName: string;
   liters: number;
   wialonUnitId: number | null;
-  source?: "wialon" | "manual" | "mixed" | "delivery";
+  source?: "wialon" | "manual" | "mixed" | "delivery" | "overnight";
 };
 
 type FuelDashboardHeaderProps = {

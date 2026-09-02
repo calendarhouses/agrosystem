@@ -121,7 +121,7 @@ type FuelKpisRefueled = {
       equipmentName: string;
       liters: number;
       wialonUnitId: number | null;
-      source: "wialon" | "manual" | "mixed" | "delivery";
+      source: "wialon" | "manual" | "mixed" | "delivery" | "overnight";
     }>;
   };
 } | { ok: false; error: string };
