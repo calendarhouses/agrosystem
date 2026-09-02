@@ -112,9 +112,12 @@ type FuelDashboardHeaderProps = {
 function KpiBreakdownList({
   emptyLabel,
   rows,
+  embedded = false,
 }: {
   emptyLabel: string;
   rows: Array<{ title: string; subtitle?: string; liters: number }>;
+  /** Без власного скролу — прокручує батьківський контейнер попапу */
+  embedded?: boolean;
 }) {
   if (rows.length === 0) {
     return (
@@ -122,7 +125,12 @@ function KpiBreakdownList({
     );
   }
   return (
-    <ul className="max-h-[min(40vh,16rem)] space-y-0.5 overflow-y-auto overscroll-contain pr-0.5">
+    <ul
+      className={cn(
+        "space-y-0.5 pr-0.5",
+        !embedded && "max-h-[min(40vh,16rem)] overflow-y-auto overscroll-contain"
+      )}
+    >
       {rows.map((row, index) => (
         <li
           key={`${row.title}-${row.subtitle ?? ""}-${index}`}
@@ -232,7 +240,7 @@ function KpiValue({
       return false;
     };
 
-    const onScrollOrWheel = (event: Event) => {
+    const onScroll = (event: Event) => {
       if (isInsidePanel(event.target)) return;
       setOpen(false);
     };
@@ -242,21 +250,11 @@ function KpiValue({
       setOpen(false);
     };
 
-    window.addEventListener("scroll", onScrollOrWheel, true);
-    window.addEventListener("wheel", onScrollOrWheel, {
-      capture: true,
-      passive: true,
-    });
-    window.addEventListener("touchmove", onScrollOrWheel, {
-      capture: true,
-      passive: true,
-    });
+    window.addEventListener("scroll", onScroll, true);
     document.addEventListener("pointerdown", onPointerDown, true);
 
     return () => {
-      window.removeEventListener("scroll", onScrollOrWheel, true);
-      window.removeEventListener("wheel", onScrollOrWheel, true);
-      window.removeEventListener("touchmove", onScrollOrWheel, true);
+      window.removeEventListener("scroll", onScroll, true);
       document.removeEventListener("pointerdown", onPointerDown, true);
     };
   }, [open]);
@@ -319,19 +317,18 @@ function KpiValue({
         align="start"
         side="bottom"
         sideOffset={10}
-        sheetOnMobile={false}
         className={cn(
-          "w-[min(calc(100vw-1.5rem),20.5rem)] gap-0 overflow-hidden rounded-2xl border border-[#E5DFD3]/90 p-0 text-zinc-900",
+          "flex w-[min(calc(100vw-1.5rem),20.5rem)] max-h-[min(85dvh,36rem)] flex-col gap-0 overflow-hidden rounded-2xl border border-[#E5DFD3]/90 p-0 text-zinc-900",
           "bg-[linear-gradient(180deg,#ffffff_0%,#FBF9F5_55%,#F4F1EA_100%)]",
           "shadow-[0_18px_48px_-16px_rgba(39,33,24,0.35),0_0_0_1px_rgba(255,255,255,0.7)_inset]"
         )}
       >
-        <div ref={panelRef} className="relative">
+        <div ref={panelRef} className="flex min-h-0 flex-1 flex-col">
           <div
             aria-hidden
             className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white to-transparent"
           />
-          <div className="flex items-start gap-3 border-b border-[#E5DFD3]/70 px-3.5 py-3 pr-12">
+          <div className="relative flex shrink-0 items-start gap-3 border-b border-[#E5DFD3]/70 px-3.5 py-3 pr-12">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#276749]/12 text-[#276749] shadow-sm ring-1 ring-[#276749]/10">
               <Fuel className="h-4 w-4" strokeWidth={2} />
             </div>
@@ -356,17 +353,23 @@ function KpiValue({
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
-          <div className="px-2 py-2" data-allow-pan="true">
-            <KpiBreakdownList
-              emptyLabel={breakdownEmpty}
-              rows={breakdownRows}
-            />
-          </div>
-          {popoverFooter ? (
-            <div className="border-t border-[#E5DFD3]/70 px-3.5 py-3 text-[11px] leading-relaxed text-zinc-600">
-              {popoverFooter}
+          <div
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y"
+            data-allow-pan="true"
+          >
+            <div className="px-2 py-2">
+              <KpiBreakdownList
+                embedded
+                emptyLabel={breakdownEmpty}
+                rows={breakdownRows}
+              />
             </div>
-          ) : null}
+            {popoverFooter ? (
+              <div className="border-t border-[#E5DFD3]/70 px-3.5 py-3 text-[11px] leading-relaxed text-zinc-600">
+                {popoverFooter}
+              </div>
+            ) : null}
+          </div>
         </div>
       </PopoverContent>
     </Popover>
