@@ -26,11 +26,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import type { FuelStorage } from "@/lib/fuel-storages";
 import { useFuelLoadProgress } from "@/lib/fuel-kpi-load-progress";
 import { useIsMobile } from "@/lib/use-mobile";
@@ -269,23 +264,22 @@ function KpiValue({
   if (!interactive) return value;
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger
         className={cn(
           "group inline-flex text-left outline-none",
           "focus-visible:ring-2 focus-visible:ring-emerald-500/20 rounded-xl"
         )}
       >
         {value}
-      </PopoverTrigger>
-      <PopoverContent
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
         align="start"
         side="bottom"
         sideOffset={10}
-        sheetOnMobile={false}
         data-vaul-no-drag=""
         className={cn(
-          "flex w-[min(calc(100vw-1.5rem),20.5rem)] max-h-[min(85dvh,36rem)] flex-col gap-0 overflow-hidden rounded-2xl border border-[#E5DFD3]/90 p-0 text-zinc-900",
+          "z-[270] w-[min(calc(100vw-1.5rem),20.5rem)] max-h-[min(85dvh,36rem)] overflow-hidden rounded-2xl border border-[#E5DFD3]/90 p-0 text-zinc-900",
           "bg-[linear-gradient(180deg,#ffffff_0%,#FBF9F5_55%,#F4F1EA_100%)]",
           "shadow-[0_18px_48px_-16px_rgba(39,33,24,0.35),0_0_0_1px_rgba(255,255,255,0.7)_inset]"
         )}
@@ -321,7 +315,7 @@ function KpiValue({
             </button>
           </div>
           <div
-            className="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y"
+            className="max-h-[min(70dvh,28rem)] overflow-y-auto overscroll-contain touch-pan-y"
             data-allow-pan="true"
           >
             <div className="px-2 py-2">
@@ -338,8 +332,8 @@ function KpiValue({
             ) : null}
           </div>
         </div>
-      </PopoverContent>
-    </Popover>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
