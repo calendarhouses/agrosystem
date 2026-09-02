@@ -96,6 +96,9 @@ type FuelDashboardHeaderProps = {
   refuelHasData: boolean;
   refuelLoading: boolean;
   refuelBreakdown: RefuelBreakdownRow[];
+  /** Паливо в баках тракторів на початок / кінець періоду (ДУТ) */
+  openingTankLiters?: number | null;
+  closingTankLiters?: number | null;
   onFieldFuelPeriodChange: (period: FieldFuelPeriod) => void;
   onPurchase: () => void;
   onTransfer: () => void;
@@ -382,6 +385,8 @@ export function FuelDashboardHeader({
   refuelHasData,
   refuelLoading,
   refuelBreakdown,
+  openingTankLiters = null,
+  closingTankLiters = null,
   onFieldFuelPeriodChange,
   onPurchase,
   onTransfer,
@@ -402,6 +407,28 @@ export function FuelDashboardHeader({
   // Показуємо всю витрату флоту: інакше «Спалено» непорівнянне із «Заправлено»,
   // бо заправляють і те паливо, що йде на переїзди та роботу на базі.
   const burnedTotal = fieldFuelTotalLiters ?? fieldFuelLiters;
+  const tankBalanceNote = (() => {
+    if (
+      fieldFuelLoading ||
+      refuelLoading ||
+      burnedTotal == null ||
+      refuelLiters == null ||
+      openingTankLiters == null ||
+      openingTankLiters <= 0
+    ) {
+      return null;
+    }
+    const gap = Math.round((burnedTotal - refuelLiters) * 10) / 10;
+    if (gap < 400) return null;
+    const explained = Math.max(
+      0,
+      Math.round((openingTankLiters - (closingTankLiters ?? 0)) * 10) / 10
+    );
+    if (explained >= gap * 0.35) {
+      return `У баках на початок періоду було ≈ ${formatLiters(openingTankLiters)} л — частина спаленого звідти, не лише з нових заправок ДУТ.`;
+    }
+    return `Спалено більше, ніж ДУТ зафіксував заправок (+${formatLiters(gap)} л). Перевірте журнал заправок або сенсори.`;
+  })();
   const onFieldListed = fieldFuelBreakdown.reduce(
     (acc, row) => acc + row.liters,
     0
@@ -603,8 +630,8 @@ export function FuelDashboardHeader({
                 liters={burnedTotal}
                 loading={fieldFuelLoading}
                 empty={
-                  !fieldFuelHasData &&
                   !fieldFuelLoading &&
+                  (burnedTotal ?? 0) <= 0 &&
                   !fieldFuelCoverage?.incomplete
                 }
                 interactive={fieldFuelHasData && !fieldFuelLoading}
@@ -636,7 +663,7 @@ export function FuelDashboardHeader({
               <KpiValue
                 liters={refuelLiters}
                 loading={refuelLoading}
-                empty={!refuelHasData}
+                empty={!refuelLoading && (refuelLiters ?? 0) <= 0}
                 interactive={refuelHasData && !refuelLoading}
                 popoverTitle="Кому заправили"
                 popoverDescription={`ДУТ з БД + журнал без датчика · ${periodLabel.toLowerCase()}`}
@@ -654,6 +681,13 @@ export function FuelDashboardHeader({
         {progressBar ? (
           <div className="border-t border-[#E5DFD3]/80 px-4 py-3 sm:px-6">
             {progressBar}
+          </div>
+        ) : null}
+        {tankBalanceNote ? (
+          <div className="border-t border-[#E5DFD3]/80 px-4 py-2.5 sm:px-6">
+            <p className="text-[11px] leading-snug font-medium text-zinc-500 sm:text-xs">
+              {tankBalanceNote}
+            </p>
           </div>
         ) : null}
       </div>

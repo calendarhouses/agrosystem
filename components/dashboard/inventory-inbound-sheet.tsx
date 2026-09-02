@@ -7,6 +7,7 @@ import {
   useTransition,
   type FormEvent,
 } from "react";
+import { format } from "date-fns";
 import { toast } from "sonner";
 import {
   AlertCircle,
@@ -47,6 +48,7 @@ import {
   fuelSheetStickyFooterClass,
 } from "@/components/dashboard/fuel-sheet-chrome";
 import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/ui/date-picker";
 import {
   Command,
   CommandEmpty,
@@ -97,6 +99,20 @@ function formatAreaHa(areaHa: number): string {
   }).format(areaHa);
 }
 
+function todayYmd(): string {
+  return format(new Date(), "yyyy-MM-dd");
+}
+
+function parseYmd(ymd: string): Date | undefined {
+  const [y, m, d] = ymd.split("-").map(Number);
+  if (!y || !m || !d) return undefined;
+  return new Date(y, m - 1, d);
+}
+
+function toYmd(d: Date): string {
+  return format(d, "yyyy-MM-dd");
+}
+
 export function InventoryInboundSheet({
   open,
   onOpenChange,
@@ -125,6 +141,7 @@ export function InventoryInboundSheet({
   const [suppliers, setSuppliers] = useState<string[]>([]);
   const [supplierOpen, setSupplierOpen] = useState(false);
   const [note, setNote] = useState("");
+  const [inboundDate, setInboundDate] = useState(todayYmd);
   const [pendingFiles, setPendingFiles] = useState<PendingAttachment[]>([]);
   const [itemOpen, setItemOpen] = useState(false);
   const [itemSearch, setItemSearch] = useState("");
@@ -257,6 +274,7 @@ export function InventoryInboundSheet({
     setUnitPrice("");
     setSupplier("");
     setNote("");
+    setInboundDate(todayYmd());
     setPendingFiles([]);
     setCreatingItem(false);
     setNewName("");
@@ -330,6 +348,7 @@ export function InventoryInboundSheet({
         fieldId: cat === "harvest" ? fieldId : null,
         note: note.trim() || null,
         season: activeSeason,
+        date: inboundDate,
       });
       if (!res.ok) {
         setFormError(res.error);
@@ -394,6 +413,21 @@ export function InventoryInboundSheet({
               </div>
             ) : (
               <>
+                <section className="space-y-2.5">
+                  <div>
+                    <p className={fuelFieldLabelClass}>Дата приходу</p>
+                    <p className="mt-0.5 text-xs text-zinc-400">
+                      Можна вказати заднім числом
+                    </p>
+                  </div>
+                  <DatePicker
+                    date={parseYmd(inboundDate)}
+                    onChange={(next) => {
+                      if (next) setInboundDate(toYmd(next));
+                    }}
+                  />
+                </section>
+
                 <section className="space-y-2.5">
                   <div>
                     <p className={fuelFieldLabelClass}>Категорія</p>

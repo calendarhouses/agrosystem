@@ -55,6 +55,7 @@ import {
   opsSheetFooterClass,
 } from "@/components/dashboard/operations-sheet-chrome";
 import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/ui/date-picker";
 import { DrawerHeaderHandle } from "@/components/ui/drawer";
 import {
   Command,
@@ -91,6 +92,16 @@ function formatAreaHa(areaHa: number): string {
   return new Intl.NumberFormat("uk-UA", {
     maximumFractionDigits: areaHa >= 100 ? 0 : 1,
   }).format(areaHa);
+}
+
+function parseYmd(ymd: string): Date | undefined {
+  const [y, m, d] = ymd.split("-").map(Number);
+  if (!y || !m || !d) return undefined;
+  return new Date(y, m - 1, d);
+}
+
+function toYmd(d: Date): string {
+  return format(d, "yyyy-MM-dd");
 }
 
 type Cat = QuickIssueItemOption["category"];
@@ -492,11 +503,11 @@ export function QuickIssueSheet({
               {isDark ? (
                 <OperationsDatePicker value={moveDate} onChange={setMoveDate} />
               ) : (
-                <input
-                  type="date"
-                  value={moveDate}
-                  onChange={(e) => setMoveDate(e.target.value)}
-                  className="h-12 w-full rounded-2xl border border-[#E5DFD3]/90 bg-white px-4 text-sm font-semibold text-zinc-900"
+                <DatePicker
+                  date={parseYmd(moveDate)}
+                  onChange={(next) => {
+                    if (next) setMoveDate(toYmd(next));
+                  }}
                 />
               )}
             </section>

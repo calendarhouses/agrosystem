@@ -214,10 +214,9 @@ export async function getFieldFuelConsumed(
           sum.liters > 0 ||
           fleet.liters > 0,
         liveSynced,
-        // Спалено самохідною (цистерни / роздача відсічені в sumFleet…)
-        totalLiters: fleet.hasData
-          ? Math.max(fleet.liters, sum.liters)
-          : sum.liters,
+        // Спалено самохідною (ДУТ флоту); поля — окремо в liters / breakdown
+        totalLiters:
+          fleet.liters > 0 ? fleet.liters : sum.liters,
         daysCovered,
         daysExpected,
         coverageIncomplete: stillMissing.length > 0,
@@ -261,6 +260,8 @@ export async function getFuelRefueledForPeriod(
       wialonUnitId: number | null;
       source: "wialon" | "manual" | "mixed";
     }>;
+    openingTankLiters: number;
+    closingTankLiters: number;
   }>
 > {
   try {
@@ -323,6 +324,8 @@ export async function getFuelRefueledForPeriod(
         wialonLiters: data.wialonLiters,
         manualOnlyLiters: data.manualOnlyLiters,
         breakdown: data.rows,
+        openingTankLiters: data.openingTankLiters,
+        closingTankLiters: data.closingTankLiters,
       },
     };
   } catch (error) {

@@ -314,9 +314,7 @@ async function runEquipmentDaySync(
             fuel_end: hasFuel ? analytics.summary.fuelEnd : null,
             fuel_delta: hasFuel ? analytics.summary.fuelDelta : null,
             fuel_filled:
-              hasFuel && !delivery && burnOk
-                ? analytics.summary.fuelFilled
-                : 0,
+              hasFuel && !delivery ? analytics.summary.fuelFilled : 0,
             // Цистерна / роздача — не «спалено двигуном»
             fuel_consumed: burnOk ? rawConsumed : null,
             has_fuel_sensor: hasFuel,
@@ -392,6 +390,12 @@ function dayBurnLitersFromStatsRow(
   row: FleetFuelDayStatRow,
   tankVolumeLiters: number | undefined
 ): number | null {
+  // fuel_consumed уже пройшов burnOk при sync — не перефільтровувати при KPI-агрегації
+  const stored = Number(row.fuel_consumed);
+  if (Number.isFinite(stored) && stored > 0) {
+    return stored;
+  }
+
   const recalc = resolvePlausibleDayFuelConsumed({
     start: row.fuel_start,
     end: row.fuel_end,
@@ -607,7 +611,7 @@ export async function sumFleetFuelFilledForPeriod(
     if (isFuelDeliveryUnit(name)) continue;
 
     const tankVol = resolveFuelTankVolumeLiters(name);
-    const maxFill = tankVol != null ? tankVol * 1.15 : 1_200;
+    const maxFill = tankVol != null ? tankVol * 1.35 : 1_500;
     if (filled > maxFill) continue;
 
     byUnit.set(wid, (byUnit.get(wid) ?? 0) + filled);
@@ -637,6 +641,96 @@ export async function sumFleetFuelFilledForPeriod(
     hasData: rows.length > 0,
     rows,
     dutUnitIds,
+  };
+}
+
+/**
+ * Паливо в баках флоту на початок / кінець періоду (перший/останній ДУТ-день по кожній одиниці).
+ * Для пояснення, чому «спалено» може перевищувати «заправлено» за той самий інтервал.
+ */
+export async function sumFleetTankBalanceForPeriod(
+  fromDate: string,
+  toDate: string
+): Promise<{
+  openingLiters: number;
+  closingLiters: number;
+  hasData: boolean;
+}> {
+  const supabase = createServiceSupabase();
+
+  const [{ data, error }, eqRes] = await Promise.all([
+    supabase
+      .from("wialon_equipment_day_stats")
+      .select("date, fuel_start, fuel_end, wialon_unit_id, equipment_id, has_fuel_sensor")
+      .gte("date", fromDate)
+      .lte("date", toDate)
+      .eq("has_fuel_sensor", true)
+      .order("date", { ascending: true }),
+    supabase.from("equipment").select("id, wialon_id, name"),
+  ]);
+
+  if (error) {
+    return { openingLiters: 0, closingLiters: 0, hasData: false };
+  }
+
+  const deliveryWialonIds = new Set<number>();
+  const deliveryEquipmentIds = new Set<string>();
+  const eqNameByWid = new Map<number, string>();
+  for (const row of eqRes.data ?? []) {
+    if (isFuelDeliveryUnit(row.name)) {
+      const wid = Number(row.wialon_id);
+      if (Number.isFinite(wid) && wid > 0) deliveryWialonIds.add(wid);
+      if (row.id) deliveryEquipmentIds.add(String(row.id));
+    }
+    const wid = Number(row.wialon_id);
+    if (Number.isFinite(wid) && wid > 0 && row.name) {
+      eqNameByWid.set(wid, String(row.name));
+    }
+  }
+
+  const wialonIds = [
+    ...new Set(
+      (data ?? [])
+        .map((row) => Number(row.wialon_unit_id))
+        .filter((id) => Number.isFinite(id) && id > 0)
+    ),
+  ];
+  const displayNames = await resolveWialonUnitDisplayNames(wialonIds);
+
+  const firstStart = new Map<number, number>();
+  const lastEnd = new Map<number, number>();
+
+  for (const row of data ?? []) {
+    const wid = Number(row.wialon_unit_id);
+    if (!Number.isFinite(wid) || wid <= 0) continue;
+    const eid = row.equipment_id != null ? String(row.equipment_id) : null;
+    if (deliveryWialonIds.has(wid)) continue;
+    if (eid && deliveryEquipmentIds.has(eid)) continue;
+    const name =
+      displayNames.get(wid) ?? eqNameByWid.get(wid) ?? "";
+    if (isFuelDeliveryUnit(name)) continue;
+
+    const start = Number(row.fuel_start);
+    const end = Number(row.fuel_end);
+    if (!firstStart.has(wid) && Number.isFinite(start) && start > 0) {
+      firstStart.set(wid, start);
+    }
+    if (Number.isFinite(end) && end > 0) {
+      lastEnd.set(wid, end);
+    }
+  }
+
+  const openingLiters = Math.round(
+    [...firstStart.values()].reduce((acc, v) => acc + v, 0) * 10
+  ) / 10;
+  const closingLiters = Math.round(
+    [...lastEnd.values()].reduce((acc, v) => acc + v, 0) * 10
+  ) / 10;
+
+  return {
+    openingLiters,
+    closingLiters,
+    hasData: firstStart.size > 0 || lastEnd.size > 0,
   };
 }
 

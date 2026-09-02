@@ -9,7 +9,7 @@ import {
   type FieldFuelPeriod,
 } from "@/lib/wialon-field-fuel-sync";
 import { resolveWialonUnitDisplayNames } from "@/lib/wialon-unit-names";
-import { sumFleetFuelFilledForPeriod } from "@/lib/wialon-equipment-day-sync";
+import { sumFleetFuelFilledForPeriod, sumFleetTankBalanceForPeriod } from "@/lib/wialon-equipment-day-sync";
 import { kyivDayBoundsUnix } from "@/lib/kyiv-date";
 import { isFuelDeliveryUnit } from "@/lib/equipment-fuel-tanks";
 
@@ -46,6 +46,10 @@ export async function sumOutboundRefueledForPeriod(
   rows: RefuelBreakdownRow[];
   wialonLiters: number;
   manualOnlyLiters: number;
+  /** Паливо в баках тракторів на перший день періоду (ДУТ) */
+  openingTankLiters: number;
+  /** Паливо в баках на останній день періоду */
+  closingTankLiters: number;
 }> {
   const { fromDate, toDate } = resolveFieldFuelPeriodBounds(period, now);
   const { fromUnix } = kyivDayBoundsUnix(fromDate);
@@ -142,6 +146,7 @@ export async function sumOutboundRefueledForPeriod(
   }
 
   const dbFilled = await sumFleetFuelFilledForPeriod(fromDate, toDate);
+  const tankBalance = await sumFleetTankBalanceForPeriod(fromDate, toDate);
   const byKey = new Map<string, RefuelBreakdownRow>();
 
   const bump = (
@@ -246,5 +251,7 @@ export async function sumOutboundRefueledForPeriod(
     rows,
     wialonLiters,
     manualOnlyLiters: Math.round(manualOnlyLiters * 10) / 10,
+    openingTankLiters: tankBalance.openingLiters,
+    closingTankLiters: tankBalance.closingLiters,
   };
 }

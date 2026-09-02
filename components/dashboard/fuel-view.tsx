@@ -112,6 +112,8 @@ type FuelKpisRefueled = {
   data: {
     liters: number;
     hasData: boolean;
+    openingTankLiters?: number;
+    closingTankLiters?: number;
     breakdown: Array<{
       equipmentName: string;
       liters: number;
@@ -822,6 +824,12 @@ export function FuelView({
       source?: "wialon" | "manual" | "mixed";
     }>
   >(seedRefueled?.breakdown ?? []);
+  const [openingTankLiters, setOpeningTankLiters] = useState<number | null>(
+    seedRefueled?.openingTankLiters ?? null
+  );
+  const [closingTankLiters, setClosingTankLiters] = useState<number | null>(
+    seedRefueled?.closingTankLiters ?? null
+  );
   const [kpiRefreshToken, setKpiRefreshToken] = useState(0);
   /** Фоновий догруз відсутніх днів — без повторного «Завантаження…» */
   const kpiSilentRefreshRef = useRef(false);
@@ -1230,6 +1238,8 @@ export function FuelView({
           setRefuelLoading(true);
         } else {
           keepLoadingAfterFetch = false;
+          setFieldFuelLoading(false);
+          setRefuelLoading(false);
         }
 
         if (incomplete) {
@@ -1260,10 +1270,14 @@ export function FuelView({
         setRefuelLiters(refueled.data.liters);
         setRefuelHasData(refueled.data.hasData);
         setRefuelBreakdown(refueled.data.breakdown);
+        setOpeningTankLiters(refueled.data.openingTankLiters ?? null);
+        setClosingTankLiters(refueled.data.closingTankLiters ?? null);
       } else {
         setRefuelLiters(null);
         setRefuelHasData(false);
         setRefuelBreakdown([]);
+        setOpeningTankLiters(null);
+        setClosingTankLiters(null);
       }
       if (payload.storages) {
         setPeriodStorageLiters(payload.storages.liters);
@@ -1298,6 +1312,8 @@ export function FuelView({
       setRefuelLiters(null);
       setRefuelHasData(false);
       setRefuelBreakdown([]);
+      setOpeningTankLiters(null);
+      setClosingTankLiters(null);
       setPeriodStorageLiters(null);
       setPeriodStorageValue(null);
       setPeriodStorageLive(fieldFuelPeriod === "today");
@@ -1487,6 +1503,8 @@ export function FuelView({
         refuelHasData={refuelHasData}
         refuelLoading={refuelLoading}
         refuelBreakdown={refuelBreakdown}
+        openingTankLiters={openingTankLiters}
+        closingTankLiters={closingTankLiters}
         onFieldFuelPeriodChange={setFieldFuelPeriod}
         onPurchase={() => {
           setEditTransaction(null);

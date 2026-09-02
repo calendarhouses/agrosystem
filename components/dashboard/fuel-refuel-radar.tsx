@@ -533,8 +533,34 @@ export function FuelRefuelRadar({
   );
 
   if (isCommandBar) {
+    const title =
+      loading && !hasAlerts
+        ? "Сканування…"
+        : hasAlerts
+          ? `Радар: ${count}`
+          : "Радар";
+    const subtitle = hasAlerts ? "Необліковані" : "Чисто · 7 днів";
+
+    const iconWell = (
+      <span
+        className={cn(
+          "relative inline-flex shrink-0 items-center justify-center rounded-xl text-white shadow-sm",
+          "h-9 w-9 md:h-7 md:w-7",
+          hasAlerts ? "bg-rose-600" : "bg-zinc-700"
+        )}
+      >
+        <Radar className="h-4 w-4 md:h-3.5 md:w-3.5" strokeWidth={2} />
+        {hasAlerts ? (
+          <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-rose-300" />
+          </span>
+        ) : null}
+      </span>
+    );
+
     return (
-      <div className={cn("flex w-full min-w-0 flex-col", className)}>
+      <div className={cn("flex w-full min-w-0 flex-col md:h-full", className)}>
         <Button
           type="button"
           disabled={loading && !hasAlerts}
@@ -544,48 +570,43 @@ export function FuelRefuelRadar({
           }}
           className={cn(
             "h-auto min-h-[3.25rem] w-full items-center justify-start gap-2.5 rounded-2xl px-3 py-3",
-            "text-left shadow-sm md:min-h-14 md:flex-col md:items-start md:justify-center md:gap-0.5 md:px-4",
+            "text-left shadow-sm",
+            "md:h-full md:min-h-14 md:flex-col md:items-start md:justify-center md:gap-0.5 md:px-4 md:py-3",
             hasAlerts
               ? "border border-rose-200/80 bg-gradient-to-br from-rose-50 to-white text-rose-950 hover:from-rose-100/90"
               : "border border-zinc-200/80 bg-gradient-to-br from-zinc-50 to-white text-zinc-800 hover:from-zinc-100/80"
           )}
         >
-          <span className="inline-flex items-center gap-2 text-[13px] font-bold md:text-sm">
-            <span
-              className={cn(
-                "relative inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white shadow-sm md:h-7 md:w-7",
-                hasAlerts ? "bg-rose-600" : "bg-zinc-700"
-              )}
-            >
-              <Radar className="h-4 w-4 md:h-3.5 md:w-3.5" strokeWidth={2} />
-              {hasAlerts ? (
-                <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-rose-300" />
-                </span>
-              ) : null}
-            </span>
+          <span className="inline-flex w-full min-w-0 items-center gap-2 text-[13px] font-bold md:hidden">
+            {iconWell}
             <span className="min-w-0">
-              <span className="block truncate">
-                {loading && !hasAlerts
-                  ? "Сканування…"
-                  : hasAlerts
-                    ? `Радар: ${count}`
-                    : "Радар"}
-              </span>
+              <span className="block truncate">{title}</span>
               <span
                 className={cn(
-                  "mt-0.5 block truncate text-[10px] font-medium md:pl-0 md:text-[11px]",
+                  "mt-0.5 block truncate text-[10px] font-medium",
                   hasAlerts ? "text-rose-800/70" : "text-zinc-500"
                 )}
               >
-                {hasAlerts ? "Необліковані" : "Чисто · 7 днів"}
+                {subtitle}
               </span>
             </span>
           </span>
+
+          <span className="hidden items-center gap-2 text-sm font-bold md:inline-flex">
+            {iconWell}
+            {title}
+          </span>
+          <span
+            className={cn(
+              "hidden pl-9 text-[11px] font-medium md:block",
+              hasAlerts ? "text-rose-800/70" : "text-zinc-500"
+            )}
+          >
+            {subtitle}
+          </span>
         </Button>
         {error ? (
-          <p className="mt-1 text-[10px] text-rose-600">{error}</p>
+          <p className="mt-1 text-[10px] text-rose-600 md:hidden">{error}</p>
         ) : null}
         {sheet}
       </div>
