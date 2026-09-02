@@ -11,7 +11,7 @@ import {
   Warehouse,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import type {
   FieldFuelBreakdownRow,
@@ -223,41 +223,6 @@ function KpiValue({
   accentClass?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const panelRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-
-    const isInsidePanel = (target: EventTarget | null) => {
-      if (!(target instanceof Node)) return false;
-      if (panelRef.current?.contains(target)) return true;
-      if (
-        target instanceof Element &&
-        target.closest("[data-slot='popover-trigger']")
-      ) {
-        return true;
-      }
-      return false;
-    };
-
-    const onScroll = (event: Event) => {
-      if (isInsidePanel(event.target)) return;
-      setOpen(false);
-    };
-
-    const onPointerDown = (event: PointerEvent) => {
-      if (isInsidePanel(event.target)) return;
-      setOpen(false);
-    };
-
-    window.addEventListener("scroll", onScroll, true);
-    document.addEventListener("pointerdown", onPointerDown, true);
-
-    return () => {
-      window.removeEventListener("scroll", onScroll, true);
-      document.removeEventListener("pointerdown", onPointerDown, true);
-    };
-  }, [open]);
 
   if (loading) {
     return (
@@ -304,7 +269,7 @@ function KpiValue({
   if (!interactive) return value;
 
   return (
-    <Popover open={open} onOpenChange={setOpen} modal={false}>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         className={cn(
           "group inline-flex text-left outline-none",
@@ -317,13 +282,15 @@ function KpiValue({
         align="start"
         side="bottom"
         sideOffset={10}
+        sheetOnMobile={false}
+        data-vaul-no-drag=""
         className={cn(
           "flex w-[min(calc(100vw-1.5rem),20.5rem)] max-h-[min(85dvh,36rem)] flex-col gap-0 overflow-hidden rounded-2xl border border-[#E5DFD3]/90 p-0 text-zinc-900",
           "bg-[linear-gradient(180deg,#ffffff_0%,#FBF9F5_55%,#F4F1EA_100%)]",
           "shadow-[0_18px_48px_-16px_rgba(39,33,24,0.35),0_0_0_1px_rgba(255,255,255,0.7)_inset]"
         )}
       >
-        <div ref={panelRef} className="flex min-h-0 flex-1 flex-col">
+        <div className="flex min-h-0 flex-col">
           <div
             aria-hidden
             className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white to-transparent"
