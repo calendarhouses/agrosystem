@@ -1,7 +1,6 @@
 "use server";
 
 import {
-  dismissRefueling,
   findUnrecordedRefuelings,
   UNRECORDED_LOOKBACK_HOURS,
   type UnrecordedRefueling,
@@ -258,11 +257,12 @@ export async function getFuelRefueledForPeriod(
       equipmentName: string;
       liters: number;
       wialonUnitId: number | null;
-      source: "wialon" | "manual" | "mixed" | "delivery" | "overnight";
+      source: "wialon" | "manual" | "mixed" | "delivery" | "overnight" | "correction";
     }>;
     dutLiters: number;
     dispensedLiters: number;
     overnightLiters: number;
+    correctionLiters: number;
     openingTankLiters: number;
     closingTankLiters: number;
   }>
@@ -330,6 +330,7 @@ export async function getFuelRefueledForPeriod(
         dutLiters: data.dutLiters,
         dispensedLiters: data.dispensedLiters,
         overnightLiters: data.overnightLiters,
+        correctionLiters: data.correctionLiters,
         openingTankLiters: data.openingTankLiters,
         closingTankLiters: data.closingTankLiters,
       },
@@ -407,7 +408,7 @@ export async function getUnrecordedRefuelings(options?: {
   }
 }
 
-/** Відхилити подію радара — хибне спрацювання ДУТ. */
+/** Відхилити подію радара — хибна заливка, прибираємо з KPI. */
 export async function dismissRadarRefueling(input: {
   unitId: number;
   timeIso: string;
@@ -415,7 +416,13 @@ export async function dismissRadarRefueling(input: {
   reason?: string;
 }): Promise<ActionResult> {
   try {
-    await dismissRefueling(input);
+    const { dismissRadarRefuelEvent } = await import("@/lib/fuel-radar-confirm");
+    await dismissRadarRefuelEvent({
+      unitId: input.unitId,
+      timeIso: input.timeIso,
+      detectedLiters: input.volumeLiters,
+      reason: input.reason,
+    });
     return { ok: true, data: null };
   } catch (error) {
     return {
@@ -424,6 +431,35 @@ export async function dismissRadarRefueling(input: {
         error instanceof Error
           ? error.message
           : "Не вдалося відхилити заправку",
+    };
+  }
+}
+
+/** Підтвердити заправку з радара — коригує KPI «Заправлено». */
+export async function confirmRadarRefueling(input: {
+  unitId: number;
+  timeIso: string;
+  detectedLiters: number;
+  correctedLiters: number;
+  fromStorageId?: string | null;
+}): Promise<ActionResult<{ fuelTransactionId: string | null }>> {
+  try {
+    const { confirmRadarRefuelEvent } = await import("@/lib/fuel-radar-confirm");
+    const data = await confirmRadarRefuelEvent({
+      unitId: input.unitId,
+      timeIso: input.timeIso,
+      detectedLiters: input.detectedLiters,
+      correctedLiters: input.correctedLiters,
+      fromStorageId: input.fromStorageId ?? null,
+    });
+    return { ok: true, data };
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Не вдалося підтвердити заправку",
     };
   }
 }

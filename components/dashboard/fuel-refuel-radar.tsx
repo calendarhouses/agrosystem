@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 import {
+  confirmRadarRefueling,
   dismissRadarRefueling,
   getUnrecordedRefuelings,
 } from "@/app/fuel/actions";
@@ -36,7 +37,7 @@ import {
 import {
   UNRECORDED_LOOKBACK_HOURS,
   type UnrecordedRefueling,
-} from "@/lib/fuel-unrecorded-refuelings";
+} from "@/lib/fuel-radar-constants";
 import type { FuelStorage } from "@/lib/fuel-storages";
 import { cn } from "@/lib/utils";
 
@@ -94,6 +95,9 @@ export function FuelRefuelRadar({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sourceByKey, setSourceByKey] = useState<Record<string, string>>({});
   const [litersByKey, setLitersByKey] = useState<Record<string, string>>({});
+  const [writeOffByKey, setWriteOffByKey] = useState<Record<string, boolean>>(
+    {}
+  );
   const [approvingKey, setApprovingKey] = useState<string | null>(null);
   const [dismissingKey, setDismissingKey] = useState<string | null>(null);
   const [rowError, setRowError] = useState<Record<string, string>>({});
@@ -204,11 +208,14 @@ export function FuelRefuelRadar({
   const approve = useCallback(
     async (event: UnrecordedRefueling) => {
       const key = eventKey(event);
-      const fromStorageId = sourceByKey[key] || mobileDefault;
-      if (!fromStorageId) {
+      const writeOff = writeOffByKey[key] === true;
+      const fromStorageId = writeOff
+        ? sourceByKey[key] || mobileDefault
+        : null;
+      if (writeOff && !fromStorageId) {
         setRowError((prev) => ({
           ...prev,
-          [key]: "Оберіть склад-джерело (бензовоз)",
+          [key]: "Увімкніть списання зі складу й оберіть бензовоз",
         }));
         return;
       }
@@ -229,26 +236,15 @@ export function FuelRefuelRadar({
       });
 
       try {
-        const response = await fetch("/api/fuel/transactions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            transactionType: "outbound",
-            amountLiters,
-            fromStorageId,
-            wialonUnitId: event.unitId,
-            hasFuelSensor: true,
-            sensorSourced: true,
-            transactionDate: event.timeIso,
-            operatorName: "Wialon Radar",
-          }),
+        const result = await confirmRadarRefueling({
+          unitId: event.unitId,
+          timeIso: event.timeIso,
+          detectedLiters: event.volume,
+          correctedLiters: amountLiters,
+          fromStorageId,
         });
-        const data = (await response.json()) as {
-          ok?: boolean;
-          error?: string;
-        };
-        if (!response.ok || !data.ok) {
-          throw new Error(data.error || "Не вдалося створити заправку");
+        if (!result.ok) {
+          throw new Error(result.error);
         }
 
         setEvents((prev) => prev.filter((e) => eventKey(e) !== key));
@@ -257,13 +253,13 @@ export function FuelRefuelRadar({
         setRowError((prev) => ({
           ...prev,
           [key]:
-            err instanceof Error ? err.message : "Помилка створення транзакції",
+            err instanceof Error ? err.message : "Помилка підтвердження",
         }));
       } finally {
         setApprovingKey(null);
       }
     },
-    [sourceByKey, mobileDefault, onApproved, litersFor]
+    [sourceByKey, mobileDefault, onApproved, litersFor, writeOffByKey]
   );
 
   const count = events.length;
@@ -276,8 +272,8 @@ export function FuelRefuelRadar({
         <FuelSheetHeader
           icon={Radar}
           accent="amber"
-          title="Необліковані заправки"
-          description="Стрибки ДУТ за останні 7 днів · схваліть і спишемо зі складу"
+          title="Перевірка заправок"
+          description="Підтвердьте або виправте — «Заправлено» оновиться. Списання з бензовоза — за бажанням."
           meta={
             hasAlerts ? (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-800 ring-1 ring-rose-500/15">
@@ -305,7 +301,7 @@ export function FuelRefuelRadar({
                 Список порожній
               </p>
               <p className="max-w-[14rem] text-xs leading-relaxed text-zinc-500">
-                Усі виявлені заправки вже схвалені або обліковані в журналі
+                Усі заправки за 7 днів перевірені — «Заправлено» актуальне
               </p>
               <Button
                 type="button"
@@ -326,6 +322,7 @@ export function FuelRefuelRadar({
             <ul className="space-y-3">
               {events.map((event) => {
                 const key = eventKey(event);
+                const writeOff = writeOffByKey[key] === true;
                 const sourceId = sourceByKey[key] || mobileDefault;
                 const busy = approvingKey === key;
                 const rejecting = dismissingKey === key;
@@ -333,7 +330,9 @@ export function FuelRefuelRadar({
                 const edited = Math.abs(amount - event.volume) > 0.05;
                 const donor = storages.find((s) => s.id === sourceId);
                 const insufficient =
-                  donor != null && donor.currentVolume + 0.001 < amount;
+                  writeOff &&
+                  donor != null &&
+                  donor.currentVolume + 0.001 < amount;
 
                 return (
                   <li
@@ -409,15 +408,35 @@ export function FuelRefuelRadar({
                         </div>
                         <p className="text-[11px] text-emerald-700/70">
                           {edited
-                            ? `ДУТ показав ${formatLiters(event.volume)} л`
-                            : "ДУТ · можна виправити"}
+                            ? `Wialon показав ${formatLiters(event.volume)} л`
+                            : "можна виправити літри"}
                         </p>
                       </div>
                     </div>
 
-                    <div className="space-y-1.5 px-4 pt-3">
-                      <label className={fuelFieldLabelClass}>Джерело</label>
-                      <Select
+                    <div className="space-y-2 px-4 pt-3">
+                      <label className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-zinc-100 bg-zinc-50/80 px-3 py-2.5">
+                        <input
+                          type="checkbox"
+                          checked={writeOff}
+                          onChange={(e) =>
+                            setWriteOffByKey((prev) => ({
+                              ...prev,
+                              [key]: e.target.checked,
+                            }))
+                          }
+                          className="h-4 w-4 rounded border-zinc-300 text-emerald-600"
+                        />
+                        <span className="text-[13px] font-medium text-zinc-800">
+                          Списати з бензовоза / складу
+                        </span>
+                      </label>
+                      {writeOff ? (
+                        <div className="space-y-1.5">
+                          <label className={fuelFieldLabelClass}>
+                            Звідки списати
+                          </label>
+                          <Select
                         items={storages.map((s) => ({
                           value: s.id,
                           label: s.name,
@@ -468,6 +487,8 @@ export function FuelRefuelRadar({
                           )}
                         </SelectContent>
                       </Select>
+                        </div>
+                      ) : null}
                     </div>
 
                     <div className="px-4 pt-2 pb-4">
@@ -489,9 +510,8 @@ export function FuelRefuelRadar({
                           disabled={
                             busy ||
                             rejecting ||
-                            !sourceId ||
-                            insufficient ||
-                            storages.length === 0
+                            (writeOff && (!sourceId || insufficient)) ||
+                            storages.length === 0 && writeOff
                           }
                           onClick={() => void approve(event)}
                           className={cn(
@@ -511,7 +531,7 @@ export function FuelRefuelRadar({
                           variant="secondary"
                           disabled={busy || rejecting}
                           onClick={() => void dismiss(event)}
-                          title="Хибне спрацювання ДУТ — прибрати з радара"
+                          title="Хибна заливка — прибрати з «Заправлено»"
                           className="h-11 gap-2 rounded-xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-600 hover:bg-zinc-50 hover:text-rose-700"
                         >
                           {rejecting ? (
@@ -539,7 +559,7 @@ export function FuelRefuelRadar({
         : hasAlerts
           ? `Радар: ${count}`
           : "Радар";
-    const subtitle = hasAlerts ? "Необліковані" : "Чисто · 7 днів";
+    const subtitle = hasAlerts ? "На перевірку" : "Чисто · 7 днів";
 
     const iconWell = (
       <span

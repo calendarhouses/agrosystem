@@ -15,6 +15,7 @@ import {
   sumFleetOvernightFillsForPeriod,
   sumFleetTankBalanceForPeriod,
 } from "@/lib/wialon-equipment-day-sync";
+import { sumRefuelCorrectionAdjustmentsForPeriod } from "@/lib/fuel-refuel-corrections";
 import { kyivDayBoundsUnix } from "@/lib/kyiv-date";
 import { isFuelDeliveryUnit } from "@/lib/equipment-fuel-tanks";
 
@@ -23,7 +24,7 @@ export type RefuelBreakdownRow = {
   liters: number;
   wialonUnitId: number | null;
   /** Джерело в розшифровці */
-  source: "wialon" | "manual" | "mixed" | "delivery" | "overnight";
+  source: "wialon" | "manual" | "mixed" | "delivery" | "overnight" | "correction";
 };
 
 type ManualRow = {
@@ -57,6 +58,8 @@ export async function sumOutboundRefueledForPeriod(
   dispensedLiters: number;
   /** Заливки між днями (вечір → ранок), які intraday-детектор пропустив */
   overnightLiters: number;
+  /** Корекції з радара (підтверджено / відхилено) */
+  correctionLiters: number;
   /** Паливо в баках тракторів на перший день періоду (ДУТ) */
   openingTankLiters: number;
   /** Паливо в баках на останній день періоду */
@@ -156,12 +159,13 @@ export async function sumOutboundRefueledForPeriod(
     });
   }
 
-  const [dbFilled, deliveryDispensed, overnightFills, tankBalance] =
+  const [dbFilled, deliveryDispensed, overnightFills, tankBalance, corrections] =
     await Promise.all([
       sumFleetFuelFilledForPeriod(fromDate, toDate),
       sumFleetDeliveryDispensedForPeriod(fromDate, toDate),
       sumFleetOvernightFillsForPeriod(fromDate, toDate),
       sumFleetTankBalanceForPeriod(fromDate, toDate),
+      sumRefuelCorrectionAdjustmentsForPeriod(fromIso, toIso),
     ]);
   const byKey = new Map<string, RefuelBreakdownRow>();
 
@@ -234,6 +238,7 @@ export async function sumOutboundRefueledForPeriod(
   const displayNames = await resolveWialonUnitDisplayNames([
     ...dbFilled.rows.map((r) => r.wialonUnitId),
     ...manualWialonIds,
+    ...corrections.rows.map((r) => r.wialonUnitId),
   ]);
 
   let manualOnlyLiters = 0;
@@ -281,8 +286,28 @@ export async function sumOutboundRefueledForPeriod(
     );
   }
 
-  // KPI «Заправлено» = денні стрибки ДУТ + заливки між днями (+ журнал).
-  const liters = Math.round((dutLiters + overnightLiters) * 10) / 10;
+  const correctionLiters =
+    Math.round(corrections.adjustmentLiters * 10) / 10;
+  const correctionByUnit = new Map<number, number>();
+  for (const row of corrections.rows) {
+    if (Math.abs(row.adjustmentLiters) < 0.05) continue;
+    correctionByUnit.set(
+      row.wialonUnitId,
+      Math.round(
+        ((correctionByUnit.get(row.wialonUnitId) ?? 0) + row.adjustmentLiters) *
+          10
+      ) / 10
+    );
+  }
+  for (const [wialonUnitId, liters] of correctionByUnit) {
+    const name =
+      displayNames.get(wialonUnitId) ?? `Wialon #${wialonUnitId}`;
+    bump(`c:${wialonUnitId}`, name, wialonUnitId, liters, "correction");
+  }
+
+  // KPI «Заправлено» = Wialon + заливки між днями + корекції радара (+ журнал без ДУТ).
+  const liters =
+    Math.round((dutLiters + overnightLiters + correctionLiters) * 10) / 10;
   const rows = [...byKey.values()].sort((a, b) => b.liters - a.liters);
 
   return {
@@ -301,6 +326,7 @@ export async function sumOutboundRefueledForPeriod(
     dutLiters,
     dispensedLiters,
     overnightLiters,
+    correctionLiters,
     openingTankLiters: tankBalance.openingLiters,
     closingTankLiters: tankBalance.closingLiters,
   };

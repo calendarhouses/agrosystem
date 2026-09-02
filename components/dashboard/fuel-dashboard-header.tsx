@@ -64,7 +64,7 @@ type RefuelBreakdownRow = {
   equipmentName: string;
   liters: number;
   wialonUnitId: number | null;
-  source?: "wialon" | "manual" | "mixed" | "delivery" | "overnight";
+  source?: "wialon" | "manual" | "mixed" | "delivery" | "overnight" | "correction";
 };
 
 type FuelDashboardHeaderProps = {
@@ -604,7 +604,9 @@ export function FuelDashboardHeader({
     subtitle:
       row.source === "overnight"
         ? "заливка вночі в полі"
-        : row.source === "manual"
+        : row.source === "correction"
+          ? "корекція з радара"
+          : row.source === "manual"
           ? "журнал"
           : row.source === "mixed"
             ? "ДУТ + журнал"
