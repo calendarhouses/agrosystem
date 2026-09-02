@@ -11,7 +11,7 @@ import {
   Warehouse,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import type {
   FieldFuelBreakdownRow,
@@ -99,6 +99,9 @@ type FuelDashboardHeaderProps = {
   /** Паливо в баках тракторів на початок / кінець періоду (ДУТ) */
   openingTankLiters?: number | null;
   closingTankLiters?: number | null;
+  refuelDutLiters?: number | null;
+  refuelDispensedLiters?: number | null;
+  refuelOvernightLiters?: number | null;
   onFieldFuelPeriodChange: (period: FieldFuelPeriod) => void;
   onPurchase: () => void;
   onTransfer: () => void;
@@ -197,6 +200,7 @@ function KpiValue({
   popoverDescription,
   breakdownEmpty,
   breakdownRows,
+  popoverFooter,
   accentClass,
 }: {
   liters: number | null;
@@ -207,6 +211,7 @@ function KpiValue({
   popoverDescription: string;
   breakdownEmpty: string;
   breakdownRows: Array<{ title: string; subtitle?: string; liters: number }>;
+  popoverFooter?: ReactNode;
   accentClass?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -357,6 +362,11 @@ function KpiValue({
               rows={breakdownRows}
             />
           </div>
+          {popoverFooter ? (
+            <div className="border-t border-[#E5DFD3]/70 px-3.5 py-3 text-[11px] leading-relaxed text-zinc-600">
+              {popoverFooter}
+            </div>
+          ) : null}
         </div>
       </PopoverContent>
     </Popover>
@@ -387,6 +397,9 @@ export function FuelDashboardHeader({
   refuelBreakdown,
   openingTankLiters = null,
   closingTankLiters = null,
+  refuelDutLiters = null,
+  refuelDispensedLiters = null,
+  refuelOvernightLiters = null,
   onFieldFuelPeriodChange,
   onPurchase,
   onTransfer,
@@ -407,28 +420,6 @@ export function FuelDashboardHeader({
   // Показуємо всю витрату флоту: інакше «Спалено» непорівнянне із «Заправлено»,
   // бо заправляють і те паливо, що йде на переїзди та роботу на базі.
   const burnedTotal = fieldFuelTotalLiters ?? fieldFuelLiters;
-  const tankBalanceNote = (() => {
-    if (
-      fieldFuelLoading ||
-      refuelLoading ||
-      burnedTotal == null ||
-      refuelLiters == null ||
-      openingTankLiters == null ||
-      openingTankLiters <= 0
-    ) {
-      return null;
-    }
-    const gap = Math.round((burnedTotal - refuelLiters) * 10) / 10;
-    if (gap < 400) return null;
-    const explained = Math.max(
-      0,
-      Math.round((openingTankLiters - (closingTankLiters ?? 0)) * 10) / 10
-    );
-    if (explained >= gap * 0.35) {
-      return `У баках на початок періоду було ≈ ${formatLiters(openingTankLiters)} л — частина спаленого звідти, не лише з нових заправок ДУТ.`;
-    }
-    return `Спалено більше, ніж ДУТ зафіксував заправок (+${formatLiters(gap)} л). Перевірте журнал заправок або сенсори.`;
-  })();
   const onFieldListed = fieldFuelBreakdown.reduce(
     (acc, row) => acc + row.liters,
     0
@@ -500,16 +491,105 @@ export function FuelDashboardHeader({
       : []),
     ...offFieldRows,
   ];
-  const refuelRows = refuelBreakdown.map((row) => ({
+  const fleetBurnRows =
+    fleetFuelBreakdown.length > 0
+      ? fleetFuelBreakdown.map((unit) => ({
+          title: unit.equipmentName,
+          subtitle: "витрата ДВЗ · ДУТ",
+          liters: unit.liters,
+        }))
+      : burnedRows;
+
+  const burnGapLiters =
+    burnedTotal != null && refuelLiters != null
+      ? Math.round((burnedTotal - refuelLiters) * 10) / 10
+      : null;
+
+  const burnPopoverFooter = (
+    <div className="space-y-2">
+      <p>
+        <span className="font-semibold text-zinc-800">Як рахуємо:</span> по
+        кожній одиниці техніки — масовий баланс{" "}
+        <code className="rounded bg-white/80 px-1 py-0.5 text-[10px] text-zinc-700">
+          бак на початок + заливки − бак на кінець
+        </code>
+        . Враховуємо і денні стрибки ДУТ, і заливки між днями (повільна з
+        бензовоза в полі).
+      </p>
+      {(refuelDutLiters != null && refuelDutLiters > 0) ||
+      (refuelOvernightLiters != null && refuelOvernightLiters > 0) ||
+      (refuelDispensedLiters != null && refuelDispensedLiters > 0) ? (
+        <div className="space-y-1 rounded-xl bg-white/70 px-2.5 py-2 ring-1 ring-[#E5DFD3]/80">
+          <p className="font-semibold text-zinc-800">Заправки за період (окрема картка)</p>
+          {refuelDutLiters != null && refuelDutLiters > 0 ? (
+            <p>
+              ДУТ вдень:{" "}
+              <span className="font-bold tabular-nums text-zinc-900">
+                {formatLiters(refuelDutLiters)} л
+              </span>
+            </p>
+          ) : null}
+          {refuelOvernightLiters != null && refuelOvernightLiters > 0 ? (
+            <p>
+              Заливки між днями (вечір → ранок):{" "}
+              <span className="font-bold tabular-nums text-zinc-900">
+                {formatLiters(refuelOvernightLiters)} л
+              </span>
+            </p>
+          ) : null}
+          {refuelDispensedLiters != null && refuelDispensedLiters > 0 ? (
+            <p>
+              Роздано з бензовоза (контекст):{" "}
+              <span className="font-bold tabular-nums text-zinc-900">
+                {formatLiters(refuelDispensedLiters)} л
+              </span>
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+      {openingTankLiters != null && openingTankLiters > 0 ? (
+        <p>
+          У баках на початок періоду:{" "}
+          <span className="font-bold tabular-nums text-zinc-900">
+            ≈ {formatLiters(openingTankLiters)} л
+          </span>
+          {closingTankLiters != null && closingTankLiters > 0 ? (
+            <>
+              {" "}
+              · на кінець:{" "}
+              <span className="font-bold tabular-nums text-zinc-900">
+                ≈ {formatLiters(closingTankLiters)} л
+              </span>
+            </>
+          ) : null}
+        </p>
+      ) : null}
+      {burnGapLiters != null && burnGapLiters > 200 ? (
+        <p className="text-zinc-500">
+          Спалено на {formatLiters(burnGapLiters)} л більше, ніж зафіксовано
+          заливок у баки — перевірте одиницю з найбільшим розривом у списку
+          вище або залишок палива на старті періоду (
+          {openingTankLiters != null && openingTankLiters > 0
+            ? `≈ ${formatLiters(openingTankLiters)} л`
+            : "зазвичай сотні літрів, не тисячі"}
+          ).
+        </p>
+      ) : null}
+    </div>
+  );
+
+  const refuelRows = refuelBreakdown
+    .filter((row) => row.source !== "delivery")
+    .map((row) => ({
     title: row.equipmentName,
     subtitle:
-      row.source === "delivery"
-        ? "роздача з бензовоза"
+      row.source === "overnight"
+        ? "заливка між днями · вечір → ранок"
         : row.source === "manual"
           ? "журнал"
           : row.source === "mixed"
             ? "ДУТ + журнал"
-            : "ДУТ",
+            : "ДУТ вдень",
     liters: row.liters,
   }));
 
@@ -638,9 +718,10 @@ export function FuelDashboardHeader({
                 }
                 interactive={fieldFuelHasData && !fieldFuelLoading}
                 popoverTitle="Хто скільки спалив"
-                popoverDescription={`Техніка × поле · ${periodLabel.toLowerCase()}`}
+                popoverDescription={`Витрата ДВЗ · ДУТ Wialon · ${periodLabel.toLowerCase()}`}
                 breakdownEmpty={`Немає даних за ${fieldFuelPeriodCaption(fieldFuelPeriod)}`}
-                breakdownRows={burnedRows}
+                breakdownRows={fleetBurnRows}
+                popoverFooter={burnPopoverFooter}
                 accentClass="text-amber-950"
               />
               <p className="mt-1.5 text-[12px] font-medium text-zinc-400 sm:mt-2">
@@ -668,13 +749,21 @@ export function FuelDashboardHeader({
                 empty={!refuelLoading && (refuelLiters ?? 0) <= 0}
                 interactive={refuelHasData && !refuelLoading}
                 popoverTitle="Кому заправили"
-                popoverDescription={`ДУТ тракторів + роздача з бензовоза · ${periodLabel.toLowerCase()}`}
+                popoverDescription={`Зростання рівня в баках тракторів · ${periodLabel.toLowerCase()}`}
                 breakdownEmpty={`Немає заправок за ${fieldFuelPeriodCaption(fieldFuelPeriod)}`}
                 breakdownRows={refuelRows}
                 accentClass="text-sky-950"
               />
               <p className="mt-1.5 text-[12px] font-medium text-zinc-400 sm:mt-2">
                 {periodLabel}
+                {!refuelLoading &&
+                refuelDispensedLiters != null &&
+                refuelDispensedLiters > 0 ? (
+                  <span className="ml-1.5 text-zinc-500">
+                    · бензовоз ≈ {formatLiters(refuelDispensedLiters)} л — у
+                    розшифровці «Спалено»
+                  </span>
+                ) : null}
               </p>
             </div>
           </div>
@@ -683,13 +772,6 @@ export function FuelDashboardHeader({
         {progressBar ? (
           <div className="border-t border-[#E5DFD3]/80 px-4 py-3 sm:px-6">
             {progressBar}
-          </div>
-        ) : null}
-        {tankBalanceNote ? (
-          <div className="border-t border-[#E5DFD3]/80 px-4 py-2.5 sm:px-6">
-            <p className="text-[11px] leading-snug font-medium text-zinc-500 sm:text-xs">
-              {tankBalanceNote}
-            </p>
           </div>
         ) : null}
       </div>

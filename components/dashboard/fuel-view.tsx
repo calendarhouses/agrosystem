@@ -114,6 +114,9 @@ type FuelKpisRefueled = {
     hasData: boolean;
     openingTankLiters?: number;
     closingTankLiters?: number;
+    dutLiters?: number;
+    dispensedLiters?: number;
+    overnightLiters?: number;
     breakdown: Array<{
       equipmentName: string;
       liters: number;
@@ -821,7 +824,7 @@ export function FuelView({
       equipmentName: string;
       liters: number;
       wialonUnitId: number | null;
-      source?: "wialon" | "manual" | "mixed" | "delivery";
+      source?: "wialon" | "manual" | "mixed" | "delivery" | "overnight";
     }>
   >(seedRefueled?.breakdown ?? []);
   const [openingTankLiters, setOpeningTankLiters] = useState<number | null>(
@@ -830,6 +833,15 @@ export function FuelView({
   const [closingTankLiters, setClosingTankLiters] = useState<number | null>(
     seedRefueled?.closingTankLiters ?? null
   );
+  const [refuelDutLiters, setRefuelDutLiters] = useState<number | null>(
+    seedRefueled?.dutLiters ?? seedRefueled?.liters ?? null
+  );
+  const [refuelDispensedLiters, setRefuelDispensedLiters] = useState<
+    number | null
+  >(seedRefueled?.dispensedLiters ?? null);
+  const [refuelOvernightLiters, setRefuelOvernightLiters] = useState<
+    number | null
+  >(seedRefueled?.overnightLiters ?? null);
   const [kpiRefreshToken, setKpiRefreshToken] = useState(0);
   /** Фоновий догруз відсутніх днів — без повторного «Завантаження…» */
   const kpiSilentRefreshRef = useRef(false);
@@ -1272,12 +1284,18 @@ export function FuelView({
         setRefuelBreakdown(refueled.data.breakdown);
         setOpeningTankLiters(refueled.data.openingTankLiters ?? null);
         setClosingTankLiters(refueled.data.closingTankLiters ?? null);
+        setRefuelDutLiters(refueled.data.dutLiters ?? refueled.data.liters);
+        setRefuelDispensedLiters(refueled.data.dispensedLiters ?? null);
+        setRefuelOvernightLiters(refueled.data.overnightLiters ?? null);
       } else {
         setRefuelLiters(null);
         setRefuelHasData(false);
         setRefuelBreakdown([]);
         setOpeningTankLiters(null);
         setClosingTankLiters(null);
+        setRefuelDutLiters(null);
+        setRefuelDispensedLiters(null);
+        setRefuelOvernightLiters(null);
       }
       if (payload.storages) {
         setPeriodStorageLiters(payload.storages.liters);
@@ -1314,6 +1332,9 @@ export function FuelView({
       setRefuelBreakdown([]);
       setOpeningTankLiters(null);
       setClosingTankLiters(null);
+      setRefuelDutLiters(null);
+      setRefuelDispensedLiters(null);
+      setRefuelOvernightLiters(null);
       setPeriodStorageLiters(null);
       setPeriodStorageValue(null);
       setPeriodStorageLive(fieldFuelPeriod === "today");
@@ -1505,6 +1526,9 @@ export function FuelView({
         refuelBreakdown={refuelBreakdown}
         openingTankLiters={openingTankLiters}
         closingTankLiters={closingTankLiters}
+        refuelDutLiters={refuelDutLiters}
+        refuelDispensedLiters={refuelDispensedLiters}
+        refuelOvernightLiters={refuelOvernightLiters}
         onFieldFuelPeriodChange={setFieldFuelPeriod}
         onPurchase={() => {
           setEditTransaction(null);

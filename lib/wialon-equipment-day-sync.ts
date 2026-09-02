@@ -376,6 +376,7 @@ export type FleetFuelConsumedBreakdownRow = {
 };
 
 type FleetFuelDayStatRow = {
+  date?: string;
   fuel_consumed: number | string | null;
   fuel_start: number | null;
   fuel_end: number | null;
@@ -385,6 +386,77 @@ type FleetFuelDayStatRow = {
   wialon_unit_id: number | null;
   equipment_id: string | null;
 };
+
+/** Стрибок рівня між вечором і ранком = заливка, яку intraday-детектор пропустив */
+const OVERNIGHT_FILL_JUMP_L = 15;
+
+function massBalanceFromUnitDays(rows: FleetFuelDayStatRow[]): {
+  burnLiters: number;
+  dutFillLiters: number;
+  overnightFillLiters: number;
+} {
+  const sorted = [...rows].sort((a, b) =>
+    String(a.date ?? "").localeCompare(String(b.date ?? ""))
+  );
+  let dutFill = 0;
+  let overnight = 0;
+  let sumStoredBurn = 0;
+
+  for (let i = 0; i < sorted.length; i++) {
+    const row = sorted[i]!;
+    dutFill += Number(row.fuel_filled) || 0;
+    sumStoredBurn += Number(row.fuel_consumed) || 0;
+    if (i > 0) {
+      const prevEnd = Number(sorted[i - 1]!.fuel_end);
+      const curStart = Number(row.fuel_start);
+      const dayFilled = Number(row.fuel_filled) || 0;
+      // 0 л на вечір = немає валідного зчитування, не «порожній бак».
+      if (
+        Number.isFinite(prevEnd) &&
+        prevEnd >= OVERNIGHT_FILL_JUMP_L &&
+        Number.isFinite(curStart) &&
+        curStart >= OVERNIGHT_FILL_JUMP_L &&
+        curStart > prevEnd + OVERNIGHT_FILL_JUMP_L
+      ) {
+        const jump = curStart - prevEnd;
+        // Якщо intraday-детектор уже записав заливку в fuel_filled — не дублюємо.
+        const uncaptured = Math.max(0, jump - dayFilled);
+        if (uncaptured > OVERNIGHT_FILL_JUMP_L) {
+          overnight += uncaptured;
+        }
+      }
+    }
+  }
+
+  const openingRow = sorted.find((row) => {
+    const v = Number(row.fuel_start);
+    return Number.isFinite(v) && v >= OVERNIGHT_FILL_JUMP_L;
+  });
+  const closingRow = [...sorted].reverse().find((row) => {
+    const v = Number(row.fuel_end);
+    return Number.isFinite(v) && v >= 0;
+  });
+  const opening = Number(openingRow?.fuel_start);
+  const closing = Number(closingRow?.fuel_end);
+  if (
+    Number.isFinite(opening) &&
+    opening >= OVERNIGHT_FILL_JUMP_L &&
+    Number.isFinite(closing) &&
+    closing >= 0
+  ) {
+    return {
+      burnLiters: Math.max(0, opening + dutFill + overnight - closing),
+      dutFillLiters: dutFill,
+      overnightFillLiters: overnight,
+    };
+  }
+
+  return {
+    burnLiters: Math.max(0, sumStoredBurn + overnight),
+    dutFillLiters: dutFill,
+    overnightFillLiters: overnight,
+  };
+}
 
 function dayBurnLitersFromStatsRow(
   row: FleetFuelDayStatRow,
@@ -426,6 +498,8 @@ async function fleetFuelConsumedBucketsForPeriod(
   toDate: string
 ): Promise<{
   byUnit: Map<number, number>;
+  overnightFillByUnit: Map<number, number>;
+  dutFillByUnit: Map<number, number>;
   hasData: boolean;
   eqNameByWid: Map<number, string>;
 }> {
@@ -435,16 +509,22 @@ async function fleetFuelConsumedBucketsForPeriod(
     supabase
       .from("wialon_equipment_day_stats")
       .select(
-        "fuel_consumed, fuel_start, fuel_end, fuel_filled, work_hours, hours_on_field, wialon_unit_id, equipment_id"
+        "date, fuel_consumed, fuel_start, fuel_end, fuel_filled, work_hours, hours_on_field, wialon_unit_id, equipment_id, has_fuel_sensor"
       )
       .gte("date", fromDate)
       .lte("date", toDate)
-      .not("fuel_consumed", "is", null),
+      .order("date", { ascending: true }),
     supabase.from("equipment").select("id, wialon_id, name"),
   ]);
 
   if (error) {
-    return { byUnit: new Map(), hasData: false, eqNameByWid: new Map() };
+    return {
+      byUnit: new Map(),
+      overnightFillByUnit: new Map(),
+      dutFillByUnit: new Map(),
+      hasData: false,
+      eqNameByWid: new Map(),
+    };
   }
 
   const deliveryWialonIds = new Set<number>();
@@ -462,26 +542,54 @@ async function fleetFuelConsumedBucketsForPeriod(
     }
   }
 
-  const byUnit = new Map<number, number>();
+  const wialonIds = [
+    ...new Set(
+      (data ?? [])
+        .map((row) => Number(row.wialon_unit_id))
+        .filter((id) => Number.isFinite(id) && id > 0)
+    ),
+  ];
+  const displayNames = await resolveWialonUnitDisplayNames(wialonIds);
+
+  const rowsByUnit = new Map<number, FleetFuelDayStatRow[]>();
   for (const row of data ?? []) {
     const wid = Number(row.wialon_unit_id);
     const eid = row.equipment_id != null ? String(row.equipment_id) : null;
     if (!Number.isFinite(wid) || wid <= 0) continue;
     if (deliveryWialonIds.has(wid)) continue;
     if (eid && deliveryEquipmentIds.has(eid)) continue;
+    const name = displayNames.get(wid) ?? eqNameByWid.get(wid) ?? "";
+    if (isFuelDeliveryUnit(name)) continue;
+    const bucket = rowsByUnit.get(wid) ?? [];
+    bucket.push(row as FleetFuelDayStatRow);
+    rowsByUnit.set(wid, bucket);
+  }
 
-    const liters = dayBurnLitersFromStatsRow(
-      row as FleetFuelDayStatRow,
-      resolveFuelTankVolumeLiters(eqNameByWid.get(wid)) ?? undefined
-    );
-    if (liters == null) continue;
+  const byUnit = new Map<number, number>();
+  const overnightFillByUnit = new Map<number, number>();
+  const dutFillByUnit = new Map<number, number>();
 
-    byUnit.set(wid, (byUnit.get(wid) ?? 0) + liters);
+  for (const [wid, unitRows] of rowsByUnit) {
+    const balance = massBalanceFromUnitDays(unitRows);
+    if (balance.burnLiters > 0) {
+      byUnit.set(wid, Math.round(balance.burnLiters * 10) / 10);
+    }
+    if (balance.overnightFillLiters > 0) {
+      overnightFillByUnit.set(
+        wid,
+        Math.round(balance.overnightFillLiters * 10) / 10
+      );
+    }
+    if (balance.dutFillLiters > 0) {
+      dutFillByUnit.set(wid, Math.round(balance.dutFillLiters * 10) / 10);
+    }
   }
 
   return {
     byUnit,
-    hasData: (data?.length ?? 0) > 0,
+    overnightFillByUnit,
+    dutFillByUnit,
+    hasData: rowsByUnit.size > 0,
     eqNameByWid,
   };
 }
@@ -501,6 +609,40 @@ export async function sumFleetFuelConsumedForPeriod(
     liters: Math.round(liters * 10) / 10,
     hasData,
   };
+}
+
+/** Заливки між днями: вечір N → ранок N+1 (повільна з бензовоза, intraday-детектор не бачить). */
+export async function sumFleetOvernightFillsForPeriod(
+  fromDate: string,
+  toDate: string
+): Promise<{
+  liters: number;
+  hasData: boolean;
+  rows: FleetFuelFilledBreakdownRow[];
+}> {
+  const { overnightFillByUnit, hasData, eqNameByWid } =
+    await fleetFuelConsumedBucketsForPeriod(fromDate, toDate);
+
+  const unitIds = [...overnightFillByUnit.keys()];
+  const displayNames = await resolveWialonUnitDisplayNames(unitIds);
+
+  const rows: FleetFuelFilledBreakdownRow[] = unitIds
+    .map((wialonUnitId) => ({
+      wialonUnitId,
+      equipmentName:
+        displayNames.get(wialonUnitId) ??
+        eqNameByWid.get(wialonUnitId) ??
+        `Wialon #${wialonUnitId}`,
+      liters: overnightFillByUnit.get(wialonUnitId) ?? 0,
+    }))
+    .filter((row) => row.liters > 0)
+    .sort((a, b) => b.liters - a.liters);
+
+  const liters = Math.round(
+    rows.reduce((acc, row) => acc + row.liters, 0) * 10
+  ) / 10;
+
+  return { liters, hasData: hasData && liters > 0, rows };
 }
 
 /** Спалено по кожній одиниці техніки за період (для розшифровки «поза полями»). */

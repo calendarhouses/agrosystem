@@ -258,8 +258,11 @@ export async function getFuelRefueledForPeriod(
       equipmentName: string;
       liters: number;
       wialonUnitId: number | null;
-      source: "wialon" | "manual" | "mixed" | "delivery";
+      source: "wialon" | "manual" | "mixed" | "delivery" | "overnight";
     }>;
+    dutLiters: number;
+    dispensedLiters: number;
+    overnightLiters: number;
     openingTankLiters: number;
     closingTankLiters: number;
   }>
@@ -324,6 +327,9 @@ export async function getFuelRefueledForPeriod(
         wialonLiters: data.wialonLiters,
         manualOnlyLiters: data.manualOnlyLiters,
         breakdown: data.rows,
+        dutLiters: data.dutLiters,
+        dispensedLiters: data.dispensedLiters,
+        overnightLiters: data.overnightLiters,
         openingTankLiters: data.openingTankLiters,
         closingTankLiters: data.closingTankLiters,
       },

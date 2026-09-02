@@ -11,8 +11,8 @@ import {
 import { resolveWialonUnitDisplayNames } from "@/lib/wialon-unit-names";
 import {
   sumFleetDeliveryDispensedForPeriod,
-  sumFleetFuelConsumedForPeriod,
   sumFleetFuelFilledForPeriod,
+  sumFleetOvernightFillsForPeriod,
   sumFleetTankBalanceForPeriod,
 } from "@/lib/wialon-equipment-day-sync";
 import { kyivDayBoundsUnix } from "@/lib/kyiv-date";
@@ -23,7 +23,7 @@ export type RefuelBreakdownRow = {
   liters: number;
   wialonUnitId: number | null;
   /** Джерело в розшифровці */
-  source: "wialon" | "manual" | "mixed" | "delivery";
+  source: "wialon" | "manual" | "mixed" | "delivery" | "overnight";
 };
 
 type ManualRow = {
@@ -55,6 +55,8 @@ export async function sumOutboundRefueledForPeriod(
   dutLiters: number;
   /** Роздача з бензовоза (падіння рівня цистерни) */
   dispensedLiters: number;
+  /** Заливки між днями (вечір → ранок), які intraday-детектор пропустив */
+  overnightLiters: number;
   /** Паливо в баках тракторів на перший день періоду (ДУТ) */
   openingTankLiters: number;
   /** Паливо в баках на останній день періоду */
@@ -154,12 +156,13 @@ export async function sumOutboundRefueledForPeriod(
     });
   }
 
-  const [dbFilled, deliveryDispensed, fleetBurn, tankBalance] = await Promise.all([
-    sumFleetFuelFilledForPeriod(fromDate, toDate),
-    sumFleetDeliveryDispensedForPeriod(fromDate, toDate),
-    sumFleetFuelConsumedForPeriod(fromDate, toDate),
-    sumFleetTankBalanceForPeriod(fromDate, toDate),
-  ]);
+  const [dbFilled, deliveryDispensed, overnightFills, tankBalance] =
+    await Promise.all([
+      sumFleetFuelFilledForPeriod(fromDate, toDate),
+      sumFleetDeliveryDispensedForPeriod(fromDate, toDate),
+      sumFleetOvernightFillsForPeriod(fromDate, toDate),
+      sumFleetTankBalanceForPeriod(fromDate, toDate),
+    ]);
   const byKey = new Map<string, RefuelBreakdownRow>();
 
   const bump = (
@@ -253,31 +256,33 @@ export async function sumOutboundRefueledForPeriod(
   const dutLiters =
     Math.round((wialonLiters + manualOnlyLiters) * 10) / 10;
 
-  const burnLiters = fleetBurn.liters;
-  const dispenseCap = Math.max(0, burnLiters - dutLiters);
-  const dispensedLiters = Math.round(
-    Math.min(deliveryDispensed.liters, dispenseCap) * 10
-  ) / 10;
+  const dispensedLiters = Math.round(deliveryDispensed.liters * 10) / 10;
+  const overnightLiters = Math.round(overnightFills.liters * 10) / 10;
 
-  if (dispensedLiters > 0) {
-    for (const row of deliveryDispensed.rows) {
-      if (row.liters <= 0) continue;
-      const share =
-        deliveryDispensed.liters > 0
-          ? (row.liters / deliveryDispensed.liters) * dispensedLiters
-          : 0;
-      if (share <= 0) continue;
-      bump(
-        `d:${row.wialonUnitId}`,
-        row.equipmentName,
-        row.wialonUnitId,
-        share,
-        "delivery"
-      );
-    }
+  for (const row of overnightFills.rows) {
+    if (row.liters <= 0) continue;
+    bump(
+      `o:${row.wialonUnitId}`,
+      row.equipmentName,
+      row.wialonUnitId,
+      row.liters,
+      "overnight"
+    );
   }
 
-  const liters = Math.round((dutLiters + dispensedLiters) * 10) / 10;
+  for (const row of deliveryDispensed.rows) {
+    if (row.liters <= 0) continue;
+    bump(
+      `d:${row.wialonUnitId}`,
+      row.equipmentName,
+      row.wialonUnitId,
+      row.liters,
+      "delivery"
+    );
+  }
+
+  // KPI «Заправлено» = денні стрибки ДУТ + заливки між днями (+ журнал).
+  const liters = Math.round((dutLiters + overnightLiters) * 10) / 10;
   const rows = [...byKey.values()].sort((a, b) => b.liters - a.liters);
 
   return {
@@ -291,10 +296,11 @@ export async function sumOutboundRefueledForPeriod(
       dbFilled.hasData ||
       deliveryDispensed.hasData,
     rows,
-    wialonLiters: dutLiters + dispensedLiters,
+    wialonLiters: dutLiters,
     manualOnlyLiters: Math.round(manualOnlyLiters * 10) / 10,
     dutLiters,
     dispensedLiters,
+    overnightLiters,
     openingTankLiters: tankBalance.openingLiters,
     closingTankLiters: tankBalance.closingLiters,
   };
