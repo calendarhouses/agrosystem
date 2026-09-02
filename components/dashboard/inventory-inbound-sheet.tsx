@@ -221,7 +221,8 @@ export function InventoryInboundSheet({
     qtyNum <= 0 ||
     !Number.isFinite(priceNum) ||
     priceNum < 0 ||
-    !unitPrice.trim();
+    !unitPrice.trim() ||
+    (category === "harvest" && !fieldId);
 
   useEffect(() => {
     if (!selectedItem) return;
@@ -332,6 +333,10 @@ export function InventoryInboundSheet({
     }
     if (!Number.isFinite(priceNum) || priceNum < 0 || !unitPrice.trim()) {
       setFormError("Вкажіть ціну за одиницю (₴)");
+      return;
+    }
+    if (category === "harvest" && !fieldId) {
+      setFormError("Оберіть поле, з якого зібрано врожай");
       return;
     }
     startTransition(async () => {

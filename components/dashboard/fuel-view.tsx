@@ -1194,8 +1194,8 @@ export function FuelView({
   useEffect(() => {
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
-    /** Incomplete без цифр — не знімати спінер у finally */
-    let keepLoadingAfterFetch = false;
+    /** Incomplete без цифр «Спалено» — не знімати спінер burn у finally */
+    let keepBurnLoadingAfterFetch = false;
 
     // Не тягнути оцінку часу від попереднього періоду (тиждень → місяць)
     setKpiExpectedLoadMs(null);
@@ -1245,13 +1245,11 @@ export function FuelView({
         });
 
         if (incomplete && !hasData) {
-          keepLoadingAfterFetch = true;
+          keepBurnLoadingAfterFetch = true;
           setFieldFuelLoading(true);
-          setRefuelLoading(true);
         } else {
-          keepLoadingAfterFetch = false;
+          keepBurnLoadingAfterFetch = false;
           setFieldFuelLoading(false);
-          setRefuelLoading(false);
         }
 
         if (incomplete) {
@@ -1259,9 +1257,8 @@ export function FuelView({
           retryTimer = setTimeout(() => {
             if (kpiBackfillAttemptsRef.current >= 40) {
               // Досить спроб — не крутити вічно, якщо дні «биті»
-              keepLoadingAfterFetch = false;
+              keepBurnLoadingAfterFetch = false;
               setFieldFuelLoading(false);
-              setRefuelLoading(false);
               return;
             }
             kpiBackfillAttemptsRef.current += 1;
@@ -1287,6 +1284,7 @@ export function FuelView({
         setRefuelDutLiters(refueled.data.dutLiters ?? refueled.data.liters);
         setRefuelDispensedLiters(refueled.data.dispensedLiters ?? null);
         setRefuelOvernightLiters(refueled.data.overnightLiters ?? null);
+        setRefuelLoading(false);
       } else {
         setRefuelLiters(null);
         setRefuelHasData(false);
@@ -1296,6 +1294,7 @@ export function FuelView({
         setRefuelDutLiters(null);
         setRefuelDispensedLiters(null);
         setRefuelOvernightLiters(null);
+        setRefuelLoading(false);
       }
       if (payload.storages) {
         setPeriodStorageLiters(payload.storages.liters);
@@ -1313,9 +1312,8 @@ export function FuelView({
 
     if (seeded) {
       applyPayload(seeded);
-      if (!keepLoadingAfterFetch) {
+      if (!keepBurnLoadingAfterFetch) {
         setFieldFuelLoading(false);
-        setRefuelLoading(false);
       }
     } else if (!silent) {
       setFieldFuelLoading(true);
@@ -1367,10 +1365,10 @@ export function FuelView({
       })
       .finally(() => {
         if (cancelled) return;
-        if (!keepLoadingAfterFetch) {
+        if (!keepBurnLoadingAfterFetch) {
           setFieldFuelLoading(false);
-          setRefuelLoading(false);
         }
+        setRefuelLoading(false);
       });
 
     return () => {

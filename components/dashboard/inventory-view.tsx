@@ -103,6 +103,7 @@ import {
 import { useSeasonStore } from "@/lib/season-store";
 import { localMoveFromOutboundRow } from "@/lib/local-move-edit";
 import { nextDateRangeSelection } from "@/lib/date-range-select";
+import { useRangePopoverDraft } from "@/lib/use-range-popover-draft";
 import { useFieldRealtime } from "@/lib/use-field-realtime";
 import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
@@ -229,6 +230,18 @@ export function InventoryView({
   const [seasonOpen, setSeasonOpen] = useState(false);
   const [rangeOpen, setRangeOpen] = useState(false);
   const [customRange, setCustomRange] = useState<DateRange | undefined>();
+
+  const rangeDraft = useRangePopoverDraft({
+    period,
+    setPeriod,
+    customRange,
+    setCustomRange,
+    rangeOpen,
+    setRangeOpen,
+    rangePeriod: "Діапазон",
+    fallbackPeriod: "Сезон",
+    onPopoverOpen: () => setSeasonOpen(false),
+  });
 
   async function refreshOperational() {
     setOperationalLoading(true);
@@ -934,18 +947,12 @@ export function InventoryView({
 
                 <Popover
                   open={rangeOpen}
-                  onOpenChange={(next) => {
-                    setRangeOpen(next);
-                    if (next) {
-                      setSeasonOpen(false);
-                      applyPeriod("Діапазон");
-                    }
-                  }}
+                  onOpenChange={rangeDraft.handleOpenChange}
                 >
                   <PopoverTrigger
                     className={cn(
                       "inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl border px-3 text-sm font-semibold transition-all md:h-9 md:text-xs",
-                      period === "Діапазон"
+                      period === "Діапазон" || rangeOpen
                         ? "border-[#276749] bg-[#276749] text-white shadow-[0_6px_16px_-6px_rgba(39,103,73,0.55)]"
                         : "border-[#E0DBD0] bg-white text-zinc-700"
                     )}
@@ -971,21 +978,20 @@ export function InventoryView({
                     className="w-[min(100vw-1.5rem,22.5rem)] rounded-2xl border border-zinc-200 bg-white p-3 shadow-xl"
                   >
                     <p className="mb-2 px-1 text-[11px] text-zinc-500">
-                      {customRange?.from && customRange?.to
+                      {rangeDraft.draft?.from && rangeDraft.draft?.to
                         ? "Натисніть дату, щоб обрати новий початок"
-                        : customRange?.from
+                        : rangeDraft.draft?.from
                           ? "Тепер оберіть кінець періоду"
                           : "Оберіть початок, потім кінець періоду"}
                     </p>
                     <Calendar
                       mode="range"
                       numberOfMonths={1}
-                      selected={customRange}
-                      defaultMonth={customRange?.from ?? new Date()}
+                      selected={rangeDraft.calendarSelected}
+                      defaultMonth={rangeDraft.draft?.from ?? customRange?.from ?? new Date()}
                       onSelect={(range, triggerDate) => {
-                        applyPeriod("Діапазон");
-                        setCustomRange(
-                          nextDateRangeSelection(customRange, range, triggerDate)
+                        rangeDraft.setDraft(
+                          nextDateRangeSelection(rangeDraft.draft, range, triggerDate)
                         );
                       }}
                       locale={uk}
@@ -994,29 +1000,15 @@ export function InventoryView({
                     <div className="mt-3 flex items-center gap-2 border-t border-zinc-100 pt-3">
                       <button
                         type="button"
-                        onClick={() => {
-                          setCustomRange(undefined);
-                          applyPeriod("Сезон");
-                          setRangeOpen(false);
-                        }}
+                        onClick={rangeDraft.resetDraft}
                         className="h-11 flex-1 rounded-xl border border-zinc-200 bg-white text-sm font-semibold text-zinc-600"
                       >
                         Скинути
                       </button>
                       <button
                         type="button"
-                        disabled={!customRange?.from}
-                        onClick={() => {
-                          if (!customRange?.from) return;
-                          if (!customRange.to) {
-                            setCustomRange({
-                              from: customRange.from,
-                              to: customRange.from,
-                            });
-                          }
-                          setPeriod("Діапазон");
-                          setRangeOpen(false);
-                        }}
+                        disabled={!rangeDraft.draft?.from}
+                        onClick={rangeDraft.applyDraft}
                         className="h-11 flex-[1.4] rounded-xl bg-[#276749] text-sm font-bold text-white disabled:opacity-50"
                       >
                         Застосувати

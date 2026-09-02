@@ -40,6 +40,7 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { TimePicker } from "@/components/ui/time-picker";
 import { Button } from "@/components/ui/button";
 import { nextDateRangeSelection } from "@/lib/date-range-select";
+import { useRangePopoverDraft } from "@/lib/use-range-popover-draft";
 import {
   deleteFieldOperation,
   estimateAreaHaFromTrack,
@@ -1490,7 +1491,6 @@ export function FieldDetailSheet({
   const [rangeOpen, setRangeOpen] = useState(false);
   const [seasonOpen, setSeasonOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<FieldHubTab>("overview");
-  /** Після першого заходу на «Техніка» тримаємо панель змонтованою (кеш GPS без рефетчу) */
   const [techPanelMounted, setTechPanelMounted] = useState(
     () => initialTab === "tech"
   );
@@ -1518,6 +1518,20 @@ export function FieldDetailSheet({
     const year = Number(currentAgroSeason());
     if (Number.isFinite(year)) setHistorySeasonYear(year);
   }
+
+  const rangeDraft = useRangePopoverDraft({
+    period,
+    setPeriod,
+    customRange,
+    setCustomRange,
+    rangeOpen,
+    setRangeOpen,
+    rangePeriod: "custom",
+    fallbackPeriod: "Сезон",
+    onPopoverOpen: () => setSeasonOpen(false),
+    onApplyPeriod: applyHistoryPeriod,
+    onResetPeriod: applyHistoryPeriod,
+  });
 
   // При відкритті хаба — підтягнути актуальний сезон з store
   useEffect(() => {
@@ -2202,18 +2216,12 @@ export function FieldDetailSheet({
 
                         <Popover
                           open={rangeOpen}
-                          onOpenChange={(next) => {
-                            setRangeOpen(next);
-                            if (next) {
-                              setSeasonOpen(false);
-                              applyHistoryPeriod("custom");
-                            }
-                          }}
+                          onOpenChange={rangeDraft.handleOpenChange}
                         >
                           <PopoverTrigger
                             className={cn(
                               "inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl border px-2.5 text-sm font-semibold transition-all md:h-9 md:text-xs",
-                              period === "custom"
+                              period === "custom" || rangeOpen
                                 ? "border-[#276749] bg-[#276749] text-white shadow-[0_6px_16px_-6px_rgba(39,103,73,0.55)]"
                                 : "border-[#E0DBD0] bg-white text-zinc-700 hover:border-[#276749]/35"
                             )}
@@ -2221,7 +2229,7 @@ export function FieldDetailSheet({
                             <CalendarIcon
                               className={cn(
                                 "h-3.5 w-3.5 shrink-0",
-                                period === "custom"
+                                period === "custom" || rangeOpen
                                   ? "text-white/90"
                                   : "text-zinc-500"
                               )}
@@ -2242,22 +2250,21 @@ export function FieldDetailSheet({
                             className="w-auto rounded-2xl border border-zinc-200 bg-white p-3 shadow-xl"
                           >
                             <p className="mb-2 px-1 text-[11px] text-zinc-500">
-                              {customRange?.from && customRange?.to
+                              {rangeDraft.draft?.from && rangeDraft.draft?.to
                                 ? "Натисніть дату, щоб обрати новий початок"
-                                : customRange?.from
+                                : rangeDraft.draft?.from
                                   ? "Тепер оберіть кінець періоду"
                                   : "Оберіть початок, потім кінець періоду"}
                             </p>
                             <Calendar
                               mode="range"
                               numberOfMonths={1}
-                              selected={customRange}
-                              defaultMonth={customRange?.from ?? new Date()}
+                              selected={rangeDraft.calendarSelected}
+                              defaultMonth={rangeDraft.draft?.from ?? customRange?.from ?? new Date()}
                               onSelect={(range, triggerDate) => {
-                                applyHistoryPeriod("custom");
-                                setCustomRange(
+                                rangeDraft.setDraft(
                                   nextDateRangeSelection(
-                                    customRange,
+                                    rangeDraft.draft,
                                     range,
                                     triggerDate
                                   )
@@ -2269,29 +2276,15 @@ export function FieldDetailSheet({
                             <div className="mt-3 flex items-center gap-2 border-t border-zinc-100 pt-3">
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setCustomRange(undefined);
-                                  setPeriod("Сезон");
-                                  setRangeOpen(false);
-                                }}
+                                onClick={rangeDraft.resetDraft}
                                 className="h-11 flex-1 rounded-xl border border-zinc-200 bg-white text-sm font-semibold text-zinc-600 hover:bg-zinc-50"
                               >
                                 Скинути
                               </button>
                               <button
                                 type="button"
-                                disabled={!customRange?.from}
-                                onClick={() => {
-                                  if (!customRange?.from) return;
-                                  if (!customRange.to) {
-                                    setCustomRange({
-                                      from: customRange.from,
-                                      to: customRange.from,
-                                    });
-                                  }
-                                  setPeriod("custom");
-                                  setRangeOpen(false);
-                                }}
+                                disabled={!rangeDraft.draft?.from}
+                                onClick={rangeDraft.applyDraft}
                                 className="h-11 flex-[1.4] rounded-xl bg-[#276749] text-sm font-bold text-white hover:bg-[#22543d] disabled:opacity-50"
                               >
                                 Застосувати

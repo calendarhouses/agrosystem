@@ -56,6 +56,7 @@ import {
   type FinancePeriod,
 } from "@/lib/finance-period";
 import { nextDateRangeSelection } from "@/lib/date-range-select";
+import { useRangePopoverDraft } from "@/lib/use-range-popover-draft";
 import {
   filterDashboardByRange,
   type InventoryFullDashboard,
@@ -341,6 +342,18 @@ export function FinanceView({
   const [showUnplanned, setShowUnplanned] = useState(false);
   const [showCrops, setShowCrops] = useState(false);
   const [customRange, setCustomRange] = useState<DateRange | undefined>();
+
+  const rangeDraft = useRangePopoverDraft({
+    period,
+    setPeriod,
+    customRange,
+    setCustomRange,
+    rangeOpen,
+    setRangeOpen,
+    rangePeriod: "Діапазон",
+    fallbackPeriod: "Сезон",
+    onPopoverOpen: () => setSeasonOpen(false),
+  });
 
   // Не показуємо SSR-огляд іншого сезону — інакше маржа «стрибає» 98%→100%
   const ssrMatchesClient = storeSeasonYear === initialSeasonYear;
@@ -843,18 +856,12 @@ export function FinanceView({
 
                 <Popover
                   open={rangeOpen}
-                  onOpenChange={(next) => {
-                    setRangeOpen(next);
-                    if (next) {
-                      setSeasonOpen(false);
-                      setPeriod("Діапазон");
-                    }
-                  }}
+                  onOpenChange={rangeDraft.handleOpenChange}
                 >
                   <PopoverTrigger
                     className={cn(
                       "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold transition-all",
-                      period === "Діапазон"
+                      period === "Діапазон" || rangeOpen
                         ? "border-[#276749] bg-[#276749] text-white shadow-[0_6px_16px_-6px_rgba(39,103,73,0.55)]"
                         : "border-[#E0DBD0] bg-white text-zinc-700 hover:border-[#276749]/35"
                     )}
@@ -862,7 +869,7 @@ export function FinanceView({
                     <CalendarIcon
                       className={cn(
                         "h-3.5 w-3.5 shrink-0",
-                        period === "Діапазон"
+                        period === "Діапазон" || rangeOpen
                           ? "text-white/90"
                           : "text-zinc-500"
                       )}
@@ -881,22 +888,21 @@ export function FinanceView({
                     className="z-[260] w-auto rounded-2xl border border-zinc-200 bg-white p-3 shadow-xl"
                   >
                     <p className="mb-2 px-1 text-[11px] text-zinc-500">
-                      {customRange?.from && customRange?.to
+                      {rangeDraft.draft?.from && rangeDraft.draft?.to
                         ? "Натисніть дату, щоб обрати новий початок"
-                        : customRange?.from
+                        : rangeDraft.draft?.from
                           ? "Тепер оберіть кінець періоду"
                           : "Оберіть початок, потім кінець періоду"}
                     </p>
                     <Calendar
                       mode="range"
                       numberOfMonths={1}
-                      selected={customRange}
-                      defaultMonth={customRange?.from ?? new Date()}
+                      selected={rangeDraft.calendarSelected}
+                      defaultMonth={rangeDraft.draft?.from ?? customRange?.from ?? new Date()}
                       onSelect={(range, triggerDate) => {
-                        setPeriod("Діапазон");
-                        setCustomRange(
+                        rangeDraft.setDraft(
                           nextDateRangeSelection(
-                            customRange,
+                            rangeDraft.draft,
                             range,
                             triggerDate
                           )
@@ -907,29 +913,15 @@ export function FinanceView({
                     <div className="mt-3 flex items-center gap-2 border-t border-zinc-100 pt-3">
                       <button
                         type="button"
-                        onClick={() => {
-                          setCustomRange(undefined);
-                          setPeriod("Сезон");
-                          setRangeOpen(false);
-                        }}
+                        onClick={rangeDraft.resetDraft}
                         className="h-9 flex-1 rounded-xl border border-zinc-200 bg-white text-xs font-semibold text-zinc-600 hover:bg-zinc-50"
                       >
                         Скинути
                       </button>
                       <button
                         type="button"
-                        disabled={!customRange?.from}
-                        onClick={() => {
-                          if (!customRange?.from) return;
-                          if (!customRange.to) {
-                            setCustomRange({
-                              from: customRange.from,
-                              to: customRange.from,
-                            });
-                          }
-                          setPeriod("Діапазон");
-                          setRangeOpen(false);
-                        }}
+                        disabled={!rangeDraft.draft?.from}
+                        onClick={rangeDraft.applyDraft}
                         className="h-9 flex-[1.4] rounded-xl bg-[#276749] text-xs font-bold text-white hover:bg-[#22543d] disabled:opacity-50"
                       >
                         Застосувати
@@ -1051,18 +1043,12 @@ export function FinanceView({
 
               <Popover
                 open={rangeOpen}
-                onOpenChange={(next) => {
-                  setRangeOpen(next);
-                  if (next) {
-                    setSeasonOpen(false);
-                    setPeriod("Діапазон");
-                  }
-                }}
+                onOpenChange={rangeDraft.handleOpenChange}
               >
                 <PopoverTrigger
                   className={cn(
                     "inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl border px-3 text-sm font-semibold transition-all",
-                    period === "Діапазон"
+                    period === "Діапазон" || rangeOpen
                       ? "border-[#276749] bg-[#276749] text-white shadow-[0_6px_16px_-6px_rgba(39,103,73,0.55)]"
                       : "border-[#E0DBD0] bg-white text-zinc-700 hover:border-[#276749]/35"
                   )}
@@ -1070,7 +1056,7 @@ export function FinanceView({
                   <CalendarIcon
                     className={cn(
                       "h-3.5 w-3.5 shrink-0",
-                      period === "Діапазон" ? "text-white/90" : "text-zinc-500"
+                      period === "Діапазон" || rangeOpen ? "text-white/90" : "text-zinc-500"
                     )}
                     aria-hidden
                   />
@@ -1089,21 +1075,20 @@ export function FinanceView({
                   className="z-[260] w-[min(100vw-1.5rem,22.5rem)] rounded-2xl border border-zinc-200 bg-white p-3 shadow-xl"
                 >
                   <p className="mb-2 px-1 text-[11px] text-zinc-500">
-                    {customRange?.from && customRange?.to
+                    {rangeDraft.draft?.from && rangeDraft.draft?.to
                       ? "Натисніть дату, щоб обрати новий початок"
-                      : customRange?.from
+                      : rangeDraft.draft?.from
                         ? "Тепер оберіть кінець періоду"
                         : "Оберіть початок, потім кінець періоду"}
                   </p>
                   <Calendar
                     mode="range"
                     numberOfMonths={1}
-                    selected={customRange}
-                    defaultMonth={customRange?.from ?? new Date()}
+                    selected={rangeDraft.calendarSelected}
+                    defaultMonth={rangeDraft.draft?.from ?? customRange?.from ?? new Date()}
                     onSelect={(range, triggerDate) => {
-                      setPeriod("Діапазон");
-                      setCustomRange(
-                        nextDateRangeSelection(customRange, range, triggerDate)
+                      rangeDraft.setDraft(
+                        nextDateRangeSelection(rangeDraft.draft, range, triggerDate)
                       );
                     }}
                     locale={uk}
@@ -1112,29 +1097,15 @@ export function FinanceView({
                   <div className="mt-3 flex items-center gap-2 border-t border-zinc-100 pt-3">
                     <button
                       type="button"
-                      onClick={() => {
-                        setCustomRange(undefined);
-                        setPeriod("Сезон");
-                        setRangeOpen(false);
-                      }}
+                      onClick={rangeDraft.resetDraft}
                       className="h-11 flex-1 rounded-xl border border-zinc-200 bg-white text-sm font-semibold text-zinc-600 hover:bg-zinc-50"
                     >
                       Скинути
                     </button>
                     <button
                       type="button"
-                      disabled={!customRange?.from}
-                      onClick={() => {
-                        if (!customRange?.from) return;
-                        if (!customRange.to) {
-                          setCustomRange({
-                            from: customRange.from,
-                            to: customRange.from,
-                          });
-                        }
-                        setPeriod("Діапазон");
-                        setRangeOpen(false);
-                      }}
+                      disabled={!rangeDraft.draft?.from}
+                      onClick={rangeDraft.applyDraft}
                       className="h-11 flex-[1.4] rounded-xl bg-[#276749] text-sm font-bold text-white hover:bg-[#22543d] disabled:opacity-50"
                     >
                       Застосувати

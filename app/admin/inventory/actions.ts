@@ -512,6 +512,17 @@ export async function createLocalInboundMove(input: {
 
   try {
     const supabase = createServiceSupabase();
+
+    const { data: itemRow } = await supabase
+      .from("inventory_items_cache")
+      .select("category")
+      .eq("bas_ref_key", itemRefKey)
+      .maybeSingle();
+
+    if (String(itemRow?.category ?? "") === "harvest" && !fieldId) {
+      return { ok: false, error: "Для врожаю оберіть поле" };
+    }
+
     const actor = await getCurrentActor();
     const payload: Record<string, unknown> = {
       item_ref_key: itemRefKey,

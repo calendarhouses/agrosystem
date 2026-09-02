@@ -626,7 +626,7 @@ export function FuelRefuelRadar({
           </span>
         </Button>
         {error ? (
-          <p className="mt-1 text-[10px] text-rose-600 md:hidden">{error}</p>
+          <p className="mt-1 text-[10px] text-rose-600">{error}</p>
         ) : null}
         {sheet}
       </div>

@@ -16,6 +16,7 @@ import {
   FINANCE_QUICK_PERIODS,
 } from "@/lib/finance-period";
 import type { FinancePeriodFilter } from "@/lib/use-finance-period-filter";
+import { useRangePopoverDraft } from "@/lib/use-range-popover-draft";
 import { cn } from "@/lib/utils";
 
 const SEASON_OPTIONS = [2024, 2025, 2026, 2027];
@@ -55,6 +56,18 @@ export function FinancePeriodToolbar({
     availableSeasons.length > 0
       ? availableSeasons.map(Number)
       : SEASON_OPTIONS;
+
+  const rangeDraft = useRangePopoverDraft({
+    period,
+    setPeriod,
+    customRange,
+    setCustomRange,
+    rangeOpen,
+    setRangeOpen,
+    rangePeriod: "Діапазон",
+    fallbackPeriod: "Сезон",
+    onPopoverOpen: () => setSeasonOpen(false),
+  });
 
   return (
     <div
@@ -161,19 +174,13 @@ export function FinancePeriodToolbar({
 
         <Popover
           open={rangeOpen}
-          onOpenChange={(next) => {
-            setRangeOpen(next);
-            if (next) {
-              setSeasonOpen(false);
-              applyPeriod("Діапазон");
-            }
-          }}
+          onOpenChange={rangeDraft.handleOpenChange}
         >
           <PopoverTrigger
             className={cn(
               "inline-flex shrink-0 items-center gap-1.5 rounded-xl border font-semibold transition-all",
               desktop ? "h-9 px-3 text-xs" : "h-11 px-3 text-sm md:h-9 md:text-xs",
-              period === "Діапазон"
+              period === "Діапазон" || rangeOpen
                 ? dark
                   ? "border-orange-500/60 bg-orange-500/15 text-orange-50 shadow-[0_6px_20px_-8px_rgba(249,115,22,0.55)]"
                   : "border-[#276749] bg-[#276749] text-white shadow-[0_6px_16px_-6px_rgba(39,103,73,0.55)]"
@@ -185,7 +192,7 @@ export function FinancePeriodToolbar({
             <CalendarIcon
               className={cn(
                 "h-3.5 w-3.5 shrink-0",
-                period === "Діапазон"
+                period === "Діапазон" || rangeOpen
                   ? dark
                     ? "text-orange-200/90"
                     : "text-white/90"
@@ -215,21 +222,20 @@ export function FinancePeriodToolbar({
             )}
           >
             <p className="mb-2 px-1 text-[11px] text-zinc-500">
-              {customRange?.from && customRange?.to
+              {rangeDraft.draft?.from && rangeDraft.draft?.to
                 ? "Натисніть дату, щоб обрати новий початок"
-                : customRange?.from
+                : rangeDraft.draft?.from
                   ? "Тепер оберіть кінець періоду"
                   : "Оберіть початок, потім кінець періоду"}
             </p>
             <Calendar
               mode="range"
               numberOfMonths={1}
-              selected={customRange}
-              defaultMonth={customRange?.from ?? new Date()}
+              selected={rangeDraft.calendarSelected}
+              defaultMonth={rangeDraft.draft?.from ?? customRange?.from ?? new Date()}
               onSelect={(range, triggerDate) => {
-                applyPeriod("Діапазон");
-                setCustomRange(
-                  nextDateRangeSelection(customRange, range, triggerDate)
+                rangeDraft.setDraft(
+                  nextDateRangeSelection(rangeDraft.draft, range, triggerDate)
                 );
               }}
               locale={uk}
@@ -238,11 +244,7 @@ export function FinancePeriodToolbar({
             <div className="mt-3 flex items-center gap-2 border-t border-zinc-100 pt-3">
               <button
                 type="button"
-                onClick={() => {
-                  setCustomRange(undefined);
-                  applyPeriod("Сезон");
-                  setRangeOpen(false);
-                }}
+                onClick={rangeDraft.resetDraft}
                 className={cn(
                   "flex-1 rounded-xl border border-zinc-200 bg-white font-semibold text-zinc-600 hover:bg-zinc-50",
                   desktop ? "h-9 text-xs" : "h-11 text-sm"
@@ -252,18 +254,8 @@ export function FinancePeriodToolbar({
               </button>
               <button
                 type="button"
-                disabled={!customRange?.from}
-                onClick={() => {
-                  if (!customRange?.from) return;
-                  if (!customRange.to) {
-                    setCustomRange({
-                      from: customRange.from,
-                      to: customRange.from,
-                    });
-                  }
-                  setPeriod("Діапазон");
-                  setRangeOpen(false);
-                }}
+                disabled={!rangeDraft.draft?.from}
+                onClick={rangeDraft.applyDraft}
                 className={cn(
                   "flex-[1.4] rounded-xl bg-[#276749] font-bold text-white hover:bg-[#22543d] disabled:opacity-50",
                   desktop ? "h-9 text-xs" : "h-11 text-sm"
