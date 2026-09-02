@@ -645,6 +645,100 @@ export async function sumFleetFuelFilledForPeriod(
 }
 
 /**
+ * Роздано з бензовоза / цистерни — падіння рівня ДУТ мінус заправка самої цистерни.
+ * Це паливо, що пішло в трактори, але ДУТ трактора міг не зафіксувати заливку.
+ */
+export async function sumFleetDeliveryDispensedForPeriod(
+  fromDate: string,
+  toDate: string
+): Promise<{
+  liters: number;
+  hasData: boolean;
+  rows: FleetFuelFilledBreakdownRow[];
+}> {
+  const supabase = createServiceSupabase();
+
+  const [{ data, error }, eqRes] = await Promise.all([
+    supabase
+      .from("wialon_equipment_day_stats")
+      .select(
+        "fuel_start, fuel_end, fuel_filled, wialon_unit_id, equipment_id, has_fuel_sensor"
+      )
+      .gte("date", fromDate)
+      .lte("date", toDate)
+      .eq("has_fuel_sensor", true),
+    supabase.from("equipment").select("id, wialon_id, name"),
+  ]);
+
+  if (error) {
+    return { liters: 0, hasData: false, rows: [] };
+  }
+
+  const deliveryWialonIds = new Set<number>();
+  const deliveryEquipmentIds = new Set<string>();
+  const eqNameByWid = new Map<number, string>();
+  for (const row of eqRes.data ?? []) {
+    const wid = Number(row.wialon_id);
+    const nm = String(row.name ?? "").trim();
+    if (Number.isFinite(wid) && wid > 0 && nm) eqNameByWid.set(wid, nm);
+    if (!isFuelDeliveryUnit(nm)) continue;
+    if (Number.isFinite(wid) && wid > 0) deliveryWialonIds.add(wid);
+    if (row.id) deliveryEquipmentIds.add(String(row.id));
+  }
+
+  const candidateWids = [
+    ...new Set(
+      (data ?? [])
+        .map((row) => Number(row.wialon_unit_id))
+        .filter((id) => Number.isFinite(id) && id > 0)
+    ),
+  ];
+  const displayNames = await resolveWialonUnitDisplayNames(candidateWids);
+
+  const byUnit = new Map<number, number>();
+  for (const row of data ?? []) {
+    const wid = Number(row.wialon_unit_id);
+    if (!Number.isFinite(wid) || wid <= 0) continue;
+    const eid = row.equipment_id != null ? String(row.equipment_id) : null;
+    const name =
+      displayNames.get(wid) ?? eqNameByWid.get(wid) ?? "";
+    const isDelivery =
+      deliveryWialonIds.has(wid) ||
+      (eid != null && deliveryEquipmentIds.has(eid)) ||
+      isFuelDeliveryUnit(name);
+    if (!isDelivery) continue;
+
+    const start = Number(row.fuel_start);
+    const end = Number(row.fuel_end);
+    const filled = Number(row.fuel_filled) || 0;
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start <= end) {
+      continue;
+    }
+    const dispensed = Math.round((start - end - filled) * 10) / 10;
+    if (dispensed <= 0) continue;
+    byUnit.set(wid, (byUnit.get(wid) ?? 0) + dispensed);
+  }
+
+  const rowDisplayNames = await resolveWialonUnitDisplayNames([...byUnit.keys()]);
+  const rows: FleetFuelFilledBreakdownRow[] = [...byUnit.entries()]
+    .map(([wialonUnitId, liters]) => ({
+      wialonUnitId,
+      equipmentName:
+        rowDisplayNames.get(wialonUnitId) ??
+        eqNameByWid.get(wialonUnitId) ??
+        `Wialon #${wialonUnitId}`,
+      liters: Math.round(liters * 10) / 10,
+    }))
+    .sort((a, b) => b.liters - a.liters);
+
+  const liters = Math.round(
+    rows.reduce((acc, row) => acc + row.liters, 0) * 10
+  ) / 10;
+
+  return { liters, hasData: rows.length > 0, rows };
+}
+
+/**
  * Паливо в баках флоту на початок / кінець періоду (перший/останній ДУТ-день по кожній одиниці).
  * Для пояснення, чому «спалено» може перевищувати «заправлено» за той самий інтервал.
  */

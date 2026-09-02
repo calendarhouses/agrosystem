@@ -258,7 +258,7 @@ export async function getFuelRefueledForPeriod(
       equipmentName: string;
       liters: number;
       wialonUnitId: number | null;
-      source: "wialon" | "manual" | "mixed";
+      source: "wialon" | "manual" | "mixed" | "delivery";
     }>;
     openingTankLiters: number;
     closingTankLiters: number;

@@ -64,7 +64,7 @@ type RefuelBreakdownRow = {
   equipmentName: string;
   liters: number;
   wialonUnitId: number | null;
-  source?: "wialon" | "manual" | "mixed";
+  source?: "wialon" | "manual" | "mixed" | "delivery";
 };
 
 type FuelDashboardHeaderProps = {
@@ -503,11 +503,13 @@ export function FuelDashboardHeader({
   const refuelRows = refuelBreakdown.map((row) => ({
     title: row.equipmentName,
     subtitle:
-      row.source === "manual"
-        ? "журнал"
-        : row.source === "mixed"
-          ? "ДУТ + журнал"
-          : "ДУТ",
+      row.source === "delivery"
+        ? "роздача з бензовоза"
+        : row.source === "manual"
+          ? "журнал"
+          : row.source === "mixed"
+            ? "ДУТ + журнал"
+            : "ДУТ",
     liters: row.liters,
   }));
 
@@ -666,7 +668,7 @@ export function FuelDashboardHeader({
                 empty={!refuelLoading && (refuelLiters ?? 0) <= 0}
                 interactive={refuelHasData && !refuelLoading}
                 popoverTitle="Кому заправили"
-                popoverDescription={`ДУТ з БД + журнал без датчика · ${periodLabel.toLowerCase()}`}
+                popoverDescription={`ДУТ тракторів + роздача з бензовоза · ${periodLabel.toLowerCase()}`}
                 breakdownEmpty={`Немає заправок за ${fieldFuelPeriodCaption(fieldFuelPeriod)}`}
                 breakdownRows={refuelRows}
                 accentClass="text-sky-950"

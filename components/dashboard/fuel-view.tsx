@@ -118,7 +118,7 @@ type FuelKpisRefueled = {
       equipmentName: string;
       liters: number;
       wialonUnitId: number | null;
-      source: "wialon" | "manual" | "mixed";
+      source: "wialon" | "manual" | "mixed" | "delivery";
     }>;
   };
 } | { ok: false; error: string };
@@ -821,7 +821,7 @@ export function FuelView({
       equipmentName: string;
       liters: number;
       wialonUnitId: number | null;
-      source?: "wialon" | "manual" | "mixed";
+      source?: "wialon" | "manual" | "mixed" | "delivery";
     }>
   >(seedRefueled?.breakdown ?? []);
   const [openingTankLiters, setOpeningTankLiters] = useState<number | null>(
