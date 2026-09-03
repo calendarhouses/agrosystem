@@ -1095,16 +1095,12 @@ export function OperationsYearCalendar({
     setFocusedFieldId(null);
   }, [fields, searchQuery]);
 
-  useEffect(() => {
-    if (!isDesktop || isSearchMode || cropGroups.length === 0) return;
-    setSelectedCropId((prev) => prev ?? cropGroups[0]!.id);
-  }, [isDesktop, isSearchMode, cropGroups]);
-
   const activeGroup =
     cropGroups.find((group) => group.id === selectedCropId) ??
     cropGroups[0] ??
     null;
-  const listedFields = isSearchMode ? fields : (activeGroup?.fields ?? fields);
+  const listedFields =
+    isDesktop || isSearchMode ? fields : (activeGroup?.fields ?? fields);
 
   if (isLoading) {
     return (
@@ -1149,44 +1145,23 @@ export function OperationsYearCalendar({
     />
   ));
 
-  if (isSearchMode) {
+  if (isDesktop) {
     return (
-      <div className="flex flex-col gap-4 pb-6">
+      <div
+        className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-y-auto pb-6"
+        data-chronicle-scroll
+      >
         {legend}
         {fieldList}
       </div>
     );
   }
 
-  if (isDesktop) {
+  if (isSearchMode) {
     return (
-      <div className="flex min-h-0 flex-1 gap-4 overflow-hidden">
-        <aside className="flex w-56 shrink-0 flex-col gap-2 self-stretch border-r border-white/5 bg-zinc-950 pr-4">
-          <p className="shrink-0 px-1 text-[11px] font-semibold tracking-[0.14em] text-zinc-500 uppercase">
-            Культури
-          </p>
-          <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto overscroll-y-contain">
-            {cropGroups.map((group) => (
-              <CropCategoryCard
-                key={group.id}
-                group={group}
-                compact
-                active={activeGroup?.id === group.id}
-                onSelect={() => {
-                  setSelectedCropId(group.id);
-                  setFocusedFieldId(null);
-                }}
-              />
-            ))}
-          </div>
-        </aside>
-        <div
-          className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-y-auto pb-6"
-          data-chronicle-scroll
-        >
-          {legend}
-          {fieldList}
-        </div>
+      <div className="flex flex-col gap-4 pb-6">
+        {legend}
+        {fieldList}
       </div>
     );
   }
