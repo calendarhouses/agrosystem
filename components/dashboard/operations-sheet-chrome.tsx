@@ -109,7 +109,7 @@ export const OPS_MOBILE_DRAWER_SIZE =
 
 /** Права панель хронології / операцій на ПК */
 export const opsSheetContentClass = cn(
-  "w-full gap-0 overflow-hidden border-l border-white/10",
+  "w-full gap-0 border-l border-white/10",
   "bg-zinc-950 p-0 text-zinc-50",
   "shadow-[-12px_0_48px_-12px_rgba(0,0,0,0.55)]",
   "sm:max-w-[26rem]",
@@ -120,7 +120,7 @@ export const opsSheetContentClass = cn(
 );
 
 export const opsSheetBodyClass = cn(
-  "flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto overscroll-contain touch-pan-y",
+  "min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain touch-pan-y",
   "px-4 py-4 pb-[max(2.5rem,calc(1.25rem+var(--safe-bottom)))] md:px-5"
 );
 
@@ -357,9 +357,9 @@ export function OperationsPanelShell({
             side="right"
             showOverlay
             overlayClassName="bg-black/75 supports-backdrop-filter:backdrop-blur-[4px]"
-            className={cn(opsSheetContentClass, "!h-dvh !max-h-dvh", className)}
+            className={cn(opsSheetContentClass, className)}
           >
-            <div className="relative flex h-full max-h-full min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="relative flex min-h-0 flex-1 flex-col">
               {children}
             </div>
           </SheetContent>

@@ -871,7 +871,7 @@ function MetroFieldLine({
   );
 }
 
-function CropCategoryCard({
+export function CropCategoryCard({
   group,
   onSelect,
   active = false,

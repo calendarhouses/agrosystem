@@ -309,7 +309,7 @@ function EventDetailHero({
   return (
     <div
       className={cn(
-        "relative overflow-hidden rounded-3xl border p-5",
+        "relative shrink-0 overflow-visible rounded-3xl border p-5",
         isEquipment && isFuture
           ? "border-sky-500/25 border-dashed bg-gradient-to-br from-sky-500/10 via-white/[0.04] to-transparent"
           : isEquipment
@@ -646,7 +646,7 @@ export function OperationsEventDetailSheet({
               description={detailHeaderDescription}
             />
 
-            <div className={chrome.body}>
+            <div className={chrome.body} data-vaul-no-drag="" data-allow-pan="true">
               {loading ? (
                 <div className="flex items-center justify-center py-16 text-zinc-400">
                   <Loader2 className="mr-2 size-5 animate-spin" />

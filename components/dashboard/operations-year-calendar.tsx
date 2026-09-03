@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   eachDayOfInterval,
   endOfMonth,
@@ -15,7 +15,6 @@ import { uk } from "date-fns/locale";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowLeft,
-  CalendarDays,
   Camera,
   ChevronDown,
   ChevronLeft,
@@ -37,9 +36,17 @@ import {
   timelineEventDateIso,
   toTimelineField,
 } from "@/lib/field-timeline";
-import { ukStationLabel } from "@/lib/uk-plural";
+import { CropCategoryCard } from "@/components/dashboard/operations-metro-map";
+import { groupTimelineByCrop } from "@/lib/field-timeline-crops";
+import { ukFieldLabel, ukStationLabel } from "@/lib/uk-plural";
 import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
+
+function formatAreaHa(areaHa: number): string {
+  return `${new Intl.NumberFormat("uk-UA", {
+    maximumFractionDigits: areaHa >= 100 ? 0 : 1,
+  }).format(areaHa)} га`;
+}
 
 type CalendarStation = {
   event: UnifiedTimelineEvent;
@@ -189,25 +196,37 @@ function MonthMiniHeat({
   monthDate: Date;
   buckets: Map<string, DayBucket>;
 }) {
+  const isMobile = useIsMobile();
   const cells = useMemo(() => buildMonthGrid(monthDate), [monthDate]);
   return (
-    <div className="flex flex-col gap-[3px]">
+    <div className={cn("flex flex-col", isMobile ? "gap-[3px]" : "gap-[2px]")}>
       {/* Заголовок — одна літера кожного дня */}
-      <div className="grid grid-cols-7 gap-[2px]">
+      <div className={cn("grid grid-cols-7", isMobile ? "gap-[3px]" : "gap-[2px]")}>
         {WEEKDAY_LETTERS.map((d, i) => (
           <div
             key={i}
-            className="text-center text-[7px] font-semibold text-zinc-600"
+            className={cn(
+              "text-center font-semibold text-zinc-600",
+              isMobile ? "text-[8px]" : "text-[7px]"
+            )}
           >
             {d}
           </div>
         ))}
       </div>
       {/* Клітинки */}
-      <div className="grid grid-cols-7 gap-[2px]">
+      <div className={cn("grid grid-cols-7", isMobile ? "gap-[3px]" : "gap-[2px]")}>
         {cells.map((day, i) => {
           if (!day || !isSameMonth(day, monthDate)) {
-            return <div key={`e-${i}`} className="aspect-square" />;
+            return (
+              <div
+                key={`e-${i}`}
+                className={cn(
+                  "aspect-square",
+                  isMobile && "rounded-[4px] border border-white/[0.04] bg-white/[0.01]"
+                )}
+              />
+            );
           }
           const iso = format(day, "yyyy-MM-dd");
           const bucket = buckets.get(iso);
@@ -224,9 +243,14 @@ function MonthMiniHeat({
                   : undefined
               }
               className={cn(
-                "flex aspect-square items-center justify-center rounded-[4px] text-[7.5px] font-semibold tabular-nums transition-all",
+                "flex aspect-square items-center justify-center rounded-[4px] font-semibold tabular-nums transition-all",
+                isMobile ? "text-[8.5px]" : "text-[7.5px]",
                 // Порожні дні — прозорі, щоб не зливались
-                !hasEvents && !today && "text-zinc-600",
+                !hasEvents && !today
+                  ? isMobile
+                    ? "text-zinc-600 border border-white/[0.04] bg-white/[0.01]"
+                    : "text-zinc-600"
+                  : "",
                 // День з однією категорією
                 hasEvents &&
                   types.length === 1 &&
@@ -606,7 +630,7 @@ function MonthCalendarBody({
           !isDesktop && "overflow-y-auto"
         )}
       >
-        <div className="mb-2 grid shrink-0 grid-cols-7 gap-1 lg:gap-0.5">
+        <div className="mb-2 grid shrink-0 grid-cols-7 gap-1.5 lg:gap-0.5">
           {WEEKDAYS.map((d) => (
             <div
               key={d}
@@ -616,7 +640,7 @@ function MonthCalendarBody({
             </div>
           ))}
         </div>
-        <div className="grid grid-cols-7 gap-1 lg:gap-1">
+        <div className="grid grid-cols-7 gap-1.5 lg:gap-1">
           {expandedCells.map((day, i) => {
             const iso = day ? format(day, "yyyy-MM-dd") : `pad-${i}`;
             return (
@@ -1047,6 +1071,7 @@ export function OperationsYearCalendar({
   fields,
   seasonYear,
   isLoading,
+  searchQuery = "",
   onEventClick,
   onAddClick,
   onFieldExcelExport,
@@ -1054,17 +1079,32 @@ export function OperationsYearCalendar({
   fields: FieldWithTimeline[];
   seasonYear: number;
   isLoading?: boolean;
+  searchQuery?: string;
   onEventClick: (field: FieldTimelineField, event: UnifiedTimelineEvent) => void;
   onAddClick: (field: FieldTimelineField) => void;
   onFieldExcelExport: (field: FieldWithTimeline) => void;
 }) {
   const isDesktop = !useIsMobile();
   const [focusedFieldId, setFocusedFieldId] = useState<string | null>(null);
+  const [selectedCropId, setSelectedCropId] = useState<string | null>(null);
+  const cropGroups = useMemo(() => groupTimelineByCrop(fields), [fields]);
+  const isSearchMode = Boolean(searchQuery.trim());
 
-  const totalEvents = useMemo(
-    () => fields.reduce((s, f) => s + f.events.length, 0),
-    [fields]
-  );
+  useEffect(() => {
+    setSelectedCropId(null);
+    setFocusedFieldId(null);
+  }, [fields, searchQuery]);
+
+  useEffect(() => {
+    if (!isDesktop || isSearchMode || cropGroups.length === 0) return;
+    setSelectedCropId((prev) => prev ?? cropGroups[0]!.id);
+  }, [isDesktop, isSearchMode, cropGroups]);
+
+  const activeGroup =
+    cropGroups.find((group) => group.id === selectedCropId) ??
+    cropGroups[0] ??
+    null;
+  const listedFields = isSearchMode ? fields : (activeGroup?.fields ?? fields);
 
   if (isLoading) {
     return (
@@ -1079,49 +1119,138 @@ export function OperationsYearCalendar({
     );
   }
 
-  return (
-    <div className="flex flex-col gap-4 pb-6">
-      {/* Легенда */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-xs text-zinc-500">
-          <CalendarDays className="size-3.5 text-emerald-400/80" />
-          <span>
-            Сезон {seasonYear}/{String(seasonYear + 1).slice(-2)} · березень–лютий
-          </span>
-          <span className="text-zinc-600">·</span>
-          <span className="font-medium text-zinc-400">
-            {ukStationLabel(totalEvents)}
-          </span>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {TYPE_ORDER.map((type) => (
-            <span
-              key={type}
-              className="inline-flex items-center gap-1.5 text-[10px] font-medium text-zinc-500"
-            >
-              <span className={cn("size-2 rounded-full", TYPE_META[type].dot)} />
-              {TYPE_META[type].label}
-            </span>
-          ))}
+  const legend = (
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      {TYPE_ORDER.map((type) => (
+        <span
+          key={type}
+          className="inline-flex items-center gap-1.5 text-[10px] font-medium text-zinc-500"
+        >
+          <span className={cn("size-2 rounded-full", TYPE_META[type].dot)} />
+          {TYPE_META[type].label}
+        </span>
+      ))}
+    </div>
+  );
+
+  const fieldList = listedFields.map((field) => (
+    <FieldCalendarBlock
+      key={field.fieldId}
+      field={field}
+      seasonYear={seasonYear}
+      isDesktop={isDesktop}
+      onEventClick={onEventClick}
+      onAddClick={onAddClick}
+      onExcelExport={onFieldExcelExport}
+      onMonthExpand={(id, expanded) =>
+        setFocusedFieldId(expanded ? id : null)
+      }
+      hidden={focusedFieldId != null && focusedFieldId !== field.fieldId}
+    />
+  ));
+
+  if (isSearchMode) {
+    return (
+      <div className="flex flex-col gap-4 pb-6">
+        {legend}
+        {fieldList}
+      </div>
+    );
+  }
+
+  if (isDesktop) {
+    return (
+      <div className="flex min-h-0 flex-1 gap-4 overflow-hidden">
+        <aside className="flex w-56 shrink-0 flex-col gap-2 self-stretch border-r border-white/5 bg-zinc-950 pr-4">
+          <p className="shrink-0 px-1 text-[11px] font-semibold tracking-[0.14em] text-zinc-500 uppercase">
+            Культури
+          </p>
+          <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto overscroll-y-contain">
+            {cropGroups.map((group) => (
+              <CropCategoryCard
+                key={group.id}
+                group={group}
+                compact
+                active={activeGroup?.id === group.id}
+                onSelect={() => {
+                  setSelectedCropId(group.id);
+                  setFocusedFieldId(null);
+                }}
+              />
+            ))}
+          </div>
+        </aside>
+        <div
+          className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-y-auto pb-6"
+          data-chronicle-scroll
+        >
+          {legend}
+          {fieldList}
         </div>
       </div>
+    );
+  }
 
-      {/* По одному блоку на кожне поле */}
-      {fields.map((field) => (
-        <FieldCalendarBlock
-          key={field.fieldId}
-          field={field}
-          seasonYear={seasonYear}
-          isDesktop={isDesktop}
-          onEventClick={onEventClick}
-          onAddClick={onAddClick}
-          onExcelExport={onFieldExcelExport}
-          onMonthExpand={(id, expanded) =>
-            setFocusedFieldId(expanded ? id : null)
-          }
-          hidden={focusedFieldId != null && focusedFieldId !== field.fieldId}
-        />
-      ))}
+  if (!selectedCropId) {
+    return (
+      <div className="space-y-3 pb-6">
+        {legend}
+        <p className="px-1 text-[11px] font-semibold tracking-[0.14em] text-zinc-500 uppercase">
+          Культури
+        </p>
+        {cropGroups.map((group) => (
+          <CropCategoryCard
+            key={group.id}
+            group={group}
+            onSelect={() => setSelectedCropId(group.id)}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3 pb-6">
+      <button
+        type="button"
+        onClick={() => {
+          setSelectedCropId(null);
+          setFocusedFieldId(null);
+        }}
+        className="inline-flex min-h-8 items-center gap-1.5 rounded-xl px-1 text-sm font-medium text-zinc-400 transition hover:text-zinc-100"
+      >
+        <ChevronLeft className="size-4" />
+        Усі культури
+      </button>
+
+      {activeGroup ? (
+        <div
+          className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur-md"
+          style={{
+            background: `linear-gradient(135deg, ${activeGroup.accentColor}18 0%, rgba(255,255,255,0.03) 70%)`,
+          }}
+        >
+          <div className="flex items-center gap-3">
+            <span
+              className="h-10 w-1.5 shrink-0 rounded-full"
+              style={{ backgroundColor: activeGroup.accentColor }}
+            />
+            <div>
+              <h2 className="text-base font-medium text-zinc-100">
+                {activeGroup.label}
+              </h2>
+              <p className="mt-0.5 text-xs text-zinc-400">
+                {ukFieldLabel(activeGroup.fieldCount)} ·{" "}
+                {ukStationLabel(activeGroup.stationCount)} ·{" "}
+                {formatAreaHa(activeGroup.totalAreaHa)}
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {legend}
+      {fieldList}
     </div>
   );
 }
