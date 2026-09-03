@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   eachDayOfInterval,
   endOfMonth,
@@ -17,12 +17,13 @@ import {
   ArrowLeft,
   CalendarDays,
   Camera,
+  ChevronLeft,
+  ChevronRight,
   PackageMinus,
   Tractor,
   X,
 } from "lucide-react";
 
-import { MetroStationCard } from "@/components/dashboard/operations-metro-map";
 import type {
   FieldTimelineField,
   FieldWithTimeline,
@@ -124,6 +125,7 @@ function mondayIndex(date: Date): number {
   return (getDay(date) + 6) % 7;
 }
 
+/** Тільки реальна кількість тижнів (4–6 рядків), без примусових 42 клітинок */
 function buildMonthGrid(monthDate: Date): (Date | null)[] {
   const start = startOfMonth(monthDate);
   const end = endOfMonth(monthDate);
@@ -132,7 +134,6 @@ function buildMonthGrid(monthDate: Date): (Date | null)[] {
   const cells: (Date | null)[] = Array.from({ length: pad }, () => null);
   cells.push(...days);
   while (cells.length % 7 !== 0) cells.push(null);
-  while (cells.length < 42) cells.push(null);
   return cells;
 }
 
@@ -179,12 +180,12 @@ function MonthMiniHeat({
 }) {
   const cells = useMemo(() => buildMonthGrid(monthDate), [monthDate]);
   return (
-    <div className="flex flex-col gap-0.5">
+    <div className="flex flex-col gap-px">
       <div className="grid grid-cols-7 gap-px">
         {WEEKDAYS.map((d) => (
           <div
             key={d}
-            className="text-center text-[7px] font-bold text-zinc-600/70"
+            className="text-center text-[7px] font-bold text-zinc-700"
           >
             {d}
           </div>
@@ -193,40 +194,38 @@ function MonthMiniHeat({
       <div className="grid grid-cols-7 gap-px">
         {cells.map((day, i) => {
           if (!day || !isSameMonth(day, monthDate)) {
-            return <div key={`e-${i}`} className="aspect-square rounded-[2px]" />;
+            return <div key={`e-${i}`} className="aspect-square" />;
           }
           const iso = format(day, "yyyy-MM-dd");
           const bucket = buckets.get(iso);
           const types = bucket ? activeTypes(bucket.byType) : [];
-          if (types.length === 0) {
-            return (
-              <div
-                key={iso}
-                className="aspect-square rounded-[2px] bg-white/[0.04]"
-              />
-            );
-          }
-          if (types.length === 1) {
-            return (
-              <div
-                key={iso}
-                className={cn(
-                  "aspect-square rounded-[2px] ring-1 ring-inset ring-white/10",
-                  TYPE_META[types[0]!].heat
-                )}
-                title={`${types[0]} · ${bucket!.stations.length}`}
-              />
-            );
-          }
+          const primary = bucket ? dominantType(bucket.byType) : null;
+          const today = isToday(day);
           return (
             <div
               key={iso}
-              className="grid aspect-square grid-cols-2 gap-px overflow-hidden rounded-[2px] ring-1 ring-inset ring-white/15"
-              title={ukStationLabel(bucket!.stations.length)}
+              title={
+                bucket
+                  ? `${format(day, "d MMM", { locale: uk })} · ${ukStationLabel(bucket.stations.length)}`
+                  : undefined
+              }
+              className={cn(
+                "flex aspect-square items-center justify-center rounded-[3px] text-[8px] font-semibold tabular-nums",
+                types.length === 0 && "bg-white/[0.04] text-zinc-600",
+                types.length === 1 &&
+                  primary &&
+                  cn(
+                    TYPE_META[primary].bg,
+                    TYPE_META[primary].text,
+                    "ring-1 ring-inset",
+                    TYPE_META[primary].ring
+                  ),
+                types.length > 1 &&
+                  "bg-gradient-to-br from-orange-500/30 via-emerald-500/20 to-sky-500/30 text-zinc-50 ring-1 ring-inset ring-white/20",
+                today && "ring-1 ring-emerald-300/80"
+              )}
             >
-              {types.slice(0, 4).map((type) => (
-                <span key={type} className={cn("min-h-0 min-w-0", TYPE_META[type].heat)} />
-              ))}
+              {format(day, "d")}
             </div>
           );
         })}
@@ -235,6 +234,112 @@ function MonthMiniHeat({
   );
 }
 
+/** Компактний преміальний чіп події — для місячного перегляду і денної панелі */
+function CalendarEventChip({
+  event,
+  field,
+  onClick,
+}: {
+  event: UnifiedTimelineEvent;
+  field: FieldTimelineField;
+  onClick: () => void;
+}) {
+  const meta = TYPE_META[event.type];
+  const Icon = meta.Icon;
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      className={cn(
+        "flex w-full min-w-0 items-center gap-2 rounded-xl border px-3 py-2.5 text-left",
+        "shadow-[0_4px_16px_-8px_rgba(0,0,0,0.6)] transition",
+        "hover:brightness-110 active:scale-[0.99]",
+        meta.border,
+        meta.bg
+      )}
+    >
+      <span
+        className={cn(
+          "flex size-7 shrink-0 items-center justify-center rounded-lg ring-1",
+          meta.soft,
+          meta.ring
+        )}
+      >
+        <Icon className="size-3.5" strokeWidth={2.1} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-semibold leading-tight text-zinc-50">
+          {event.title}
+        </span>
+        <span className="mt-0.5 block truncate text-xs leading-tight text-zinc-400">
+          {field.name}
+          {event.metric ? (
+            <span className="text-zinc-500"> · {event.metric}</span>
+          ) : null}
+        </span>
+      </span>
+      {event.cost > 0 ? (
+        <span className="shrink-0 text-xs font-semibold tabular-nums text-zinc-500">
+          {new Intl.NumberFormat("uk-UA", { maximumFractionDigits: 0 }).format(
+            event.cost
+          )}{" "}
+          ₴
+        </span>
+      ) : null}
+    </button>
+  );
+}
+
+/** Денна панель для мобільного: список подій дня */
+function DayStationsPanel({
+  bucket,
+  onClose,
+  onEventClick,
+}: {
+  bucket: DayBucket;
+  onClose: () => void;
+  onEventClick: (field: FieldTimelineField, event: UnifiedTimelineEvent) => void;
+}) {
+  const label = format(bucket.date, "EEEE, d MMMM", { locale: uk });
+
+  return (
+    <div className="flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-zinc-900/95 shadow-[0_20px_60px_-20px_rgba(0,0,0,0.8)] backdrop-blur-xl">
+      <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] px-4 py-3">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-400/80">
+            {ukStationLabel(bucket.stations.length)}
+          </p>
+          <h3 className="mt-0.5 text-base font-semibold capitalize tracking-tight text-zinc-50">
+            {label}
+          </h3>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="flex size-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-zinc-400 transition hover:bg-white/10 hover:text-zinc-100"
+          aria-label="Закрити"
+        >
+          <X className="size-4" />
+        </button>
+      </div>
+      <div className="flex flex-col gap-2 p-3">
+        {bucket.stations.map(({ event, field }) => (
+          <CalendarEventChip
+            key={`${field.id}:${event.id}`}
+            event={event}
+            field={field}
+            onClick={() => onEventClick(field, event)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Клітинка дня у розгорнутому місяці */
 function DayCellExpanded({
   day,
   monthDate,
@@ -253,7 +358,7 @@ function DayCellExpanded({
   onEventClick: (field: FieldTimelineField, event: UnifiedTimelineEvent) => void;
 }) {
   if (!day || !isSameMonth(day, monthDate)) {
-    return <div className="min-h-[72px] rounded-xl lg:min-h-[88px]" />;
+    return <div className="rounded-lg" />;
   }
 
   const count = bucket?.stations.length ?? 0;
@@ -262,72 +367,65 @@ function DayCellExpanded({
   const types = bucket ? activeTypes(bucket.byType) : [];
   const primary = bucket ? dominantType(bucket.byType) : null;
   const primaryMeta = primary ? TYPE_META[primary] : null;
-  const first = bucket?.stations[0];
-  const tip =
-    count === 1 && first
-      ? first.event.title
-      : count > 1
-        ? `${ukStationLabel(count)}`
-        : null;
+  const visibleStations = isDesktop ? (bucket?.stations ?? []) : [];
 
-  return (
-    <div
-      role={!isDesktop && has ? "button" : undefined}
-      tabIndex={!isDesktop && has ? 0 : undefined}
-      onClick={() => {
-        if (bucket && !isDesktop) onSelect(bucket);
-      }}
-      onKeyDown={(e) => {
-        if (!isDesktop && has && (e.key === "Enter" || e.key === " ")) {
-          e.preventDefault();
-          if (bucket) onSelect(bucket);
-        }
-      }}
-      className={cn(
-        "group relative flex min-h-[72px] flex-col overflow-hidden rounded-xl border p-1.5 text-left transition lg:min-h-[120px] lg:rounded-2xl lg:p-2",
-        !has && "border-transparent bg-transparent text-zinc-600",
-        has && primaryMeta && cn(primaryMeta.border, primaryMeta.bg),
-        has &&
-          types.length > 1 &&
-          "border-white/25 bg-gradient-to-br from-orange-500/12 via-emerald-500/10 to-sky-500/12",
-        has && !isDesktop && "cursor-pointer hover:brightness-110 active:scale-[0.98]",
-        has && isDesktop && "hover:border-white/30",
-        selected && !isDesktop && primaryMeta && cn("ring-2", primaryMeta.ring),
-        selected && !isDesktop && !primaryMeta && "ring-2 ring-white/30",
-        today && !selected && !has && "ring-1 ring-white/20",
-        today && !selected && has && "ring-1 ring-white/35"
-      )}
-    >
-      <div className="flex w-full items-start justify-between gap-1">
-        <span
-          className={cn(
-            "text-[11px] font-semibold tabular-nums lg:text-sm",
-            has ? "text-zinc-50" : "text-zinc-600",
-            today && "text-emerald-300"
-          )}
-        >
-          {format(day, "d")}
-        </span>
-        {has && types.length > 0 && !isDesktop ? (
-          <span className="flex items-center gap-0.5">
-            {types.map((type) => (
-              <span
-                key={type}
-                className={cn("size-1.5 rounded-full lg:size-2", TYPE_META[type].dot)}
-              />
-            ))}
+  function handleMobileTap() {
+    if (!bucket) return;
+    // 1 подія — відкрити деталі одразу; кілька — показати список
+    if (bucket.stations.length === 1) {
+      const { field, event } = bucket.stations[0]!;
+      onEventClick(field, event);
+    } else {
+      onSelect(bucket);
+    }
+  }
+
+  // На мобільному — завжди <button>, щоб iOS коректно обробляв tap
+  if (!isDesktop) {
+    return (
+      <button
+        type="button"
+        disabled={!has}
+        onClick={handleMobileTap}
+        className={cn(
+          "group relative flex min-h-0 w-full flex-col overflow-hidden rounded-lg border p-1 text-left transition",
+          "min-h-[40px]",
+          !has && "border-white/[0.04] bg-white/[0.01] disabled:opacity-100",
+          has && primaryMeta && cn(primaryMeta.border, "bg-white/[0.03]"),
+          has &&
+            types.length > 1 &&
+            "border-white/20 bg-gradient-to-br from-orange-500/8 via-emerald-500/6 to-sky-500/8",
+          has && "active:scale-[0.96]",
+          selected && primaryMeta && cn("ring-2", primaryMeta.ring),
+          today && "ring-1 ring-emerald-300/50"
+        )}
+      >
+        <div className="flex w-full shrink-0 items-center justify-between gap-1">
+          <span
+            className={cn(
+              "inline-flex size-5 items-center justify-center rounded-md text-[11px] font-semibold tabular-nums",
+              today
+                ? "bg-emerald-500 text-zinc-950"
+                : has
+                  ? "text-zinc-100"
+                  : "text-zinc-600"
+            )}
+          >
+            {format(day, "d")}
           </span>
-        ) : null}
-      </div>
-
-      {has && !isDesktop ? (
-        <div className="mt-1 flex min-h-0 flex-1 flex-col gap-0.5">
-          {tip ? (
-            <span className="line-clamp-2 text-[9px] leading-tight font-medium text-zinc-200 lg:text-[10px]">
-              {tip}
+          {has ? (
+            <span className="flex items-center gap-px">
+              {types.map((type) => (
+                <span
+                  key={type}
+                  className={cn("size-1.5 rounded-full", TYPE_META[type].dot)}
+                />
+              ))}
             </span>
           ) : null}
-          <div className="mt-auto flex flex-wrap items-center gap-0.5">
+        </div>
+        {has && types.length > 0 ? (
+          <div className="mt-1 flex flex-wrap gap-px">
             {types.map((type) => {
               const n = bucket?.byType[type] ?? 0;
               if (n <= 0) return null;
@@ -335,7 +433,7 @@ function DayCellExpanded({
                 <span
                   key={type}
                   className={cn(
-                    "rounded px-1 py-px text-[8px] font-bold tracking-wide uppercase lg:text-[9px]",
+                    "rounded-[4px] px-1 py-px text-[8px] font-bold uppercase leading-tight",
                     TYPE_META[type].soft
                   )}
                 >
@@ -345,26 +443,86 @@ function DayCellExpanded({
               );
             })}
           </div>
-        </div>
-      ) : null}
+        ) : null}
+      </button>
+    );
+  }
 
-      {has && isDesktop ? (
-        <div className="mt-2 flex w-full flex-col gap-1.5">
-          {bucket!.stations.map(({ event, field }) => (
-            <div key={`${field.id}:${event.id}`} className="w-full">
-              <p className="mb-1 truncate px-0.5 text-[10px] font-medium text-zinc-500">
-                {field.name}
-                {field.crop ? (
-                  <span className="text-zinc-600"> · {field.crop}</span>
-                ) : null}
-              </p>
-              <MetroStationCard
-                event={event}
-                compact
-                fullWidth
-                onClick={() => onEventClick(field, event)}
+  // Десктоп — div з вкладеними кнопками-чіпами
+  return (
+    <div
+      className={cn(
+        "group relative flex min-h-0 flex-col overflow-hidden rounded-lg border p-1 text-left transition",
+        "h-full sm:p-1.5",
+        !has && "border-white/[0.04] bg-white/[0.01]",
+        has && primaryMeta && cn(primaryMeta.border, "bg-white/[0.03]"),
+        has &&
+          types.length > 1 &&
+          "border-white/20 bg-gradient-to-br from-orange-500/8 via-emerald-500/6 to-sky-500/8",
+        today && "ring-1 ring-emerald-300/50"
+      )}
+    >
+      <div className="flex w-full shrink-0 items-center justify-between gap-1">
+        <span
+          className={cn(
+            "inline-flex items-center justify-center rounded-md text-[11px] font-semibold tabular-nums",
+            isDesktop ? "size-6 text-xs" : "size-5",
+            today
+              ? "bg-emerald-500 text-zinc-950"
+              : has
+                ? "text-zinc-100"
+                : "text-zinc-600"
+          )}
+        >
+          {format(day, "d")}
+        </span>
+        {has ? (
+          <span className="flex items-center gap-px">
+            {types.map((type) => (
+              <span
+                key={type}
+                className={cn("size-1.5 rounded-full", TYPE_META[type].dot)}
               />
-            </div>
+            ))}
+          </span>
+        ) : null}
+      </div>
+
+      {has ? (
+        <div className="mt-1 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain">
+          {visibleStations.map(({ event, field }) => (
+            <button
+              key={`${field.id}:${event.id}`}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onEventClick(field, event);
+              }}
+              className={cn(
+                "flex w-full min-w-0 items-center gap-1 rounded-md border px-1 py-0.5 text-left transition",
+                "hover:brightness-110 active:scale-[0.99]",
+                TYPE_META[event.type].border,
+                TYPE_META[event.type].bg
+              )}
+            >
+              <span
+                className={cn(
+                  "flex size-3.5 shrink-0 items-center justify-center rounded-[3px] ring-1",
+                  TYPE_META[event.type].soft,
+                  TYPE_META[event.type].ring
+                )}
+              >
+                {(() => { const Icon = TYPE_META[event.type].Icon; return <Icon className="size-2" strokeWidth={2.5} />; })()}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[9px] font-semibold leading-tight text-zinc-50 sm:text-[10px]">
+                  {event.title}
+                </span>
+                <span className="block truncate text-[8px] leading-tight text-zinc-500 sm:text-[9px]">
+                  {field.name}
+                </span>
+              </span>
+            </button>
           ))}
         </div>
       ) : null}
@@ -372,66 +530,95 @@ function DayCellExpanded({
   );
 }
 
-function DayStationsPanel({
-  bucket,
-  onClose,
+/** Анімований місячний календар зі свайпом */
+function MonthCalendarBody({
+  expanded,
+  expandedCells,
+  bucketsByIso,
+  selectedBucket,
+  isDesktop,
+  swipeDir,
+  onDaySelect,
   onEventClick,
 }: {
-  bucket: DayBucket;
-  onClose: () => void;
+  expanded: { index: number; monthDate: Date; count: number } | null;
+  expandedCells: (Date | null)[];
+  bucketsByIso: Map<string, DayBucket>;
+  selectedBucket: DayBucket | null;
+  isDesktop: boolean;
+  swipeDir: number;
+  onDaySelect: (iso: string) => void;
   onEventClick: (field: FieldTimelineField, event: UnifiedTimelineEvent) => void;
 }) {
-  const label = format(bucket.date, "d MMMM yyyy", { locale: uk });
+  if (!expanded) return null;
+
+  const variants = {
+    enter: (d: number) => ({
+      x: d > 0 ? "100%" : "-100%",
+      opacity: 0,
+    }),
+    center: { x: 0, opacity: 1 },
+    exit: (d: number) => ({
+      x: d > 0 ? "-100%" : "100%",
+      opacity: 0,
+    }),
+  };
 
   return (
-    <aside
-      className={cn(
-        "flex max-h-[48vh] flex-col overflow-hidden rounded-[1.5rem] border border-white/10",
-        "bg-gradient-to-b from-zinc-900/95 to-zinc-950/95 shadow-[0_24px_60px_-20px_rgba(0,0,0,0.75)]",
-        "backdrop-blur-xl sm:max-h-none sm:min-h-0 sm:flex-1"
-      )}
-    >
-      <div className="flex items-start justify-between gap-3 border-b border-white/5 px-4 py-3.5">
-        <div>
-          <p className="text-[10px] font-bold tracking-[0.14em] text-emerald-400/90 uppercase">
-            День
-          </p>
-          <h3 className="mt-0.5 text-base font-semibold tracking-tight text-zinc-50 capitalize">
-            {label}
-          </h3>
-          <p className="mt-0.5 text-xs text-zinc-500">
-            {ukStationLabel(bucket.stations.length)}
-          </p>
+    <AnimatePresence custom={swipeDir} mode="popLayout" initial={false}>
+      <motion.div
+        key={`grid-${expanded.index}`}
+        custom={swipeDir}
+        variants={variants}
+        initial="enter"
+        animate="center"
+        exit="exit"
+        transition={{ type: "spring", stiffness: 380, damping: 40, mass: 0.9 }}
+        className={cn(
+          "flex flex-col",
+          !isDesktop && "overflow-y-auto"
+        )}
+      >
+        <div className="mb-1.5 grid shrink-0 grid-cols-7 gap-0.5">
+          {WEEKDAYS.map((d) => (
+            <div
+              key={d}
+              className="text-center text-[10px] font-bold uppercase tracking-wider text-zinc-600"
+            >
+              {d}
+            </div>
+          ))}
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="inline-flex size-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-zinc-400 transition hover:bg-white/10 hover:text-zinc-100"
-          aria-label="Закрити день"
+        <div
+          className={cn(
+            "grid grid-cols-7 gap-0.5 sm:gap-1",
+            isDesktop ? "min-h-0 flex-1 auto-rows-fr" : "auto-rows-auto"
+          )}
         >
-          <X className="size-4" />
-        </button>
-      </div>
-
-      <ul className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-3">
-        {bucket.stations.map(({ event, field }) => (
-          <li key={`${field.id}:${event.id}`} className="space-y-1.5">
-            <p className="px-0.5 text-[11px] font-medium text-zinc-500">
-              {field.name}
-              {field.crop ? (
-                <span className="text-zinc-600"> · {field.crop}</span>
-              ) : null}
-            </p>
-            <MetroStationCard
-              event={event}
-              compact
-              fullWidth
-              onClick={() => onEventClick(field, event)}
-            />
-          </li>
-        ))}
-      </ul>
-    </aside>
+          {expandedCells.map((day, i) => {
+            const iso = day ? format(day, "yyyy-MM-dd") : `pad-${i}`;
+            return (
+              <DayCellExpanded
+                key={iso}
+                day={day}
+                monthDate={expanded.monthDate}
+                bucket={
+                  day ? bucketsByIso.get(format(day, "yyyy-MM-dd")) : undefined
+                }
+                selected={
+                  day != null &&
+                  selectedBucket != null &&
+                  isSameDay(day, selectedBucket.date)
+                }
+                isDesktop={isDesktop}
+                onSelect={(bucket) => onDaySelect(bucket.dateIso)}
+                onEventClick={onEventClick}
+              />
+            );
+          })}
+        </div>
+      </motion.div>
+    </AnimatePresence>
   );
 }
 
@@ -449,6 +636,10 @@ export function OperationsYearCalendar({
   const isDesktop = !useIsMobile();
   const [expandedMonth, setExpandedMonth] = useState<number | null>(null);
   const [selectedDayIso, setSelectedDayIso] = useState<string | null>(null);
+  const [swipeDir, setSwipeDir] = useState(1);
+
+  // Pointer-based swipe tracking
+  const pointerRef = useRef<{ x: number; y: number } | null>(null);
 
   const stations = useMemo(() => flattenStations(fields), [fields]);
 
@@ -515,7 +706,10 @@ export function OperationsYearCalendar({
   const selectedBucket =
     selectedDayIso != null ? bucketsByIso.get(selectedDayIso) ?? null : null;
 
-  function openMonth(index: number) {
+  function goToMonth(index: number) {
+    if (index < 0 || index > 11) return;
+    const dir = expandedMonth == null || index >= expandedMonth ? 1 : -1;
+    setSwipeDir(dir);
     setExpandedMonth(index);
     setSelectedDayIso(null);
   }
@@ -533,6 +727,7 @@ export function OperationsYearCalendar({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 pb-6">
+      {/* Легенда */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-xs text-zinc-500">
           <CalendarDays className="size-3.5 text-emerald-400/80" />
@@ -558,6 +753,7 @@ export function OperationsYearCalendar({
       </div>
 
       <AnimatePresence mode="wait" initial={false}>
+        {/* ──── РІЧНИЙ ОГЛЯД ──── */}
         {expanded == null ? (
           <motion.div
             key="year"
@@ -565,33 +761,38 @@ export function OperationsYearCalendar({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
-            className="rounded-2xl border border-white/10 bg-white/[0.02] p-3 sm:p-4"
+            className={cn(
+              "overflow-hidden rounded-2xl border border-white/[0.07]",
+              "bg-zinc-950/60"
+            )}
           >
-            <div className="grid grid-cols-2 gap-x-4 gap-y-5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+            {/* 3 cols on mobile, 4 on md, 6 on xl — з border-dividers */}
+            <div className="grid grid-cols-3 border-t border-l border-white/[0.07] md:grid-cols-4 xl:grid-cols-6">
               {months.map((month) => {
                 const active = month.count > 0;
                 return (
                   <button
                     key={month.prefix}
                     type="button"
-                    onClick={() => openMonth(month.index)}
+                    onClick={() => goToMonth(month.index)}
                     className={cn(
-                      "group flex flex-col text-left transition",
-                      "rounded-xl p-1.5 -m-1.5 hover:bg-white/[0.04]",
-                      !active && "opacity-55 hover:opacity-80"
+                      "group flex flex-col border-b border-r border-white/[0.07]",
+                      "p-2.5 text-left transition sm:p-3",
+                      "hover:bg-white/[0.03] active:bg-white/[0.05]",
+                      !active && "opacity-50"
                     )}
                   >
-                    <div className="mb-1.5 flex items-baseline justify-between gap-2 px-0.5">
+                    <div className="mb-1.5 flex items-baseline justify-between gap-1">
                       <p
                         className={cn(
-                          "text-[13px] font-semibold capitalize tracking-tight",
+                          "text-[12px] font-semibold capitalize tracking-tight sm:text-[13px]",
                           active ? "text-zinc-100" : "text-zinc-500"
                         )}
                       >
-                        {format(month.monthDate, "LLLL", { locale: uk })}
+                        {format(month.monthDate, "LLL", { locale: uk })}
                       </p>
                       {active ? (
-                        <span className="text-[10px] font-bold tabular-nums text-zinc-500">
+                        <span className="text-[9px] font-bold tabular-nums text-zinc-600">
                           {month.count}
                         </span>
                       ) : null}
@@ -600,9 +801,9 @@ export function OperationsYearCalendar({
                       monthDate={month.monthDate}
                       buckets={bucketsByIso}
                     />
-                    {active ? (
-                      <div className="mt-1.5 flex h-1 overflow-hidden rounded-full bg-white/5">
-                        {TYPE_ORDER.map((type) => {
+                    <div className="mt-2 flex h-px w-full overflow-hidden rounded-full">
+                      {active ? (
+                        TYPE_ORDER.map((type) => {
                           const n = month.byType[type];
                           if (n <= 0) return null;
                           const total =
@@ -616,132 +817,131 @@ export function OperationsYearCalendar({
                               style={{ width: `${(n / total) * 100}%` }}
                             />
                           );
-                        })}
-                      </div>
-                    ) : (
-                      <div className="mt-1.5 h-1 rounded-full bg-transparent" />
-                    )}
+                        })
+                      ) : (
+                        <span className="h-full w-full bg-white/[0.04]" />
+                      )}
+                    </div>
                   </button>
                 );
               })}
             </div>
           </motion.div>
         ) : (
+          /* ──── РОЗГОРНУТИЙ МІСЯЦЬ ──── */
           <motion.div
-            key={`month-${expanded.index}`}
+            key="month-expanded"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
             className={cn(
-              "flex min-h-0 flex-1 flex-col gap-3",
-              !isDesktop && "lg:flex-row"
+              "flex min-h-0 flex-col gap-3",
+              isDesktop && "flex-1 lg:flex-row"
             )}
           >
+            {/* Панель місяця */}
             <div
               className={cn(
-                "flex min-h-0 flex-col overflow-hidden rounded-2xl border border-white/12",
-                "bg-zinc-950/80",
-                !isDesktop ? "flex-[1.55]" : "flex-1"
+                "flex min-h-0 flex-col overflow-hidden rounded-2xl border border-white/12 bg-zinc-950/80",
+                isDesktop ? "flex-1" : ""
               )}
+              onPointerDown={(e) => {
+                if (isDesktop) return;
+                pointerRef.current = { x: e.clientX, y: e.clientY };
+              }}
+              onPointerUp={(e) => {
+                if (isDesktop || !pointerRef.current) return;
+                const dx = e.clientX - pointerRef.current.x;
+                const dy = e.clientY - pointerRef.current.y;
+                pointerRef.current = null;
+                if (Math.abs(dx) < Math.abs(dy) || Math.abs(dx) < 48) return;
+                const nextIdx = dx < 0 ? expandedMonth! + 1 : expandedMonth! - 1;
+                goToMonth(nextIdx);
+              }}
+              onPointerCancel={() => {
+                pointerRef.current = null;
+              }}
             >
-              <div className="flex items-center gap-3 border-b border-white/5 px-3 py-3 sm:px-4">
+              {/* Заголовок */}
+              <div className="flex shrink-0 items-center gap-2 border-b border-white/[0.06] px-3 py-2.5">
                 <button
                   type="button"
                   onClick={closeMonth}
-                  className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 text-sm font-medium text-zinc-200 transition hover:bg-white/10"
+                  className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 text-sm font-medium text-zinc-200 transition hover:bg-white/10"
                 >
                   <ArrowLeft className="size-4" />
                   Рік
                 </button>
-                <div className="min-w-0 flex-1">
-          <p className="truncate text-base font-semibold capitalize tracking-tight text-zinc-50 sm:text-lg">
+
+                <div className="min-w-0 flex-1 text-center">
+                  <p className="truncate text-sm font-semibold capitalize tracking-tight text-zinc-50">
                     {format(expanded.monthDate, "LLLL yyyy", { locale: uk })}
                   </p>
-                  <p className="text-xs text-zinc-500">
-                    {ukStationLabel(expanded.count)} · натисніть день
-                  </p>
                 </div>
+
+                {/* Стрілки для мобільного */}
+                {!isDesktop ? (
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      disabled={expandedMonth === 0}
+                      onClick={() => goToMonth(expandedMonth! - 1)}
+                      className="flex size-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-zinc-300 transition disabled:opacity-30 hover:bg-white/10"
+                    >
+                      <ChevronLeft className="size-4" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={expandedMonth === 11}
+                      onClick={() => goToMonth(expandedMonth! + 1)}
+                      className="flex size-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-zinc-300 transition disabled:opacity-30 hover:bg-white/10"
+                    >
+                      <ChevronRight className="size-4" />
+                    </button>
+                  </div>
+                ) : null}
               </div>
 
-              <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
-                <div className="mb-2 grid grid-cols-7 gap-1 sm:gap-1.5">
-                  {WEEKDAYS.map((d) => (
-                    <div
-                      key={d}
-                      className="text-center text-[10px] font-bold tracking-wider text-zinc-600 uppercase"
-                    >
-                      {d}
-                    </div>
-                  ))}
-                </div>
-                <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
-                  {expandedCells.map((day, i) => {
-                    const iso = day ? format(day, "yyyy-MM-dd") : `pad-${i}`;
-                    return (
-                      <DayCellExpanded
-                        key={iso}
-                        day={day}
-                        monthDate={expanded.monthDate}
-                        bucket={
-                          day
-                            ? bucketsByIso.get(format(day, "yyyy-MM-dd"))
-                            : undefined
-                        }
-                        selected={
-                          day != null &&
-                          selectedBucket != null &&
-                          isSameDay(day, selectedBucket.date)
-                        }
-                        isDesktop={isDesktop}
-                        onSelect={(bucket) => setSelectedDayIso(bucket.dateIso)}
-                        onEventClick={onEventClick}
-                      />
-                    );
-                  })}
-                </div>
+              {/* Сітка календаря зі свайп-анімацією */}
+              <div
+                className={cn(
+                  "relative flex-1 overflow-hidden p-2 sm:p-3",
+                  isDesktop && "min-h-0 flex flex-col"
+                )}
+              >
+                <MonthCalendarBody
+                  expanded={expanded}
+                  expandedCells={expandedCells}
+                  bucketsByIso={bucketsByIso}
+                  selectedBucket={selectedBucket}
+                  isDesktop={isDesktop}
+                  swipeDir={swipeDir}
+                  onDaySelect={(iso) => setSelectedDayIso(iso)}
+                  onEventClick={onEventClick}
+                />
               </div>
             </div>
 
+            {/* Мобільна панель дня */}
             {!isDesktop ? (
-              <div className="flex min-h-0 flex-1 flex-col">
-                <AnimatePresence mode="wait">
-                  {selectedBucket ? (
-                    <motion.div
-                      key={selectedBucket.dateIso}
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: 6 }}
-                      transition={{ duration: 0.18 }}
-                      className="flex min-h-0 flex-1 flex-col"
-                    >
-                      <DayStationsPanel
-                        bucket={selectedBucket}
-                        onClose={() => setSelectedDayIso(null)}
-                        onEventClick={onEventClick}
-                      />
-                    </motion.div>
-                  ) : (
-                    <motion.div
-                      key="hint"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      className="hidden flex-1 items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-6 text-center lg:flex"
-                    >
-                      <div>
-                        <p className="text-sm font-medium text-zinc-300">
-                          Оберіть день
-                        </p>
-                        <p className="mt-1 text-xs text-zinc-500">
-                          Підсвічені дати мають станції — відкрийте деталі як у
-                          розділі «Станції»
-                        </p>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
+              <AnimatePresence mode="wait">
+                {selectedBucket ? (
+                  <motion.div
+                    key={selectedBucket.dateIso}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 8 }}
+                    transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+                  >
+                    <DayStationsPanel
+                      bucket={selectedBucket}
+                      onClose={() => setSelectedDayIso(null)}
+                      onEventClick={onEventClick}
+                    />
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
             ) : null}
           </motion.div>
         )}
