@@ -1,39 +1,33 @@
 import { NextResponse } from "next/server";
 
-import {
-  EMPTY_GEOFENCE_COLLECTION,
-  getWialonGeofences,
-  getWialonUnits,
-  wialonLogin,
-  wialonResourcesToGeofenceGeoJSON,
-} from "@/lib/wialon";
+import { EMPTY_GEOFENCE_COLLECTION } from "@/lib/wialon";
+import { getCachedWialonBoot } from "@/lib/wialon-boot-cache";
 
 export const runtime = "nodejs";
 export const maxDuration = 25;
 
 /**
  * GET /api/wialon — READ-ONLY: техніка + геозони (поля) як GeoJSON.
+ * Boot з in-process кешем + single-flight (3+ логіни не валять Wialon).
  */
 const JSON_UTF8 = {
   "Content-Type": "application/json; charset=utf-8",
+  "Cache-Control": "private, max-age=15, stale-while-revalidate=60",
 } as const;
 
 export async function GET() {
   try {
-    const eid = await wialonLogin();
-    const [units, resources] = await Promise.all([
-      getWialonUnits(eid),
-      getWialonGeofences(eid),
-    ]);
-    const geofences = wialonResourcesToGeofenceGeoJSON(resources);
+    // lightUnits: без N× calc — boot карти швидкий; літри тягне /api/equipment/fleet
+    const boot = await getCachedWialonBoot({ lightUnits: true });
 
     return NextResponse.json(
       {
         ok: true,
-        count: units.length,
-        geofenceCount: geofences.features.length,
-        units,
-        geofences,
+        count: boot.units.length,
+        geofenceCount: boot.geofences.features.length,
+        units: boot.units,
+        geofences: boot.geofences,
+        fetchedAt: new Date(boot.fetchedAt).toISOString(),
       },
       { headers: JSON_UTF8 }
     );
@@ -45,7 +39,7 @@ export async function GET() {
         units: [],
         geofences: EMPTY_GEOFENCE_COLLECTION,
       },
-      { status: 500, headers: JSON_UTF8 }
+      { status: 500, headers: { "Content-Type": JSON_UTF8["Content-Type"] } }
     );
   }
 }

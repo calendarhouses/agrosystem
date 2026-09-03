@@ -209,31 +209,12 @@ export type WarmEndpoint = {
 export const APP_WARM_ENDPOINTS: readonly WarmEndpoint[] = [
   { key: "api:wialon", url: "/api/wialon", delayMs: 0 },
   { key: "api:fields", url: "/api/fields", delayMs: 0 },
-  { key: "api:equipment:fleet", url: "/api/equipment/fleet", delayMs: 150 },
-  { key: "api:fuel:storages", url: "/api/fuel/storages", delayMs: 350 },
-  {
-    key: "api:fuel:transactions",
-    url: "/api/fuel/transactions?limit=200",
-    delayMs: 450,
-  },
-  /** Спалено / заправлено — найповільніше на екрані Палива */
-  {
-    key: "api:fuel:kpis:today",
-    url: "/api/fuel/kpis?period=today",
-    delayMs: 500,
-  },
-  { key: "api:agro-radar:stock", url: "/api/agro-radar/stock", delayMs: 700 },
-  {
-    key: "api:inventory:dashboard",
-    url: "/api/inventory/dashboard",
-    delayMs: 550,
-  },
-  { key: "api:finance:boot", url: "/api/finance/boot", delayMs: 1200 },
-  {
-    key: "api:accounting:queue",
-    url: "/api/accounting/queue",
-    delayMs: 1800,
-  },
+  { key: "api:equipment:fleet", url: "/api/equipment/fleet", delayMs: 200 },
+  { key: "api:fuel:storages", url: "/api/fuel/storages", delayMs: 400 },
+  /**
+   * Важкі ендпоінти (KPI палива, finance, склад, черга) — НЕ гріємо всім на логін.
+   * Інакше 3+ паралельні сесії одразу валять Wialon/BAS. Кеш зʼявиться при заході в розділ.
+   */
 ] as const;
 
 /** @deprecated RSC prefetch вимкнено — провокував React #412 при soft-nav */

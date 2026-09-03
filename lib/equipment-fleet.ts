@@ -366,7 +366,9 @@ function gpsSnapshotChanged(prev: FleetTrackedUnit, live: WialonUnit): boolean {
     .sensorCalc;
   const liveCalc = (live as WialonUnit & { sensorCalc?: Record<string, number> })
     .sensorCalc;
-  return JSON.stringify(prevCalc ?? null) !== JSON.stringify(liveCalc ?? null);
+  // Live без calc — не вважати зміною (поллінг позицій не тягне датчики)
+  if (liveCalc == null) return false;
+  return JSON.stringify(prevCalc ?? null) !== JSON.stringify(liveCalc);
 }
 
 /** Оновити лише GPS-частину tracked-списку після поллінгу */
@@ -382,6 +384,12 @@ export function patchFleetGps(
     if (!live) return item;
     if (!gpsSnapshotChanged(item, live)) return item;
     changed = true;
+    const prevCalc = (
+      item as FleetTrackedUnit & { sensorCalc?: Record<string, number> }
+    ).sensorCalc;
+    const liveCalc = (
+      live as WialonUnit & { sensorCalc?: Record<string, number> }
+    ).sensorCalc;
     return {
       ...live,
       id: item.id,
@@ -391,6 +399,8 @@ export function patchFleetGps(
       equipmentType: item.equipmentType,
       equipmentCode: item.equipmentCode,
       activeOp: item.activeOp ?? null,
+      // Live-поллінг без calc — не затирати вже відомі літри
+      sensorCalc: liveCalc ?? prevCalc,
     };
   });
   return changed ? next : tracked;

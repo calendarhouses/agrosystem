@@ -1592,18 +1592,17 @@ export function FieldDetailSheet({
     [period, historySeasonYear, customRange]
   );
 
-  /** Sticky footer — лише з паспортом; без нього списання/наряд уводять в тупик */
+  /** Паспорт у БД + площа/культура — інакше списання/наряд уводять в тупик */
+  const hasFarmPassport = Boolean(farmFieldId);
   const passportReadyForOps =
-    Boolean(farmFieldId) &&
+    hasFarmPassport &&
     Boolean(field) &&
     isFieldPassportComplete({
       areaHa: passportAreaHa || field?.areaHa,
       crop: passportCrop || field?.crop,
     });
-  const showStickyActionFooter =
-    passportReadyForOps &&
-    activeTab !== "settings" &&
-    activeTab !== "tech";
+  /** Футер завжди на Огляд / Історія / Техніка — не ховаємо кнопки */
+  const showStickyActionFooter = activeTab !== "settings";
 
   async function reloadFieldEvents() {
     if (!farmFieldId) {
@@ -2600,52 +2599,122 @@ export function FieldDetailSheet({
 
             {showStickyActionFooter ? (
               <footer className="z-20 shrink-0 border-t border-[#E5DFD3]/80 bg-[#F4F1EA] px-3 pt-2.5 pb-3 md:px-5 md:py-2.5">
-                <div className="grid w-full grid-cols-2 gap-2 md:gap-2.5">
+                {!hasFarmPassport ? (
                   <button
                     type="button"
-                    onClick={() => setQuickIssueOpen(true)}
+                    onClick={() => setActiveTab("settings")}
                     className={cn(
-                      "flex min-h-[3.25rem] items-center gap-2 rounded-2xl px-3 text-left text-white md:min-h-[3rem] md:gap-2.5 md:px-3",
+                      "flex w-full min-h-[3.5rem] items-center gap-3 rounded-2xl px-4 text-left text-white",
                       "bg-gradient-to-br from-[#1a3d2c] via-[#276749] to-[#3a8f5e]",
                       "shadow-[0_12px_28px_-12px_rgba(39,103,73,0.55)]",
                       "transition-transform duration-200 hover:-translate-y-0.5"
                     )}
                   >
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/12 ring-1 ring-white/20">
-                      <PackageMinus className="h-4 w-4" />
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/12 ring-1 ring-white/20">
+                      <Settings2 className="h-5 w-5" />
                     </span>
-                    <span className="min-w-0">
-                      <span className="block text-[13px] font-bold tracking-tight">
-                        Списати ТМЦ
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[15px] font-bold tracking-tight">
+                        Створити паспорт
                       </span>
-                      <span className="mt-0.5 block text-[10px] font-medium leading-tight text-white/70">
-                        Насіння · ЗЗР · добрива
-                      </span>
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditingOp(null);
-                      setPlanPrefill(null);
-                      setPlanPastWork(false);
-                      setPlanOpen(true);
-                    }}
-                    className="flex min-h-[3.25rem] items-center gap-2 rounded-2xl border border-[#D8D2C6] bg-white/85 px-3 text-left shadow-sm transition-colors hover:bg-white md:min-h-[3rem] md:gap-2.5 md:px-3"
-                  >
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#276749]/10 text-[#276749]">
-                      <Tractor className="h-4 w-4" />
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block text-[13px] font-bold tracking-tight text-zinc-900">
-                        Додати роботу
-                      </span>
-                      <span className="mt-0.5 block text-[10px] font-medium leading-tight text-zinc-500">
-                        Наряд або виконану операцію
+                      <span className="mt-0.5 block text-[11px] font-medium leading-tight text-white/75">
+                        Збережіть площу й культуру — тоді можна списувати ТМЦ і
+                        планувати роботи
                       </span>
                     </span>
                   </button>
-                </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="grid w-full grid-cols-2 gap-2 md:gap-2.5">
+                      <button
+                        type="button"
+                        disabled={!passportReadyForOps}
+                        onClick={() => {
+                          if (!passportReadyForOps) return;
+                          setQuickIssueOpen(true);
+                        }}
+                        className={cn(
+                          "flex min-h-[3.25rem] items-center gap-2 rounded-2xl px-3 text-left text-white md:min-h-[3rem] md:gap-2.5 md:px-3",
+                          "bg-gradient-to-br from-[#1a3d2c] via-[#276749] to-[#3a8f5e]",
+                          "shadow-[0_12px_28px_-12px_rgba(39,103,73,0.55)]",
+                          passportReadyForOps
+                            ? "transition-transform duration-200 hover:-translate-y-0.5"
+                            : "cursor-not-allowed opacity-45 shadow-none"
+                        )}
+                      >
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/12 ring-1 ring-white/20">
+                          <PackageMinus className="h-4 w-4" />
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block text-[13px] font-bold tracking-tight">
+                            Списати ТМЦ
+                          </span>
+                          <span className="mt-0.5 block text-[10px] font-medium leading-tight text-white/70">
+                            Насіння · ЗЗР · добрива
+                          </span>
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!passportReadyForOps}
+                        onClick={() => {
+                          if (!passportReadyForOps) return;
+                          setEditingOp(null);
+                          setPlanPrefill(null);
+                          setPlanPastWork(false);
+                          setPlanOpen(true);
+                        }}
+                        className={cn(
+                          "flex min-h-[3.25rem] items-center gap-2 rounded-2xl border px-3 text-left md:min-h-[3rem] md:gap-2.5 md:px-3",
+                          passportReadyForOps
+                            ? "border-[#D8D2C6] bg-white/85 shadow-sm transition-colors hover:bg-white"
+                            : "cursor-not-allowed border-[#E5DFD3] bg-[#EDE8DF]/70 opacity-60"
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
+                            passportReadyForOps
+                              ? "bg-[#276749]/10 text-[#276749]"
+                              : "bg-zinc-200/80 text-zinc-400"
+                          )}
+                        >
+                          <Tractor className="h-4 w-4" />
+                        </span>
+                        <span className="min-w-0">
+                          <span
+                            className={cn(
+                              "block text-[13px] font-bold tracking-tight",
+                              passportReadyForOps
+                                ? "text-zinc-900"
+                                : "text-zinc-500"
+                            )}
+                          >
+                            Додати роботу
+                          </span>
+                          <span className="mt-0.5 block text-[10px] font-medium leading-tight text-zinc-500">
+                            Наряд або виконану операцію
+                          </span>
+                        </span>
+                      </button>
+                    </div>
+                    {!passportReadyForOps ? (
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab("settings")}
+                        className="w-full rounded-xl border border-amber-200/80 bg-amber-50/90 px-3 py-2 text-left transition-colors hover:bg-amber-50"
+                      >
+                        <p className="text-[12px] font-semibold text-amber-900">
+                          Спочатку заповніть паспорт
+                        </p>
+                        <p className="mt-0.5 text-[11px] leading-snug text-amber-800/80">
+                          Вкажіть площу й культуру в «Налаштуваннях» — далі
+                          кнопки стануть активними.
+                        </p>
+                      </button>
+                    ) : null}
+                  </div>
+                )}
               </footer>
             ) : null}
               </>

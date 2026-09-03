@@ -112,9 +112,12 @@ export function FieldsView() {
 
   const { units: wialonUnits } = useLiveWialonUnits({
     enabled: true,
-    intervalMs: 15_000,
+    intervalMs: 30_000,
     seedUnits: wialonSeedUnits,
   });
+
+  const wialonUnitsRef = useRef(wialonUnits);
+  wialonUnitsRef.current = wialonUnits;
 
   /** Повний boot (геозони + seed) ще йде — скелетони в списку */
   const wialonLoading = wialonBootLoading && wialonSeedUnits == null;
@@ -175,6 +178,8 @@ export function FieldsView() {
       }),
     [savedFields, wialonGeofences]
   );
+  const mapFieldsRef = useRef(mapFields);
+  mapFieldsRef.current = mapFields;
 
   const { connected: liveConnected, pulse: livePulse } = useFieldRealtime({
     onFarmFieldsChange: () => {
@@ -183,13 +188,20 @@ export function FieldsView() {
     },
     onFieldOperationsChange: () => {
       setRealtimeVersion((version) => version + 1);
-      reloadFinanceOverview();
     },
     onInventoryMovesChange: () => {
       setRealtimeVersion((version) => version + 1);
-      reloadFinanceOverview();
     },
   });
+
+  /** Бюджет % на карті — раз на 5 хв, не на кожен realtime наряд/ТМЦ */
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (document.hidden) return;
+      reloadFinanceOverview();
+    }, 5 * 60_000);
+    return () => window.clearInterval(timer);
+  }, [reloadFinanceOverview]);
 
   const selectedItem = useMemo(
     () => mapFields.find((item) => item.id === selectedId) ?? null,
@@ -556,44 +568,48 @@ export function FieldsView() {
     };
   }, []);
 
-  /** Автостатус: запланована техніка заїхала на поле → in_progress */
+  /** Автостатус: запланована техніка заїхала на поле → in_progress.
+   * Не залежить від wialonUnits/mapFields — інакше кожен GPS-тік
+   * перезапускає effect і шле зайві POST на всіх клієнтах. */
   useEffect(() => {
-    if (wialonLoading || wialonUnits.length === 0 || mapFields.length === 0) {
-      return;
-    }
+    if (wialonLoading) return;
 
     let cancelled = false;
 
     async function tick() {
       if (cancelled) return;
-      const fields = mapFields
+      const units = wialonUnitsRef.current;
+      const fieldsList = mapFieldsRef.current
         .filter((item) => item.geometry)
         .map((item) => ({
           fieldKey: fieldOperationsKey(item),
           geometry: item.geometry,
           farmFieldId: item.farmField?.id ?? null,
         }));
-      if (fields.length === 0) return;
+      if (units.length === 0 || fieldsList.length === 0) return;
       try {
         await syncPlannedOpsFromTrackerPresence({
-          fields,
-          units: wialonUnits,
+          fields: fieldsList,
+          units,
         });
       } catch {
         /* silent */
       }
     }
 
-    void tick();
+    const initial = window.setTimeout(() => {
+      void tick();
+    }, 12_000);
     const timer = window.setInterval(() => {
       void tick();
-    }, 60_000);
+    }, 90_000);
 
     return () => {
       cancelled = true;
+      window.clearTimeout(initial);
       window.clearInterval(timer);
     };
-  }, [wialonLoading, wialonUnits, mapFields]);
+  }, [wialonLoading]);
 
   const flashStatus = useCallback((message: string) => {
     setStatusHint(message);

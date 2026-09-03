@@ -1,6 +1,3 @@
-import { NextResponse } from "next/server";
-import type { FeatureCollection, Polygon } from "geojson";
-
 import {
   attachActiveOpsToFleet,
   loadTodayActiveOperations,
@@ -11,14 +8,11 @@ import {
   type FleetEquipmentRow,
 } from "@/lib/equipment-fleet";
 import { createServiceSupabase } from "@/lib/supabase/server";
-import {
-  EMPTY_GEOFENCE_COLLECTION,
-  getWialonGeofences,
-  getWialonUnits,
-  wialonLogin,
-  wialonResourcesToGeofenceGeoJSON,
-  type WialonGeofenceProperties,
-} from "@/lib/wialon";
+import { EMPTY_GEOFENCE_COLLECTION, type WialonGeofenceProperties } from "@/lib/wialon";
+import { getCachedWialonGeofences } from "@/lib/wialon-boot-cache";
+import { getCachedWialonUnitsFull } from "@/lib/wialon-live-cache";
+import type { FeatureCollection, Polygon } from "geojson";
+import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -92,21 +86,24 @@ export async function GET() {
       Polygon,
       WialonGeofenceProperties
     > = EMPTY_GEOFENCE_COLLECTION;
-    let wialonUnits: Awaited<ReturnType<typeof getWialonUnits>> = [];
+    let wialonUnits: Awaited<
+      ReturnType<typeof getCachedWialonUnitsFull>
+    >["units"] = [];
     let wialonError: string | null = null;
 
     try {
-      const eid = await wialonLogin();
-      wialonUnits = await getWialonUnits(eid);
-      try {
-        const resources = await getWialonGeofences(eid);
-        geofences = wialonResourcesToGeofenceGeoJSON(resources);
-      } catch (geoErr) {
-        wialonError =
-          geoErr instanceof Error
-            ? `Геозони: ${geoErr.message}`
-            : "Не вдалося завантажити геозони";
-      }
+      const [unitsResult, geo] = await Promise.all([
+        getCachedWialonUnitsFull(),
+        getCachedWialonGeofences().catch((geoErr: unknown) => {
+          wialonError =
+            geoErr instanceof Error
+              ? `Геозони: ${geoErr.message}`
+              : "Не вдалося завантажити геозони";
+          return EMPTY_GEOFENCE_COLLECTION;
+        }),
+      ]);
+      wialonUnits = unitsResult.units;
+      geofences = geo;
     } catch (err) {
       wialonError =
         err instanceof Error ? err.message : "Не вдалося завантажити Wialon";

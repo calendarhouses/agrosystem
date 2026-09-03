@@ -1389,7 +1389,7 @@ export function EquipmentView() {
     useState<FleetSummaryMetric | null>(null);
   const { units: liveWialonUnits, error: liveGpsError } = useLiveWialonUnits({
     enabled: !loading && units.length > 0,
-    intervalMs: 15_000,
+    intervalMs: 30_000,
     // Не передаємо `units` як seed — це створювало Maximum update depth
   });
 

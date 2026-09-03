@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { WialonUnit } from "@/lib/wialon";
 
-const DEFAULT_INTERVAL_MS = 15_000;
+const DEFAULT_INTERVAL_MS = 30_000;
 
 type UseLiveWialonUnitsOptions = {
   /** За замовчуванням true */
@@ -54,7 +54,11 @@ function positionsChanged(prev: WialonUnit[], next: WialonUnit[]): boolean {
     const nextCalc = (
       unit as WialonUnit & { sensorCalc?: Record<string, number> }
     ).sensorCalc;
-    if (JSON.stringify(oldCalc ?? null) !== JSON.stringify(nextCalc ?? null)) {
+    // Live без calc — ігноруємо (інакше кожен полл «змінює» юніт)
+    if (
+      nextCalc != null &&
+      JSON.stringify(oldCalc ?? null) !== JSON.stringify(nextCalc)
+    ) {
       return true;
     }
   }

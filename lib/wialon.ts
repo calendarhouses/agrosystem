@@ -640,9 +640,14 @@ export async function listWialonUnitBasics(
 
 /**
  * Список техніки (avl_unit): база + last message + датчики + лічильники.
- * flags=13313. Додатково — READ-ONLY calc_last_message для точних літрів.
+ * flags=13313.
+ * withSensorCalc (default true) — додатково READ-ONLY calc_last_message
+ * для точних літрів. Для live-поллінгу карти передавай false.
  */
-export async function getWialonUnits(eid: string): Promise<WialonUnit[]> {
+export async function getWialonUnits(
+  eid: string,
+  options?: { withSensorCalc?: boolean }
+): Promise<WialonUnit[]> {
   try {
     if (!eid?.trim()) {
       throw new Error("Потрібен eid (session id)");
@@ -666,13 +671,23 @@ export async function getWialonUnits(eid: string): Promise<WialonUnit[]> {
     );
 
     const items = Array.isArray(data.items) ? data.items : [];
+    if (options?.withSensorCalc === false) {
+      return items;
+    }
 
-    const withCalc = await Promise.all(
-      items.map(async (unit) => {
-        const sensorCalc = await calcUnitLastMessageSensors(eid, unit.id);
-        return { ...unit, sensorCalc };
-      })
-    );
+    // Wialon: ≤10 паралельних запитів на сесію — не валимо Promise.all на весь флот
+    const CONCURRENCY = 4;
+    const withCalc: WialonUnit[] = [];
+    for (let i = 0; i < items.length; i += CONCURRENCY) {
+      const chunk = items.slice(i, i + CONCURRENCY);
+      const enriched = await Promise.all(
+        chunk.map(async (unit) => {
+          const sensorCalc = await calcUnitLastMessageSensors(eid, unit.id);
+          return { ...unit, sensorCalc };
+        })
+      );
+      withCalc.push(...enriched);
+    }
 
     return withCalc;
   } catch (error) {

@@ -29,7 +29,7 @@ export type FieldRealtimeHandlers = {
   ) => string | undefined;
 };
 
-const REALTIME_DEBOUNCE_MS = 900;
+const REALTIME_DEBOUNCE_MS = 2200;
 const CHANNEL_NAME = "agrosystem-field-sync";
 
 function rowFromPayload(
