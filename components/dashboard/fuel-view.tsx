@@ -1380,13 +1380,14 @@ export function FuelView({
   /** Список техніки: довідник equipment + live Wialon */
   useEffect(() => {
     const controller = new AbortController();
-    setUnitsLoading(true);
+    let cancelled = false;
 
-    void (async () => {
+    async function loadUnits(opts?: { silent?: boolean }) {
+      if (!opts?.silent) setUnitsLoading(true);
       try {
         const [catalogRes, wialonRes] = await Promise.all([
           listEquipmentForOps(),
-          fetch("/api/wialon", { signal: controller.signal })
+          fetch("/api/wialon/units", { signal: controller.signal, cache: "no-store" })
             .then(async (response) => {
               const data = (await response.json()) as {
                 ok?: boolean;
@@ -1398,7 +1399,7 @@ export function FuelView({
             .catch(() => [] as WialonUnit[]),
         ]);
 
-        if (controller.signal.aborted) return;
+        if (cancelled || controller.signal.aborted) return;
 
         const catalog = catalogRes.ok ? catalogRes.data : [];
         const merged = mergeEquipmentOpsOptions(catalog, wialonRes);
@@ -1423,11 +1424,22 @@ export function FuelView({
       } catch {
         /* лишаємо FALLBACK_UNITS */
       } finally {
-        if (!controller.signal.aborted) setUnitsLoading(false);
+        if (!cancelled && !controller.signal.aborted) setUnitsLoading(false);
       }
-    })();
+    }
 
-    return () => controller.abort();
+    void loadUnits();
+
+    const onFocus = () => {
+      void loadUnits({ silent: true });
+    };
+    window.addEventListener("focus", onFocus);
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      window.removeEventListener("focus", onFocus);
+    };
   }, []);
 
   const totalLiters = useMemo(() => totalFuelVolume(storages), [storages]);

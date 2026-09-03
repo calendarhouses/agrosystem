@@ -482,11 +482,42 @@ export async function listEquipmentForOps(): Promise<
     const supabase = createServiceSupabase();
     const { data, error } = await supabase
       .from("equipment")
-      .select("id, name, type, wialon_id, has_tracker, is_active")
+      .select("id, name, type, wialon_id, has_tracker, is_active, work_scope")
       .eq("is_active", true)
       .order("name");
 
-    if (error) return { ok: false, error: error.message };
+    if (error) {
+      if (error.message?.includes("work_scope")) {
+        const legacy = await supabase
+          .from("equipment")
+          .select("id, name, type, wialon_id, has_tracker, is_active")
+          .eq("is_active", true)
+          .order("name");
+        if (legacy.error) return { ok: false, error: legacy.error.message };
+        const rows: EquipmentForOpsRow[] = (legacy.data ?? [])
+          .filter((row) =>
+            isSelfPropelledEquipmentType(String(row.type ?? "other"))
+          )
+          .map((row) => {
+            const wialonRaw = row.wialon_id;
+            const wialonId =
+              wialonRaw != null && Number.isFinite(Number(wialonRaw))
+                ? Number(wialonRaw)
+                : null;
+            const hasTracker = Boolean(row.has_tracker) && wialonId != null;
+            return {
+              id: String(row.id),
+              name: String(row.name ?? "").trim() || "Техніка",
+              type: String(row.type ?? "other"),
+              wialonId,
+              hasTracker,
+              workScope: null,
+            };
+          });
+        return { ok: true, data: rows };
+      }
+      return { ok: false, error: error.message };
+    }
 
     const rows: EquipmentForOpsRow[] = (data ?? [])
       .filter((row) => isSelfPropelledEquipmentType(String(row.type ?? "other")))
@@ -497,12 +528,15 @@ export async function listEquipmentForOps(): Promise<
             ? Number(wialonRaw)
             : null;
         const hasTracker = Boolean(row.has_tracker) && wialonId != null;
+        const scope = String(row.work_scope ?? "");
         return {
           id: String(row.id),
           name: String(row.name ?? "").trim() || "Техніка",
           type: String(row.type ?? "other"),
           wialonId,
           hasTracker,
+          workScope:
+            scope === "field" || scope === "base" ? scope : null,
         };
       });
 
@@ -617,6 +651,226 @@ export async function resolveImplementWorkingWidth(
         error instanceof Error
           ? error.message
           : "Не вдалося знайти ширину знаряддя",
+    };
+  }
+}
+
+/** Типи самохідної техніки для форми «Додати нову». */
+export const LOCAL_EQUIPMENT_TYPE_OPTIONS = [
+  { id: "tractor", label: "Трактор" },
+  { id: "combine", label: "Комбайн" },
+  { id: "sprayer", label: "Оприскувач" },
+  { id: "loader", label: "Навантажувач" },
+  { id: "truck", label: "Вантажівка / бензовоз" },
+  { id: "car", label: "Автомобіль" },
+  { id: "other", label: "Інше" },
+] as const;
+
+export type LocalEquipmentType =
+  (typeof LOCAL_EQUIPMENT_TYPE_OPTIONS)[number]["id"];
+
+/** Куди відноситься техніка для BAS / бухгалтера */
+export const EQUIPMENT_WORK_SCOPE_OPTIONS = [
+  {
+    id: "field",
+    label: "Поля",
+    hint: "Трактори, комбайни, оприскувачі — робота на полях",
+  },
+  {
+    id: "base",
+    label: "База",
+    hint: "Крани, двір, склади — робота на базі",
+  },
+] as const;
+
+export type EquipmentWorkScope =
+  (typeof EQUIPMENT_WORK_SCOPE_OPTIONS)[number]["id"];
+
+export function equipmentWorkScopeLabel(
+  scope: string | null | undefined
+): string | null {
+  if (scope === "field") return "Поля";
+  if (scope === "base") return "База";
+  return null;
+}
+
+/**
+ * Додати техніку вручну (немає в BAS / Wialon).
+ * Зʼявляється у флоті «Без трекера» і в списку заправок Палива.
+ */
+export async function createLocalEquipment(input: {
+  name: string;
+  type: string;
+  /** Обовʼязково: Поля або База — для бухгалтера / BAS */
+  workScope: string;
+  code?: string | null;
+  fuelTankVolume?: number | null;
+}): Promise<
+  | { ok: true; id: string; name: string; workScope: EquipmentWorkScope }
+  | { ok: false; error: string }
+> {
+  const name = input.name?.trim() ?? "";
+  if (name.length < 2) {
+    return { ok: false, error: "Вкажіть назву техніки (мін. 2 символи)" };
+  }
+  if (name.length > 120) {
+    return { ok: false, error: "Назва занадто довга" };
+  }
+
+  const typeRaw = String(input.type ?? "other").trim().toLowerCase();
+  const allowed = new Set(
+    LOCAL_EQUIPMENT_TYPE_OPTIONS.map((option) => option.id)
+  );
+  const type = allowed.has(typeRaw as LocalEquipmentType)
+    ? typeRaw
+    : "other";
+
+  const scopeRaw = String(input.workScope ?? "").trim().toLowerCase();
+  if (scopeRaw !== "field" && scopeRaw !== "base") {
+    return {
+      ok: false,
+      error: "Оберіть категорію: Поля або База",
+    };
+  }
+  const workScope: EquipmentWorkScope = scopeRaw;
+
+  const code = input.code?.trim() || null;
+  let fuelTankVolume: number | null = null;
+  if (input.fuelTankVolume != null && String(input.fuelTankVolume) !== "") {
+    const n = Number(input.fuelTankVolume);
+    if (!Number.isFinite(n) || n <= 0) {
+      return { ok: false, error: "Обʼєм бака має бути > 0 л" };
+    }
+    if (n > 50_000) {
+      return { ok: false, error: "Обʼєм бака занадто великий" };
+    }
+    fuelTankVolume = Math.round(n * 100) / 100;
+  }
+
+  try {
+    const supabase = createServiceSupabase();
+    const payload: Record<string, unknown> = {
+      name,
+      full_name: name,
+      code,
+      type,
+      bas_ref_key: null,
+      wialon_id: null,
+      wialon_name: null,
+      has_tracker: false,
+      is_active: true,
+      source: "local",
+      work_scope: workScope,
+      fuel_tank_volume: fuelTankVolume,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase
+      .from("equipment")
+      .insert(payload)
+      .select("id, name, work_scope")
+      .single();
+
+    if (error) {
+      // Міграція 056 ще не накатана — bas_ref_key NOT NULL
+      if (
+        error.message?.includes("bas_ref_key") ||
+        error.message?.includes("null value") ||
+        error.code === "23502"
+      ) {
+        return {
+          ok: false,
+          error:
+            "Потрібна міграція 056 (локальна техніка). Виконай supabase/migrations/056_equipment_local.sql",
+        };
+      }
+      if (error.message?.includes("work_scope")) {
+        return {
+          ok: false,
+          error:
+            "Потрібна міграція 057 (категорія Поля/База). Виконай supabase/migrations/057_equipment_work_scope.sql",
+        };
+      }
+      if (error.message?.includes("source")) {
+        const { source: _s, ...withoutSource } = payload;
+        const retry = await supabase
+          .from("equipment")
+          .insert({ ...withoutSource, bas_ref_key: null })
+          .select("id, name, work_scope")
+          .single();
+        if (retry.error) {
+          if (retry.error.message?.includes("work_scope")) {
+            return {
+              ok: false,
+              error:
+                "Потрібна міграція 057 (категорія Поля/База). Виконай supabase/migrations/057_equipment_work_scope.sql",
+            };
+          }
+          return {
+            ok: false,
+            error:
+              retry.error.message?.includes("bas_ref_key") ||
+              retry.error.code === "23502"
+                ? "Потрібна міграція 056 (локальна техніка). Виконай supabase/migrations/056_equipment_local.sql"
+                : retry.error.message,
+          };
+        }
+        revalidatePath("/equipment");
+        revalidatePath("/fuel");
+        revalidatePath("/admin/equipment");
+        return {
+          ok: true,
+          id: String(retry.data.id),
+          name: String(retry.data.name),
+          workScope:
+            retry.data.work_scope === "base" ? "base" : workScope,
+        };
+      }
+      if (error.message?.includes("fuel_tank_volume")) {
+        const { fuel_tank_volume: _f, ...withoutTank } = payload;
+        const retry = await supabase
+          .from("equipment")
+          .insert(withoutTank)
+          .select("id, name, work_scope")
+          .single();
+        if (retry.error) {
+          if (retry.error.message?.includes("work_scope")) {
+            return {
+              ok: false,
+              error:
+                "Потрібна міграція 057 (категорія Поля/База). Виконай supabase/migrations/057_equipment_work_scope.sql",
+            };
+          }
+          return { ok: false, error: retry.error.message };
+        }
+        revalidatePath("/equipment");
+        revalidatePath("/fuel");
+        revalidatePath("/admin/equipment");
+        return {
+          ok: true,
+          id: String(retry.data.id),
+          name: String(retry.data.name),
+          workScope:
+            retry.data.work_scope === "base" ? "base" : workScope,
+        };
+      }
+      return { ok: false, error: error.message };
+    }
+
+    revalidatePath("/equipment");
+    revalidatePath("/fuel");
+    revalidatePath("/admin/equipment");
+    return {
+      ok: true,
+      id: String(data.id),
+      name: String(data.name),
+      workScope: data.work_scope === "base" ? "base" : "field",
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        error instanceof Error ? error.message : "Не вдалося додати техніку",
     };
   }
 }

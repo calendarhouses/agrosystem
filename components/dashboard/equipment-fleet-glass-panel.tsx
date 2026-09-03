@@ -1,10 +1,10 @@
 "use client";
 
 import type { ReactNode, TouchEvent as ReactTouchEvent } from "react";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, Radar, Route, Tractor, X } from "lucide-react";
+import { ArrowLeft, Plus, Radar, Route, Tractor, Warehouse, X } from "lucide-react";
 
 import {
   FleetDaySummaryBar,
@@ -235,6 +235,51 @@ const slideVariants = {
   exitToRight: { x: 24, opacity: 0 },
 };
 
+function NonTrackedCard({
+  item,
+  variant,
+}: {
+  item: FleetNonTrackedItem;
+  variant: "base" | "field";
+}) {
+  const Icon = variant === "base" ? Warehouse : Tractor;
+  const subtitleParts = [
+    variant === "field" && item.workScope === "field" ? "Поля" : null,
+    item.code,
+    "Без GPS",
+  ].filter(Boolean);
+
+  return (
+    <div
+      className={cn(
+        "rounded-xl border bg-white/55 px-3 py-2.5 backdrop-blur-md",
+        item.activeOp
+          ? "border-green-300/70 ring-1 ring-green-200/50"
+          : "border-white/40"
+      )}
+    >
+      <div className="flex items-center gap-2.5">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/60 bg-white/80 text-zinc-600">
+          <Icon className="h-4 w-4" strokeWidth={1.5} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold text-zinc-900">
+            {item.name}
+          </p>
+          <p className="truncate text-[11px] text-zinc-500">
+            {subtitleParts.join(" · ")}
+          </p>
+        </div>
+      </div>
+      {item.activeOp ? (
+        <p className="mt-2 text-[11px] font-medium text-green-700">
+          В роботі · {item.activeOp.fieldName}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 type Props = {
   units: FleetTrackedUnit[];
   nonTracked: FleetNonTrackedItem[];
@@ -265,6 +310,8 @@ type Props = {
   onSummaryDateChange: (d: Date) => void;
   onSummaryMetricSelect: (m: FleetSummaryMetric | null) => void;
   onSummaryRefresh?: () => void;
+  /** Відкрити форму додавання локальної техніки */
+  onAddEquipment?: () => void;
   /** Вміст Vehicle 360 для Master-Detail */
   detailContent: ReactNode;
 };
@@ -298,6 +345,7 @@ export function EquipmentFleetGlassPanel({
   onSummaryDateChange,
   onSummaryMetricSelect,
   onSummaryRefresh,
+  onAddEquipment,
   detailContent,
 }: Props) {
   const isMobile = useIsMobile();
@@ -307,6 +355,16 @@ export function EquipmentFleetGlassPanel({
   const sortedUnits = sortedUnitIds
     .map((id) => units.find((u) => u.id === id))
     .filter(Boolean) as FleetTrackedUnit[];
+
+  const { baseNonTracked, fieldNonTracked } = useMemo(() => {
+    const base: FleetNonTrackedItem[] = [];
+    const field: FleetNonTrackedItem[] = [];
+    for (const item of nonTracked) {
+      if (item.workScope === "base") base.push(item);
+      else field.push(item);
+    }
+    return { baseNonTracked: base, fieldNonTracked: field };
+  }, [nonTracked]);
 
   const showDetail = selectedUnitId != null;
   /** Повний snap лише коли явно розгорнули — деталі можна згорнути в peek над картою */
@@ -345,7 +403,7 @@ export function EquipmentFleetGlassPanel({
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-600/90 text-white shadow-md">
             <Radar className="h-4 w-4" />
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-extrabold tracking-tight text-zinc-900">
               Диспетчерська
             </p>
@@ -358,6 +416,22 @@ export function EquipmentFleetGlassPanel({
               · GPS наживо
             </p>
           </div>
+          {onAddEquipment ? (
+            <Button
+              type="button"
+              size="sm"
+              onClick={onAddEquipment}
+              className={cn(
+                "h-10 shrink-0 gap-1.5 rounded-xl px-3 text-xs font-bold",
+                "bg-[#276749] text-white shadow-sm hover:bg-[#22543d]",
+                "md:h-9"
+              )}
+            >
+              <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
+              <span className="hidden sm:inline">Додати</span>
+              <span className="sm:hidden">+</span>
+            </Button>
+          ) : null}
         </div>
         </div>
       </div>
@@ -442,46 +516,71 @@ export function EquipmentFleetGlassPanel({
               })}
         </div>
 
-        {nonTracked.length > 0 ? (
+        {baseNonTracked.length > 0 ? (
           <div className="px-3 pb-3">
-            <div className="px-1 pt-1 pb-2">
+            <div className="flex items-center gap-2 px-1 pt-1 pb-2">
+              <Warehouse className="h-3.5 w-3.5 text-zinc-500" strokeWidth={2} />
               <h3 className="text-xs font-semibold text-muted-foreground">
-                Без трекера ({nonTracked.length})
+                База ({baseNonTracked.length})
               </h3>
             </div>
             <div className="space-y-2">
-              {nonTracked.map((item) => (
-                <div
-                  key={`${item.source ?? "equipment"}:${item.equipmentId}`}
-                  className={cn(
-                    "rounded-xl border bg-white/55 px-3 py-2.5 backdrop-blur-md",
-                    item.activeOp
-                      ? "border-green-300/70 ring-1 ring-green-200/50"
-                      : "border-white/40"
-                  )}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/60 bg-white/80 text-zinc-600">
-                      <Tractor className="h-4 w-4" strokeWidth={1.5} />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-zinc-900">
-                        {item.name}
-                      </p>
-                      <p className="truncate text-[11px] text-zinc-500">
-                        {item.code ? `${item.code} · ` : ""}
-                        Без GPS
-                      </p>
-                    </div>
-                  </div>
-                  {item.activeOp ? (
-                    <p className="mt-2 text-[11px] font-medium text-green-700">
-                      В роботі · {item.activeOp.fieldName}
-                    </p>
-                  ) : null}
-                </div>
+              {baseNonTracked.map((item) => (
+                <NonTrackedCard key={`base:${item.equipmentId}`} item={item} variant="base" />
               ))}
             </div>
+          </div>
+        ) : null}
+
+        {fieldNonTracked.length > 0 || onAddEquipment ? (
+          <div className="px-3 pb-3">
+            <div className="flex items-center justify-between gap-2 px-1 pt-1 pb-2">
+              <h3 className="text-xs font-semibold text-muted-foreground">
+                Без трекера
+                {fieldNonTracked.length > 0
+                  ? ` (${fieldNonTracked.length})`
+                  : ""}
+              </h3>
+              {onAddEquipment ? (
+                <button
+                  type="button"
+                  onClick={onAddEquipment}
+                  className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-bold text-[#276749] transition-colors hover:bg-[#276749]/10"
+                >
+                  <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
+                  Додати нову
+                </button>
+              ) : null}
+            </div>
+            {fieldNonTracked.length === 0 ? (
+              onAddEquipment ? (
+                <button
+                  type="button"
+                  onClick={onAddEquipment}
+                  className="flex w-full flex-col items-center gap-2 rounded-2xl border border-dashed border-[#276749]/30 bg-white/40 px-4 py-6 text-center transition-colors hover:border-[#276749]/50 hover:bg-white/70"
+                >
+                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#276749]/10 text-[#276749]">
+                    <Plus className="h-5 w-5" />
+                  </span>
+                  <span className="text-sm font-semibold text-zinc-800">
+                    Додати техніку без GPS
+                  </span>
+                  <span className="max-w-[16rem] text-[11px] leading-snug text-zinc-500">
+                    Польова — сюди; техніка двору — у список «База»
+                  </span>
+                </button>
+              ) : null
+            ) : (
+              <div className="space-y-2">
+                {fieldNonTracked.map((item) => (
+                  <NonTrackedCard
+                    key={`field:${item.source ?? "equipment"}:${item.equipmentId}`}
+                    item={item}
+                    variant="field"
+                  />
+                ))}
+              </div>
+            )}
           </div>
         ) : null}
       </div>

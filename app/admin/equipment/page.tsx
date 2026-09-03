@@ -23,6 +23,8 @@ export type EquipmentRow = {
   has_tracker: boolean;
   is_active: boolean;
   fuel_tank_volume: number | null;
+  /** field | base | null — категорія для бухгалтерії */
+  work_scope: "field" | "base" | null;
 };
 
 export type ImplementRow = {
@@ -80,12 +82,28 @@ export default async function EquipmentPage() {
   const equipmentQuery = await supabase
     .from("equipment")
     .select(
-      "id,bas_ref_key,name,full_name,code,type,wialon_id,wialon_name,has_tracker,is_active,fuel_tank_volume"
+      "id,bas_ref_key,name,full_name,code,type,wialon_id,wialon_name,has_tracker,is_active,fuel_tank_volume,work_scope"
     )
     .order("name");
 
-  if (equipmentQuery.error) {
-    throw new Error(equipmentQuery.error.message);
+  let equipmentData: Record<string, unknown>[] | null = equipmentQuery.data as
+    | Record<string, unknown>[]
+    | null;
+  let equipmentError = equipmentQuery.error;
+
+  if (equipmentError && equipmentError.message?.includes("work_scope")) {
+    const fallback = await supabase
+      .from("equipment")
+      .select(
+        "id,bas_ref_key,name,full_name,code,type,wialon_id,wialon_name,has_tracker,is_active,fuel_tank_volume"
+      )
+      .order("name");
+    equipmentData = (fallback.data as Record<string, unknown>[] | null) ?? null;
+    equipmentError = fallback.error;
+  }
+
+  if (equipmentError) {
+    throw new Error(equipmentError.message);
   }
 
   const [{ data: implements_ }, wialonUnits] = await Promise.all([
@@ -96,31 +114,33 @@ export default async function EquipmentPage() {
     fetchWialonUnits(),
   ]);
 
-  const equipmentRows: EquipmentRow[] = (equipmentQuery.data ?? []).map(
-    (row) => {
-      const r = row as Record<string, unknown>;
-      return {
-        id: String(r.id),
-        bas_ref_key: String(r.bas_ref_key),
-        name: String(r.name),
-        full_name: r.full_name != null ? String(r.full_name) : null,
-        code: r.code != null ? String(r.code) : null,
-        type: String(r.type ?? "other"),
-        wialon_id:
-          r.wialon_id != null && Number.isFinite(Number(r.wialon_id))
-            ? Number(r.wialon_id)
-            : null,
-        wialon_name: r.wialon_name != null ? String(r.wialon_name) : null,
-        has_tracker: Boolean(r.has_tracker),
-        is_active: r.is_active !== false,
-        fuel_tank_volume:
-          r.fuel_tank_volume != null &&
-          Number.isFinite(Number(r.fuel_tank_volume))
-            ? Number(r.fuel_tank_volume)
-            : null,
-      };
-    }
-  );
+  const equipmentRows: EquipmentRow[] = (equipmentData ?? []).map((row) => {
+    const r = row as Record<string, unknown>;
+    return {
+      id: String(r.id),
+      bas_ref_key: String(r.bas_ref_key),
+      name: String(r.name),
+      full_name: r.full_name != null ? String(r.full_name) : null,
+      code: r.code != null ? String(r.code) : null,
+      type: String(r.type ?? "other"),
+      wialon_id:
+        r.wialon_id != null && Number.isFinite(Number(r.wialon_id))
+          ? Number(r.wialon_id)
+          : null,
+      wialon_name: r.wialon_name != null ? String(r.wialon_name) : null,
+      has_tracker: Boolean(r.has_tracker),
+      is_active: r.is_active !== false,
+      fuel_tank_volume:
+        r.fuel_tank_volume != null &&
+        Number.isFinite(Number(r.fuel_tank_volume))
+          ? Number(r.fuel_tank_volume)
+          : null,
+      work_scope:
+        r.work_scope === "field" || r.work_scope === "base"
+          ? r.work_scope
+          : null,
+    };
+  });
 
   return (
     <main className="mx-auto h-full w-full max-w-7xl overflow-y-auto overscroll-none px-4 pt-3 pb-6 sm:px-6 lg:px-8">

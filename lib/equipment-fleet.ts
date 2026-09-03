@@ -34,6 +34,8 @@ export type FleetEquipmentRow = {
   code: string | null;
   wialon_id: number | null;
   fuel_tank_volume: number | null;
+  /** field | base | null */
+  work_scope?: string | null;
 };
 
 /** Активна техніка з GPS (або з wialon_id, але без відповіді Wialon) */
@@ -52,6 +54,8 @@ export type FleetNonTrackedItem = {
   type: string;
   code: string | null;
   fuelTankVolume: number | null;
+  /** field = Поля, base = База */
+  workScope?: "field" | "base" | null;
   /** equipment без GPS або запис з довідника implements */
   source?: "equipment" | "implement";
   activeOp?: FleetActiveOperation | null;
@@ -214,6 +218,10 @@ export function wialonFirstFleet(
       type: row.type,
       code: row.code,
       fuelTankVolume: resolveUnitTankVolume(row.fuel_tank_volume, row.name),
+      workScope:
+        row.work_scope === "field" || row.work_scope === "base"
+          ? row.work_scope
+          : null,
       source: "equipment",
       activeOp: null,
     };
@@ -267,6 +275,10 @@ export function mergeEquipmentFleet(
         type: row.type,
         code: row.code,
         fuelTankVolume: tank,
+        workScope:
+          row.work_scope === "field" || row.work_scope === "base"
+            ? row.work_scope
+            : null,
         source: "equipment",
       };
       if (

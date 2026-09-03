@@ -9,6 +9,8 @@ export type EquipmentForOpsRow = {
   type: string;
   wialonId: number | null;
   hasTracker: boolean;
+  /** field = Поля, base = База (для бухгалтера) */
+  workScope?: "field" | "base" | null;
 };
 
 export type EquipmentOpsOption = {
@@ -79,9 +81,16 @@ export function mergeEquipmentOpsOptions(
         : null;
     const hasTracker = Boolean(row.hasTracker && wialonUnitId != null);
     if (wialonUnitId != null) seenWialon.add(wialonUnitId);
+    const scopeLabel =
+      row.workScope === "field"
+        ? "Поля"
+        : row.workScope === "base"
+          ? "База"
+          : null;
+    const baseName = row.name.trim() || "Техніка";
     options.push({
       key: `eq:${row.id}`,
-      label: row.name.trim() || "Техніка",
+      label: scopeLabel ? `${baseName} · ${scopeLabel}` : baseName,
       equipmentId: row.id,
       wialonUnitId,
       hasTracker,

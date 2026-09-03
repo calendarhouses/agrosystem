@@ -42,6 +42,7 @@ import {
   type EquipmentCommandMapHandle,
 } from "@/components/dashboard/equipment-command-map";
 import { EquipmentFleetGlassPanel } from "@/components/dashboard/equipment-fleet-glass-panel";
+import { AddEquipmentSheet } from "@/components/dashboard/add-equipment-sheet";
 import { EquipmentTrackPlaybackPanel } from "@/components/dashboard/equipment-track-playback-panel";
 import {
   FuelSparkline,
@@ -116,6 +117,7 @@ import {
 } from "@/lib/equipment-export";
 import {
   cachedFetchJson,
+  invalidateAppCache,
   peekAppCache,
   peekAppCacheStale,
 } from "@/lib/client-data-cache";
@@ -1331,6 +1333,8 @@ export function EquipmentView() {
     useState<GeofenceCollection>(EMPTY_GEOFENCES);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [addEquipmentOpen, setAddEquipmentOpen] = useState(false);
+  const [fleetRefreshToken, setFleetRefreshToken] = useState(0);
   const [selectedUnit, setSelectedUnit] = useState<FleetTrackedUnit | null>(
     null
   );
@@ -1478,7 +1482,10 @@ export function EquipmentView() {
     };
 
     const stale = peekAppCacheStale<FleetResponse>("api:equipment:fleet");
-    const fresh = peekAppCache<FleetResponse>("api:equipment:fleet");
+    const fresh =
+      fleetRefreshToken > 0
+        ? null
+        : peekAppCache<FleetResponse>("api:equipment:fleet");
     if (fresh?.ok !== false && (fresh?.tracked || stale?.tracked)) {
       applyFleet(fresh ?? stale!);
       setLoading(false);
@@ -1492,7 +1499,7 @@ export function EquipmentView() {
       "api:equipment:fleet",
       "/api/equipment/fleet",
       undefined,
-      { signal: controller.signal, force: !fresh }
+      { signal: controller.signal, force: !fresh || fleetRefreshToken > 0 }
     )
       .then(({ data }) => {
         if (data.ok === false) {
@@ -1517,7 +1524,7 @@ export function EquipmentView() {
       });
 
     return () => controller.abort();
-  }, []);
+  }, [fleetRefreshToken]);
 
   /** Оновлення бейджів нарядів без повного перезавантаження флоту */
   useEffect(() => {
@@ -2350,6 +2357,7 @@ export function EquipmentView() {
           fleetSummaryForceRefreshRef.current = true;
           setFleetSummaryRefreshToken((n) => n + 1);
         }}
+        onAddEquipment={() => setAddEquipmentOpen(true)}
         detailContent={
           liveSelectedUnit && selectedTelemetry ? (
             <div className="flex flex-col gap-2.5 pb-4 md:gap-3">
@@ -2638,6 +2646,15 @@ export function EquipmentView() {
             </div>
           )
         }
+      />
+
+      <AddEquipmentSheet
+        open={addEquipmentOpen}
+        onOpenChange={setAddEquipmentOpen}
+        onCreated={() => {
+          invalidateAppCache("api:equipment:fleet");
+          setFleetRefreshToken((n) => n + 1);
+        }}
       />
     </div>
   );

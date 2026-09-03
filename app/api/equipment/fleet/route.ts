@@ -28,6 +28,7 @@ type EquipmentDbRow = {
   code: string | null;
   wialon_id: number | null;
   fuel_tank_volume?: number | string | null;
+  work_scope?: string | null;
 };
 
 /**
@@ -42,9 +43,22 @@ export async function GET() {
     let equipment: FleetEquipmentRow[] = [];
     let { data: rows, error } = await supabase
       .from("equipment")
-      .select("id, name, type, code, wialon_id, fuel_tank_volume")
+      .select("id, name, type, code, wialon_id, fuel_tank_volume, work_scope")
       .eq("is_active", true)
       .order("name");
+
+    if (error && error.message?.includes("work_scope")) {
+      const withoutScope = await supabase
+        .from("equipment")
+        .select("id, name, type, code, wialon_id, fuel_tank_volume")
+        .eq("is_active", true)
+        .order("name");
+      rows = (withoutScope.data ?? []).map((row) => ({
+        ...row,
+        work_scope: null,
+      }));
+      error = withoutScope.error;
+    }
 
     if (error && error.message?.includes("fuel_tank_volume")) {
       const legacy = await supabase
@@ -55,6 +69,7 @@ export async function GET() {
       rows = (legacy.data ?? []).map((row) => ({
         ...row,
         fuel_tank_volume: null,
+        work_scope: null,
       }));
       error = legacy.error;
     }
@@ -73,6 +88,10 @@ export async function GET() {
           row.fuel_tank_volume != null &&
           Number.isFinite(Number(row.fuel_tank_volume))
             ? Number(row.fuel_tank_volume)
+            : null,
+        work_scope:
+          row.work_scope === "field" || row.work_scope === "base"
+            ? row.work_scope
             : null,
       }));
     }

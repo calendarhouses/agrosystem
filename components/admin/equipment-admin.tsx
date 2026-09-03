@@ -303,6 +303,7 @@ export function EquipmentAdmin({ equipment, implements_, wialonUnits }: Props) {
                   <TableRow>
                     <TableHead className="w-[260px]">Назва</TableHead>
                     <TableHead>Тип</TableHead>
+                    <TableHead className="w-[90px]">Контур</TableHead>
                     <TableHead className="min-w-[200px]">Wialon</TableHead>
                     <TableHead className="w-[110px]">Бак, л</TableHead>
                     <TableHead className="w-[90px]">Статус</TableHead>
@@ -329,6 +330,15 @@ export function EquipmentAdmin({ equipment, implements_, wialonUnits }: Props) {
                           <Badge variant="secondary">
                             {TYPE_LABELS[row.type] ?? row.type}
                           </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {row.work_scope === "field" ? (
+                            <Badge variant="outline">Поля</Badge>
+                          ) : row.work_scope === "base" ? (
+                            <Badge variant="outline">База</Badge>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
                         </TableCell>
                         <TableCell>
                           <Select
