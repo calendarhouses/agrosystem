@@ -85,7 +85,10 @@ export function TimePicker({
           </p>
         </div>
         <div className="grid grid-cols-2 gap-0 divide-x divide-[#E5DFD3]">
-          <div className="max-h-64 overflow-y-auto overscroll-contain p-1.5 md:max-h-48">
+          <div
+            className="desktop-scrollbar max-h-64 overflow-y-auto overscroll-contain p-1.5 md:max-h-48"
+            data-desktop-scroll="true"
+          >
             <p className="px-2 py-1 text-[10px] font-semibold tracking-wider text-zinc-400 uppercase">
               Год
             </p>
@@ -108,7 +111,10 @@ export function TimePicker({
               );
             })}
           </div>
-          <div className="max-h-64 overflow-y-auto overscroll-contain p-1.5 md:max-h-48">
+          <div
+            className="desktop-scrollbar max-h-64 overflow-y-auto overscroll-contain p-1.5 md:max-h-48"
+            data-desktop-scroll="true"
+          >
             <p className="px-2 py-1 text-[10px] font-semibold tracking-wider text-zinc-400 uppercase">
               Хв
             </p>

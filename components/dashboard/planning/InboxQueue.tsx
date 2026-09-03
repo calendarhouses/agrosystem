@@ -34,7 +34,7 @@ export function InboxQueue({ className }: Props) {
         </div>
       </header>
 
-      <div className="custom-scrollbar flex-1 space-y-2 overflow-y-auto p-3">
+      <div className="custom-scrollbar desktop-scrollbar flex-1 space-y-2 overflow-y-auto p-3">
         {draftTasks.length === 0 ? (
           <p className="px-1 py-8 text-center text-xs text-zinc-500">
             Черга порожня

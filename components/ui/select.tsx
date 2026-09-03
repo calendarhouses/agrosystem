@@ -119,7 +119,7 @@ function SelectContent({
             className="max-h-[var(--app-sheet-max)]"
             onSwipeDown={() => backdropRef.current?.click()}
           >
-            <SelectPrimitive.List className="max-h-[min(60dvh,calc(var(--app-sheet-max)-3rem))] overflow-y-auto overscroll-none p-1.5 pt-2 pr-12">
+            <SelectPrimitive.List className="desktop-scrollbar max-h-[min(60dvh,calc(var(--app-sheet-max)-3rem))] overflow-y-auto overscroll-none p-1.5 pt-2 pr-12">
               {children}
             </SelectPrimitive.List>
           </SwipeableSheet>
@@ -141,9 +141,10 @@ function SelectContent({
         <>
           <SelectScrollUpButton />
           <SelectPrimitive.List
-            className="max-h-[min(var(--available-height,55dvh),22rem)] overflow-y-auto overscroll-contain touch-pan-y p-1"
+            className="desktop-scrollbar max-h-[min(var(--available-height,55dvh),22rem)] overflow-y-auto overscroll-contain touch-pan-y p-1"
             data-vaul-no-drag=""
             data-allow-pan="true"
+            data-desktop-scroll="true"
           >
             {children}
           </SelectPrimitive.List>

@@ -274,7 +274,7 @@ function UnpricedCategoryPopover({
             Планова ціна за одиницю для розрахунку собівартості поля.
           </p>
         </PopoverHeader>
-        <ul className="max-h-56 space-y-2 overflow-y-auto">
+        <ul className="desktop-scrollbar max-h-56 space-y-2 overflow-y-auto" data-desktop-scroll="true">
           {items.map((item) => {
             const unitSuffix = item.unit.trim() || "од.";
             const isSaving = pending && savingKey === item.basRefKey;

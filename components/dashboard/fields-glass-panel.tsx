@@ -478,7 +478,7 @@ export function FieldsGlassPanel({
       </div>
 
       <div
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y px-2 py-2"
+        className="desktop-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y px-2 py-2"
         data-allow-pan="true"
         data-vaul-no-drag=""
         onMouseLeave={() => onHover(null)}

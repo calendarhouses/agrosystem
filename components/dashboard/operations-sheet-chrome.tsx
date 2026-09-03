@@ -171,7 +171,8 @@ export const opsPopoverContentClass =
 export const opsCommandInputClass =
   "h-11 border-0 border-b border-white/10 bg-transparent text-sm text-zinc-50 placeholder:text-zinc-500";
 
-export const opsCommandListClass = "max-h-64 bg-zinc-900";
+export const opsCommandListClass =
+  "desktop-scrollbar-on-dark max-h-64 bg-zinc-900";
 
 export const opsCommandItemClass =
   "cursor-pointer gap-3 rounded-xl px-3 py-2.5 text-zinc-100 data-[selected=true]:bg-white/10 data-[selected=true]:text-zinc-50";

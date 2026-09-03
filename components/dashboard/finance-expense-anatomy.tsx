@@ -240,7 +240,7 @@ export function FinanceExpenseAnatomy({
                   </div>
 
                   {breakdown.length > 0 ? (
-                    <ul className="relative max-h-52 space-y-1 overflow-y-auto pr-0.5">
+                    <ul className="desktop-scrollbar relative max-h-52 space-y-1 overflow-y-auto pr-1" data-desktop-scroll="true">
                       {breakdown.map((row) => (
                         <li
                           key={row.label}

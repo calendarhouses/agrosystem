@@ -128,7 +128,8 @@ function KpiBreakdownList({
     <ul
       className={cn(
         "space-y-0.5 pr-0.5",
-        !embedded && "max-h-[min(40vh,16rem)] overflow-y-auto overscroll-contain"
+        !embedded &&
+          "desktop-scrollbar max-h-[min(40vh,16rem)] overflow-y-auto overscroll-contain"
       )}
     >
       {rows.map((row, index) => (

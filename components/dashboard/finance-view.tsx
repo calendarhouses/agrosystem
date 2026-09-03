@@ -1715,7 +1715,7 @@ export function FinanceView({
                       Усі показники в нормі
                     </p>
                   ) : (
-                    <ul className="no-scrollbar max-h-[min(40vh,280px)] space-y-2 overflow-y-auto overscroll-contain pr-0.5 sm:max-h-[220px]">
+                    <ul className="desktop-scrollbar max-h-[min(40vh,280px)] space-y-2 overflow-y-auto overscroll-contain pr-1 sm:max-h-[220px]" data-desktop-scroll="true">
                       {ownerPulse.risks.map((risk) => (
                         <li key={risk.id}>
                           <button

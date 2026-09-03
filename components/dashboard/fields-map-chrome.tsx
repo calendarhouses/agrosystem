@@ -145,7 +145,7 @@ function WeatherSettingsForm({
         ) : null}
 
         {placeResults.length > 0 ? (
-          <ul className="max-h-44 space-y-1.5 overflow-y-auto overscroll-contain rounded-xl border border-[#E5DFD3]/80 bg-white/70 p-1">
+          <ul className="desktop-scrollbar max-h-44 space-y-1.5 overflow-y-auto overscroll-contain rounded-xl border border-[#E5DFD3]/80 bg-white/70 p-1" data-desktop-scroll="true">
             {placeResults.map((result) => (
               <li key={result.id}>
                 <button

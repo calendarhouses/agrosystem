@@ -64,7 +64,7 @@ export function EquipmentSmartAlertsCenter({ alerts, onAlertClick }: Props) {
           </DropdownMenuLabel>
         </DropdownMenuGroup>
 
-        <DropdownMenuGroup className="max-h-[min(60vh,420px)] overflow-y-auto p-1">
+        <DropdownMenuGroup className="desktop-scrollbar max-h-[min(60vh,420px)] overflow-y-auto p-1" data-desktop-scroll="true">
           {count === 0 ? (
             <p className="px-3 py-6 text-center text-sm text-muted-foreground">
               Усе спокійно

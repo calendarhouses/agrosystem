@@ -1516,7 +1516,7 @@ export function AccountantHubView({
                   Архів порожній
                 </p>
               ) : (
-                <ul className="max-h-80 space-y-2 overflow-y-auto px-4 py-4">
+                <ul className="desktop-scrollbar max-h-80 space-y-2 overflow-y-auto px-4 py-4" data-desktop-scroll="true">
                   {archive.slice(0, 100).map((item) => {
                     const meta = kindMeta(item.kind);
                     const Icon = meta.icon;

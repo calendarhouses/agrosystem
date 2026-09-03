@@ -390,7 +390,7 @@ export function EquipmentFleetGlassPanel({
         </div>
       ) : null}
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain" data-vaul-no-drag="" data-allow-pan="true">
+      <div className="desktop-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain" data-vaul-no-drag="" data-allow-pan="true">
         <div className="space-y-2 px-3 py-3">
             {loading
             ? Array.from({ length: 6 }).map((_, i) => (
@@ -524,7 +524,7 @@ export function EquipmentFleetGlassPanel({
         </div>
       </div>
       <div
-        className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-3 py-3"
+        className="desktop-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-3 py-3"
         data-vaul-no-drag=""
         data-allow-pan="true"
       >

@@ -421,7 +421,7 @@ export function FieldIntegrationsPanel({
             className="h-11 rounded-xl border-[#E5DFD3] bg-white text-base md:text-sm"
           />
 
-          <ul className="max-h-64 space-y-1 overflow-y-auto pr-1">
+          <ul className="desktop-scrollbar max-h-64 space-y-1 overflow-y-auto pr-1" data-desktop-scroll="true">
             {filteredGeofences.length === 0 ? (
               <li className="rounded-xl border border-dashed border-zinc-200 px-3 py-4 text-center text-xs text-zinc-500">
                 {wialonGeofences.features.length === 0

@@ -1976,7 +1976,10 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
                     <p className="mt-3 text-xs text-amber-800">{searchError}</p>
                   ) : null}
                   {searchResults.length > 0 ? (
-                    <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto overscroll-contain">
+                    <ul
+                      className="desktop-scrollbar mt-2 max-h-48 space-y-1 overflow-y-auto overscroll-contain"
+                      data-desktop-scroll="true"
+                    >
                       {searchResults.map((result) => (
                         <li key={result.id}>
                           <button
