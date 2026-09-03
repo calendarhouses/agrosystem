@@ -72,7 +72,7 @@ export function FinancePeriodToolbar({
   return (
     <div
       className={cn(
-        desktop ? "w-full max-w-xl space-y-2 lg:w-auto" : "space-y-2.5",
+        desktop ? "flex w-full flex-row items-center gap-2 max-w-xl lg:w-auto" : "space-y-2.5",
         className
       )}
     >
@@ -91,7 +91,7 @@ export function FinancePeriodToolbar({
             className={cn(
               "inline-flex items-center gap-2 rounded-xl border px-2.5 text-left font-semibold transition-all",
               desktop
-                ? "h-9 min-w-0 flex-1 text-xs"
+                ? "h-11 min-w-32 flex-none px-4 text-sm"
                 : "h-11 min-w-0 flex-1 text-sm md:h-9 md:flex-none md:text-xs",
               period === "Сезон"
                 ? dark
@@ -179,7 +179,7 @@ export function FinancePeriodToolbar({
           <PopoverTrigger
             className={cn(
               "inline-flex shrink-0 items-center gap-1.5 rounded-xl border font-semibold transition-all",
-              desktop ? "h-9 px-3 text-xs" : "h-11 px-3 text-sm md:h-9 md:text-xs",
+              desktop ? "h-11 px-4 text-sm" : "h-11 px-3 text-sm md:h-9 md:text-xs",
               period === "Діапазон" || rangeOpen
                 ? dark
                   ? "border-orange-500/60 bg-orange-500/15 text-orange-50 shadow-[0_6px_20px_-8px_rgba(249,115,22,0.55)]"
@@ -272,10 +272,11 @@ export function FinancePeriodToolbar({
         ) : null}
       </div>
 
-      <div className={cn("flex items-center", trailing ? "gap-2" : "gap-1.5")}>
+      <div className={cn("flex items-center", desktop ? "" : trailing ? "gap-2" : "gap-1.5")}>
         <div
           className={cn(
-            "flex min-w-0 flex-1 items-center gap-0.5 rounded-xl p-0.5",
+            "flex items-center gap-0.5 rounded-xl p-0.5",
+            desktop ? "h-11 w-auto px-0.5" : "min-w-0 flex-1",
             dark ? "bg-white/5" : "bg-[#EDE8DF]"
           )}
         >
@@ -285,10 +286,10 @@ export function FinancePeriodToolbar({
               type="button"
               onClick={() => applyPeriod(option)}
               className={cn(
-                "min-w-0 flex-1 rounded-[10px] font-semibold transition-all",
+                "rounded-[10px] font-semibold transition-all",
                 desktop
-                  ? "h-8 px-2 text-xs"
-                  : "h-11 px-1 text-[11px] sm:px-2 sm:text-xs md:h-8",
+                  ? "h-10 px-4 text-sm"
+                  : "min-w-0 flex-1 h-10 px-1 text-[11px] sm:px-2 sm:text-xs",
                 period === option
                   ? dark
                     ? "bg-orange-500/90 text-white shadow-[0_4px_14px_-4px_rgba(249,115,22,0.65)]"

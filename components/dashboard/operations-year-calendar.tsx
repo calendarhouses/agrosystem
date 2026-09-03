@@ -34,6 +34,7 @@ import {
   toTimelineField,
 } from "@/lib/field-timeline";
 import { ukStationLabel } from "@/lib/uk-plural";
+import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
 
 type CalendarStation = {
@@ -178,46 +179,58 @@ function MonthMiniHeat({
 }) {
   const cells = useMemo(() => buildMonthGrid(monthDate), [monthDate]);
   return (
-    <div className="grid grid-cols-7 gap-px">
-      {cells.map((day, i) => {
-        if (!day || !isSameMonth(day, monthDate)) {
-          return <div key={`e-${i}`} className="aspect-square rounded-[2px]" />;
-        }
-        const iso = format(day, "yyyy-MM-dd");
-        const bucket = buckets.get(iso);
-        const types = bucket ? activeTypes(bucket.byType) : [];
-        if (types.length === 0) {
-          return (
-            <div
-              key={iso}
-              className="aspect-square rounded-[2px] bg-white/[0.04]"
-            />
-          );
-        }
-        if (types.length === 1) {
-          return (
-            <div
-              key={iso}
-              className={cn(
-                "aspect-square rounded-[2px] ring-1 ring-inset ring-white/10",
-                TYPE_META[types[0]!].heat
-              )}
-              title={`${types[0]} · ${bucket!.stations.length}`}
-            />
-          );
-        }
-        return (
+    <div className="flex flex-col gap-0.5">
+      <div className="grid grid-cols-7 gap-px">
+        {WEEKDAYS.map((d) => (
           <div
-            key={iso}
-            className="grid aspect-square grid-cols-2 gap-px overflow-hidden rounded-[2px] ring-1 ring-inset ring-white/15"
-            title={ukStationLabel(bucket!.stations.length)}
+            key={d}
+            className="text-center text-[7px] font-bold text-zinc-600/70"
           >
-            {types.slice(0, 4).map((type) => (
-              <span key={type} className={cn("min-h-0 min-w-0", TYPE_META[type].heat)} />
-            ))}
+            {d}
           </div>
-        );
-      })}
+        ))}
+      </div>
+      <div className="grid grid-cols-7 gap-px">
+        {cells.map((day, i) => {
+          if (!day || !isSameMonth(day, monthDate)) {
+            return <div key={`e-${i}`} className="aspect-square rounded-[2px]" />;
+          }
+          const iso = format(day, "yyyy-MM-dd");
+          const bucket = buckets.get(iso);
+          const types = bucket ? activeTypes(bucket.byType) : [];
+          if (types.length === 0) {
+            return (
+              <div
+                key={iso}
+                className="aspect-square rounded-[2px] bg-white/[0.04]"
+              />
+            );
+          }
+          if (types.length === 1) {
+            return (
+              <div
+                key={iso}
+                className={cn(
+                  "aspect-square rounded-[2px] ring-1 ring-inset ring-white/10",
+                  TYPE_META[types[0]!].heat
+                )}
+                title={`${types[0]} · ${bucket!.stations.length}`}
+              />
+            );
+          }
+          return (
+            <div
+              key={iso}
+              className="grid aspect-square grid-cols-2 gap-px overflow-hidden rounded-[2px] ring-1 ring-inset ring-white/15"
+              title={ukStationLabel(bucket!.stations.length)}
+            >
+              {types.slice(0, 4).map((type) => (
+                <span key={type} className={cn("min-h-0 min-w-0", TYPE_META[type].heat)} />
+              ))}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -227,13 +240,17 @@ function DayCellExpanded({
   monthDate,
   bucket,
   selected,
+  isDesktop,
   onSelect,
+  onEventClick,
 }: {
   day: Date | null;
   monthDate: Date;
   bucket?: DayBucket;
   selected: boolean;
+  isDesktop: boolean;
   onSelect: (bucket: DayBucket) => void;
+  onEventClick: (field: FieldTimelineField, event: UnifiedTimelineEvent) => void;
 }) {
   if (!day || !isSameMonth(day, monthDate)) {
     return <div className="min-h-[72px] rounded-xl lg:min-h-[88px]" />;
@@ -254,37 +271,44 @@ function DayCellExpanded({
         : null;
 
   return (
-    <button
-      type="button"
-      disabled={!has}
+    <div
+      role={!isDesktop && has ? "button" : undefined}
+      tabIndex={!isDesktop && has ? 0 : undefined}
       onClick={() => {
-        if (bucket) onSelect(bucket);
+        if (bucket && !isDesktop) onSelect(bucket);
+      }}
+      onKeyDown={(e) => {
+        if (!isDesktop && has && (e.key === "Enter" || e.key === " ")) {
+          e.preventDefault();
+          if (bucket) onSelect(bucket);
+        }
       }}
       className={cn(
-        "group relative flex min-h-[72px] flex-col overflow-hidden rounded-xl border p-1.5 text-left transition lg:min-h-[88px] lg:rounded-2xl lg:p-2",
+        "group relative flex min-h-[72px] flex-col overflow-hidden rounded-xl border p-1.5 text-left transition lg:min-h-[120px] lg:rounded-2xl lg:p-2",
         !has && "border-transparent bg-transparent text-zinc-600",
         has && primaryMeta && cn(primaryMeta.border, primaryMeta.bg),
         has &&
           types.length > 1 &&
           "border-white/25 bg-gradient-to-br from-orange-500/12 via-emerald-500/10 to-sky-500/12",
-        has && "hover:brightness-110 active:scale-[0.98]",
-        selected && primaryMeta && cn("ring-2", primaryMeta.ring),
-        selected && !primaryMeta && "ring-2 ring-white/30",
+        has && !isDesktop && "cursor-pointer hover:brightness-110 active:scale-[0.98]",
+        has && isDesktop && "hover:border-white/30",
+        selected && !isDesktop && primaryMeta && cn("ring-2", primaryMeta.ring),
+        selected && !isDesktop && !primaryMeta && "ring-2 ring-white/30",
         today && !selected && !has && "ring-1 ring-white/20",
         today && !selected && has && "ring-1 ring-white/35"
       )}
     >
-      <div className="flex items-start justify-between gap-1">
+      <div className="flex w-full items-start justify-between gap-1">
         <span
           className={cn(
-            "text-[11px] font-semibold tabular-nums lg:text-xs",
+            "text-[11px] font-semibold tabular-nums lg:text-sm",
             has ? "text-zinc-50" : "text-zinc-600",
             today && "text-emerald-300"
           )}
         >
           {format(day, "d")}
         </span>
-        {has && types.length > 0 ? (
+        {has && types.length > 0 && !isDesktop ? (
           <span className="flex items-center gap-0.5">
             {types.map((type) => (
               <span
@@ -296,7 +320,7 @@ function DayCellExpanded({
         ) : null}
       </div>
 
-      {has ? (
+      {has && !isDesktop ? (
         <div className="mt-1 flex min-h-0 flex-1 flex-col gap-0.5">
           {tip ? (
             <span className="line-clamp-2 text-[9px] leading-tight font-medium text-zinc-200 lg:text-[10px]">
@@ -323,7 +347,28 @@ function DayCellExpanded({
           </div>
         </div>
       ) : null}
-    </button>
+
+      {has && isDesktop ? (
+        <div className="mt-2 flex w-full flex-col gap-1.5">
+          {bucket!.stations.map(({ event, field }) => (
+            <div key={`${field.id}:${event.id}`} className="w-full">
+              <p className="mb-1 truncate px-0.5 text-[10px] font-medium text-zinc-500">
+                {field.name}
+                {field.crop ? (
+                  <span className="text-zinc-600"> · {field.crop}</span>
+                ) : null}
+              </p>
+              <MetroStationCard
+                event={event}
+                compact
+                fullWidth
+                onClick={() => onEventClick(field, event)}
+              />
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -401,6 +446,7 @@ export function OperationsYearCalendar({
   isLoading?: boolean;
   onEventClick: (field: FieldTimelineField, event: UnifiedTimelineEvent) => void;
 }) {
+  const isDesktop = !useIsMobile();
   const [expandedMonth, setExpandedMonth] = useState<number | null>(null);
   const [selectedDayIso, setSelectedDayIso] = useState<string | null>(null);
 
@@ -486,10 +532,7 @@ export function OperationsYearCalendar({
   }
 
   return (
-    <div
-      className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-y-auto"
-      data-chronicle-scroll
-    >
+    <div className="flex min-h-0 flex-1 flex-col gap-3 pb-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-xs text-zinc-500">
           <CalendarDays className="size-3.5 text-emerald-400/80" />
@@ -590,12 +633,16 @@ export function OperationsYearCalendar({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
-            className="flex min-h-0 flex-1 flex-col gap-3 lg:flex-row"
+            className={cn(
+              "flex min-h-0 flex-1 flex-col gap-3",
+              !isDesktop && "lg:flex-row"
+            )}
           >
             <div
               className={cn(
-                "flex min-h-0 flex-[1.55] flex-col overflow-hidden rounded-2xl border border-white/12",
-                "bg-zinc-950/80"
+                "flex min-h-0 flex-col overflow-hidden rounded-2xl border border-white/12",
+                "bg-zinc-950/80",
+                !isDesktop ? "flex-[1.55]" : "flex-1"
               )}
             >
               <div className="flex items-center gap-3 border-b border-white/5 px-3 py-3 sm:px-4">
@@ -608,7 +655,7 @@ export function OperationsYearCalendar({
                   Рік
                 </button>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-base font-semibold capitalize tracking-tight text-zinc-50 sm:text-lg">
+          <p className="truncate text-base font-semibold capitalize tracking-tight text-zinc-50 sm:text-lg">
                     {format(expanded.monthDate, "LLLL yyyy", { locale: uk })}
                   </p>
                   <p className="text-xs text-zinc-500">
@@ -646,7 +693,9 @@ export function OperationsYearCalendar({
                           selectedBucket != null &&
                           isSameDay(day, selectedBucket.date)
                         }
+                        isDesktop={isDesktop}
                         onSelect={(bucket) => setSelectedDayIso(bucket.dateIso)}
+                        onEventClick={onEventClick}
                       />
                     );
                   })}
@@ -654,44 +703,46 @@ export function OperationsYearCalendar({
               </div>
             </div>
 
-            <div className="flex min-h-0 flex-1 flex-col">
-              <AnimatePresence mode="wait">
-                {selectedBucket ? (
-                  <motion.div
-                    key={selectedBucket.dateIso}
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 6 }}
-                    transition={{ duration: 0.18 }}
-                    className="flex min-h-0 flex-1 flex-col"
-                  >
-                    <DayStationsPanel
-                      bucket={selectedBucket}
-                      onClose={() => setSelectedDayIso(null)}
-                      onEventClick={onEventClick}
-                    />
-                  </motion.div>
-                ) : (
-                  <motion.div
-                    key="hint"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="hidden flex-1 items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-6 text-center lg:flex"
-                  >
-                    <div>
-                      <p className="text-sm font-medium text-zinc-300">
-                        Оберіть день
-                      </p>
-                      <p className="mt-1 text-xs text-zinc-500">
-                        Підсвічені дати мають станції — відкрийте деталі як у
-                        розділі «Станції»
-                      </p>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
+            {!isDesktop ? (
+              <div className="flex min-h-0 flex-1 flex-col">
+                <AnimatePresence mode="wait">
+                  {selectedBucket ? (
+                    <motion.div
+                      key={selectedBucket.dateIso}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 6 }}
+                      transition={{ duration: 0.18 }}
+                      className="flex min-h-0 flex-1 flex-col"
+                    >
+                      <DayStationsPanel
+                        bucket={selectedBucket}
+                        onClose={() => setSelectedDayIso(null)}
+                        onEventClick={onEventClick}
+                      />
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      key="hint"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="hidden flex-1 items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-6 text-center lg:flex"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-zinc-300">
+                          Оберіть день
+                        </p>
+                        <p className="mt-1 text-xs text-zinc-500">
+                          Підсвічені дати мають станції — відкрийте деталі як у
+                          розділі «Станції»
+                        </p>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            ) : null}
           </motion.div>
         )}
       </AnimatePresence>
