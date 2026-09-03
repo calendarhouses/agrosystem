@@ -378,19 +378,27 @@ function MetroStationDateRow({ event }: { event: UnifiedTimelineEvent }) {
   );
 }
 
-function MetroStationCard({
+/** Картка станції — спільна для метро-мапи і денної панелі календаря. */
+export function MetroStationCard({
   event,
   onClick,
   compact = false,
+  fullWidth = false,
 }: {
   event: UnifiedTimelineEvent;
   onClick?: () => void;
   compact?: boolean;
+  /** Розтягнути на контейнер (календар / списки) замість фіксованої ширини метро. */
+  fullWidth?: boolean;
 }) {
   const icon = deriveTimelineIcon(event);
   const isFuture = isFutureTimelineOperation(event);
   const statusLabel = timelineOperationStatusLabel(event.operationStatus);
-  const cardWidth = compact ? "w-[10.5rem]" : "w-[13.5rem]";
+  const cardWidth = fullWidth
+    ? "w-full"
+    : compact
+      ? "w-[10.5rem]"
+      : "w-[13.5rem]";
   const cardPad = compact ? "p-2" : "p-2.5";
   const cardRadius = compact ? "rounded-xl" : "rounded-2xl";
 

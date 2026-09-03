@@ -471,7 +471,15 @@ export function OperationsMatrixView() {
           </div>
         </header>
 
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-6 pt-2 pb-3">
+        <div
+          className={cn(
+            "flex min-h-0 flex-1 flex-col px-6 pt-2 pb-3",
+            viewMode === "calendar"
+              ? "overflow-y-auto overscroll-y-auto"
+              : "overflow-hidden"
+          )}
+          data-chronicle-scroll={viewMode === "calendar" ? true : undefined}
+        >
           {!isLoading && error ? (
             <div className="mb-4 shrink-0 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
               {error}
