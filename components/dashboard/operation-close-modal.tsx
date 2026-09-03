@@ -930,11 +930,16 @@ export function OperationClosePanel({
           )}
         >
           {saving ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Збереження…
+            </>
           ) : (
-            <CheckCircle2 className="h-4 w-4" />
+            <>
+              <CheckCircle2 className="h-4 w-4" />
+              {isCorrection ? "Зберегти коригування" : "Підтвердити факт"}
+            </>
           )}
-          {isCorrection ? "Зберегти коригування" : "Підтвердити факт"}
         </button>
       </div>
     </form>

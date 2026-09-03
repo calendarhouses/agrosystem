@@ -177,7 +177,7 @@ export function InventoryItemEditDialog({
             className="bg-[#276749] text-white hover:bg-[#1f5339]"
           >
             {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            Зберегти
+            {pending ? "Збереження…" : "Зберегти"}
           </Button>
         </DialogFooter>
       </DialogContent>

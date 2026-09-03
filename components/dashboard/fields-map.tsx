@@ -19,7 +19,7 @@ import type {
   Geometry,
   Polygon,
 } from "geojson";
-import { Focus, Landmark, Map as MapIcon, Pentagon, Save, Search, Tractor, X } from "lucide-react";
+import { Focus, Landmark, Loader2, Map as MapIcon, Pentagon, Save, Search, Tractor, X } from "lucide-react";
 import Map, { Layer, Marker, Source } from "react-map-gl/mapbox";
 import type {
   MapMouseEvent,
@@ -2048,15 +2048,21 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
                 <button
                   type="button"
                   disabled={drawSave.disabled}
-                  title={drawSave.label}
+                  title={drawSave.disabled ? "Збереження…" : drawSave.label}
                   onClick={drawSave.onSave}
                   className={cn(
                     "inline-flex h-11 items-center gap-1.5 rounded-xl bg-primary px-3 text-sm font-semibold text-primary-foreground shadow-sm transition-all md:h-10",
-                    "hover:bg-primary/90 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                    "hover:bg-primary/90 active:scale-95 disabled:cursor-not-allowed disabled:opacity-70"
                   )}
                 >
-                  <Save className="h-4 w-4 shrink-0" />
-                  <span className="max-sm:sr-only sm:inline">{drawSave.label}</span>
+                  {drawSave.disabled ? (
+                    <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                  ) : (
+                    <Save className="h-4 w-4 shrink-0" />
+                  )}
+                  <span className="max-sm:sr-only sm:inline">
+                    {drawSave.disabled ? "Збереження…" : drawSave.label}
+                  </span>
                 </button>
               </div>
             ) : null}
@@ -2094,7 +2100,8 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
                 <button
                   type="button"
                   onClick={drawSave.onCancel}
-                  className="inline-flex h-11 shrink-0 items-center justify-center rounded-xl border border-[#E5DFD3] bg-white px-4 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50 active:scale-[0.98]"
+                  disabled={drawSave.disabled}
+                  className="inline-flex h-11 shrink-0 items-center justify-center rounded-xl border border-[#E5DFD3] bg-white px-4 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50 active:scale-[0.98] disabled:opacity-50"
                 >
                   Скасувати
                 </button>
@@ -2105,11 +2112,15 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
                 onClick={drawSave.onSave}
                 className={cn(
                   "inline-flex h-11 min-w-0 flex-1 items-center justify-center gap-2 rounded-xl bg-[#276749] px-4 text-sm font-bold text-white shadow-sm transition sm:flex-none sm:min-w-[10.5rem]",
-                  "hover:bg-[#22543d] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+                  "hover:bg-[#22543d] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70"
                 )}
               >
-                <Save className="h-4 w-4 shrink-0" />
-                {drawSave.label}
+                {drawSave.disabled ? (
+                  <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4 shrink-0" />
+                )}
+                {drawSave.disabled ? "Збереження…" : drawSave.label}
               </button>
             </div>
           </div>
@@ -2135,7 +2146,8 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
                 <button
                   type="button"
                   onClick={drawSave.onCancel}
-                  className="inline-flex h-11 shrink-0 items-center justify-center rounded-xl border border-[#E5DFD3] bg-white px-4 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50 active:scale-[0.98]"
+                  disabled={drawSave.disabled}
+                  className="inline-flex h-11 shrink-0 items-center justify-center rounded-xl border border-[#E5DFD3] bg-white px-4 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50 active:scale-[0.98] disabled:opacity-50"
                 >
                   Скасувати
                 </button>
@@ -2146,11 +2158,15 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
                 onClick={drawSave.onSave}
                 className={cn(
                   "inline-flex h-11 min-w-[10.5rem] shrink-0 items-center justify-center gap-2 rounded-xl bg-[#276749] px-4 text-sm font-bold text-white shadow-sm transition",
-                  "hover:bg-[#22543d] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+                  "hover:bg-[#22543d] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70"
                 )}
               >
-                <Save className="h-4 w-4 shrink-0" />
-                {drawSave.label}
+                {drawSave.disabled ? (
+                  <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4 shrink-0" />
+                )}
+                {drawSave.disabled ? "Збереження…" : drawSave.label}
               </button>
             </div>
           </div>

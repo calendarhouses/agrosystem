@@ -22,6 +22,7 @@ import {
   History,
   Landmark,
   Leaf,
+  Loader2,
   PackageMinus,
   Pencil,
   Play,
@@ -339,7 +340,7 @@ function statusMeta(status: FieldOperation["status"]) {
 
 type OperationCardProps = {
   op: FieldOperation;
-  onStart: (op: FieldOperation) => void;
+  onStart: (op: FieldOperation) => void | Promise<void>;
   onEdit: (op: FieldOperation) => void;
   onDelete: (op: FieldOperation) => void;
   onComplete: (op: FieldOperation) => void;
@@ -354,6 +355,7 @@ function OperationCard({
   onComplete,
   onCorrect,
 }: OperationCardProps) {
+  const [starting, setStarting] = useState(false);
   const pct =
     op.areaTotal > 0 ? Math.round((op.areaDone / op.areaTotal) * 100) : 0;
   const fuelPerHa =
@@ -504,16 +506,33 @@ function OperationCard({
         {isPlanned ? (
           <button
             type="button"
-            onClick={() => onStart(op)}
+            disabled={starting}
+            onClick={() => {
+              if (starting) return;
+              setStarting(true);
+              void Promise.resolve(onStart(op)).finally(() => {
+                setStarting(false);
+              });
+            }}
             className={cn(
               "inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl px-3 text-sm font-bold text-white",
               "bg-gradient-to-r from-[#1f5239] via-[#276749] to-[#2f7a52]",
               "shadow-[0_8px_20px_-8px_rgba(39,103,73,0.55)]",
-              "transition-all hover:-translate-y-px hover:brightness-105 active:translate-y-0"
+              "transition-all hover:-translate-y-px hover:brightness-105 active:translate-y-0",
+              "disabled:pointer-events-none disabled:opacity-70"
             )}
           >
-            <Play className="h-4 w-4 fill-current" />
-            Почати роботу
+            {starting ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Збереження…
+              </>
+            ) : (
+              <>
+                <Play className="h-4 w-4 fill-current" />
+                Почати роботу
+              </>
+            )}
           </button>
         ) : null}
 
@@ -595,7 +614,7 @@ type PlanWorkPanelProps = {
   submitAsCompleted?: boolean;
   onPassportPatched?: (patch: { crop: string; areaHa: number }) => void;
   onBack: () => void;
-  onSubmit: (op: FieldOperation) => void;
+  onSubmit: (op: FieldOperation) => void | Promise<void>;
 };
 
 function PlanWorkPanel({
@@ -613,6 +632,7 @@ function PlanWorkPanel({
 }: PlanWorkPanelProps) {
   const areaDefault = Number(field.areaHa) || 0;
   const isEdit = Boolean(initial);
+  const [saving, setSaving] = useState(false);
   const [passportCrop, setPassportCrop] = useState(field.crop);
   const [passportAreaHa, setPassportAreaHa] = useState(field.areaHa);
 
@@ -985,8 +1005,9 @@ function PlanWorkPanel({
     setFuelUsed(String(estimatePlanFuelLiters(type, area)));
   }
 
-  function handleSubmit(event: FormEvent) {
+  async function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    if (saving) return;
     if (fieldPassportBlocked) {
       setError(
         "У цього поля не заповнений паспорт (площа або культура)."
@@ -1073,7 +1094,12 @@ function PlanWorkPanel({
       materials: material ? [material] : [],
     };
 
-    onSubmit(op);
+    setSaving(true);
+    try {
+      await onSubmit(op);
+    } finally {
+      setSaving(false);
+    }
   }
 
   const fieldControlClass = cn(
@@ -1328,7 +1354,7 @@ function PlanWorkPanel({
             </div>
           </section>
 
-          <section className="overflow-hidden rounded-2xl border border-[#E5DFD3] bg-white p-4 shadow-sm">
+          <section className="rounded-2xl border border-[#E5DFD3] bg-white p-4 shadow-sm">
             <MechanicNameField
               value={mechanicName}
               onChange={setMechanicName}
@@ -1431,26 +1457,36 @@ function PlanWorkPanel({
           <button
             type="button"
             onClick={onBack}
-            className="h-12 flex-1 rounded-2xl border border-zinc-200 bg-white text-sm font-semibold text-zinc-700 transition-colors hover:bg-zinc-50"
+            disabled={saving}
+            className="h-12 flex-1 rounded-2xl border border-zinc-200 bg-white text-sm font-semibold text-zinc-700 transition-colors hover:bg-zinc-50 disabled:pointer-events-none disabled:opacity-50"
           >
             Скасувати
           </button>
           <button
             type="submit"
-            disabled={fieldPassportBlocked}
+            disabled={fieldPassportBlocked || saving}
             className={cn(
               "inline-flex h-12 flex-[1.4] items-center justify-center gap-2 rounded-2xl",
               "bg-gradient-to-r from-[#1f5239] via-[#276749] to-[#2f7a52]",
               "text-sm font-bold text-white shadow-[0_10px_28px_-8px_rgba(39,103,73,0.45)]",
-              "transition hover:brightness-105 disabled:pointer-events-none disabled:opacity-50"
+              "transition hover:brightness-105 disabled:pointer-events-none disabled:opacity-70"
             )}
           >
-            <CalendarPlus className="h-4 w-4" />
-            {isEdit
-              ? "Зберегти"
-              : submitAsCompleted
-                ? "Зберегти виконану роботу"
-                : "Додати в історію"}
+            {saving ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Збереження…
+              </>
+            ) : (
+              <>
+                <CalendarPlus className="h-4 w-4" />
+                {isEdit
+                  ? "Зберегти"
+                  : submitAsCompleted
+                    ? "Зберегти виконану роботу"
+                    : "Додати в історію"}
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -1915,32 +1951,32 @@ export function FieldDetailSheet({
     setQuickIssueOpen(false);
   }
 
-  function submitPlanOperation(op: FieldOperation) {
-    void persistOperation(op)
-      .then((saved) => {
-        if (!editingOp) onPlanWork?.(op);
-        closePlanForm();
-        setActiveTab("history");
-        setHistorySeasonYear(saved.seasonYear);
-        setPeriod("Сезон");
-        toast.success(
-          planPastWork && !editingOp
-            ? `Виконану роботу збережено · сезон ${saved.seasonYear}`
-            : editingOp
-              ? "Наряд оновлено"
-              : "Наряд додано в історію"
+  async function submitPlanOperation(op: FieldOperation) {
+    try {
+      const saved = await persistOperation(op);
+      if (!editingOp) onPlanWork?.(op);
+      closePlanForm();
+      setActiveTab("history");
+      setHistorySeasonYear(saved.seasonYear);
+      setPeriod("Сезон");
+      toast.success(
+        planPastWork && !editingOp
+          ? `Виконану роботу збережено · сезон ${saved.seasonYear}`
+          : editingOp
+            ? "Наряд оновлено"
+            : "Наряд додано в історію"
+      );
+    } catch (err) {
+      if (resolvedFieldKey) {
+        void listFieldOperations(resolvedFieldKey, legacyKey).then(
+          setOperations
         );
-      })
-      .catch((err) => {
-        if (resolvedFieldKey) {
-          void listFieldOperations(resolvedFieldKey, legacyKey).then(
-            setOperations
-          );
-        }
-        toast.error(
-          err instanceof Error ? err.message : "Не вдалося зберегти наряд"
-        );
-      });
+      }
+      toast.error(
+        err instanceof Error ? err.message : "Не вдалося зберегти наряд"
+      );
+      throw err;
+    }
   }
 
   const planPanel =
@@ -2401,8 +2437,8 @@ export function FieldDetailSheet({
                           <OperationCard
                             key={op.id}
                             op={op}
-                            onStart={(item) => {
-                              void persistOperation({
+                            onStart={async (item) => {
+                              await persistOperation({
                                 ...item,
                                 status: "in_progress",
                               });
@@ -2493,8 +2529,8 @@ export function FieldDetailSheet({
                             <OperationCard
                               key={op.id}
                               op={op}
-                              onStart={(item) => {
-                                void persistOperation({
+                              onStart={async (item) => {
+                                await persistOperation({
                                   ...item,
                                   status: "in_progress",
                                 });

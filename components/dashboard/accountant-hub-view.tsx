@@ -1495,9 +1495,13 @@ export function AccountantHubView({
                                   className="h-9 rounded-xl bg-[#276749] font-bold text-white hover:bg-[#1f5239]"
                                 >
                                   {pending ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                  ) : null}
-                                  Зберегти
+                                    <>
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                      Збереження…
+                                    </>
+                                  ) : (
+                                    "Зберегти"
+                                  )}
                                 </Button>
                               </div>
                             </div>
