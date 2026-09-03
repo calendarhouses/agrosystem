@@ -445,36 +445,19 @@ export function OperationsMatrixView() {
   if (!isMobile) {
     return (
       <section className="flex h-full min-h-0 flex-1 flex-col bg-zinc-950 text-zinc-50">
-        <header className="shrink-0 border-b border-white/5 px-6 pb-4 pt-3">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-3">
-                <h1 className="text-xl font-semibold tracking-tight text-zinc-50">
-                  Хронологія полів
-                </h1>
-              </div>
-              <p className="mt-1 text-xs text-zinc-400 sm:text-sm">
-                {viewMode === "calendar"
-                  ? "Річний огляд рухів по полях агросезону."
-                  : "Наряди техніки та списання ТМЦ по полях обраного сезону."}
-                {!isLoading && !error ? (
-                  <span className="ml-1 font-medium text-zinc-300">
-                    {ukFieldLabel(summary.fieldCount)} ·{" "}
-                    {ukStationLabel(summary.stationCount)}
-                  </span>
-                ) : null}
-              </p>
-            </div>
+        <header className="shrink-0 border-b border-white/5 px-6 pb-4 pt-5">
+          <div className="flex items-center justify-between gap-4">
+            <h1 className="text-xl font-semibold tracking-tight text-zinc-50">
+              Хронологія полів
+            </h1>
 
-            <div className="flex w-full shrink-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-end lg:w-auto">
-              <FinancePeriodToolbar
-                {...periodFilter}
-                variant="desktop"
-                theme="dark"
-                loading={isLoading}
-                className="w-full shrink-0 lg:w-auto"
-              />
-            </div>
+            <FinancePeriodToolbar
+              {...periodFilter}
+              variant="desktop"
+              theme="dark"
+              loading={isLoading}
+              className="shrink-0"
+            />
           </div>
 
           <div className="mt-4 flex max-w-2xl items-center gap-3">

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
-import { format } from "date-fns";
+import { eachDayOfInterval, format } from "date-fns";
 import { Loader2, Tractor } from "lucide-react";
 import { toast } from "sonner";
 
@@ -11,7 +11,7 @@ import { getWorkTypeWageRate } from "@/app/fields/operation-wage-actions";
 import { MechanicNameField } from "@/components/dashboard/mechanic-name-field";
 import { Button } from "@/components/ui/button";
 import {
-  OperationsDatePicker,
+  OperationsDateRangePicker,
   OperationsPanelShell,
   OperationsSheetFooter,
   OperationsSheetHeader,
@@ -87,7 +87,8 @@ export function OperationsOperationForm({
     []
   );
   const [type, setType] = useState<string>(OPERATION_TYPES[0]);
-  const [date, setDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
+  const [dateFrom, setDateFrom] = useState(() => format(new Date(), "yyyy-MM-dd"));
+  const [dateTo, setDateTo] = useState<string | null>(null);
   const [unitKey, setUnitKey] = useState<string | null>(null);
   const [implement, setImplement] = useState(IMPLEMENT_PRESETS.Посів);
   const [implementId, setImplementId] = useState<string | null>(null);
@@ -151,7 +152,8 @@ export function OperationsOperationForm({
     const areaDefault = Number(field.areaHa) || 0;
     if (initial) {
       setType(initial.type || OPERATION_TYPES[0]);
-      setDate(initial.occurredAt?.slice(0, 10) || format(new Date(), "yyyy-MM-dd"));
+      setDateFrom(initial.occurredAt?.slice(0, 10) || format(new Date(), "yyyy-MM-dd"));
+      setDateTo(null);
       setImplement(initial.implement || IMPLEMENT_PRESETS.Посів);
       setImplementId(null);
       setAreaDone(String(initial.areaDone || areaDefault));
@@ -176,7 +178,8 @@ export function OperationsOperationForm({
       return;
     }
     setType(OPERATION_TYPES[0]);
-    setDate(format(new Date(), "yyyy-MM-dd"));
+    setDateFrom(format(new Date(), "yyyy-MM-dd"));
+    setDateTo(null);
     setImplement(IMPLEMENT_PRESETS.Посів);
     setImplementId(null);
     setAreaDone(String(areaDefault));
@@ -259,47 +262,71 @@ export function OperationsOperationForm({
     }
 
     const pay = estimateWageFromRate(rate, area);
-    const occurred = new Date(`${date}T12:00:00`);
-    const opSeason = Number.isNaN(occurred.getTime())
-      ? seasonYear
-      : occurred.getMonth() >= 2
-        ? occurred.getFullYear()
-        : occurred.getFullYear() - 1;
+    const width_ = width;
 
-    const op: FieldOperation = {
-      id: initial?.id ?? crypto.randomUUID(),
-      seasonYear: opSeason,
-      occurredAt: date,
-      type: type.trim(),
-      crop: field.crop || "—",
-      date: formatOpDateLabel(date),
-      time: initial?.time ?? "08:00 – 18:00",
-      machinery: selectedUnit.label,
-      implement: implement.trim(),
-      areaDone: Math.round(area * 100) / 100,
-      areaTotal: Number(field.areaHa) || area,
-      fuelUsed: Math.round(fuel),
-      wage: pay,
-      wageRateUahPerHa: Math.round(rate * 100) / 100,
-      mechanicName: mechanicName.trim() || null,
-      status: "completed",
-      agronomistComment: comment.trim() || undefined,
-      equipmentId: selectedUnit.equipmentId,
-      wialonUnitId: selectedUnit.wialonUnitId,
-      implementWidthM: width,
-      exportStatus: initial?.exportStatus ?? "none",
-      materials: material ? [material] : [],
-    };
+    // Build list of dates to create operations for
+    const dates: string[] = [];
+    if (dateTo && dateTo !== dateFrom) {
+      const fromD = new Date(`${dateFrom}T12:00:00`);
+      const toD = new Date(`${dateTo}T12:00:00`);
+      if (!Number.isNaN(fromD.getTime()) && !Number.isNaN(toD.getTime())) {
+        for (const d of eachDayOfInterval({ start: fromD, end: toD })) {
+          dates.push(format(d, "yyyy-MM-dd"));
+        }
+      }
+    }
+    if (dates.length === 0) dates.push(dateFrom);
 
     setSaving(true);
     setError(null);
     try {
-      await upsertFieldOperation({
-        ...op,
-        fieldKey,
-        fieldId: field.id,
-      });
-      toast.success(isEdit ? "Наряд оновлено" : "Операцію додано");
+      for (const d of dates) {
+        const occurred = new Date(`${d}T12:00:00`);
+        const opSeason = Number.isNaN(occurred.getTime())
+          ? seasonYear
+          : occurred.getMonth() >= 2
+            ? occurred.getFullYear()
+            : occurred.getFullYear() - 1;
+
+        const op: FieldOperation = {
+          id: dates.length === 1 ? (initial?.id ?? crypto.randomUUID()) : crypto.randomUUID(),
+          seasonYear: opSeason,
+          occurredAt: d,
+          type: type.trim(),
+          crop: field.crop || "—",
+          date: formatOpDateLabel(d),
+          time: initial?.time ?? "08:00 – 18:00",
+          machinery: selectedUnit.label,
+          implement: implement.trim(),
+          areaDone: Math.round(area * 100) / 100,
+          areaTotal: Number(field.areaHa) || area,
+          fuelUsed: Math.round(fuel),
+          wage: pay,
+          wageRateUahPerHa: Math.round(rate * 100) / 100,
+          mechanicName: mechanicName.trim() || null,
+          status: "completed",
+          agronomistComment: comment.trim() || undefined,
+          equipmentId: selectedUnit.equipmentId,
+          wialonUnitId: selectedUnit.wialonUnitId,
+          implementWidthM: width_,
+          exportStatus: initial?.exportStatus ?? "none",
+          materials: material ? [material] : [],
+        };
+
+        await upsertFieldOperation({
+          ...op,
+          fieldKey,
+          fieldId: field.id,
+        });
+      }
+      const count = dates.length;
+      toast.success(
+        isEdit
+          ? "Наряд оновлено"
+          : count > 1
+            ? `Додано ${count} нарядів (${format(new Date(`${dates[0]}T12:00:00`), "d MMM", { locale: undefined })} – ${format(new Date(`${dates[dates.length - 1]}T12:00:00`), "d MMM", { locale: undefined })})`
+            : "Операцію додано"
+      );
       onSaved();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Не вдалося зберегти");
@@ -354,7 +381,11 @@ export function OperationsOperationForm({
         <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="min-w-0 space-y-2">
             <Label className={chrome.label}>Дата</Label>
-            <OperationsDatePicker value={date} onChange={setDate} />
+            <OperationsDateRangePicker
+              from={dateFrom}
+              to={dateTo}
+              onChange={(f, t) => { setDateFrom(f); setDateTo(t); }}
+            />
           </div>
           <div className="min-w-0 space-y-2">
             <Label className={chrome.label}>Площа, га</Label>

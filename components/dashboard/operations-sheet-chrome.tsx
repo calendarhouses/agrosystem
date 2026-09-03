@@ -244,6 +244,96 @@ export function OperationsDatePicker({
   );
 }
 
+/** Дейтпікер з підтримкою діапазону дат */
+export function OperationsDateRangePicker({
+  from,
+  to,
+  onChange,
+  placeholder = "Оберіть дату або діапазон",
+  className,
+}: {
+  from: string;
+  to: string | null;
+  onChange: (from: string, to: string | null) => void;
+  placeholder?: string;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const parsedFrom = from ? new Date(`${from.slice(0, 10)}T12:00:00`) : undefined;
+  const parsedTo = to ? new Date(`${to.slice(0, 10)}T12:00:00`) : undefined;
+  const hasRange = parsedFrom && parsedTo && from !== to;
+
+  const label = hasRange
+    ? `${format(parsedFrom, "d MMM", { locale: uk })} – ${format(parsedTo!, "d MMM yyyy", { locale: uk })}`
+    : parsedFrom && !Number.isNaN(parsedFrom.getTime())
+      ? format(parsedFrom, "d MMMM yyyy", { locale: uk })
+      : placeholder;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        type="button"
+        className={cn(opsInputClass, "inline-flex items-center gap-2", className)}
+      >
+        <CalendarIcon className="size-4 shrink-0 text-emerald-400" />
+        <span className={cn("truncate text-left", !from && "text-zinc-500")}>
+          {label}
+        </span>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        sheetOnMobile={false}
+        className="w-auto overflow-hidden rounded-2xl border border-white/10 bg-zinc-900 p-3 text-zinc-50 shadow-2xl"
+      >
+        <p className="mb-2 px-1 text-[11px] text-zinc-400">
+          Оберіть початок, потім кінець діапазону. Для однієї дати — натисніть двічі.
+        </p>
+        <Calendar
+          mode="range"
+          selected={
+            parsedFrom
+              ? { from: parsedFrom, to: parsedTo ?? parsedFrom }
+              : undefined
+          }
+          onSelect={(range) => {
+            if (!range?.from) return;
+            const f = format(range.from, "yyyy-MM-dd");
+            if (range.to) {
+              const t = format(range.to, "yyyy-MM-dd");
+              if (f === t) {
+                // Same day clicked twice → single date, close
+                onChange(f, null);
+                setOpen(false);
+              } else {
+                onChange(f, t);
+                setOpen(false);
+              }
+            } else {
+              // First click — just set from, keep open
+              onChange(f, null);
+            }
+          }}
+          locale={uk}
+          className="rounded-xl bg-transparent text-zinc-50 [--cell-size:2.5rem]"
+          classNames={{
+            caption_label: "text-sm font-semibold text-zinc-100",
+            weekday: "text-zinc-500",
+            button_previous:
+              "text-zinc-300 hover:bg-white/10 hover:text-zinc-50",
+            button_next: "text-zinc-300 hover:bg-white/10 hover:text-zinc-50",
+            today: "bg-white/10 text-emerald-300",
+            outside: "text-zinc-600",
+            disabled: "text-zinc-600 opacity-40",
+            range_start: "bg-emerald-600 text-white rounded-l-lg",
+            range_end: "bg-emerald-600 text-white rounded-r-lg",
+            range_middle: "bg-emerald-500/20 text-emerald-200",
+          }}
+        />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export function OperationsPanelShell({
   open,
   onOpenChange,
@@ -267,9 +357,9 @@ export function OperationsPanelShell({
             side="right"
             showOverlay
             overlayClassName="bg-black/75 supports-backdrop-filter:backdrop-blur-[4px]"
-            className={cn(opsSheetContentClass, className)}
+            className={cn(opsSheetContentClass, "!h-dvh !max-h-dvh", className)}
           >
-            <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="relative flex h-full max-h-full min-h-0 flex-1 flex-col overflow-hidden">
               {children}
             </div>
           </SheetContent>

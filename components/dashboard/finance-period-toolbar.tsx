@@ -72,7 +72,7 @@ export function FinancePeriodToolbar({
   return (
     <div
       className={cn(
-        desktop ? "flex w-full flex-row items-center gap-2 max-w-xl lg:w-auto" : "space-y-2.5",
+        desktop ? "flex flex-row items-center gap-2" : "space-y-2.5",
         className
       )}
     >
@@ -293,7 +293,7 @@ export function FinancePeriodToolbar({
         <div
           className={cn(
             "flex items-center gap-0.5 rounded-xl p-0.5",
-            desktop ? "h-11 w-auto px-0.5" : "min-w-0 flex-1",
+            desktop ? "w-auto" : "min-w-0 flex-1",
             dark ? "bg-white/5" : "bg-[#EDE8DF]"
           )}
         >

@@ -383,7 +383,7 @@ function DayCellExpanded({
   onEventClick: (field: FieldTimelineField, event: UnifiedTimelineEvent) => void;
 }) {
   if (!day || !isSameMonth(day, monthDate)) {
-    return <div className="rounded-lg" />;
+    return <div className="min-h-[52px] rounded-lg lg:min-h-0" />;
   }
 
   const count = bucket?.stations.length ?? 0;
@@ -413,8 +413,8 @@ function DayCellExpanded({
         disabled={!has}
         onClick={handleMobileTap}
         className={cn(
-          "group relative flex min-h-0 w-full flex-col overflow-hidden rounded-lg border p-1 text-left transition",
-          "min-h-[40px]",
+          "group relative flex min-h-0 w-full flex-col overflow-hidden rounded-lg border p-1.5 text-left transition",
+          "min-h-[52px]",
           !has && "border-white/[0.04] bg-white/[0.01] disabled:opacity-100",
           has && primaryMeta && cn(primaryMeta.border, "bg-white/[0.03]"),
           has &&
@@ -606,7 +606,7 @@ function MonthCalendarBody({
           !isDesktop && "overflow-y-auto"
         )}
       >
-        <div className="mb-1.5 grid shrink-0 grid-cols-7 gap-0.5">
+        <div className="mb-2 grid shrink-0 grid-cols-7 gap-1 lg:gap-0.5">
           {WEEKDAYS.map((d) => (
             <div
               key={d}
@@ -616,7 +616,7 @@ function MonthCalendarBody({
             </div>
           ))}
         </div>
-        <div className="grid grid-cols-7 gap-0.5 sm:gap-1">
+        <div className="grid grid-cols-7 gap-1 lg:gap-1">
           {expandedCells.map((day, i) => {
             const iso = day ? format(day, "yyyy-MM-dd") : `pad-${i}`;
             return (
@@ -652,6 +652,8 @@ function FieldCalendarBlock({
   onEventClick,
   onAddClick,
   onExcelExport,
+  onMonthExpand,
+  hidden,
 }: {
   field: FieldWithTimeline;
   seasonYear: number;
@@ -659,6 +661,8 @@ function FieldCalendarBlock({
   onEventClick: (field: FieldTimelineField, event: UnifiedTimelineEvent) => void;
   onAddClick: (field: FieldTimelineField) => void;
   onExcelExport: (field: FieldWithTimeline) => void;
+  onMonthExpand?: (fieldId: string, expanded: boolean) => void;
+  hidden?: boolean;
 }) {
   const [expandedMonth, setExpandedMonth] = useState<number | null>(null);
   const [selectedDayIso, setSelectedDayIso] = useState<string | null>(null);
@@ -737,17 +741,19 @@ function FieldCalendarBlock({
     setSwipeDir(dir);
     setExpandedMonth(index);
     setSelectedDayIso(null);
+    onMonthExpand?.(field.fieldId, true);
   }
 
   function closeMonth() {
     setExpandedMonth(null);
     setSelectedDayIso(null);
+    onMonthExpand?.(field.fieldId, false);
   }
 
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-white/[0.06] bg-zinc-900/30">
+    <div className={cn("overflow-hidden rounded-2xl border border-white/[0.06] bg-zinc-900/30", hidden && "hidden")}>
       {/* Заголовок поля — натискання = відкрити/закрити */}
       <button
         type="button"
@@ -1053,6 +1059,7 @@ export function OperationsYearCalendar({
   onFieldExcelExport: (field: FieldWithTimeline) => void;
 }) {
   const isDesktop = !useIsMobile();
+  const [focusedFieldId, setFocusedFieldId] = useState<string | null>(null);
 
   const totalEvents = useMemo(
     () => fields.reduce((s, f) => s + f.events.length, 0),
@@ -1109,6 +1116,10 @@ export function OperationsYearCalendar({
           onEventClick={onEventClick}
           onAddClick={onAddClick}
           onExcelExport={onFieldExcelExport}
+          onMonthExpand={(id, expanded) =>
+            setFocusedFieldId(expanded ? id : null)
+          }
+          hidden={focusedFieldId != null && focusedFieldId !== field.fieldId}
         />
       ))}
     </div>
