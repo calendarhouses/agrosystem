@@ -398,7 +398,7 @@ export function EquipmentFleetGlassPanel({
     <div className="flex h-full min-h-0 flex-col">
       <div className="relative shrink-0 border-b border-white/30">
         <DrawerHeaderHandle theme="light" />
-        <div className="px-4 py-3 pr-14">
+        <div className="px-4 py-3 md:pr-4 pr-14">
         <div className="flex items-center gap-2">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-600/90 text-white shadow-md">
             <Radar className="h-4 w-4" />
@@ -422,17 +422,29 @@ export function EquipmentFleetGlassPanel({
               size="sm"
               onClick={onAddEquipment}
               className={cn(
-                "h-10 shrink-0 gap-1.5 rounded-xl px-3 text-xs font-bold",
-                "bg-[#276749] text-white shadow-sm hover:bg-[#22543d]",
-                "md:h-9"
+                "hidden h-9 shrink-0 gap-1.5 rounded-xl px-3.5 text-xs font-bold md:inline-flex",
+                "bg-[#276749] text-white shadow-sm hover:bg-[#22543d]"
               )}
             >
               <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
-              <span className="hidden sm:inline">Додати</span>
-              <span className="sm:hidden">+</span>
+              <span className="whitespace-nowrap">Нова техніка</span>
             </Button>
           ) : null}
         </div>
+        {onAddEquipment ? (
+          <Button
+            type="button"
+            size="sm"
+            onClick={onAddEquipment}
+            className={cn(
+              "mt-2.5 flex h-11 w-full gap-1.5 rounded-xl text-sm font-bold md:hidden",
+              "bg-[#276749] text-white shadow-sm hover:bg-[#22543d]"
+            )}
+          >
+            <Plus className="h-4 w-4" strokeWidth={2.5} />
+            Нова техніка
+          </Button>
+        ) : null}
         </div>
       </div>
 
@@ -548,7 +560,7 @@ export function EquipmentFleetGlassPanel({
                   className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-bold text-[#276749] transition-colors hover:bg-[#276749]/10"
                 >
                   <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
-                  Додати нову
+                  Нова техніка
                 </button>
               ) : null}
             </div>
@@ -680,8 +692,9 @@ export function EquipmentFleetGlassPanel({
       {isMobile ? (
         <>
           {!showFullSnap ? (
-            <button
-              type="button"
+            <div
+              role="button"
+              tabIndex={0}
               aria-expanded={false}
               aria-label={
                 showDetail
@@ -699,12 +712,18 @@ export function EquipmentFleetGlassPanel({
               onTouchStart={onPeekTouchStart}
               onTouchEnd={onPeekTouchEnd}
               onClick={() => onMobileExpandedChange(true)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onMobileExpandedChange(true);
+                }
+              }}
             >
               <div
                 className="mx-auto mt-2 h-1.5 w-12 shrink-0 rounded-full bg-zinc-400/90"
                 aria-hidden
               />
-              <span className="relative flex min-h-0 flex-1 items-center gap-3 pr-14 pl-4 pb-2 text-left">
+              <div className="relative flex min-h-0 flex-1 items-center gap-2.5 pr-3 pl-4 pb-2 text-left">
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm shadow-emerald-700/25">
                   <Radar className="h-4 w-4" />
                 </span>
@@ -720,9 +739,24 @@ export function EquipmentFleetGlassPanel({
                         : `${formatCountPlural(units.length, ["одиниця", "одиниці", "одиниць"])} · GPS наживо`}
                   </span>
                 </span>
-              </span>
+                {onAddEquipment && !showDetail ? (
+                  <button
+                    type="button"
+                    aria-label="Нова техніка"
+                    className="inline-flex h-9 shrink-0 items-center gap-1 rounded-xl bg-[#276749] px-2.5 text-[11px] font-bold text-white shadow-sm"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onAddEquipment();
+                    }}
+                  >
+                    <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
+                    Нова
+                  </button>
+                ) : null}
+              </div>
               <FleetPeekCue />
-            </button>
+            </div>
           ) : null}
 
           <NonModalDrawerBackdrop
