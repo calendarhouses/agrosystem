@@ -393,7 +393,7 @@ export function MetroStationCard({
 }) {
   const icon = deriveTimelineIcon(event);
   const isFuture = isFutureTimelineOperation(event);
-  const statusLabel = timelineOperationStatusLabel(event.operationStatus);
+  const statusLabel = timelineOperationStatusLabel(event.operationStatus, event.date);
   const cardWidth = fullWidth
     ? "w-full"
     : compact

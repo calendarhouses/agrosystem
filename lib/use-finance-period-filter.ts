@@ -8,12 +8,31 @@ import {
   toIsoRange,
   type FinancePeriod,
 } from "@/lib/finance-period";
+import { currentAgroSeason } from "@/lib/season";
 import { useSeasonStore } from "@/lib/season-store";
 
-export function useFinancePeriodFilter(defaultPeriod: FinancePeriod = "Сезон") {
-  const activeSeason = useSeasonStore((s) => s.activeSeason);
-  const setActiveSeason = useSeasonStore((s) => s.setActiveSeason);
+/**
+ * @param defaultPeriod — початковий період (за замовчуванням "Сезон")
+ * @param options.isolated — якщо true, сезон зберігається локально
+ *   (не торкає глобальний useSeasonStore). Завжди стартує з поточного агросезону.
+ *   Використовується для Хронології, щоб не впливати на деталі поля.
+ */
+export function useFinancePeriodFilter(
+  defaultPeriod: FinancePeriod = "Сезон",
+  options?: { isolated?: boolean }
+) {
+  const isolated = options?.isolated ?? false;
+
+  // Глобальний стор
+  const globalSeason = useSeasonStore((s) => s.activeSeason);
+  const setGlobalSeason = useSeasonStore((s) => s.setActiveSeason);
   const availableSeasons = useSeasonStore((s) => s.availableSeasons);
+
+  // Локальний стан (використовується лише в isolated-режимі)
+  const [localSeason, setLocalSeason] = useState(() => currentAgroSeason());
+
+  const activeSeason = isolated ? localSeason : globalSeason;
+  const setActiveSeason = isolated ? setLocalSeason : setGlobalSeason;
   const seasonYear = Number(activeSeason) || 2026;
 
   const [period, setPeriod] = useState<FinancePeriod>(defaultPeriod);

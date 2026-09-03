@@ -133,16 +133,31 @@ export function deriveTimelineIcon(
 }
 
 export function isFutureTimelineOperation(event: UnifiedTimelineEvent): boolean {
-  return (
-    event.type === "equipment" &&
-    (event.operationStatus === "planned" ||
-      event.operationStatus === "in_progress")
-  );
+  if (event.type !== "equipment") return false;
+  if (
+    event.operationStatus !== "planned" &&
+    event.operationStatus !== "in_progress"
+  )
+    return false;
+  // Якщо дата в минулому — це не «майбутня» операція, навіть якщо статус planned
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const eventDate =
+    event.date instanceof Date ? event.date : new Date(event.date);
+  return eventDate >= now;
 }
 
 export function timelineOperationStatusLabel(
-  status: TimelineOperationStatus | null | undefined
+  status: TimelineOperationStatus | null | undefined,
+  date?: Date
 ): string | null {
+  // Якщо дата в минулому — статус «заплановано/в роботі» більше не актуальний
+  if (date) {
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    const d = date instanceof Date ? date : new Date(date);
+    if (d < now) return null;
+  }
   if (status === "planned") return "Заплановано";
   if (status === "in_progress") return "В роботі";
   return null;

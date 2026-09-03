@@ -20,6 +20,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  FileSpreadsheet,
   PackageMinus,
   Plus,
   Tractor,
@@ -650,12 +651,14 @@ function FieldCalendarBlock({
   isDesktop,
   onEventClick,
   onAddClick,
+  onExcelExport,
 }: {
   field: FieldWithTimeline;
   seasonYear: number;
   isDesktop: boolean;
   onEventClick: (field: FieldTimelineField, event: UnifiedTimelineEvent) => void;
   onAddClick: (field: FieldTimelineField) => void;
+  onExcelExport: (field: FieldWithTimeline) => void;
 }) {
   const [expandedMonth, setExpandedMonth] = useState<number | null>(null);
   const [selectedDayIso, setSelectedDayIso] = useState<string | null>(null);
@@ -770,8 +773,31 @@ function FieldCalendarBlock({
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
-          {/* Кнопка додати — з зеленим акцентом */}
+        <div className="flex shrink-0 items-center gap-1.5">
+          {/* Excel по цьому полю */}
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={(e) => {
+              e.stopPropagation();
+              onExcelExport(field);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.stopPropagation();
+                onExcelExport(field);
+              }
+            }}
+            className={cn(
+              "inline-flex items-center justify-center rounded-full border border-white/10 bg-white/5 text-zinc-400 transition hover:bg-white/10 hover:text-zinc-200 active:scale-[0.95]",
+              isDesktop ? "gap-1.5 px-3 py-1.5" : "size-8"
+            )}
+          >
+            <FileSpreadsheet className="size-3.5" />
+            {isDesktop ? <span className="text-xs font-medium">Excel</span> : null}
+          </span>
+
+          {/* Кнопка додати — кругла, зелений акцент */}
           <span
             role="button"
             tabIndex={0}
@@ -785,10 +811,13 @@ function FieldCalendarBlock({
                 onAddClick(tf);
               }
             }}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-500/20 hover:text-emerald-200 active:scale-[0.97]"
+            className={cn(
+              "inline-flex items-center justify-center rounded-full border border-emerald-500/25 bg-emerald-500/10 text-emerald-300 transition hover:bg-emerald-500/20 hover:text-emerald-200 active:scale-[0.95]",
+              isDesktop ? "gap-1.5 px-3 py-1.5" : "size-8"
+            )}
           >
             <Plus className="size-3.5" />
-            <span className={cn(!isDesktop && "sr-only")}>Додати</span>
+            {isDesktop ? <span className="text-xs font-semibold">Додати</span> : null}
           </span>
 
           {/* Стрілка акордеону */}
@@ -1011,19 +1040,17 @@ function FieldCalendarBlock({
 export function OperationsYearCalendar({
   fields,
   seasonYear,
-  availableSeasons,
   isLoading,
   onEventClick,
   onAddClick,
-  onSeasonChange,
+  onFieldExcelExport,
 }: {
   fields: FieldWithTimeline[];
   seasonYear: number;
-  availableSeasons?: readonly string[];
   isLoading?: boolean;
   onEventClick: (field: FieldTimelineField, event: UnifiedTimelineEvent) => void;
   onAddClick: (field: FieldTimelineField) => void;
-  onSeasonChange?: (year: number) => void;
+  onFieldExcelExport: (field: FieldWithTimeline) => void;
 }) {
   const isDesktop = !useIsMobile();
 
@@ -1031,15 +1058,6 @@ export function OperationsYearCalendar({
     () => fields.reduce((s, f) => s + f.events.length, 0),
     [fields]
   );
-
-  // Доступні сезони як числа для навігації
-  const seasonNumbers = useMemo(
-    () => (availableSeasons ?? []).map(Number).filter(Boolean).sort((a, b) => a - b),
-    [availableSeasons]
-  );
-  const currentIdx = seasonNumbers.indexOf(seasonYear);
-  const canPrev = currentIdx > 0;
-  const canNext = currentIdx < seasonNumbers.length - 1;
 
   if (isLoading) {
     return (
@@ -1054,57 +1072,21 @@ export function OperationsYearCalendar({
     );
   }
 
-  const seasonLabel = `${seasonYear}/${String(seasonYear + 1).slice(-2)} · березень–лютий`;
-
   return (
     <div className="flex flex-col gap-4 pb-6">
-      {/* Легенда / перемикач сезону */}
+      {/* Легенда */}
       <div className="flex flex-wrap items-center justify-between gap-2">
-        {/* Мобільний перемикач сезону */}
-        {!isDesktop && onSeasonChange && seasonNumbers.length > 1 ? (
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              disabled={!canPrev}
-              onClick={() => onSeasonChange(seasonNumbers[currentIdx - 1]!)}
-              className="flex size-7 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-zinc-400 transition disabled:opacity-25 hover:bg-white/10 hover:text-zinc-100"
-            >
-              <ChevronLeft className="size-3.5" />
-            </button>
-
-            <div className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-1.5">
-              <CalendarDays className="size-3.5 text-emerald-400/80" />
-              <span className="text-xs font-medium text-zinc-300">
-                Сезон {seasonLabel}
-              </span>
-            </div>
-
-            <button
-              type="button"
-              disabled={!canNext}
-              onClick={() => onSeasonChange(seasonNumbers[currentIdx + 1]!)}
-              className="flex size-7 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-zinc-400 transition disabled:opacity-25 hover:bg-white/10 hover:text-zinc-100"
-            >
-              <ChevronRight className="size-3.5" />
-            </button>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 text-xs text-zinc-500">
-            <CalendarDays className="size-3.5 text-emerald-400/80" />
-            <span>Сезон {seasonLabel}</span>
-            <span className="text-zinc-600">·</span>
-            <span className="font-medium text-zinc-400">
-              {ukStationLabel(totalEvents)}
-            </span>
-          </div>
-        )}
-
+        <div className="flex items-center gap-2 text-xs text-zinc-500">
+          <CalendarDays className="size-3.5 text-emerald-400/80" />
+          <span>
+            Сезон {seasonYear}/{String(seasonYear + 1).slice(-2)} · березень–лютий
+          </span>
+          <span className="text-zinc-600">·</span>
+          <span className="font-medium text-zinc-400">
+            {ukStationLabel(totalEvents)}
+          </span>
+        </div>
         <div className="flex flex-wrap items-center gap-2">
-          {!isDesktop && onSeasonChange && seasonNumbers.length > 1 ? (
-            <span className="text-xs text-zinc-500">
-              {ukStationLabel(totalEvents)}
-            </span>
-          ) : null}
           {TYPE_ORDER.map((type) => (
             <span
               key={type}
@@ -1126,6 +1108,7 @@ export function OperationsYearCalendar({
           isDesktop={isDesktop}
           onEventClick={onEventClick}
           onAddClick={onAddClick}
+          onExcelExport={onFieldExcelExport}
         />
       ))}
     </div>

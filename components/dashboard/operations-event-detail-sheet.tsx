@@ -303,7 +303,7 @@ function EventDetailHero({
   inventoryMove: LocalMoveRow | null;
 }) {
   const isFuture = isFutureTimelineOperation(event);
-  const statusLabel = timelineOperationStatusLabel(event.operationStatus);
+  const statusLabel = timelineOperationStatusLabel(event.operationStatus, event.date);
   const materialLine = formatOperationMaterialsLine(operation?.materials);
 
   return (

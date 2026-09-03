@@ -134,12 +134,18 @@ export function FinancePeriodToolbar({
             sideOffset={6}
             sheetOnMobile={false}
             className={cn(
-              "rounded-2xl border border-zinc-200 bg-white p-2 shadow-xl",
+              "rounded-2xl border p-2 shadow-xl",
+              dark
+                ? "border-white/10 bg-zinc-900"
+                : "border-zinc-200 bg-white",
               desktop ? "z-[260] w-56" : "w-[min(100vw-2rem,22rem)]"
             )}
           >
             {!desktop ? (
-              <p className="px-2.5 pt-1.5 pb-2 text-[11px] leading-snug text-zinc-500">
+              <p className={cn(
+                "px-2.5 pt-1.5 pb-2 text-[11px] leading-snug",
+                dark ? "text-zinc-400" : "text-zinc-500"
+              )}>
                 {seasonHint}
               </p>
             ) : null}
@@ -153,8 +159,10 @@ export function FinancePeriodToolbar({
                     "flex w-full items-center justify-between rounded-xl px-3 text-left transition-colors",
                     desktop ? "py-2 text-sm" : "py-2.5",
                     seasonYear === year
-                      ? "bg-[#276749] text-white"
-                      : "text-zinc-800 hover:bg-zinc-50"
+                      ? "bg-emerald-600 text-white"
+                      : dark
+                        ? "text-zinc-200 hover:bg-white/[0.06]"
+                        : "text-zinc-800 hover:bg-zinc-50"
                   )}
                 >
                   <span className="font-semibold">Сезон {year}</span>
@@ -215,13 +223,16 @@ export function FinancePeriodToolbar({
             sideOffset={6}
             sheetOnMobile={false}
             className={cn(
-              "rounded-2xl border border-zinc-200 bg-white p-3 shadow-xl",
+              "rounded-2xl border p-3 shadow-xl",
+              dark
+                ? "border-white/10 bg-zinc-900 text-zinc-200"
+                : "border-zinc-200 bg-white",
               desktop
                 ? "z-[260] w-auto"
                 : "w-[min(100vw-1.5rem,22.5rem)]"
             )}
           >
-            <p className="mb-2 px-1 text-[11px] text-zinc-500">
+            <p className={cn("mb-2 px-1 text-[11px]", dark ? "text-zinc-400" : "text-zinc-500")}>
               {rangeDraft.draft?.from && rangeDraft.draft?.to
                 ? "Натисніть дату, щоб обрати новий початок"
                 : rangeDraft.draft?.from
@@ -241,12 +252,15 @@ export function FinancePeriodToolbar({
               locale={uk}
               className={cn(!desktop && "w-full rounded-xl [--cell-size:2.5rem]")}
             />
-            <div className="mt-3 flex items-center gap-2 border-t border-zinc-100 pt-3">
+            <div className={cn("mt-3 flex items-center gap-2 border-t pt-3", dark ? "border-white/10" : "border-zinc-100")}>
               <button
                 type="button"
                 onClick={rangeDraft.resetDraft}
                 className={cn(
-                  "flex-1 rounded-xl border border-zinc-200 bg-white font-semibold text-zinc-600 hover:bg-zinc-50",
+                  "flex-1 rounded-xl border font-semibold",
+                  dark
+                    ? "border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10"
+                    : "border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50",
                   desktop ? "h-9 text-xs" : "h-11 text-sm"
                 )}
               >
@@ -257,7 +271,10 @@ export function FinancePeriodToolbar({
                 disabled={!rangeDraft.draft?.from}
                 onClick={rangeDraft.applyDraft}
                 className={cn(
-                  "flex-[1.4] rounded-xl bg-[#276749] font-bold text-white hover:bg-[#22543d] disabled:opacity-50",
+                  "flex-[1.4] rounded-xl font-bold text-white disabled:opacity-50",
+                  dark
+                    ? "bg-emerald-600 hover:bg-emerald-700"
+                    : "bg-[#276749] hover:bg-[#22543d]",
                   desktop ? "h-9 text-xs" : "h-11 text-sm"
                 )}
               >

@@ -188,7 +188,7 @@ function OperationsSheets({
 export function OperationsMatrixView() {
   const router = useRouter();
   const isMobile = useIsMobile();
-  const periodFilter = useFinancePeriodFilter("Сезон");
+  const periodFilter = useFinancePeriodFilter("Сезон", { isolated: true });
   const { period, customRange, seasonYear } = periodFilter;
   const { fieldsWithTimeline, isLoading, error, refresh, season } =
     useFieldTimeline(String(seasonYear));
@@ -308,6 +308,35 @@ export function OperationsMatrixView() {
     });
   }
 
+  function handleFieldExcelExport(field: FieldWithTimeline) {
+    if (field.events.length === 0) {
+      toast.error("Немає подій для експорту");
+      return;
+    }
+    startExcelTransition(async () => {
+      try {
+        const stations = stationsFromVisibleFields([field]);
+        const res = await buildTimelineExcelPayload(stations);
+        if (!res.ok) {
+          toast.error(res.error);
+          return;
+        }
+        const filename = downloadFieldTimelineExcel({
+          rows: res.rows,
+          fieldSummary: res.fieldSummary,
+          periodLabel: `${field.fieldName}_${seasonYear}`,
+        });
+        toast.success("Excel збережено", {
+          description: `${field.fieldName} · ${ukStationLabel(res.rows.length)} · ${filename}`,
+        });
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Не вдалося сформувати Excel"
+        );
+      }
+    });
+  }
+
   const excelButton = (
     <button
       type="button"
@@ -396,11 +425,10 @@ export function OperationsMatrixView() {
     <OperationsYearCalendar
       fields={calendarFields}
       seasonYear={seasonYear}
-      availableSeasons={periodFilter.availableSeasons}
       isLoading={isLoading}
       onEventClick={(field, event) => setSelectedEvent({ field, event })}
       onAddClick={(field) => setAddField(field)}
-      onSeasonChange={(year) => periodFilter.selectSeason(year)}
+      onFieldExcelExport={handleFieldExcelExport}
     />
   );
 
@@ -439,15 +467,13 @@ export function OperationsMatrixView() {
             </div>
 
             <div className="flex w-full shrink-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-end lg:w-auto">
-              {viewMode === "stations" ? (
-                <FinancePeriodToolbar
-                  {...periodFilter}
-                  variant="desktop"
-                  theme="dark"
-                  loading={isLoading}
-                  className="w-full shrink-0 lg:w-auto"
-                />
-              ) : null}
+              <FinancePeriodToolbar
+                {...periodFilter}
+                variant="desktop"
+                theme="dark"
+                loading={isLoading}
+                className="w-full shrink-0 lg:w-auto"
+              />
             </div>
           </div>
 
@@ -551,14 +577,12 @@ export function OperationsMatrixView() {
           ) : null}
         </div>
 
-        {viewMode === "stations" ? (
-          <FinancePeriodToolbar
-            {...periodFilter}
-            theme="dark"
-            loading={isLoading}
-            className="space-y-2"
-          />
-        ) : null}
+        <FinancePeriodToolbar
+          {...periodFilter}
+          theme="dark"
+          loading={isLoading}
+          className="space-y-2"
+        />
       </header>
 
       <div
