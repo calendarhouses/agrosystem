@@ -1,9 +1,19 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Search, X } from "lucide-react";
+import {
+  ArrowLeft,
+  CalendarDays,
+  CircleDot,
+  FileSpreadsheet,
+  Loader2,
+  Search,
+  X,
+} from "lucide-react";
+import { toast } from "sonner";
 
+import { buildTimelineExcelPayload } from "@/app/operations/timeline-export-actions";
 import { FinancePeriodToolbar } from "@/components/dashboard/finance-period-toolbar";
 import { allowHistoryBack } from "@/components/layout/prevent-edge-swipe-back";
 import { OperationsEventDetailSheet } from "@/components/dashboard/operations-event-detail-sheet";
@@ -12,18 +22,37 @@ import { OperationsMetroMap } from "@/components/dashboard/operations-metro-map"
 import { OperationsOperationFormSheet } from "@/components/dashboard/operations-operation-form-sheet";
 import { OperationsScoutingFormSheet } from "@/components/dashboard/operations-scouting-form-sheet";
 import { OperationsPanelShell } from "@/components/dashboard/operations-sheet-chrome";
+import { OperationsYearCalendar } from "@/components/dashboard/operations-year-calendar";
 import { QuickIssueSheet } from "@/components/dashboard/quick-issue-sheet";
 import { Input } from "@/components/ui/input";
 import {
   filterTimelineByIsoRange,
   getChroniclePeriodIsoRange,
 } from "@/lib/field-timeline-filter";
+import {
+  downloadFieldTimelineExcel,
+  stationsFromVisibleFields,
+} from "@/lib/field-timeline-excel-export";
 import type { FieldTimelineField, FieldWithTimeline, UnifiedTimelineEvent } from "@/lib/field-timeline";
 import { useFieldTimeline } from "@/lib/use-field-timeline";
 import { ukFieldLabel, ukStationLabel } from "@/lib/uk-plural";
 import { useFinancePeriodFilter } from "@/lib/use-finance-period-filter";
 import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
+
+const VIEW_MODE_KEY = "agrosystem-chronicle-view";
+
+type ChronicleViewMode = "stations" | "calendar";
+
+function readStoredViewMode(): ChronicleViewMode {
+  if (typeof window === "undefined") return "stations";
+  try {
+    const raw = localStorage.getItem(VIEW_MODE_KEY);
+    return raw === "calendar" ? "calendar" : "stations";
+  } catch {
+    return "stations";
+  }
+}
 
 function normalizeSearch(value: string): string {
   return value.trim().toLowerCase();
@@ -177,6 +206,21 @@ export function OperationsMatrixView() {
   );
   const [addScoutingField, setAddScoutingField] =
     useState<FieldTimelineField | null>(null);
+  const [excelPending, startExcelTransition] = useTransition();
+  const [viewMode, setViewMode] = useState<ChronicleViewMode>("stations");
+
+  useEffect(() => {
+    setViewMode(readStoredViewMode());
+  }, []);
+
+  function selectViewMode(next: ChronicleViewMode) {
+    setViewMode(next);
+    try {
+      localStorage.setItem(VIEW_MODE_KEY, next);
+    } catch {
+      /* ignore */
+    }
+  }
 
   const searchQuery = normalizeSearch(search);
 
@@ -203,13 +247,28 @@ export function OperationsMatrixView() {
     return bySearch.filter((item) => item.events.length > 0);
   }, [filteredFields, searchQuery]);
 
+  /** Календар року — увесь сезон (з урахуванням пошуку поля), без вузького періоду */
+  const calendarFields = useMemo(() => {
+    const bySearch = fieldsWithTimeline.filter((item) =>
+      fieldMatchesSearch(item, searchQuery)
+    );
+    if (searchQuery) return bySearch;
+    return bySearch.filter((item) => item.events.length > 0);
+  }, [fieldsWithTimeline, searchQuery]);
+
+  const summarySource =
+    viewMode === "calendar" ? calendarFields : visibleFields;
+
   const summary = useMemo(() => {
-    const stationCount = visibleFields.reduce(
+    const stationCount = summarySource.reduce(
       (sum, item) => sum + item.events.length,
       0
     );
-    return { fieldCount: visibleFields.length, stationCount };
-  }, [visibleFields]);
+    return { fieldCount: summarySource.length, stationCount };
+  }, [summarySource]);
+
+  const excelFields =
+    viewMode === "calendar" ? calendarFields : visibleFields;
 
   function handleExit() {
     if (typeof window !== "undefined" && window.history.length > 1) {
@@ -219,6 +278,60 @@ export function OperationsMatrixView() {
     }
     router.push("/");
   }
+
+  function handleExcelExport() {
+    if (summary.stationCount === 0) {
+      toast.error("Немає станцій для експорту");
+      return;
+    }
+    startExcelTransition(async () => {
+      try {
+        const stations = stationsFromVisibleFields(excelFields);
+        const res = await buildTimelineExcelPayload(stations);
+        if (!res.ok) {
+          toast.error(res.error);
+          return;
+        }
+        const filename = downloadFieldTimelineExcel({
+          rows: res.rows,
+          fieldSummary: res.fieldSummary,
+          periodLabel: `${period}_${seasonYear}`,
+        });
+        toast.success("Excel збережено", {
+          description: `${ukStationLabel(res.rows.length)} · ${filename}`,
+        });
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Не вдалося сформувати Excel"
+        );
+      }
+    });
+  }
+
+  const excelButton = (
+    <button
+      type="button"
+      onClick={handleExcelExport}
+      disabled={excelPending || isLoading || summary.stationCount === 0}
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-3 py-2 text-sm font-semibold transition",
+        "border-white/10 bg-white/5 text-zinc-100",
+        "hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+      )}
+    >
+      {excelPending ? (
+        <Loader2 className="size-4 animate-spin" />
+      ) : (
+        <FileSpreadsheet className="size-4" />
+      )}
+      Excel
+      {!excelPending && summary.stationCount > 0 ? (
+        <span className="text-[11px] font-medium text-zinc-400 tabular-nums">
+          {summary.stationCount}
+        </span>
+      ) : null}
+    </button>
+  );
 
   const sheets = (
     <OperationsSheets
@@ -239,6 +352,35 @@ export function OperationsMatrixView() {
     />
   );
 
+  const viewSwitcher = (
+    <div className="inline-flex rounded-xl bg-white/[0.04] p-1 ring-1 ring-white/10">
+      {(
+        [
+          { id: "stations" as const, label: "Станції", Icon: CircleDot },
+          { id: "calendar" as const, label: "Календар", Icon: CalendarDays },
+        ] as const
+      ).map(({ id, label, Icon }) => {
+        const active = viewMode === id;
+        return (
+          <button
+            key={id}
+            type="button"
+            onClick={() => selectViewMode(id)}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition sm:px-3 sm:text-sm",
+              active
+                ? "bg-white text-zinc-950 shadow-sm"
+                : "text-zinc-400 hover:text-zinc-100"
+            )}
+          >
+            <Icon className="size-3.5" strokeWidth={2.2} />
+            {label}
+          </button>
+        );
+      })}
+    </div>
+  );
+
   const metroMap = (
     <OperationsMetroMap
       variant={isMobile ? "mobile" : "desktop"}
@@ -250,7 +392,24 @@ export function OperationsMatrixView() {
     />
   );
 
-  const emptyState = !isLoading && !error && visibleFields.length === 0;
+  const yearCalendar = (
+    <OperationsYearCalendar
+      fields={calendarFields}
+      seasonYear={seasonYear}
+      isLoading={isLoading}
+      onEventClick={(field, event) => setSelectedEvent({ field, event })}
+    />
+  );
+
+  const mainContent =
+    viewMode === "calendar" ? yearCalendar : metroMap;
+
+  const emptyState =
+    !isLoading &&
+    !error &&
+    (viewMode === "calendar"
+      ? calendarFields.length === 0
+      : visibleFields.length === 0);
 
   if (!isMobile) {
     return (
@@ -258,11 +417,16 @@ export function OperationsMatrixView() {
         <header className="shrink-0 border-b border-white/5 px-6 pt-0 pb-2">
           <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0">
-              <h1 className="text-xl font-semibold tracking-tight text-zinc-50">
-                Хронологія полів
-              </h1>
+              <div className="flex flex-wrap items-center gap-3">
+                <h1 className="text-xl font-semibold tracking-tight text-zinc-50">
+                  Хронологія полів
+                </h1>
+                {viewSwitcher}
+              </div>
               <p className="mt-0.5 text-xs text-zinc-400 sm:text-sm">
-                Наряди техніки та списання ТМЦ по полях обраного сезону.
+                {viewMode === "calendar"
+                  ? "Річний огляд рухів по полях агросезону."
+                  : "Наряди техніки та списання ТМЦ по полях обраного сезону."}
                 {!isLoading && !error ? (
                   <span className="ml-1 font-medium text-zinc-300">
                     {ukFieldLabel(summary.fieldCount)} ·{" "}
@@ -272,13 +436,18 @@ export function OperationsMatrixView() {
               </p>
             </div>
 
-            <FinancePeriodToolbar
-              {...periodFilter}
-              variant="desktop"
-              theme="dark"
-              loading={isLoading}
-              className="w-full shrink-0 lg:w-auto"
-            />
+            <div className="flex w-full shrink-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-end lg:w-auto">
+              {excelButton}
+              {viewMode === "stations" ? (
+                <FinancePeriodToolbar
+                  {...periodFilter}
+                  variant="desktop"
+                  theme="dark"
+                  loading={isLoading}
+                  className="w-full shrink-0 lg:w-auto"
+                />
+              ) : null}
+            </div>
           </div>
 
           <div className="relative mt-2 max-w-md">
@@ -313,10 +482,12 @@ export function OperationsMatrixView() {
             <p className="rounded-3xl border border-white/10 bg-white/5 px-6 py-16 text-center text-sm text-zinc-500">
               {searchQuery
                 ? "Полів за запитом не знайдено."
-                : "За обраний період подій немає. Спробуйте інший діапазон або додайте операцію через пошук поля."}
+                : viewMode === "calendar"
+                  ? "За сезон подій немає. Додайте наряд, списання або скаутинг."
+                  : "За обраний період подій немає. Спробуйте інший діапазон або додайте операцію через пошук поля."}
             </p>
           ) : (
-            <div className="flex min-h-0 flex-1 flex-col">{metroMap}</div>
+            <div className="flex min-h-0 flex-1 flex-col">{mainContent}</div>
           )}
         </div>
 
@@ -342,6 +513,8 @@ export function OperationsMatrixView() {
           </h1>
         </div>
 
+        <div className="mb-3 flex justify-center">{viewSwitcher}</div>
+
         <div className="relative mb-3">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-zinc-500" />
           <Input
@@ -362,12 +535,18 @@ export function OperationsMatrixView() {
           ) : null}
         </div>
 
-        <FinancePeriodToolbar
-          {...periodFilter}
-          theme="dark"
-          loading={isLoading}
-          className="space-y-2"
-        />
+        <div className="mb-2 flex items-center justify-between gap-2">
+          {excelButton}
+        </div>
+
+        {viewMode === "stations" ? (
+          <FinancePeriodToolbar
+            {...periodFilter}
+            theme="dark"
+            loading={isLoading}
+            className="space-y-2"
+          />
+        ) : null}
       </header>
 
       <div
@@ -390,10 +569,12 @@ export function OperationsMatrixView() {
           <p className="rounded-3xl border border-white/10 bg-white/5 px-4 py-12 text-center text-sm text-zinc-500">
             {searchQuery
               ? "Полів за запитом не знайдено."
-              : "За обраний період подій немає. Спробуйте інший діапазон або додайте операцію через пошук поля."}
+              : viewMode === "calendar"
+                ? "За сезон подій немає. Додайте наряд, списання або скаутинг."
+                : "За обраний період подій немає. Спробуйте інший діапазон або додайте операцію через пошук поля."}
           </p>
         ) : (
-          metroMap
+          mainContent
         )}
       </div>
 

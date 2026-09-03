@@ -84,12 +84,17 @@ export const fuelInputClass = cn(
 );
 
 export const fuelSelectTriggerClass = cn(
-  "h-12 w-full min-w-0 max-w-full data-[size=default]:h-12 rounded-2xl",
-  "border border-zinc-200/90 bg-white px-4 text-base font-medium text-zinc-900 md:text-sm",
+  "flex h-auto min-h-12 w-full min-w-0 max-w-full items-center justify-between gap-2",
+  "rounded-2xl border border-zinc-200/90 bg-white px-4 py-2.5",
+  "text-left text-base font-medium text-zinc-900 md:text-sm",
   "shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]",
-  "overflow-hidden outline-none transition-all",
+  "outline-none transition-all",
   "focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/8",
-  "data-placeholder:text-zinc-400"
+  "data-placeholder:text-zinc-400",
+  /* перебиваємо дефолт SelectTrigger: w-fit + md:h-8 */
+  "data-[size=default]:h-auto data-[size=default]:min-h-12",
+  "md:h-auto md:min-h-12 md:data-[size=default]:h-auto md:data-[size=default]:min-h-12",
+  "*:data-[slot=select-value]:line-clamp-none *:data-[slot=select-value]:whitespace-normal"
 );
 
 export const fuelSelectItemClass =

@@ -21,6 +21,7 @@ import type { FieldGeometry } from "@/lib/farm-fields";
 import {
   estimateAreaHaFromTrack,
 } from "@/lib/field-operations";
+import { estimateWageFromRate } from "@/lib/field-operation-wage";
 import type { FieldTechVisit } from "@/lib/field-tech-history";
 import { formatUahCurrency } from "@/lib/fuel-price";
 import { cn } from "@/lib/utils";
@@ -46,6 +47,8 @@ export type CloseableOperation = {
   wagePlan?: number;
   fuelUsed: number;
   wage: number;
+  wageRateUahPerHa?: number;
+  mechanicName?: string | null;
   status: "completed" | "in_progress" | "planned";
   agronomistComment?: string;
   equipmentId?: string | null;
@@ -745,7 +748,21 @@ export function OperationClosePanel({
                     step="0.01"
                     min="0"
                     value={areaFact}
-                    onChange={(e) => setAreaFact(e.target.value)}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setAreaFact(next);
+                      const area = Number(String(next).replace(",", "."));
+                      const rate = op.wageRateUahPerHa;
+                      if (
+                        rate != null &&
+                        Number.isFinite(rate) &&
+                        rate >= 0 &&
+                        Number.isFinite(area) &&
+                        area > 0
+                      ) {
+                        setWageFact(String(estimateWageFromRate(rate, area)));
+                      }
+                    }}
                     className={cn(
                       "w-full min-w-0 border-0 bg-transparent p-0",
                       "text-2xl font-bold tabular-nums text-zinc-900",
@@ -859,7 +876,16 @@ export function OperationClosePanel({
                     )}
                   />
                 </div>
-                {Number.isFinite(wageFactNum) && wageFactNum > 0 ? (
+                {op.wageRateUahPerHa != null ? (
+                  <p className="mt-1 text-xs font-medium tabular-nums text-zinc-500">
+                    {op.wageRateUahPerHa} ₴/га
+                    {op.mechanicName ? ` · ${op.mechanicName}` : ""}
+                  </p>
+                ) : op.mechanicName ? (
+                  <p className="mt-1 text-xs font-medium text-zinc-500">
+                    {op.mechanicName}
+                  </p>
+                ) : Number.isFinite(wageFactNum) && wageFactNum > 0 ? (
                   <p className="mt-1 text-xs font-semibold tabular-nums text-emerald-700">
                     {formatUahCurrency(wageFactNum)}
                   </p>

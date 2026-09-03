@@ -27,6 +27,8 @@ type Body = {
   hasFuelSensor?: boolean | null;
   /** Опційно: привʼязка до активного наряду */
   fieldOperationId?: string | null;
+  /** Коли зроблено заправку */
+  transactionDate?: string | null;
 };
 
 type StorageRow = {
@@ -72,7 +74,14 @@ export async function POST(request: Request) {
     }
 
     const amount = roundLiters(amountLiters);
-    const transactionDate = new Date();
+    let transactionDate = new Date();
+    if (body.transactionDate) {
+      const parsed = new Date(body.transactionDate);
+      if (Number.isNaN(parsed.getTime())) {
+        return badRequest("Некоректна дата операції");
+      }
+      transactionDate = parsed;
+    }
 
     let calculatedVariance: number | null = null;
     let realAdded: number | null = null;

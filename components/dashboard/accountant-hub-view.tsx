@@ -58,6 +58,11 @@ import {
   defaultFinanceSeasonYear,
   getSeasonRange,
 } from "@/lib/finance-period";
+import {
+  INVENTORY_CATEGORIES,
+  INVENTORY_CATEGORY_META,
+  type InventoryCategory,
+} from "@/lib/inventory-bas";
 import { downloadAccountantPackageExcel } from "@/lib/inventory-excel-export";
 import { localMoveFromQueueItem } from "@/lib/local-move-edit";
 import {
@@ -66,6 +71,16 @@ import {
 } from "@/lib/use-finance-period-filter";
 import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
+
+type FuelStorageTypeFilter = "stationary" | "mobile";
+
+const FUEL_STORAGE_FILTERS: {
+  id: FuelStorageTypeFilter;
+  label: string;
+}[] = [
+  { id: "stationary", label: "Цистерни" },
+  { id: "mobile", label: "Бензовоз" },
+];
 
 const SIDEBAR_COLLAPSED_KEY = "agrosystem-sidebar-collapsed";
 
@@ -214,6 +229,33 @@ function matchesTab(
     return item.kind === "fuel_inbound" || item.kind === "fuel_transfer";
   }
   return item.kind === tab;
+}
+
+function matchesInventoryCategory(
+  item: AccountantQueueItem,
+  category: InventoryCategory | null
+): boolean {
+  if (!category) return true;
+  if (item.source !== "inventory") return false;
+  return item.category === category;
+}
+
+function matchesFuelStorageType(
+  item: AccountantQueueItem,
+  storageType: FuelStorageTypeFilter | null
+): boolean {
+  if (!storageType) return true;
+  if (item.source !== "fuel") return false;
+  return (
+    item.fromStorageType === storageType || item.toStorageType === storageType
+  );
+}
+
+function isInventoryCategory(value: string | null): value is InventoryCategory {
+  return (
+    value != null &&
+    (INVENTORY_CATEGORIES as readonly string[]).includes(value)
+  );
 }
 
 function summarizeRows(rows: AccountantQueueItem[]) {
@@ -414,6 +456,10 @@ export function AccountantHubView({
   const sidebarCollapsed = useSidebarCollapsed();
 
   const [tab, setTab] = useState<AccountantQueueTab>("all");
+  const [categoryFilter, setCategoryFilter] =
+    useState<InventoryCategory | null>(null);
+  const [fuelStorageFilter, setFuelStorageFilter] =
+    useState<FuelStorageTypeFilter | null>(null);
 
   const warmSeason = defaultFinanceSeasonYear();
   const warmRange = getSeasonRange(warmSeason);
@@ -553,6 +599,11 @@ export function AccountantHubView({
   const visible = useMemo(() => {
     return items.filter((i) => {
       if (!matchesTab(i, tab)) return false;
+      if (tab === "fuel") {
+        if (!matchesFuelStorageType(i, fuelStorageFilter)) return false;
+      } else if (!matchesInventoryCategory(i, categoryFilter)) {
+        return false;
+      }
       if (insightFilter === "no_attachment") return !i.hasAttachment;
       if (insightFilter === "new_sku") return i.isLocalItem;
       if (insightFilter === "no_fuel_price") {
@@ -563,14 +614,66 @@ export function AccountantHubView({
       }
       return true;
     });
-  }, [items, tab, insightFilter]);
+  }, [items, tab, insightFilter, categoryFilter, fuelStorageFilter]);
+
+  const tabItems = useMemo(
+    () => items.filter((i) => matchesTab(i, tab)),
+    [items, tab]
+  );
+
+  const categoryCounts = useMemo(() => {
+    const counts: Partial<Record<InventoryCategory, number>> = {};
+    for (const item of tabItems) {
+      if (!isInventoryCategory(item.category)) continue;
+      counts[item.category] = (counts[item.category] ?? 0) + 1;
+    }
+    return counts;
+  }, [tabItems]);
+
+  const fuelStorageCounts = useMemo(() => {
+    const counts: Record<FuelStorageTypeFilter, number> = {
+      stationary: 0,
+      mobile: 0,
+    };
+    for (const item of tabItems) {
+      if (item.source !== "fuel") continue;
+      if (
+        item.fromStorageType === "stationary" ||
+        item.toStorageType === "stationary"
+      ) {
+        counts.stationary += 1;
+      }
+      if (
+        item.fromStorageType === "mobile" ||
+        item.toStorageType === "mobile"
+      ) {
+        counts.mobile += 1;
+      }
+    }
+    return counts;
+  }, [tabItems]);
+
+  const visibleCategories = useMemo(
+    () =>
+      INVENTORY_CATEGORIES.filter((cat) => (categoryCounts[cat] ?? 0) > 0),
+    [categoryCounts]
+  );
+
+  function selectTab(next: AccountantQueueTab) {
+    setTab(next);
+    setCategoryFilter(null);
+    setFuelStorageFilter(null);
+  }
 
   function toggleInsight(
     next: "no_attachment" | "no_fuel_price" | "new_sku"
   ) {
     setInsightFilter((prev) => (prev === next ? null : next));
-    if (next === "no_fuel_price") setTab("fuel");
-    else setTab("all");
+    if (next === "no_fuel_price") {
+      selectTab("fuel");
+    } else {
+      selectTab("all");
+    }
   }
 
   function closeInlineEdit() {
@@ -1064,64 +1167,154 @@ export function AccountantHubView({
           <div
             className={cn(
               "flex flex-col gap-2 border-b border-[#E5DFD3]/80",
-              isMobile ? "px-2.5 py-2.5" : "gap-3 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-5"
+              isMobile ? "px-2.5 py-2.5" : "gap-3 px-4 py-3.5 sm:px-5"
             )}
           >
-            <div className="-mx-0.5 flex max-w-full gap-1 overflow-x-auto rounded-xl bg-[#F4F1EA]/90 p-1 ring-1 ring-[#E5DFD3]/90 [-ms-overflow-style:none] [scrollbar-width:none] sm:mx-0 sm:inline-flex sm:flex-wrap sm:overflow-visible [&::-webkit-scrollbar]:hidden">
-              {QUEUE_TABS.map((t) => {
-                const Icon = t.icon;
-                const count =
-                  t.id === "all"
-                    ? stats?.total
-                    : t.id === "outbound"
-                      ? stats?.outbound
-                      : t.id === "inbound"
-                        ? stats?.inbound
-                        : t.id === "sale"
-                          ? stats?.sale
-                          : stats?.fuel;
-                const active = tab === t.id;
-                return (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => setTab(t.id)}
-                    className={cn(
-                      "inline-flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-2 text-[11px] font-semibold transition sm:gap-1.5 sm:rounded-xl sm:px-3 sm:text-xs",
-                      active
-                        ? "bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200/80"
-                        : "text-zinc-500 hover:bg-white/60 hover:text-zinc-800"
-                    )}
-                  >
-                    <Icon className="h-3.5 w-3.5" strokeWidth={2} />
-                    {isMobile ? t.short : t.label}
-                    <span className="text-[10px] text-zinc-400 tabular-nums">
-                      {loading ? "—" : (count ?? 0)}
-                    </span>
-                  </button>
-                );
-              })}
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="-mx-0.5 flex max-w-full gap-1 overflow-x-auto rounded-xl bg-[#F4F1EA]/90 p-1 ring-1 ring-[#E5DFD3]/90 [-ms-overflow-style:none] [scrollbar-width:none] sm:mx-0 sm:inline-flex sm:flex-wrap sm:overflow-visible [&::-webkit-scrollbar]:hidden">
+                {QUEUE_TABS.map((t) => {
+                  const Icon = t.icon;
+                  const count =
+                    t.id === "all"
+                      ? stats?.total
+                      : t.id === "outbound"
+                        ? stats?.outbound
+                        : t.id === "inbound"
+                          ? stats?.inbound
+                          : t.id === "sale"
+                            ? stats?.sale
+                            : stats?.fuel;
+                  const active = tab === t.id;
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => selectTab(t.id)}
+                      className={cn(
+                        "inline-flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-2 text-[11px] font-semibold transition sm:gap-1.5 sm:rounded-xl sm:px-3 sm:text-xs",
+                        active
+                          ? "bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200/80"
+                          : "text-zinc-500 hover:bg-white/60 hover:text-zinc-800"
+                      )}
+                    >
+                      <Icon className="h-3.5 w-3.5" strokeWidth={2} />
+                      {isMobile ? t.short : t.label}
+                      <span className="text-[10px] text-zinc-400 tabular-nums">
+                        {loading ? "—" : (count ?? 0)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <button
+                type="button"
+                onClick={toggleVisibleAll}
+                className="inline-flex items-center gap-2 self-start rounded-xl px-2.5 py-2 text-[11px] font-semibold text-zinc-600 transition hover:bg-white hover:text-zinc-900 sm:self-auto sm:px-3 sm:text-xs"
+              >
+                <span
+                  className={cn(
+                    "flex h-5 w-5 items-center justify-center rounded-md border transition",
+                    allVisibleSelected
+                      ? "border-[#276749] bg-[#276749] text-white"
+                      : "border-zinc-300 bg-white"
+                  )}
+                >
+                  {allVisibleSelected ? (
+                    <Check className="h-3 w-3" strokeWidth={3} />
+                  ) : null}
+                </span>
+                Виділити всі
+              </button>
             </div>
 
-            <button
-              type="button"
-              onClick={toggleVisibleAll}
-              className="inline-flex items-center gap-2 self-start rounded-xl px-2.5 py-2 text-[11px] font-semibold text-zinc-600 transition hover:bg-white hover:text-zinc-900 sm:self-auto sm:px-3 sm:text-xs"
-            >
-              <span
-                className={cn(
-                  "flex h-5 w-5 items-center justify-center rounded-md border transition",
-                  allVisibleSelected
-                    ? "border-[#276749] bg-[#276749] text-white"
-                    : "border-zinc-300 bg-white"
-                )}
-              >
-                {allVisibleSelected ? (
-                  <Check className="h-3 w-3" strokeWidth={3} />
-                ) : null}
-              </span>
-              Виділити всі
-            </button>
+            {tab === "fuel" ? (
+              <div className="-mx-0.5 flex max-w-full gap-1 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible [&::-webkit-scrollbar]:hidden">
+                <button
+                  type="button"
+                  onClick={() => setFuelStorageFilter(null)}
+                  className={cn(
+                    "inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold transition sm:text-[11px]",
+                    fuelStorageFilter == null
+                      ? "bg-[#276749] text-white shadow-sm"
+                      : "bg-white/80 text-zinc-600 ring-1 ring-[#E5DFD3] hover:bg-white hover:text-zinc-900"
+                  )}
+                >
+                  Усі
+                  <span className="tabular-nums opacity-70">
+                    {tabItems.length}
+                  </span>
+                </button>
+                {FUEL_STORAGE_FILTERS.map((f) => {
+                  const count = fuelStorageCounts[f.id];
+                  if (count === 0 && fuelStorageFilter !== f.id) return null;
+                  const active = fuelStorageFilter === f.id;
+                  return (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() =>
+                        setFuelStorageFilter((prev) =>
+                          prev === f.id ? null : f.id
+                        )
+                      }
+                      className={cn(
+                        "inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold transition sm:text-[11px]",
+                        active
+                          ? "bg-[#276749] text-white shadow-sm"
+                          : "bg-white/80 text-zinc-600 ring-1 ring-[#E5DFD3] hover:bg-white hover:text-zinc-900"
+                      )}
+                    >
+                      {f.label}
+                      <span className="tabular-nums opacity-70">{count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : visibleCategories.length > 0 || categoryFilter ? (
+              <div className="-mx-0.5 flex max-w-full gap-1 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible [&::-webkit-scrollbar]:hidden">
+                <button
+                  type="button"
+                  onClick={() => setCategoryFilter(null)}
+                  className={cn(
+                    "inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold transition sm:text-[11px]",
+                    categoryFilter == null
+                      ? "bg-[#276749] text-white shadow-sm"
+                      : "bg-white/80 text-zinc-600 ring-1 ring-[#E5DFD3] hover:bg-white hover:text-zinc-900"
+                  )}
+                >
+                  Усі
+                  <span className="tabular-nums opacity-70">
+                    {tabItems.length}
+                  </span>
+                </button>
+                {INVENTORY_CATEGORIES.map((cat) => {
+                  const count = categoryCounts[cat] ?? 0;
+                  if (count === 0 && categoryFilter !== cat) return null;
+                  const active = categoryFilter === cat;
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() =>
+                        setCategoryFilter((prev) =>
+                          prev === cat ? null : cat
+                        )
+                      }
+                      className={cn(
+                        "inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold transition sm:text-[11px]",
+                        active
+                          ? "bg-[#276749] text-white shadow-sm"
+                          : "bg-white/80 text-zinc-600 ring-1 ring-[#E5DFD3] hover:bg-white hover:text-zinc-900"
+                      )}
+                    >
+                      {INVENTORY_CATEGORY_META[cat].label}
+                      <span className="tabular-nums opacity-70">{count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
           </div>
 
           <div className="hidden" />

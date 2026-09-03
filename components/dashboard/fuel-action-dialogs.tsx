@@ -28,6 +28,7 @@ import {
   fuelSheetBodyClass,
 } from "@/components/dashboard/fuel-sheet-chrome";
 import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -96,6 +97,7 @@ async function saveTransaction(
     wialonUnitId?: number | null;
     hasFuelSensor?: boolean | null;
     pricePerLiter?: number | null;
+    transactionDate?: string | null;
   },
   editId?: string | null
 ): Promise<{ message?: string; transactionId?: string }> {
@@ -130,6 +132,7 @@ async function submitRefuel(payload: {
   operatorName?: string | null;
   hasFuelSensor: boolean;
   fieldOperationId?: string | null;
+  transactionDate?: string | null;
 }): Promise<{ transaction?: FuelTransaction }> {
   const response = await fetch("/api/fuel/refuel", {
     method: "POST",
@@ -157,6 +160,32 @@ function parsePrice(raw: string): number | null {
   const n = Number(raw.replace(",", "."));
   if (!Number.isFinite(n) || n <= 0) return null;
   return Math.round(n * 100) / 100;
+}
+
+/** Дата операції → ISO (зберігаємо час доби з now / редагування) */
+function buildTransactionDateIso(
+  date: Date,
+  preserveTimeFrom?: Date | null
+): string {
+  const next = new Date(date);
+  if (preserveTimeFrom && !Number.isNaN(preserveTimeFrom.getTime())) {
+    next.setHours(
+      preserveTimeFrom.getHours(),
+      preserveTimeFrom.getMinutes(),
+      preserveTimeFrom.getSeconds(),
+      0
+    );
+  } else {
+    const now = new Date();
+    next.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), 0);
+  }
+  return next.toISOString();
+}
+
+function startOfLocalDay(d = new Date()): Date {
+  const next = new Date(d);
+  next.setHours(0, 0, 0, 0);
+  return next;
 }
 
 function formatPartyCost(liters: number, price: number): string {
@@ -407,8 +436,9 @@ function StorageSelect({
   items: Array<{ value: string; label: string }>;
   placeholder: string;
 }) {
+  const selected = storages.find((s) => s.id === value) ?? null;
   return (
-    <div className="space-y-1.5">
+    <div className="w-full min-w-0 space-y-2">
       <Label className={fuelFieldLabelClass}>{label}</Label>
       <Select
         items={items}
@@ -417,12 +447,24 @@ function StorageSelect({
           if (typeof next === "string" && next) onChange(next);
         }}
       >
-        <SelectTrigger className={selectTriggerClass}>
+        <SelectTrigger className={cn(selectTriggerClass, "w-full")}>
           <SelectValue placeholder={placeholder}>
-            {storages.find((s) => s.id === value)?.name ?? null}
+            {selected ? (
+              <span className="flex min-w-0 flex-col items-start gap-0.5 text-left">
+                <span className="w-full truncate font-semibold text-zinc-900">
+                  {storageLabel(selected)}
+                </span>
+                <span className="w-full truncate text-xs font-medium text-zinc-500">
+                  {storageMeta(selected)}
+                </span>
+              </span>
+            ) : null}
           </SelectValue>
         </SelectTrigger>
-        <SelectContent sheetOnMobile={false} className="z-[230] rounded-2xl border border-zinc-200 bg-white p-1.5 text-zinc-900 shadow-lg">
+        <SelectContent
+          sheetOnMobile={false}
+          className="z-[230] min-w-[var(--anchor-width)] rounded-2xl border border-zinc-200 bg-white p-1.5 text-zinc-900 shadow-lg"
+        >
           {storages.map((storage) => (
             <SelectItem
               key={storage.id}
@@ -441,6 +483,26 @@ function StorageSelect({
           ))}
         </SelectContent>
       </Select>
+    </div>
+  );
+}
+
+function OperationDateField({
+  value,
+  onChange,
+}: {
+  value: Date | undefined;
+  onChange: (date: Date | undefined) => void;
+}) {
+  return (
+    <div className="w-full min-w-0 space-y-2">
+      <Label className={fuelFieldLabelClass}>Дата операції</Label>
+      <DatePicker
+        date={value}
+        onChange={onChange}
+        placeholder="Оберіть дату"
+        className="h-12 min-h-12 rounded-2xl border-zinc-200/90 px-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]"
+      />
     </div>
   );
 }
@@ -465,6 +527,9 @@ export function FuelActionDialogs({
   const [fromStorage, setFromStorage] = useState("");
   const [toStorage, setToStorage] = useState("");
   const [unitId, setUnitId] = useState("");
+  const [operationDate, setOperationDate] = useState<Date | undefined>(() =>
+    startOfLocalDay()
+  );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successScreen, setSuccessScreen] = useState<FuelSuccessKind | null>(
@@ -578,10 +643,16 @@ export function FuelActionDialogs({
       const storagePrice =
         storages.find((s) => s.id === targetId)?.pricePerLiter ?? 0;
       setPricePerLiter(storagePrice > 0 ? String(storagePrice) : "");
+      setOperationDate(
+        editTransaction.transactionDate
+          ? startOfLocalDay(new Date(editTransaction.transactionDate))
+          : startOfLocalDay()
+      );
       return;
     }
     setAmount("");
     setToStorage(stationaryId);
+    setOperationDate(startOfLocalDay());
     const storagePrice =
       storages.find((s) => s.id === stationaryId)?.pricePerLiter ?? 0;
     setPricePerLiter(storagePrice > 0 ? String(storagePrice) : "");
@@ -595,11 +666,17 @@ export function FuelActionDialogs({
       setAmount(String(editTransaction.amountLiters));
       setFromStorage(editTransaction.fromStorageId ?? stationaryId);
       setToStorage(editTransaction.toStorageId ?? mobileId);
+      setOperationDate(
+        editTransaction.transactionDate
+          ? startOfLocalDay(new Date(editTransaction.transactionDate))
+          : startOfLocalDay()
+      );
       return;
     }
     setAmount("");
     setFromStorage(stationaryId);
     setToStorage(mobileId);
+    setOperationDate(startOfLocalDay());
   }, [isTransferOpen, stationaryId, mobileId, editTransaction]);
 
   useEffect(() => {
@@ -611,6 +688,11 @@ export function FuelActionDialogs({
     if (editTransaction?.type === "outbound") {
       setAmount(String(editTransaction.amountLiters));
       setFromStorage(editTransaction.fromStorageId ?? mobileId);
+      setOperationDate(
+        editTransaction.transactionDate
+          ? startOfLocalDay(new Date(editTransaction.transactionDate))
+          : startOfLocalDay()
+      );
       const match = findEquipmentOpsOption(
         units.map(
           (u): EquipmentOpsOption => ({
@@ -633,6 +715,7 @@ export function FuelActionDialogs({
     setAmount("");
     setFromStorage(mobileId);
     setUnitId(units[0]?.key ?? "");
+    setOperationDate(startOfLocalDay());
   }, [isRefuelOpen, mobileId, units, editTransaction]);
 
   /** Smart Context: локація Wialon + активний наряд при виборі техніки з GPS */
@@ -725,6 +808,7 @@ export function FuelActionDialogs({
                 try {
                   const liters = parseAmount(amount);
                   if (liters == null) throw new Error("Вкажіть кількість літрів");
+                  if (!operationDate) throw new Error("Оберіть дату операції");
                   if (!toStorage) throw new Error("Оберіть ємність");
                   const price = parsePrice(pricePerLiter);
                   if (price == null) {
@@ -744,6 +828,13 @@ export function FuelActionDialogs({
                       amountLiters: liters,
                       toStorageId: toStorage,
                       pricePerLiter: price,
+                      transactionDate: buildTransactionDateIso(
+                        operationDate,
+                        editTransaction?.type === "inbound" &&
+                          editTransaction.transactionDate
+                          ? new Date(editTransaction.transactionDate)
+                          : null
+                      ),
                     },
                     editTransaction?.type === "inbound" ? editId : null
                   );
@@ -771,6 +862,11 @@ export function FuelActionDialogs({
             }}
           >
             <div className={cn(fuelSheetBodyClass, "space-y-6")} data-vaul-no-drag="" data-allow-pan="true">
+              <OperationDateField
+                value={operationDate}
+                onChange={setOperationDate}
+              />
+
               <StorageSelect
                 label="Куди зливаємо"
                 value={toStorage}
@@ -839,6 +935,7 @@ export function FuelActionDialogs({
                 type="submit"
                 disabled={
                   submitting ||
+                  !operationDate ||
                   !amount ||
                   !pricePerLiter ||
                   receiveOverflow ||
@@ -893,6 +990,7 @@ export function FuelActionDialogs({
                 try {
                   const liters = parseAmount(amount);
                   if (liters == null) throw new Error("Вкажіть кількість літрів");
+                  if (!operationDate) throw new Error("Оберіть дату операції");
                   if (!fromStorage || !toStorage) {
                     throw new Error("Оберіть обидві ємності");
                   }
@@ -915,6 +1013,13 @@ export function FuelActionDialogs({
                       amountLiters: liters,
                       fromStorageId: fromStorage,
                       toStorageId: toStorage,
+                      transactionDate: buildTransactionDateIso(
+                        operationDate,
+                        editTransaction?.type === "transfer" &&
+                          editTransaction.transactionDate
+                          ? new Date(editTransaction.transactionDate)
+                          : null
+                      ),
                     },
                     editTransaction?.type === "transfer" ? editId : null
                   );
@@ -941,6 +1046,11 @@ export function FuelActionDialogs({
             }}
           >
             <div className={cn(fuelSheetBodyClass, "space-y-6")} data-vaul-no-drag="" data-allow-pan="true">
+              <OperationDateField
+                value={operationDate}
+                onChange={setOperationDate}
+              />
+
               <StorageSelect
                 label="Звідки"
                 value={fromStorage}
@@ -992,6 +1102,7 @@ export function FuelActionDialogs({
                 type="submit"
                 disabled={
                   submitting ||
+                  !operationDate ||
                   !amount ||
                   isError ||
                   transferOverflow ||
@@ -1046,6 +1157,7 @@ export function FuelActionDialogs({
                 try {
                   const liters = parseAmount(amount);
                   if (liters == null) throw new Error("Вкажіть кількість літрів");
+                  if (!operationDate) throw new Error("Оберіть дату операції");
                   if (!fromStorage) throw new Error("Оберіть ємність-донор");
                   if (liters > MAX_TRACTOR_TANK_LITERS) {
                     throw new Error(
@@ -1064,6 +1176,12 @@ export function FuelActionDialogs({
                   const hasFuelSensor = selected.hasFuelSensor;
                   const editOutboundId =
                     editTransaction?.type === "outbound" ? editId : null;
+                  const transactionDate = buildTransactionDateIso(
+                    operationDate,
+                    editOutboundId && editTransaction?.transactionDate
+                      ? new Date(editTransaction.transactionDate)
+                      : null
+                  );
                   if (editOutboundId) {
                     await saveTransaction(
                       {
@@ -1073,6 +1191,7 @@ export function FuelActionDialogs({
                         equipmentId: selected.equipmentId ?? null,
                         wialonUnitId: selected.wialonUnitId ?? null,
                         hasFuelSensor,
+                        transactionDate,
                       },
                       editOutboundId
                     );
@@ -1088,6 +1207,7 @@ export function FuelActionDialogs({
                         linkActiveOp && refuelActiveOp
                           ? refuelActiveOp.id
                           : null,
+                      transactionDate,
                     });
                   }
                   setAmount("");
@@ -1105,6 +1225,11 @@ export function FuelActionDialogs({
             }}
           >
             <div className={cn(fuelSheetBodyClass, "space-y-6")} data-vaul-no-drag="" data-allow-pan="true">
+              <OperationDateField
+                value={operationDate}
+                onChange={setOperationDate}
+              />
+
               <StorageSelect
                 label="Звідки"
                 value={fromStorage}
@@ -1114,7 +1239,7 @@ export function FuelActionDialogs({
                 placeholder="Ємність-донор"
               />
 
-              <div className="min-w-0 space-y-1.5">
+              <div className="w-full min-w-0 space-y-2">
                 <Label className={fuelFieldLabelClass}>
                   Техніка
                 </Label>
@@ -1125,13 +1250,33 @@ export function FuelActionDialogs({
                     if (typeof next === "string" && next) setUnitId(next);
                   }}
                 >
-                  <SelectTrigger className={selectTriggerClass}>
+                  <SelectTrigger className={cn(selectTriggerClass, "w-full")}>
                     <SelectValue
                       placeholder={
                         unitsLoading ? "Завантаження…" : "Оберіть техніку"
                       }
                     >
-                      {selectedUnit ? unitSelectLabel(selectedUnit) : null}
+                      {selectedUnit ? (
+                        <span className="flex min-w-0 flex-col items-start gap-0.5 text-left">
+                          <span className="w-full truncate font-semibold text-zinc-900">
+                            {unitSelectLabel(selectedUnit)}
+                          </span>
+                          <span
+                            className={cn(
+                              "w-full truncate text-xs font-medium",
+                              selectedUnit.hasFuelSensor
+                                ? "text-emerald-600"
+                                : "text-zinc-500"
+                            )}
+                          >
+                            {selectedUnit.hasFuelSensor
+                              ? "Звірка з датчиком палива Wialon"
+                              : selectedUnit.hasTracker
+                                ? "Ручний облік · без ДУТ"
+                                : "Без GPS · ручний облік"}
+                          </span>
+                        </span>
+                      ) : null}
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent
@@ -1268,6 +1413,7 @@ export function FuelActionDialogs({
                 type="submit"
                 disabled={
                   submitting ||
+                  !operationDate ||
                   !amount ||
                   isError ||
                   isAbsurdAmount ||

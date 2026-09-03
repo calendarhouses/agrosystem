@@ -7,6 +7,8 @@ import { Loader2, Tractor } from "lucide-react";
 import { toast } from "sonner";
 
 import { listEquipmentForOps, listImplementsForOps, type ImplementOption } from "@/app/admin/equipment/actions";
+import { getWorkTypeWageRate } from "@/app/fields/operation-wage-actions";
+import { MechanicNameField } from "@/components/dashboard/mechanic-name-field";
 import { Button } from "@/components/ui/button";
 import {
   OperationsDatePicker,
@@ -35,11 +37,14 @@ import {
 } from "@/lib/equipment-ops-options";
 import {
   estimatePlanFuelLiters,
-  estimatePlanWageUah,
   IMPLEMENT_PRESETS,
   IMPLEMENT_WIDTH_DEFAULTS,
   OPERATION_TYPES,
 } from "@/lib/field-operation-norms";
+import {
+  defaultWageRateUahPerHa,
+  estimateWageFromRate,
+} from "@/lib/field-operation-wage";
 import { operationRequiresMaterial } from "@/lib/operation-material-categories";
 import {
   listFieldOperations,
@@ -48,6 +53,7 @@ import {
 } from "@/lib/field-operations";
 import { fieldOperationsKeyFromFarmId } from "@/lib/field-timeline-ids";
 import type { FieldTimelineField } from "@/lib/field-timeline";
+import { formatUahCurrency } from "@/lib/fuel-price";
 
 function formatOpDateLabel(iso: string): string {
   const d = new Date(`${iso.slice(0, 10)}T12:00:00`);
@@ -88,11 +94,24 @@ export function OperationsOperationForm({
   const [implementOptions, setImplementOptions] = useState<ImplementOption[]>([]);
   const [areaDone, setAreaDone] = useState("");
   const [fuelUsed, setFuelUsed] = useState("");
-  const [wage, setWage] = useState("");
+  const [wageRate, setWageRate] = useState(() =>
+    String(defaultWageRateUahPerHa(OPERATION_TYPES[0]))
+  );
+  const [mechanicName, setMechanicName] = useState("");
   const [comment, setComment] = useState("");
   const [material, setMaterial] = useState<OperationMaterialDraft | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const areaDoneNum = Number(String(areaDone).replace(",", "."));
+  const wageRateNum = Number(String(wageRate).replace(",", "."));
+  const wageTotal =
+    Number.isFinite(wageRateNum) &&
+    wageRateNum >= 0 &&
+    Number.isFinite(areaDoneNum) &&
+    areaDoneNum > 0
+      ? estimateWageFromRate(wageRateNum, areaDoneNum)
+      : 0;
 
   const unitOptions = useMemo(
     () => mergeEquipmentOpsOptions(catalogEquipment, []),
@@ -139,7 +158,14 @@ export function OperationsOperationForm({
       setFuelUsed(
         String(initial.fuelUsed ?? estimatePlanFuelLiters(initial.type, initial.areaDone))
       );
-      setWage(String(initial.wage ?? estimatePlanWageUah(initial.areaDone)));
+      const rate =
+        initial.wageRateUahPerHa != null && initial.wageRateUahPerHa >= 0
+          ? initial.wageRateUahPerHa
+          : initial.areaDone > 0
+            ? Math.round((initial.wage / initial.areaDone) * 100) / 100
+            : defaultWageRateUahPerHa(initial.type);
+      setWageRate(String(rate));
+      setMechanicName(initial.mechanicName?.trim() || "");
       setComment(initial.agronomistComment ?? "");
       setMaterial(initial.materials?.[0] ?? null);
       const match = findEquipmentOpsOption(unitOptions, {
@@ -155,7 +181,11 @@ export function OperationsOperationForm({
     setImplementId(null);
     setAreaDone(String(areaDefault));
     setFuelUsed(String(estimatePlanFuelLiters(OPERATION_TYPES[0], areaDefault)));
-    setWage(String(estimatePlanWageUah(areaDefault)));
+    setWageRate(String(defaultWageRateUahPerHa(OPERATION_TYPES[0])));
+    setMechanicName("");
+    void getWorkTypeWageRate(OPERATION_TYPES[0]).then((res) => {
+      if (res.ok) setWageRate(String(res.rateUahPerHa));
+    });
     setComment("");
     setMaterial(null);
     setUnitKey(unitOptions[0]?.key ?? null);
@@ -166,13 +196,16 @@ export function OperationsOperationForm({
     const area = Number(String(areaDone).replace(",", "."));
     if (!Number.isFinite(area) || area <= 0) return;
     setFuelUsed(String(estimatePlanFuelLiters(type, area)));
-    setWage(String(estimatePlanWageUah(area)));
   }, [areaDone, initial, type]);
 
   useEffect(() => {
     if (initial) return;
     setImplement(IMPLEMENT_PRESETS[type] ?? "Знаряддя");
     setImplementId(null);
+    setWageRate(String(defaultWageRateUahPerHa(type)));
+    void getWorkTypeWageRate(type).then((res) => {
+      if (res.ok) setWageRate(String(res.rateUahPerHa));
+    });
   }, [initial, type]);
 
   useEffect(() => {
@@ -196,7 +229,7 @@ export function OperationsOperationForm({
 
     const area = Number(String(areaDone).replace(",", "."));
     const fuel = Number(String(fuelUsed).replace(",", "."));
-    const pay = Number(String(wage).replace(",", "."));
+    const rate = Number(String(wageRate).replace(",", "."));
     const width = IMPLEMENT_WIDTH_DEFAULTS[type] ?? 6;
 
     if (!selectedUnit) {
@@ -213,8 +246,8 @@ export function OperationsOperationForm({
       setError("Вкажіть коректну площу");
       return;
     }
-    if (!Number.isFinite(fuel) || fuel < 0 || !Number.isFinite(pay) || pay < 0) {
-      setError("Перевірте паливо та оплату");
+    if (!Number.isFinite(fuel) || fuel < 0 || !Number.isFinite(rate) || rate < 0) {
+      setError("Перевірте паливо та ставку оплати (₴/га)");
       return;
     }
     if (
@@ -225,6 +258,7 @@ export function OperationsOperationForm({
       return;
     }
 
+    const pay = estimateWageFromRate(rate, area);
     const occurred = new Date(`${date}T12:00:00`);
     const opSeason = Number.isNaN(occurred.getTime())
       ? seasonYear
@@ -245,7 +279,9 @@ export function OperationsOperationForm({
       areaDone: Math.round(area * 100) / 100,
       areaTotal: Number(field.areaHa) || area,
       fuelUsed: Math.round(fuel),
-      wage: Math.round(pay),
+      wage: pay,
+      wageRateUahPerHa: Math.round(rate * 100) / 100,
+      mechanicName: mechanicName.trim() || null,
       status: "completed",
       agronomistComment: comment.trim() || undefined,
       equipmentId: selectedUnit.equipmentId,
@@ -396,6 +432,15 @@ export function OperationsOperationForm({
           )}
         </section>
 
+        <section className="space-y-2">
+          <MechanicNameField
+            value={mechanicName}
+            onChange={setMechanicName}
+            labelClassName={chrome.label}
+            inputClassName={chrome.input}
+          />
+        </section>
+
         <OperationMaterialsPicker
           workType={type}
           areaHa={Number(String(areaDone).replace(",", ".")) || Number(field.areaHa) || 0}
@@ -416,13 +461,16 @@ export function OperationsOperationForm({
             />
           </div>
           <div className="space-y-2">
-            <Label className={chrome.label}>Оплата, ₴</Label>
+            <Label className={chrome.label}>Ставка, ₴/га</Label>
             <input
               inputMode="decimal"
-              value={wage}
-              onChange={(e) => setWage(e.target.value)}
+              value={wageRate}
+              onChange={(e) => setWageRate(e.target.value)}
               className={chrome.input}
             />
+            <p className="text-[10px] text-zinc-400">
+              ЗП {formatUahCurrency(wageTotal)}
+            </p>
           </div>
         </section>
 

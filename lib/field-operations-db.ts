@@ -18,6 +18,8 @@ const OPTIONAL_UPSERT_COLUMNS = [
   "actor_name",
   "closed_by_id",
   "closed_by_name",
+  "mechanic_name",
+  "wage_rate_uah_per_ha",
 ] as const;
 
 function isMissingColumnError(message: string, column: string): boolean {

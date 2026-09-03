@@ -14,16 +14,8 @@ export type LocalEquipmentType =
 
 /** Куди відноситься техніка для BAS / бухгалтера */
 export const EQUIPMENT_WORK_SCOPE_OPTIONS = [
-  {
-    id: "field",
-    label: "Поля",
-    hint: "Трактори, комбайни, оприскувачі — робота на полях",
-  },
-  {
-    id: "base",
-    label: "База",
-    hint: "Крани, двір, склади — робота на базі",
-  },
+  { id: "field", label: "Поля" },
+  { id: "base", label: "База" },
 ] as const;
 
 export type EquipmentWorkScope =

@@ -123,12 +123,7 @@ export function AddEquipmentSheet({ open, onOpenChange, onCreated }: Props) {
           data-allow-pan="true"
         >
           <section className="space-y-2.5">
-            <div>
-              <p className={fuelFieldLabelClass}>Категорія для бухгалтерії</p>
-              <p className="mt-0.5 text-xs text-zinc-400">
-                Поля — польова техніка · База — двір, крани, склади
-              </p>
-            </div>
+            <p className={fuelFieldLabelClass}>Категорія для бухгалтерії</p>
             <div className="grid grid-cols-2 gap-2.5">
               {EQUIPMENT_WORK_SCOPE_OPTIONS.map((option) => {
                 const active = workScope === option.id;
@@ -140,7 +135,7 @@ export function AddEquipmentSheet({ open, onOpenChange, onCreated }: Props) {
                     disabled={pending}
                     onClick={() => setWorkScope(option.id)}
                     className={cn(
-                      "flex min-h-[4.5rem] flex-col items-start gap-1.5 rounded-2xl border px-3.5 py-3 text-left transition-all",
+                      "flex min-h-[3.75rem] flex-col items-start gap-1.5 rounded-2xl border px-3.5 py-3 text-left transition-all",
                       active
                         ? "border-[#276749] bg-[#276749] text-white shadow-[0_8px_20px_-10px_rgba(39,103,73,0.55)]"
                         : "border-[#E0DBD0] bg-white text-zinc-800 hover:border-[#276749]/40"
@@ -156,14 +151,6 @@ export function AddEquipmentSheet({ open, onOpenChange, onCreated }: Props) {
                     </span>
                     <span className="text-[14px] font-bold tracking-tight">
                       {option.label}
-                    </span>
-                    <span
-                      className={cn(
-                        "text-[10px] leading-snug font-medium",
-                        active ? "text-white/75" : "text-zinc-500"
-                      )}
-                    >
-                      {option.hint}
                     </span>
                   </button>
                 );
@@ -196,7 +183,10 @@ export function AddEquipmentSheet({ open, onOpenChange, onCreated }: Props) {
               disabled={pending}
             >
               <SelectTrigger className={fuelSelectTriggerClass}>
-                <SelectValue />
+                <SelectValue placeholder="Оберіть тип">
+                  {LOCAL_EQUIPMENT_TYPE_OPTIONS.find((o) => o.id === type)
+                    ?.label ?? "Оберіть тип"}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent sheetOnMobile={false} className="z-[280]">
                 {LOCAL_EQUIPMENT_TYPE_OPTIONS.map((option) => (
@@ -242,8 +232,7 @@ export function AddEquipmentSheet({ open, onOpenChange, onCreated }: Props) {
             <Tractor className="mt-0.5 h-4 w-4 shrink-0 text-[#276749]" />
             <p>
               Категорія <strong>Поля</strong> — у списку «Без трекера»;{" "}
-              <strong>База</strong> — в окремий список «База». Обидві — у
-              заправці Палива.
+              <strong>База</strong> — в окремий список «База»
             </p>
           </div>
 

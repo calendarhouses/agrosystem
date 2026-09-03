@@ -27,7 +27,7 @@ export const FIELD_LIST_CATEGORIES: FieldListCategory[] = [
   {
     id: "bases",
     label: "Бази",
-    description: "База · Левада · Кафе",
+    description: "База · Левада · магазин",
     accent: "#64748B",
   },
 ];
@@ -54,8 +54,7 @@ function isBaseName(lower: string): boolean {
     /\bлевада\b/.test(lower) ||
     lower.includes("кафе") ||
     lower.includes("магазин") ||
-    lower.includes("чайна") ||
-    lower.includes("соцсфера")
+    lower.includes("чайна")
   );
 }
 

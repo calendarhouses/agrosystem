@@ -34,6 +34,10 @@ export type FieldOperation = {
   wagePlan?: number;
   fuelUsed: number;
   wage: number;
+  /** Ставка ₴/га (ввід користувача); wage = rate × area */
+  wageRateUahPerHa?: number;
+  /** ПІБ механізатора */
+  mechanicName?: string | null;
   status: Exclude<FieldOperationStatus, "cancelled">;
   agronomistComment?: string;
   /** UUID з довідника equipment (техніки без GPS теж) */
@@ -196,6 +200,14 @@ export function mapOperationRow(row: DbRow): FieldOperation {
         : wagePlan > 0
           ? wagePlan
           : wageFact,
+    wageRateUahPerHa: (() => {
+      const rate = optionalNum(row.wage_rate_uah_per_ha);
+      return rate != null && rate >= 0 ? rate : undefined;
+    })(),
+    mechanicName:
+      row.mechanic_name != null && String(row.mechanic_name).trim()
+        ? String(row.mechanic_name).trim()
+        : null,
     status,
     agronomistComment:
       row.agronomist_comment != null && String(row.agronomist_comment).trim()
@@ -397,6 +409,8 @@ export async function upsertFieldOperation(
     fuelFact: input.status === "completed" ? input.fuelUsed : null,
     wagePlan: input.wagePlan ?? input.wage,
     wageFact: input.status === "completed" ? input.wage : null,
+    wageRateUahPerHa: input.wageRateUahPerHa ?? null,
+    mechanicName: input.mechanicName?.trim() || null,
     agronomistComment: input.agronomistComment ?? null,
     equipmentId: input.equipmentId ?? null,
     wialonUnitId: input.wialonUnitId ?? null,

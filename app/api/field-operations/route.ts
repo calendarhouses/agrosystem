@@ -9,6 +9,7 @@ import {
 } from "@/lib/field-operation-materials";
 import { mapOperationRow } from "@/lib/field-operations";
 import { upsertFieldOperationRow } from "@/lib/field-operations-db";
+import { normalizeWorkTypeKey } from "@/lib/field-operation-wage";
 import { captureWeatherContextForField } from "@/lib/field-weather-context";
 import { createServiceSupabase } from "@/lib/supabase/server";
 
@@ -40,6 +41,8 @@ type UpsertBody = {
   fuelFact?: number | null;
   wagePlan?: number | null;
   wageFact?: number | null;
+  wageRateUahPerHa?: number | null;
+  mechanicName?: string | null;
   agronomistComment?: string | null;
   equipmentId?: string | null;
   wialonUnitId?: number | null;
@@ -208,6 +211,13 @@ export async function POST(request: Request) {
       fuel_fact: body.fuelFact ?? null,
       wage_plan: body.wagePlan ?? null,
       wage_fact: body.wageFact ?? null,
+      wage_rate_uah_per_ha:
+        typeof body.wageRateUahPerHa === "number" &&
+        Number.isFinite(body.wageRateUahPerHa) &&
+        body.wageRateUahPerHa >= 0
+          ? Math.round(body.wageRateUahPerHa * 100) / 100
+          : null,
+      mechanic_name: body.mechanicName?.trim() || null,
       agronomist_comment: body.agronomistComment?.trim() || null,
       equipment_id:
         typeof body.equipmentId === "string" && isUuid(body.equipmentId)
@@ -281,6 +291,27 @@ export async function POST(request: Request) {
           },
           { status: 500 }
         );
+      }
+    }
+
+    const rate =
+      typeof body.wageRateUahPerHa === "number" &&
+      Number.isFinite(body.wageRateUahPerHa) &&
+      body.wageRateUahPerHa >= 0
+        ? Math.round(body.wageRateUahPerHa * 100) / 100
+        : null;
+    if (rate != null) {
+      const rateKey = normalizeWorkTypeKey(workType);
+      if (rateKey) {
+        await supabase.from("work_type_wage_rates").upsert(
+          {
+            work_type: rateKey,
+            rate_uah_per_ha: rate,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "work_type" }
+        );
+        // таблиця може ще не існувати — ігноруємо
       }
     }
 

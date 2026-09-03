@@ -107,16 +107,20 @@ import { useSeasonStore } from "@/lib/season-store";
 import { currentAgroSeason } from "@/lib/season";
 import type { Field } from "@/lib/dashboard-data";
 import type { FieldEvent } from "@/lib/field-events";
+import { MechanicNameField } from "@/components/dashboard/mechanic-name-field";
+import { getWorkTypeWageRate } from "@/app/fields/operation-wage-actions";
 import {
   estimatePlanFuelLiters,
-  estimatePlanWageUah,
   fuelLitersPerHa,
   IMPLEMENT_PRESETS,
   IMPLEMENT_WIDTH_DEFAULTS,
   OPERATION_TYPES,
-  WAGE_UAH_PER_HA,
   isSowingOperationType,
 } from "@/lib/field-operation-norms";
+import {
+  defaultWageRateUahPerHa,
+  estimateWageFromRate,
+} from "@/lib/field-operation-wage";
 import { operationRequiresMaterial } from "@/lib/operation-material-categories";
 import { formatUahCurrency } from "@/lib/fuel-price";
 import { isFieldPassportComplete } from "@/lib/field-passport";
@@ -485,7 +489,13 @@ function OperationCard({
             <p className="mt-1 text-sm font-bold tabular-nums text-zinc-900">
               {formatUah(op.wage)}
             </p>
-            <p className="mt-1.5 text-[11px] text-zinc-500">механізатор</p>
+            <p className="mt-1.5 truncate text-[11px] text-zinc-500">
+              {op.mechanicName?.trim()
+                ? op.mechanicName
+                : op.wageRateUahPerHa != null
+                  ? `${op.wageRateUahPerHa} ₴/га`
+                  : "механізатор"}
+            </p>
           </div>
         </div>
       </div>
@@ -719,7 +729,10 @@ function PlanWorkPanel({
   const [fuelUsed, setFuelUsed] = useState(() =>
     String(estimatePlanFuelLiters(OPERATION_TYPES[0], areaDefault))
   );
-  const [wage, setWage] = useState(() => String(estimatePlanWageUah(areaDefault)));
+  const [wageRate, setWageRate] = useState(() =>
+    String(defaultWageRateUahPerHa(OPERATION_TYPES[0]))
+  );
+  const [mechanicName, setMechanicName] = useState("");
   const [material, setMaterial] = useState<OperationMaterialDraft | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dieselPriceUah, setDieselPriceUah] = useState<number | null>(null);
@@ -736,6 +749,15 @@ function PlanWorkPanel({
   }, []);
 
   const fuelLitersNum = Number(String(fuelUsed).replace(",", "."));
+  const areaDoneNum = Number(String(areaDone).replace(",", "."));
+  const wageRateNum = Number(String(wageRate).replace(",", "."));
+  const wageTotal =
+    Number.isFinite(wageRateNum) &&
+    wageRateNum >= 0 &&
+    Number.isFinite(areaDoneNum) &&
+    areaDoneNum > 0
+      ? estimateWageFromRate(wageRateNum, areaDoneNum)
+      : 0;
   const fuelCostEstimate =
     dieselPriceUah != null &&
     Number.isFinite(fuelLitersNum) &&
@@ -789,11 +811,21 @@ function PlanWorkPanel({
       );
       setAreaDone(String(initial.areaDone));
       setFuelUsed(String(initial.fuelUsed));
-      setWage(String(initial.wage));
+      const initialRate =
+        initial.wageRateUahPerHa != null &&
+        Number.isFinite(initial.wageRateUahPerHa) &&
+        initial.wageRateUahPerHa >= 0
+          ? initial.wageRateUahPerHa
+          : initial.areaDone > 0
+            ? Math.round((initial.wage / initial.areaDone) * 100) / 100
+            : defaultWageRateUahPerHa(initial.type);
+      setWageRate(String(initialRate));
+      setMechanicName(initial.mechanicName?.trim() || "");
       setMaterial(initial.materials?.[0] ?? null);
       return;
     }
     setMaterial(null);
+    setMechanicName("");
     const area = Number(field.areaHa) || 0;
     const workType = OPERATION_TYPES[0];
     setType(workType);
@@ -843,7 +875,10 @@ function PlanWorkPanel({
         ? Math.round(prefill.fuelUsed)
         : estimatePlanFuelLiters(workType, prefillArea);
     setFuelUsed(String(fuelFromGps));
-    setWage(String(estimatePlanWageUah(prefillArea)));
+    setWageRate(String(defaultWageRateUahPerHa(workType)));
+    void getWorkTypeWageRate(workType).then((res) => {
+      if (res.ok) setWageRate(String(res.rateUahPerHa));
+    });
   }, [initial, prefill, field.id, field.crop, field.areaHa]);
 
   /** Резолв ключа техніки після завантаження довідника / Wialon. */
@@ -899,7 +934,6 @@ function PlanWorkPanel({
     setAreaDone(String(area));
     if (!isEdit) {
       setFuelUsed(String(estimatePlanFuelLiters(type, area)));
-      setWage(String(estimatePlanWageUah(area)));
     }
   }
 
@@ -917,6 +951,10 @@ function PlanWorkPanel({
         const area = Number(areaDone.replace(",", ".")) || areaDefault;
         setFuelUsed(String(estimatePlanFuelLiters(next, area)));
       }
+      setWageRate(String(defaultWageRateUahPerHa(next)));
+      void getWorkTypeWageRate(next).then((res) => {
+        if (res.ok) setWageRate(String(res.rateUahPerHa));
+      });
     }
   }
 
@@ -945,7 +983,6 @@ function PlanWorkPanel({
     const area = Number(value.replace(",", "."));
     if (!Number.isFinite(area) || area <= 0) return;
     setFuelUsed(String(estimatePlanFuelLiters(type, area)));
-    setWage(String(estimatePlanWageUah(area)));
   }
 
   function handleSubmit(event: FormEvent) {
@@ -958,7 +995,7 @@ function PlanWorkPanel({
     }
     const area = Number(areaDone.replace(",", "."));
     const fuel = Number(fuelUsed.replace(",", "."));
-    const pay = Number(wage.replace(",", "."));
+    const rate = Number(wageRate.replace(",", "."));
     const width = Number(implementWidth.replace(",", "."));
     const selectedUnit = unitOptions.find((u) => u.key === unitId);
 
@@ -984,8 +1021,8 @@ function PlanWorkPanel({
       setError("Вкажіть коректну площу");
       return;
     }
-    if (!Number.isFinite(fuel) || fuel < 0 || !Number.isFinite(pay) || pay < 0) {
-      setError("Перевірте паливо та оплату");
+    if (!Number.isFinite(fuel) || fuel < 0 || !Number.isFinite(rate) || rate < 0) {
+      setError("Перевірте паливо та ставку оплати (₴/га)");
       return;
     }
     if (
@@ -996,6 +1033,7 @@ function PlanWorkPanel({
       return;
     }
 
+    const pay = estimateWageFromRate(rate, area);
     const occurred = new Date(`${date}T12:00:00`);
     const opSeason = Number.isNaN(occurred.getTime())
       ? seasonYear
@@ -1016,7 +1054,9 @@ function PlanWorkPanel({
       areaDone: Math.round(area * 100) / 100,
       areaTotal: Number(passportAreaHa) || Number(field.areaHa) || area,
       fuelUsed: Math.round(fuel),
-      wage: Math.round(pay),
+      wage: pay,
+      wageRateUahPerHa: Math.round(rate * 100) / 100,
+      mechanicName: mechanicName.trim() || null,
       status: submitAsCompleted
         ? "completed"
         : (initial?.status ?? "planned"),
@@ -1288,6 +1328,15 @@ function PlanWorkPanel({
             </div>
           </section>
 
+          <section className="overflow-hidden rounded-2xl border border-[#E5DFD3] bg-white p-4 shadow-sm">
+            <MechanicNameField
+              value={mechanicName}
+              onChange={setMechanicName}
+              labelClassName={labelClass}
+              inputClassName={fieldControlClass}
+            />
+          </section>
+
           <OperationMaterialsPicker
             workType={type}
             areaHa={Number(areaDone.replace(",", ".")) || areaDefault}
@@ -1333,15 +1382,18 @@ function PlanWorkPanel({
                 </p>
               </div>
               <div className={cellClass}>
-                <Label className={labelClass}>Оплата, ₴</Label>
+                <Label className={labelClass}>Ставка, ₴/га</Label>
                 <Input
-                  value={wage}
-                  onChange={(e) => setWage(e.target.value)}
-                  inputMode="numeric"
+                  value={wageRate}
+                  onChange={(e) => setWageRate(e.target.value)}
+                  inputMode="decimal"
                   className={cn(fieldControlClass, "tabular-nums font-semibold")}
                 />
                 <p className="h-4 text-[10px] text-zinc-400">
-                  ≈ {formatUahCurrency(estimatePlanWageUah(Number(areaDone.replace(",", ".")) || areaDefault))}
+                  ЗП {formatUahCurrency(wageTotal)}
+                  {Number.isFinite(areaDoneNum) && areaDoneNum > 0
+                    ? ` · ${areaDoneNum} га`
+                    : ""}
                 </p>
               </div>
             </div>
@@ -1355,7 +1407,7 @@ function PlanWorkPanel({
             <p className="text-xs leading-relaxed text-zinc-500">
               {submitAsCompleted
                 ? "Операція одразу потрапить у «Історію» як виконана — для розрахунку собівартості сезону."
-                : "Операція зʼявиться в «Історії» зі статусом «Заплановано». Паливо й оплату можна скоригувати — зараз це розрахунок від площі поля."}
+                : "Операція зʼявиться в «Історії» зі статусом «Заплановано». Ставка ₴/га запамʼятовується за типом робіт."}
             </p>
           )}
         </div>
@@ -1424,6 +1476,8 @@ function toCloseableOperation(op: FieldOperation): CloseableOperation {
     wagePlan: op.wagePlan,
     fuelUsed: op.fuelUsed,
     wage: op.wage,
+    wageRateUahPerHa: op.wageRateUahPerHa,
+    mechanicName: op.mechanicName,
     status: op.status,
     agronomistComment: op.agronomistComment,
     equipmentId: op.equipmentId,

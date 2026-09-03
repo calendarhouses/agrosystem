@@ -75,8 +75,20 @@ export type AccountantQueueItem = {
   toStorageName: string | null;
   fromStorageBasRefKey: string | null;
   toStorageBasRefKey: string | null;
+  /** stationary = цистерна, mobile = бензовоз */
+  fromStorageType: "stationary" | "mobile" | "other" | null;
+  toStorageType: "stationary" | "mobile" | "other" | null;
   pricePerLiter: number | null;
 };
+
+function mapFuelStorageType(
+  raw: unknown
+): "stationary" | "mobile" | "other" | null {
+  if (raw == null) return null;
+  const t = String(raw);
+  if (t === "stationary" || t === "mobile") return t;
+  return "other";
+}
 
 export type AccountantQueueStats = {
   total: number;
@@ -223,6 +235,8 @@ function inventoryToQueueItem(m: DraftExportMove): AccountantQueueItem {
     toStorageName: null,
     fromStorageBasRefKey: null,
     toStorageBasRefKey: null,
+    fromStorageType: null,
+    toStorageType: null,
     pricePerLiter: null,
   };
 }
@@ -346,8 +360,8 @@ async function fetchFuelQueue(
       transaction_date,
       sync_status,
       bas_draft_ref_key,
-      from_storage:fuel_storages!fuel_transactions_from_storage_id_fkey ( name, bas_ref_key ),
-      to_storage:fuel_storages!fuel_transactions_to_storage_id_fkey ( name, bas_ref_key )
+      from_storage:fuel_storages!fuel_transactions_from_storage_id_fkey ( name, bas_ref_key, type ),
+      to_storage:fuel_storages!fuel_transactions_to_storage_id_fkey ( name, bas_ref_key, type )
     `
     )
     .eq("sync_status", syncStatus)
@@ -385,10 +399,14 @@ async function fetchFuelQueue(
       ];
       const nameById = new Map<string, string>();
       const basById = new Map<string, string | null>();
+      const typeById = new Map<
+        string,
+        "stationary" | "mobile" | "other" | null
+      >();
       if (storageIds.length > 0) {
         const { data: storages } = await supabase
           .from("fuel_storages")
-          .select("id, name, bas_ref_key")
+          .select("id, name, bas_ref_key, type")
           .in("id", storageIds);
         for (const s of storages ?? []) {
           nameById.set(String(s.id), String(s.name ?? ""));
@@ -398,6 +416,7 @@ async function fetchFuelQueue(
               ? String(s.bas_ref_key).toLowerCase()
               : null
           );
+          typeById.set(String(s.id), mapFuelStorageType(s.type));
         }
       }
       return (simple.data ?? []).map((row) => {
@@ -456,6 +475,12 @@ async function fetchFuelQueue(
           toStorageBasRefKey: row.to_storage_id
             ? basById.get(String(row.to_storage_id)) ?? null
             : null,
+          fromStorageType: row.from_storage_id
+            ? typeById.get(String(row.from_storage_id)) ?? null
+            : null,
+          toStorageType: row.to_storage_id
+            ? typeById.get(String(row.to_storage_id)) ?? null
+            : null,
           pricePerLiter: price,
         };
       });
@@ -481,14 +506,22 @@ async function fetchFuelQueue(
         : ("fuel_inbound" as const);
     const from = unwrapJoin(
       row.from_storage as
-        | { name?: string; bas_ref_key?: string | null }
-        | { name?: string; bas_ref_key?: string | null }[]
+        | { name?: string; bas_ref_key?: string | null; type?: string | null }
+        | {
+            name?: string;
+            bas_ref_key?: string | null;
+            type?: string | null;
+          }[]
         | null
     );
     const to = unwrapJoin(
       row.to_storage as
-        | { name?: string; bas_ref_key?: string | null }
-        | { name?: string; bas_ref_key?: string | null }[]
+        | { name?: string; bas_ref_key?: string | null; type?: string | null }
+        | {
+            name?: string;
+            bas_ref_key?: string | null;
+            type?: string | null;
+          }[]
         | null
     );
     const fromName = from?.name ? String(from.name) : null;
@@ -533,6 +566,8 @@ async function fetchFuelQueue(
         to?.bas_ref_key != null && String(to.bas_ref_key).trim()
           ? String(to.bas_ref_key).toLowerCase()
           : null,
+      fromStorageType: mapFuelStorageType(from?.type),
+      toStorageType: mapFuelStorageType(to?.type),
       pricePerLiter: price,
     };
   });
@@ -945,6 +980,8 @@ export async function listAccountantArchive(input?: {
           toStorageName: snap.toStorageName ?? null,
           fromStorageBasRefKey: snap.fromStorageBasRefKey ?? null,
           toStorageBasRefKey: snap.toStorageBasRefKey ?? null,
+          fromStorageType: snap.fromStorageType ?? null,
+          toStorageType: snap.toStorageType ?? null,
           pricePerLiter: snap.pricePerLiter ?? null,
           archiveId: String(row.id),
           eventType: "deleted",

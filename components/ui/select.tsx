@@ -141,7 +141,7 @@ function SelectContent({
         <>
           <SelectScrollUpButton />
           <SelectPrimitive.List
-            className="desktop-scrollbar max-h-[min(var(--available-height,55dvh),22rem)] overflow-y-auto overscroll-contain touch-pan-y p-1"
+            className="desktop-scrollbar max-h-[min(var(--available-height,55dvh),22rem)] overflow-y-scroll overscroll-contain touch-pan-y p-1 pr-0.5"
             data-vaul-no-drag=""
             data-allow-pan="true"
             data-desktop-scroll="true"
@@ -248,7 +248,7 @@ function SelectScrollUpButton({
     <SelectPrimitive.ScrollUpArrow
       data-slot="select-scroll-up-button"
       className={cn(
-        "top-0 z-10 flex w-full cursor-default items-center justify-center bg-popover py-1 [&_svg:not([class*='size-'])]:size-4",
+        "top-0 z-10 flex w-[calc(100%-11px)] cursor-default items-center justify-center bg-popover py-1 [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       {...props}
@@ -267,7 +267,7 @@ function SelectScrollDownButton({
     <SelectPrimitive.ScrollDownArrow
       data-slot="select-scroll-down-button"
       className={cn(
-        "bottom-0 z-10 flex w-full cursor-default items-center justify-center bg-popover py-1 [&_svg:not([class*='size-'])]:size-4",
+        "bottom-0 z-10 flex w-[calc(100%-11px)] cursor-default items-center justify-center bg-popover py-1 [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       {...props}

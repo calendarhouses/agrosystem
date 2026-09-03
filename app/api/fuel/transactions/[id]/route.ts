@@ -47,6 +47,7 @@ type PatchBody = {
   hasFuelSensor?: boolean | null;
   /** Для inbound — ціна нової партії (WAC) */
   pricePerLiter?: number | null;
+  transactionDate?: string | null;
 };
 
 function badRequest(message: string) {
@@ -349,6 +350,15 @@ export async function PATCH(
       }
     }
 
+    let transactionDateIso: string | undefined;
+    if (body.transactionDate) {
+      const parsed = new Date(body.transactionDate);
+      if (Number.isNaN(parsed.getTime())) {
+        return badRequest("Некоректна дата операції");
+      }
+      transactionDateIso = parsed.toISOString();
+    }
+
     // Валідація пройшла → відкат старої + застосування нової.
     // На будь-якій помилці відновлюємо oldTx.
     await reverseTx(supabase, oldTx);
@@ -403,6 +413,7 @@ export async function PATCH(
       wialon_variance: wialonVariance,
       price_per_liter: costing.pricePerLiter,
       total_cost: costing.totalCost,
+      ...(transactionDateIso ? { transaction_date: transactionDateIso } : {}),
     };
 
     let { data: updated, error: updateError } = await supabase
