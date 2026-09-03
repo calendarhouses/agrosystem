@@ -4,13 +4,18 @@ import { useEffect, useState, useTransition } from "react";
 import { format } from "date-fns";
 import { uk } from "date-fns/locale";
 import {
+  CalendarDays as CalendarIcon,
   Camera,
+  Clock,
+  Droplets,
   Loader2,
+  MapPin,
   PackageMinus,
   Pencil,
   Search,
   Tractor,
   Trash2,
+  Wallet,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -395,42 +400,56 @@ function EventDetailHero({
         </p>
       )}
 
-      <div className="relative mt-4 flex flex-wrap gap-2">
-        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-zinc-400">
-          {formatDetailDate(event.date)}
-        </span>
+      {/* Деталі — сітка характеристик */}
+      <div className="relative mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+        {/* Дата */}
+        <div className="flex items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 py-2">
+          <CalendarIcon className="size-3.5 shrink-0 text-zinc-500" />
+          <span className="text-xs font-medium text-zinc-300">{formatDetailDate(event.date)}</span>
+        </div>
+        {/* Площа */}
         {isEquipment && !isFuture && operation?.areaDone ? (
-          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-zinc-400">
-            {operation.areaDone} га
-          </span>
+          <div className="flex items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 py-2">
+            <span className="text-[10px] font-bold text-zinc-500">ГА</span>
+            <span className="text-xs font-medium tabular-nums text-zinc-300">{operation.areaDone} га</span>
+          </div>
         ) : null}
+        {/* Паливо */}
         {isEquipment && operation?.fuelUsed ? (
-          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-zinc-400">
-            ⛽ {operation.fuelUsed} л
-          </span>
+          <div className="flex items-center gap-2 rounded-xl border border-orange-500/15 bg-orange-500/[0.04] px-3 py-2">
+            <Droplets className="size-3.5 shrink-0 text-orange-400/70" />
+            <span className="text-xs font-medium tabular-nums text-zinc-300">{operation.fuelUsed} л</span>
+          </div>
         ) : null}
+        {/* ЗП */}
         {isEquipment && operation?.wage ? (
-          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-zinc-400">
-            💵{" "}
-            {new Intl.NumberFormat("uk-UA", {
-              maximumFractionDigits: 0,
-            }).format(operation.wage)}{" "}
-            ₴
-            {operation.wageRateUahPerHa
-              ? ` · ${operation.wageRateUahPerHa} ₴/га`
-              : ""}
-          </span>
+          <div className="flex items-center gap-2 rounded-xl border border-emerald-500/15 bg-emerald-500/[0.04] px-3 py-2">
+            <Wallet className="size-3.5 shrink-0 text-emerald-400/70" />
+            <div className="min-w-0">
+              <span className="block text-xs font-medium tabular-nums text-zinc-300">
+                {new Intl.NumberFormat("uk-UA", { maximumFractionDigits: 0 }).format(operation.wage)} ₴
+              </span>
+              {operation.wageRateUahPerHa ? (
+                <span className="block text-[10px] tabular-nums text-zinc-500">
+                  {operation.wageRateUahPerHa} ₴/га
+                </span>
+              ) : null}
+            </div>
+          </div>
         ) : null}
-        {/* GPS-дані */}
+        {/* GPS — дистанція */}
         {operation?.trackerDistanceKm ? (
-          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-zinc-400">
-            📍 {operation.trackerDistanceKm.toFixed(1)} км
-          </span>
+          <div className="flex items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 py-2">
+            <MapPin className="size-3.5 shrink-0 text-zinc-500" />
+            <span className="text-xs font-medium tabular-nums text-zinc-300">{operation.trackerDistanceKm.toFixed(1)} км</span>
+          </div>
         ) : null}
+        {/* GPS — години */}
         {operation?.trackerWorkHours ? (
-          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-zinc-400">
-            ⏱ {operation.trackerWorkHours.toFixed(1)} год
-          </span>
+          <div className="flex items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 py-2">
+            <Clock className="size-3.5 shrink-0 text-zinc-500" />
+            <span className="text-xs font-medium tabular-nums text-zinc-300">{operation.trackerWorkHours.toFixed(1)} год</span>
+          </div>
         ) : null}
       </div>
     </div>

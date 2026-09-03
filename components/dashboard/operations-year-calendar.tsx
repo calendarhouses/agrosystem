@@ -17,6 +17,7 @@ import {
   ArrowLeft,
   CalendarDays,
   Camera,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   PackageMinus,
@@ -471,23 +472,36 @@ function DayCellExpanded({
     );
   }
 
-  // Десктоп — div з вкладеними кнопками-чіпами
+  // Десктоп — клітинка = картка роботи; натискання — відкриття деталей
+  const singleStation = visibleStations.length === 1 ? visibleStations[0] : null;
+
   return (
-    <div
+    <button
+      type="button"
+      disabled={!has}
+      onClick={() => {
+        if (singleStation) {
+          onEventClick(singleStation.field, singleStation.event);
+        } else if (bucket && visibleStations.length > 1) {
+          // Відкрити перший — або можна додати попап; поки відкриваємо перший
+          onEventClick(visibleStations[0]!.field, visibleStations[0]!.event);
+        }
+      }}
       className={cn(
-        "group relative flex flex-col rounded-lg border p-1 text-left transition",
-        "min-h-[80px] sm:p-1.5",
-        !has && "border-white/[0.04] bg-white/[0.01]",
+        "group relative flex flex-col rounded-lg border p-1.5 text-left transition",
+        "min-h-[72px]",
+        !has && "border-white/[0.04] bg-white/[0.01] disabled:opacity-100",
         has && primaryMeta && cn("border-white/[0.06]", "ring-1 ring-inset", primaryMeta.ring, primaryMeta.bg),
         has && types.length > 1 && "border-white/[0.08] bg-gradient-to-br from-orange-500/8 via-emerald-500/6 to-sky-500/8 ring-1 ring-inset ring-white/15",
+        has && "cursor-pointer hover:brightness-110 active:scale-[0.98]",
         today && "outline outline-1 outline-emerald-300/50"
       )}
     >
+      {/* Верхній рядок: дата + крапки типів */}
       <div className="flex w-full shrink-0 items-center justify-between gap-1">
         <span
           className={cn(
-            "inline-flex items-center justify-center rounded-md text-[11px] font-semibold tabular-nums",
-            isDesktop ? "size-6 text-xs" : "size-5",
+            "inline-flex size-6 items-center justify-center rounded-md text-xs font-semibold tabular-nums",
             today
               ? "bg-emerald-500 text-zinc-950"
               : has
@@ -509,45 +523,36 @@ function DayCellExpanded({
         ) : null}
       </div>
 
+      {/* Тіло: назва типу + кількість */}
       {has ? (
-        <div className="mt-1 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain">
-          {visibleStations.map(({ event, field }) => (
-            <button
-              key={`${field.id}:${event.id}`}
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onEventClick(field, event);
-              }}
-              className={cn(
-                "flex w-full min-w-0 items-center gap-1 rounded-md border px-1 py-0.5 text-left transition",
-                "hover:brightness-110 active:scale-[0.99]",
-                TYPE_META[event.type].border,
-                TYPE_META[event.type].bg
-              )}
-            >
+        <div className="mt-1 flex flex-1 flex-col gap-0.5">
+          {types.map((type) => {
+            const n = bucket?.byType[type] ?? 0;
+            if (n <= 0) return null;
+            const meta = TYPE_META[type];
+            return (
               <span
+                key={type}
                 className={cn(
-                  "flex size-3.5 shrink-0 items-center justify-center rounded-[3px] ring-1",
-                  TYPE_META[event.type].soft,
-                  TYPE_META[event.type].ring
+                  "inline-flex items-center gap-1 rounded-md px-1 py-px text-[9px] font-bold leading-tight",
+                  meta.soft
                 )}
               >
-                {(() => { const Icon = TYPE_META[event.type].Icon; return <Icon className="size-2" strokeWidth={2.5} />; })()}
+                {(() => { const Icon = meta.Icon; return <Icon className="size-2.5" strokeWidth={2.2} />; })()}
+                {meta.word}
+                {n > 1 ? ` ×${n}` : ""}
               </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[9px] font-semibold leading-tight text-zinc-50 sm:text-[10px]">
-                  {event.title}
-                </span>
-                <span className="block truncate text-[8px] leading-tight text-zinc-500 sm:text-[9px]">
-                  {field.name}
-                </span>
-              </span>
-            </button>
-          ))}
+            );
+          })}
+          {/* Назва операції, якщо одна */}
+          {singleStation ? (
+            <span className="mt-auto truncate text-[9px] font-medium leading-tight text-zinc-400">
+              {singleStation.event.title}
+            </span>
+          ) : null}
         </div>
       ) : null}
-    </div>
+    </button>
   );
 }
 
@@ -736,10 +741,16 @@ function FieldCalendarBlock({
     setSelectedDayIso(null);
   }
 
+  const [open, setOpen] = useState(false);
+
   return (
-    <div className="flex flex-col gap-2 rounded-2xl border border-white/[0.06] bg-zinc-900/30 p-3 sm:p-4">
-      {/* Заголовок поля */}
-      <div className="flex items-center justify-between gap-3">
+    <div className="overflow-hidden rounded-2xl border border-white/[0.06] bg-zinc-900/30">
+      {/* Заголовок поля — натискання = відкрити/закрити */}
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between gap-3 p-3 text-left transition hover:bg-white/[0.03] sm:p-4"
+      >
         <div className="flex min-w-0 items-center gap-3">
           <span
             className="size-3 shrink-0 rounded-full ring-1 ring-white/20"
@@ -758,16 +769,50 @@ function FieldCalendarBlock({
             </p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => onAddClick(tf)}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-zinc-300 transition hover:bg-white/10 hover:text-zinc-100 active:scale-[0.97]"
-        >
-          <Plus className="size-3.5" />
-          <span className={cn(!isDesktop && "sr-only")}>Додати</span>
-        </button>
-      </div>
 
+        <div className="flex shrink-0 items-center gap-2">
+          {/* Кнопка додати — з зеленим акцентом */}
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={(e) => {
+              e.stopPropagation();
+              onAddClick(tf);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.stopPropagation();
+                onAddClick(tf);
+              }
+            }}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-500/20 hover:text-emerald-200 active:scale-[0.97]"
+          >
+            <Plus className="size-3.5" />
+            <span className={cn(!isDesktop && "sr-only")}>Додати</span>
+          </span>
+
+          {/* Стрілка акордеону */}
+          <ChevronDown
+            className={cn(
+              "size-4 text-zinc-500 transition-transform duration-200",
+              open && "rotate-180"
+            )}
+          />
+        </div>
+      </button>
+
+      {/* Тіло акордеону — плавне згортання */}
+      <AnimatePresence initial={false}>
+        {open ? (
+          <motion.div
+            key="body"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+            className="overflow-hidden"
+          >
+            <div className="border-t border-white/[0.05] p-3 sm:p-4">
       {stations.length === 0 ? (
         <p className="py-4 text-center text-sm text-zinc-600">
           Немає записів за сезон
@@ -955,6 +1000,10 @@ function FieldCalendarBlock({
           )}
         </AnimatePresence>
       )}
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </div>
   );
 }
