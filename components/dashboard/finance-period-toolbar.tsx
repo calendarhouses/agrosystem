@@ -26,6 +26,7 @@ type FinancePeriodToolbarProps = FinancePeriodFilter & {
   theme?: "light" | "dark";
   seasonHint?: string;
   loading?: boolean;
+  seasonOnly?: boolean;
   trailing?: ReactNode;
   className?: string;
 };
@@ -47,6 +48,7 @@ export function FinancePeriodToolbar({
   theme = "light",
   seasonHint = "Фільтр за агросезоном (березень–лютий).",
   loading = false,
+  seasonOnly = false,
   trailing,
   className,
 }: FinancePeriodToolbarProps) {
@@ -180,10 +182,11 @@ export function FinancePeriodToolbar({
           </PopoverContent>
         </Popover>
 
-        <Popover
-          open={rangeOpen}
-          onOpenChange={rangeDraft.handleOpenChange}
-        >
+        {!seasonOnly ? (
+          <Popover
+            open={rangeOpen}
+            onOpenChange={rangeDraft.handleOpenChange}
+          >
           <PopoverTrigger
             className={cn(
               "inline-flex shrink-0 items-center gap-1.5 rounded-xl border font-semibold transition-all",
@@ -282,46 +285,51 @@ export function FinancePeriodToolbar({
               </button>
             </div>
           </PopoverContent>
-        </Popover>
+          </Popover>
+        ) : null}
 
         {loading ? (
           <Loader2 className="h-4 w-4 shrink-0 animate-spin text-zinc-400" />
         ) : null}
       </div>
 
-      <div className={cn("flex items-center", desktop ? "" : trailing ? "gap-2" : "gap-1.5")}>
-        <div
-          className={cn(
-            "flex items-center gap-0.5 rounded-xl p-0.5",
-            desktop ? "w-auto" : "min-w-0 flex-1",
-            dark ? "bg-white/5" : "bg-[#EDE8DF]"
-          )}
-        >
-          {FINANCE_QUICK_PERIODS.map((option) => (
-            <button
-              key={option}
-              type="button"
-              onClick={() => applyPeriod(option)}
+      {!seasonOnly || trailing ? (
+        <div className={cn("flex items-center", desktop ? "" : trailing ? "gap-2" : "gap-1.5")}>
+          {!seasonOnly ? (
+            <div
               className={cn(
-                "rounded-[10px] font-semibold transition-all",
-                desktop
-                  ? "h-10 px-4 text-sm"
-                  : "min-w-0 flex-1 h-10 px-1 text-[11px] sm:px-2 sm:text-xs",
-                period === option
-                  ? dark
-                    ? "bg-orange-500/90 text-white shadow-[0_4px_14px_-4px_rgba(249,115,22,0.65)]"
-                    : "bg-[#276749] text-white shadow-[0_4px_12px_-4px_rgba(39,103,73,0.55)]"
-                  : dark
-                    ? "text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
-                    : "text-zinc-500 hover:bg-white/70 hover:text-zinc-800"
+                "flex items-center gap-0.5 rounded-xl p-0.5",
+                desktop ? "w-auto" : "min-w-0 flex-1",
+                dark ? "bg-white/5" : "bg-[#EDE8DF]"
               )}
             >
-              {option}
-            </button>
-          ))}
+              {FINANCE_QUICK_PERIODS.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => applyPeriod(option)}
+                  className={cn(
+                    "rounded-[10px] font-semibold transition-all",
+                    desktop
+                      ? "h-10 px-4 text-sm"
+                      : "min-w-0 flex-1 h-10 px-1 text-[11px] sm:px-2 sm:text-xs",
+                    period === option
+                      ? dark
+                        ? "bg-orange-500/90 text-white shadow-[0_4px_14px_-4px_rgba(249,115,22,0.65)]"
+                        : "bg-[#276749] text-white shadow-[0_4px_12px_-4px_rgba(39,103,73,0.55)]"
+                      : dark
+                        ? "text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+                        : "text-zinc-500 hover:bg-white/70 hover:text-zinc-800"
+                  )}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {trailing}
         </div>
-        {trailing}
-      </div>
+      ) : null}
     </div>
   );
 }

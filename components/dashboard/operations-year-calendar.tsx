@@ -777,7 +777,12 @@ function FieldCalendarBlock({
   const [open, setOpen] = useState(false);
 
   return (
-    <div className={cn("overflow-hidden rounded-2xl border border-white/[0.06] bg-zinc-900/30", hidden && "hidden")}>
+    <div
+      className={cn(
+        "shrink-0 overflow-hidden rounded-2xl border border-white/[0.06] bg-zinc-900/30",
+        hidden && "hidden"
+      )}
+    >
       {/* Заголовок поля — натискання = відкрити/закрити */}
       <button
         type="button"
@@ -1148,7 +1153,7 @@ export function OperationsYearCalendar({
   if (isDesktop) {
     return (
       <div
-        className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-y-auto pb-6"
+        className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-y-auto pb-6"
         data-chronicle-scroll
       >
         {legend}

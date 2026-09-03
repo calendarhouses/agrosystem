@@ -457,6 +457,7 @@ export function OperationsMatrixView() {
               variant="desktop"
               theme="dark"
               loading={isLoading}
+              seasonOnly={viewMode === "calendar"}
               className="shrink-0"
             />
           </div>
@@ -557,6 +558,7 @@ export function OperationsMatrixView() {
           {...periodFilter}
           theme="dark"
           loading={isLoading}
+          seasonOnly={viewMode === "calendar"}
           className="space-y-2"
         />
       </header>
