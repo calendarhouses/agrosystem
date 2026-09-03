@@ -6,11 +6,13 @@ import { toast } from "sonner";
 
 import {
   createLocalEquipment,
+} from "@/app/admin/equipment/actions";
+import {
   EQUIPMENT_WORK_SCOPE_OPTIONS,
   LOCAL_EQUIPMENT_TYPE_OPTIONS,
   type EquipmentWorkScope,
   type LocalEquipmentType,
-} from "@/app/admin/equipment/actions";
+} from "@/lib/equipment-local";
 import {
   FuelPanelShell,
   FuelSheetHeader,

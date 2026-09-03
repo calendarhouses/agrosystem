@@ -4,6 +4,11 @@ import { revalidatePath } from "next/cache";
 
 import { getBasAllAssets, type BasMachinery } from "@/lib/bas-api";
 import { isSelfPropelledEquipmentType } from "@/lib/equipment-fleet";
+import {
+  LOCAL_EQUIPMENT_TYPE_OPTIONS,
+  type EquipmentWorkScope,
+  type LocalEquipmentType,
+} from "@/lib/equipment-local";
 import type { EquipmentForOpsRow } from "@/lib/equipment-ops-options";
 import { createServiceSupabase } from "@/lib/supabase/server";
 
@@ -655,48 +660,9 @@ export async function resolveImplementWorkingWidth(
   }
 }
 
-/** Типи самохідної техніки для форми «Додати нову». */
-export const LOCAL_EQUIPMENT_TYPE_OPTIONS = [
-  { id: "tractor", label: "Трактор" },
-  { id: "combine", label: "Комбайн" },
-  { id: "sprayer", label: "Оприскувач" },
-  { id: "loader", label: "Навантажувач" },
-  { id: "truck", label: "Вантажівка / бензовоз" },
-  { id: "car", label: "Автомобіль" },
-  { id: "other", label: "Інше" },
-] as const;
-
-export type LocalEquipmentType =
-  (typeof LOCAL_EQUIPMENT_TYPE_OPTIONS)[number]["id"];
-
-/** Куди відноситься техніка для BAS / бухгалтера */
-export const EQUIPMENT_WORK_SCOPE_OPTIONS = [
-  {
-    id: "field",
-    label: "Поля",
-    hint: "Трактори, комбайни, оприскувачі — робота на полях",
-  },
-  {
-    id: "base",
-    label: "База",
-    hint: "Крани, двір, склади — робота на базі",
-  },
-] as const;
-
-export type EquipmentWorkScope =
-  (typeof EQUIPMENT_WORK_SCOPE_OPTIONS)[number]["id"];
-
-export function equipmentWorkScopeLabel(
-  scope: string | null | undefined
-): string | null {
-  if (scope === "field") return "Поля";
-  if (scope === "base") return "База";
-  return null;
-}
-
 /**
  * Додати техніку вручну (немає в BAS / Wialon).
- * Зʼявляється у флоті «Без трекера» і в списку заправок Палива.
+ * Зʼявляється у флоті «Без трекера» / «База» і в списку заправок Палива.
  */
 export async function createLocalEquipment(input: {
   name: string;
