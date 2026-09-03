@@ -378,6 +378,17 @@ function EventDetailHero({
         </p>
       ) : null}
 
+      {/* Механізатор */}
+      {operation?.mechanicName ? (
+        <p className="relative mt-3 rounded-2xl border border-white/5 bg-black/20 px-3.5 py-2.5 text-sm text-zinc-300">
+          <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-zinc-500">
+            Механізатор
+          </span>
+          <br />
+          {operation.mechanicName}
+        </p>
+      ) : null}
+
       {(operation?.agronomistComment || inventoryMove?.note) && (
         <p className="relative mt-3 rounded-2xl border border-white/5 bg-black/20 px-3.5 py-2.5 text-sm leading-relaxed text-zinc-300">
           {operation?.agronomistComment ?? inventoryMove?.note}
@@ -391,6 +402,34 @@ function EventDetailHero({
         {isEquipment && !isFuture && operation?.areaDone ? (
           <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-zinc-400">
             {operation.areaDone} га
+          </span>
+        ) : null}
+        {isEquipment && operation?.fuelUsed ? (
+          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-zinc-400">
+            ⛽ {operation.fuelUsed} л
+          </span>
+        ) : null}
+        {isEquipment && operation?.wage ? (
+          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-zinc-400">
+            💵{" "}
+            {new Intl.NumberFormat("uk-UA", {
+              maximumFractionDigits: 0,
+            }).format(operation.wage)}{" "}
+            ₴
+            {operation.wageRateUahPerHa
+              ? ` · ${operation.wageRateUahPerHa} ₴/га`
+              : ""}
+          </span>
+        ) : null}
+        {/* GPS-дані */}
+        {operation?.trackerDistanceKm ? (
+          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-zinc-400">
+            📍 {operation.trackerDistanceKm.toFixed(1)} км
+          </span>
+        ) : null}
+        {operation?.trackerWorkHours ? (
+          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-zinc-400">
+            ⏱ {operation.trackerWorkHours.toFixed(1)} год
           </span>
         ) : null}
       </div>

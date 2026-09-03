@@ -20,6 +20,7 @@ import {
   ChevronLeft,
   ChevronRight,
   PackageMinus,
+  Plus,
   Tractor,
   X,
 } from "lucide-react";
@@ -61,6 +62,8 @@ const TYPE_META: Record<
   {
     label: string;
     short: string;
+    /** Повне слово для мобільного бейджа */
+    word: string;
     dot: string;
     soft: string;
     ring: string;
@@ -74,6 +77,7 @@ const TYPE_META: Record<
   equipment: {
     label: "Наряди",
     short: "Нар.",
+    word: "Наряд",
     dot: "bg-orange-400",
     soft: "bg-orange-500/20 text-orange-200",
     ring: "ring-orange-400/50",
@@ -86,6 +90,7 @@ const TYPE_META: Record<
   inventory: {
     label: "ТМЦ",
     short: "ТМЦ",
+    word: "Списання",
     dot: "bg-emerald-400",
     soft: "bg-emerald-500/20 text-emerald-200",
     ring: "ring-emerald-400/50",
@@ -98,6 +103,7 @@ const TYPE_META: Record<
   scouting: {
     label: "Скаутинг",
     short: "Скаут",
+    word: "Скаутинг",
     dot: "bg-sky-400",
     soft: "bg-sky-500/20 text-sky-200",
     ring: "ring-sky-400/50",
@@ -171,6 +177,9 @@ function activeTypes(byType: DayBucket["byType"]): UnifiedTimelineEventType[] {
   return TYPE_ORDER.filter((type) => byType[type] > 0);
 }
 
+// Перша літера дня тижня
+const WEEKDAY_LETTERS = ["П", "В", "С", "Ч", "П", "С", "Н"] as const;
+
 function MonthMiniHeat({
   monthDate,
   buckets,
@@ -180,18 +189,20 @@ function MonthMiniHeat({
 }) {
   const cells = useMemo(() => buildMonthGrid(monthDate), [monthDate]);
   return (
-    <div className="flex flex-col gap-px">
-      <div className="grid grid-cols-7 gap-px">
-        {WEEKDAYS.map((d) => (
+    <div className="flex flex-col gap-[3px]">
+      {/* Заголовок — одна літера кожного дня */}
+      <div className="grid grid-cols-7 gap-[2px]">
+        {WEEKDAY_LETTERS.map((d, i) => (
           <div
-            key={d}
-            className="text-center text-[7px] font-bold text-zinc-700"
+            key={i}
+            className="text-center text-[7px] font-semibold text-zinc-600"
           >
             {d}
           </div>
         ))}
       </div>
-      <div className="grid grid-cols-7 gap-px">
+      {/* Клітинки */}
+      <div className="grid grid-cols-7 gap-[2px]">
         {cells.map((day, i) => {
           if (!day || !isSameMonth(day, monthDate)) {
             return <div key={`e-${i}`} className="aspect-square" />;
@@ -201,6 +212,7 @@ function MonthMiniHeat({
           const types = bucket ? activeTypes(bucket.byType) : [];
           const primary = bucket ? dominantType(bucket.byType) : null;
           const today = isToday(day);
+          const hasEvents = types.length > 0;
           return (
             <div
               key={iso}
@@ -210,9 +222,12 @@ function MonthMiniHeat({
                   : undefined
               }
               className={cn(
-                "flex aspect-square items-center justify-center rounded-[3px] text-[8px] font-semibold tabular-nums",
-                types.length === 0 && "bg-white/[0.04] text-zinc-600",
-                types.length === 1 &&
+                "flex aspect-square items-center justify-center rounded-[4px] text-[7.5px] font-semibold tabular-nums transition-all",
+                // Порожні дні — прозорі, щоб не зливались
+                !hasEvents && !today && "text-zinc-600",
+                // День з однією категорією
+                hasEvents &&
+                  types.length === 1 &&
                   primary &&
                   cn(
                     TYPE_META[primary].bg,
@@ -220,9 +235,17 @@ function MonthMiniHeat({
                     "ring-1 ring-inset",
                     TYPE_META[primary].ring
                   ),
-                types.length > 1 &&
-                  "bg-gradient-to-br from-orange-500/30 via-emerald-500/20 to-sky-500/30 text-zinc-50 ring-1 ring-inset ring-white/20",
-                today && "ring-1 ring-emerald-300/80"
+                // День з кількома категоріями
+                hasEvents &&
+                  types.length > 1 &&
+                  "bg-gradient-to-br from-orange-500/35 via-emerald-500/20 to-sky-500/35 text-zinc-50 ring-1 ring-inset ring-white/25",
+                // Сьогодні
+                today &&
+                  !hasEvents &&
+                  "bg-emerald-500/20 text-emerald-300 ring-1 ring-inset ring-emerald-400/60",
+                today &&
+                  hasEvents &&
+                  "ring-2 ring-emerald-300/90"
               )}
             >
               {format(day, "d")}
@@ -425,7 +448,7 @@ function DayCellExpanded({
           ) : null}
         </div>
         {has && types.length > 0 ? (
-          <div className="mt-1 flex flex-wrap gap-px">
+          <div className="mt-0.5 flex flex-wrap gap-px">
             {types.map((type) => {
               const n = bucket?.byType[type] ?? 0;
               if (n <= 0) return null;
@@ -433,12 +456,12 @@ function DayCellExpanded({
                 <span
                   key={type}
                   className={cn(
-                    "rounded-[4px] px-1 py-px text-[8px] font-bold uppercase leading-tight",
+                    "rounded-[4px] px-1 py-px text-[7px] font-bold leading-tight tracking-tight",
                     TYPE_META[type].soft
                   )}
                 >
-                  {TYPE_META[type].short}
-                  {n > 1 ? ` ${n}` : ""}
+                  {TYPE_META[type].word}
+                  {n > 1 ? ` ×${n}` : ""}
                 </span>
               );
             })}
@@ -452,14 +475,12 @@ function DayCellExpanded({
   return (
     <div
       className={cn(
-        "group relative flex min-h-0 flex-col overflow-hidden rounded-lg border p-1 text-left transition",
-        "h-full sm:p-1.5",
+        "group relative flex flex-col rounded-lg border p-1 text-left transition",
+        "min-h-[80px] sm:p-1.5",
         !has && "border-white/[0.04] bg-white/[0.01]",
-        has && primaryMeta && cn(primaryMeta.border, "bg-white/[0.03]"),
-        has &&
-          types.length > 1 &&
-          "border-white/20 bg-gradient-to-br from-orange-500/8 via-emerald-500/6 to-sky-500/8",
-        today && "ring-1 ring-emerald-300/50"
+        has && primaryMeta && cn("border-white/[0.06]", "ring-1 ring-inset", primaryMeta.ring, primaryMeta.bg),
+        has && types.length > 1 && "border-white/[0.08] bg-gradient-to-br from-orange-500/8 via-emerald-500/6 to-sky-500/8 ring-1 ring-inset ring-white/15",
+        today && "outline outline-1 outline-emerald-300/50"
       )}
     >
       <div className="flex w-full shrink-0 items-center justify-between gap-1">
@@ -589,12 +610,7 @@ function MonthCalendarBody({
             </div>
           ))}
         </div>
-        <div
-          className={cn(
-            "grid grid-cols-7 gap-0.5 sm:gap-1",
-            isDesktop ? "min-h-0 flex-1 auto-rows-fr" : "auto-rows-auto"
-          )}
-        >
+        <div className="grid grid-cols-7 gap-0.5 sm:gap-1">
           {expandedCells.map((day, i) => {
             const iso = day ? format(day, "yyyy-MM-dd") : `pad-${i}`;
             return (
@@ -622,26 +638,27 @@ function MonthCalendarBody({
   );
 }
 
-export function OperationsYearCalendar({
-  fields,
+/** Блок календаря для одного поля (власний стан) */
+function FieldCalendarBlock({
+  field,
   seasonYear,
-  isLoading,
+  isDesktop,
   onEventClick,
+  onAddClick,
 }: {
-  fields: FieldWithTimeline[];
+  field: FieldWithTimeline;
   seasonYear: number;
-  isLoading?: boolean;
+  isDesktop: boolean;
   onEventClick: (field: FieldTimelineField, event: UnifiedTimelineEvent) => void;
+  onAddClick: (field: FieldTimelineField) => void;
 }) {
-  const isDesktop = !useIsMobile();
   const [expandedMonth, setExpandedMonth] = useState<number | null>(null);
   const [selectedDayIso, setSelectedDayIso] = useState<string | null>(null);
   const [swipeDir, setSwipeDir] = useState(1);
-
-  // Pointer-based swipe tracking
   const pointerRef = useRef<{ x: number; y: number } | null>(null);
 
-  const stations = useMemo(() => flattenStations(fields), [fields]);
+  const tf = useMemo(() => toTimelineField(field), [field]);
+  const stations = useMemo(() => flattenStations([field]), [field]);
 
   const bucketsByIso = useMemo(() => {
     const map = new Map<string, DayBucket>();
@@ -719,169 +736,163 @@ export function OperationsYearCalendar({
     setSelectedDayIso(null);
   }
 
-  if (isLoading) {
-    return (
-      <div className="h-[420px] animate-pulse rounded-2xl border border-white/5 bg-white/[0.03]" />
-    );
-  }
-
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 pb-6">
-      {/* Легенда */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-xs text-zinc-500">
-          <CalendarDays className="size-3.5 text-emerald-400/80" />
-          <span>
-            Сезон {seasonYear}/{String(seasonYear + 1).slice(-2)} · бер–лют
-          </span>
-          <span className="text-zinc-600">·</span>
-          <span className="font-medium text-zinc-400">
-            {ukStationLabel(stations.length)}
-          </span>
+    <div className="flex flex-col gap-2 rounded-2xl border border-white/[0.06] bg-zinc-900/30 p-3 sm:p-4">
+      {/* Заголовок поля */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <span
+            className="size-3 shrink-0 rounded-full ring-1 ring-white/20"
+            style={{ background: field.color || "#52525b" }}
+          />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-zinc-100">
+              {field.fieldName}
+            </p>
+            <p className="text-xs text-zinc-500">
+              {field.cropName}
+              {field.area ? ` · ${field.area} га` : ""}
+              {stations.length > 0
+                ? ` · ${ukStationLabel(stations.length)}`
+                : ""}
+            </p>
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {TYPE_ORDER.map((type) => (
-            <span
-              key={type}
-              className="inline-flex items-center gap-1.5 text-[10px] font-medium text-zinc-500"
-            >
-              <span className={cn("size-2 rounded-full", TYPE_META[type].dot)} />
-              {TYPE_META[type].label}
-            </span>
-          ))}
-        </div>
+        <button
+          type="button"
+          onClick={() => onAddClick(tf)}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-zinc-300 transition hover:bg-white/10 hover:text-zinc-100 active:scale-[0.97]"
+        >
+          <Plus className="size-3.5" />
+          <span className={cn(!isDesktop && "sr-only")}>Додати</span>
+        </button>
       </div>
 
-      <AnimatePresence mode="wait" initial={false}>
-        {/* ──── РІЧНИЙ ОГЛЯД ──── */}
-        {expanded == null ? (
-          <motion.div
-            key="year"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
-            className={cn(
-              "overflow-hidden rounded-2xl border border-white/[0.07]",
-              "bg-zinc-950/60"
-            )}
-          >
-            {/* 3 cols on mobile, 4 on md, 6 on xl — з border-dividers */}
-            <div className="grid grid-cols-3 border-t border-l border-white/[0.07] md:grid-cols-4 xl:grid-cols-6">
-              {months.map((month) => {
-                const active = month.count > 0;
-                return (
-                  <button
-                    key={month.prefix}
-                    type="button"
-                    onClick={() => goToMonth(month.index)}
-                    className={cn(
-                      "group flex flex-col border-b border-r border-white/[0.07]",
-                      "p-2.5 text-left transition sm:p-3",
-                      "hover:bg-white/[0.03] active:bg-white/[0.05]",
-                      !active && "opacity-50"
-                    )}
-                  >
-                    <div className="mb-1.5 flex items-baseline justify-between gap-1">
-                      <p
-                        className={cn(
-                          "text-[12px] font-semibold capitalize tracking-tight sm:text-[13px]",
-                          active ? "text-zinc-100" : "text-zinc-500"
-                        )}
-                      >
-                        {format(month.monthDate, "LLL", { locale: uk })}
-                      </p>
-                      {active ? (
-                        <span className="text-[9px] font-bold tabular-nums text-zinc-600">
-                          {month.count}
-                        </span>
-                      ) : null}
-                    </div>
-                    <MonthMiniHeat
-                      monthDate={month.monthDate}
-                      buckets={bucketsByIso}
-                    />
-                    <div className="mt-2 flex h-px w-full overflow-hidden rounded-full">
-                      {active ? (
-                        TYPE_ORDER.map((type) => {
-                          const n = month.byType[type];
-                          if (n <= 0) return null;
-                          const total =
-                            month.byType.equipment +
-                            month.byType.inventory +
-                            month.byType.scouting;
-                          return (
-                            <span
-                              key={type}
-                              className={cn("h-full", TYPE_META[type].dot)}
-                              style={{ width: `${(n / total) * 100}%` }}
-                            />
-                          );
-                        })
-                      ) : (
-                        <span className="h-full w-full bg-white/[0.04]" />
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </motion.div>
-        ) : (
-          /* ──── РОЗГОРНУТИЙ МІСЯЦЬ ──── */
-          <motion.div
-            key="month-expanded"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
-            className={cn(
-              "flex min-h-0 flex-col gap-3",
-              isDesktop && "flex-1 lg:flex-row"
-            )}
-          >
-            {/* Панель місяця */}
-            <div
-              className={cn(
-                "flex min-h-0 flex-col overflow-hidden rounded-2xl border border-white/12 bg-zinc-950/80",
-                isDesktop ? "flex-1" : ""
-              )}
-              onPointerDown={(e) => {
-                if (isDesktop) return;
-                pointerRef.current = { x: e.clientX, y: e.clientY };
-              }}
-              onPointerUp={(e) => {
-                if (isDesktop || !pointerRef.current) return;
-                const dx = e.clientX - pointerRef.current.x;
-                const dy = e.clientY - pointerRef.current.y;
-                pointerRef.current = null;
-                if (Math.abs(dx) < Math.abs(dy) || Math.abs(dx) < 48) return;
-                const nextIdx = dx < 0 ? expandedMonth! + 1 : expandedMonth! - 1;
-                goToMonth(nextIdx);
-              }}
-              onPointerCancel={() => {
-                pointerRef.current = null;
-              }}
+      {stations.length === 0 ? (
+        <p className="py-4 text-center text-sm text-zinc-600">
+          Немає записів за сезон
+        </p>
+      ) : (
+        <AnimatePresence mode="wait" initial={false}>
+          {/* ──── РІЧНИЙ ОГЛЯД ──── */}
+          {expanded == null ? (
+            <motion.div
+              key="year"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="overflow-hidden rounded-xl border border-white/[0.07] bg-zinc-950/60"
             >
-              {/* Заголовок */}
-              <div className="flex shrink-0 items-center gap-2 border-b border-white/[0.06] px-3 py-2.5">
-                <button
-                  type="button"
-                  onClick={closeMonth}
-                  className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 text-sm font-medium text-zinc-200 transition hover:bg-white/10"
-                >
-                  <ArrowLeft className="size-4" />
-                  Рік
-                </button>
+              <div className="grid grid-cols-3 border-t border-l border-white/[0.07] md:grid-cols-4 xl:grid-cols-6">
+                {months.map((month) => {
+                  const active = month.count > 0;
+                  return (
+                    <button
+                      key={month.prefix}
+                      type="button"
+                      onClick={() => goToMonth(month.index)}
+                      className={cn(
+                        "group flex flex-col border-b border-r border-white/[0.07]",
+                        "p-2.5 text-left transition sm:p-3",
+                        "hover:bg-white/[0.03] active:bg-white/[0.05]",
+                        !active && "opacity-40"
+                      )}
+                    >
+                      <div className="mb-1.5 flex items-baseline justify-between gap-1">
+                        <p
+                          className={cn(
+                            "text-[12px] font-semibold capitalize tracking-tight sm:text-[13px]",
+                            active ? "text-zinc-100" : "text-zinc-500"
+                          )}
+                        >
+                          {format(month.monthDate, "LLL", { locale: uk })}
+                        </p>
+                        {active ? (
+                          <span className="text-[9px] font-bold tabular-nums text-zinc-600">
+                            {month.count}
+                          </span>
+                        ) : null}
+                      </div>
+                      <MonthMiniHeat
+                        monthDate={month.monthDate}
+                        buckets={bucketsByIso}
+                      />
+                      <div className="mt-2 flex h-px w-full overflow-hidden rounded-full">
+                        {active ? (
+                          TYPE_ORDER.map((type) => {
+                            const n = month.byType[type];
+                            if (n <= 0) return null;
+                            const total =
+                              month.byType.equipment +
+                              month.byType.inventory +
+                              month.byType.scouting;
+                            return (
+                              <span
+                                key={type}
+                                className={cn("h-full", TYPE_META[type].dot)}
+                                style={{ width: `${(n / total) * 100}%` }}
+                              />
+                            );
+                          })
+                        ) : (
+                          <span className="h-full w-full bg-white/[0.04]" />
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </motion.div>
+          ) : (
+            /* ──── РОЗГОРНУТИЙ МІСЯЦЬ ──── */
+            <motion.div
+              key="month-expanded"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="flex flex-col gap-3"
+            >
+              {/* Панель місяця */}
+              <div
+                className="flex flex-col rounded-2xl border border-white/[0.10] bg-zinc-950/80"
+                onPointerDown={(e) => {
+                  if (isDesktop) return;
+                  pointerRef.current = { x: e.clientX, y: e.clientY };
+                }}
+                onPointerUp={(e) => {
+                  if (isDesktop || !pointerRef.current) return;
+                  const dx = e.clientX - pointerRef.current.x;
+                  const dy = e.clientY - pointerRef.current.y;
+                  pointerRef.current = null;
+                  if (Math.abs(dx) < Math.abs(dy) || Math.abs(dx) < 48)
+                    return;
+                  const nextIdx =
+                    dx < 0 ? expandedMonth! + 1 : expandedMonth! - 1;
+                  goToMonth(nextIdx);
+                }}
+                onPointerCancel={() => {
+                  pointerRef.current = null;
+                }}
+              >
+                {/* Заголовок */}
+                <div className="flex shrink-0 items-center gap-2 border-b border-white/[0.06] px-3 py-2.5">
+                  <button
+                    type="button"
+                    onClick={closeMonth}
+                    className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 text-sm font-medium text-zinc-200 transition hover:bg-white/10"
+                  >
+                    <ArrowLeft className="size-4" />
+                    Рік
+                  </button>
 
-                <div className="min-w-0 flex-1 text-center">
-                  <p className="truncate text-sm font-semibold capitalize tracking-tight text-zinc-50">
-                    {format(expanded.monthDate, "LLLL yyyy", { locale: uk })}
-                  </p>
-                </div>
+                  <div className="min-w-0 flex-1 text-center">
+                    <p className="truncate text-sm font-semibold capitalize tracking-tight text-zinc-50">
+                      {format(expanded.monthDate, "LLLL yyyy", { locale: uk })}
+                    </p>
+                  </div>
 
-                {/* Стрілки для мобільного */}
-                {!isDesktop ? (
                   <div className="flex items-center gap-1">
                     <button
                       type="button"
@@ -900,52 +911,174 @@ export function OperationsYearCalendar({
                       <ChevronRight className="size-4" />
                     </button>
                   </div>
-                ) : null}
+                </div>
+
+                {/* Сітка */}
+                <div className="p-2 sm:p-3">
+                  <MonthCalendarBody
+                    expanded={expanded}
+                    expandedCells={expandedCells}
+                    bucketsByIso={bucketsByIso}
+                    selectedBucket={selectedBucket}
+                    isDesktop={isDesktop}
+                    swipeDir={swipeDir}
+                    onDaySelect={(iso) => setSelectedDayIso(iso)}
+                    onEventClick={onEventClick}
+                  />
+                </div>
               </div>
 
-              {/* Сітка календаря зі свайп-анімацією */}
-              <div
-                className={cn(
-                  "relative flex-1 overflow-hidden p-2 sm:p-3",
-                  isDesktop && "min-h-0 flex flex-col"
-                )}
-              >
-                <MonthCalendarBody
-                  expanded={expanded}
-                  expandedCells={expandedCells}
-                  bucketsByIso={bucketsByIso}
-                  selectedBucket={selectedBucket}
-                  isDesktop={isDesktop}
-                  swipeDir={swipeDir}
-                  onDaySelect={(iso) => setSelectedDayIso(iso)}
-                  onEventClick={onEventClick}
-                />
-              </div>
+              {/* Мобільна панель дня */}
+              {!isDesktop ? (
+                <AnimatePresence mode="wait">
+                  {selectedBucket ? (
+                    <motion.div
+                      key={selectedBucket.dateIso}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 8 }}
+                      transition={{
+                        duration: 0.2,
+                        ease: [0.22, 1, 0.36, 1],
+                      }}
+                    >
+                      <DayStationsPanel
+                        bucket={selectedBucket}
+                        onClose={() => setSelectedDayIso(null)}
+                        onEventClick={onEventClick}
+                      />
+                    </motion.div>
+                  ) : null}
+                </AnimatePresence>
+              ) : null}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      )}
+    </div>
+  );
+}
+
+export function OperationsYearCalendar({
+  fields,
+  seasonYear,
+  availableSeasons,
+  isLoading,
+  onEventClick,
+  onAddClick,
+  onSeasonChange,
+}: {
+  fields: FieldWithTimeline[];
+  seasonYear: number;
+  availableSeasons?: readonly string[];
+  isLoading?: boolean;
+  onEventClick: (field: FieldTimelineField, event: UnifiedTimelineEvent) => void;
+  onAddClick: (field: FieldTimelineField) => void;
+  onSeasonChange?: (year: number) => void;
+}) {
+  const isDesktop = !useIsMobile();
+
+  const totalEvents = useMemo(
+    () => fields.reduce((s, f) => s + f.events.length, 0),
+    [fields]
+  );
+
+  // Доступні сезони як числа для навігації
+  const seasonNumbers = useMemo(
+    () => (availableSeasons ?? []).map(Number).filter(Boolean).sort((a, b) => a - b),
+    [availableSeasons]
+  );
+  const currentIdx = seasonNumbers.indexOf(seasonYear);
+  const canPrev = currentIdx > 0;
+  const canNext = currentIdx < seasonNumbers.length - 1;
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col gap-3">
+        {[1, 2, 3].map((i) => (
+          <div
+            key={i}
+            className="h-[180px] animate-pulse rounded-2xl border border-white/5 bg-white/[0.03]"
+          />
+        ))}
+      </div>
+    );
+  }
+
+  const seasonLabel = `${seasonYear}/${String(seasonYear + 1).slice(-2)} · березень–лютий`;
+
+  return (
+    <div className="flex flex-col gap-4 pb-6">
+      {/* Легенда / перемикач сезону */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        {/* Мобільний перемикач сезону */}
+        {!isDesktop && onSeasonChange && seasonNumbers.length > 1 ? (
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              disabled={!canPrev}
+              onClick={() => onSeasonChange(seasonNumbers[currentIdx - 1]!)}
+              className="flex size-7 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-zinc-400 transition disabled:opacity-25 hover:bg-white/10 hover:text-zinc-100"
+            >
+              <ChevronLeft className="size-3.5" />
+            </button>
+
+            <div className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-1.5">
+              <CalendarDays className="size-3.5 text-emerald-400/80" />
+              <span className="text-xs font-medium text-zinc-300">
+                Сезон {seasonLabel}
+              </span>
             </div>
 
-            {/* Мобільна панель дня */}
-            {!isDesktop ? (
-              <AnimatePresence mode="wait">
-                {selectedBucket ? (
-                  <motion.div
-                    key={selectedBucket.dateIso}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 8 }}
-                    transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-                  >
-                    <DayStationsPanel
-                      bucket={selectedBucket}
-                      onClose={() => setSelectedDayIso(null)}
-                      onEventClick={onEventClick}
-                    />
-                  </motion.div>
-                ) : null}
-              </AnimatePresence>
-            ) : null}
-          </motion.div>
+            <button
+              type="button"
+              disabled={!canNext}
+              onClick={() => onSeasonChange(seasonNumbers[currentIdx + 1]!)}
+              className="flex size-7 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-zinc-400 transition disabled:opacity-25 hover:bg-white/10 hover:text-zinc-100"
+            >
+              <ChevronRight className="size-3.5" />
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 text-xs text-zinc-500">
+            <CalendarDays className="size-3.5 text-emerald-400/80" />
+            <span>Сезон {seasonLabel}</span>
+            <span className="text-zinc-600">·</span>
+            <span className="font-medium text-zinc-400">
+              {ukStationLabel(totalEvents)}
+            </span>
+          </div>
         )}
-      </AnimatePresence>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {!isDesktop && onSeasonChange && seasonNumbers.length > 1 ? (
+            <span className="text-xs text-zinc-500">
+              {ukStationLabel(totalEvents)}
+            </span>
+          ) : null}
+          {TYPE_ORDER.map((type) => (
+            <span
+              key={type}
+              className="inline-flex items-center gap-1.5 text-[10px] font-medium text-zinc-500"
+            >
+              <span className={cn("size-2 rounded-full", TYPE_META[type].dot)} />
+              {TYPE_META[type].label}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* По одному блоку на кожне поле */}
+      {fields.map((field) => (
+        <FieldCalendarBlock
+          key={field.fieldId}
+          field={field}
+          seasonYear={seasonYear}
+          isDesktop={isDesktop}
+          onEventClick={onEventClick}
+          onAddClick={onAddClick}
+        />
+      ))}
     </div>
   );
 }

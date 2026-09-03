@@ -396,8 +396,11 @@ export function OperationsMatrixView() {
     <OperationsYearCalendar
       fields={calendarFields}
       seasonYear={seasonYear}
+      availableSeasons={periodFilter.availableSeasons}
       isLoading={isLoading}
       onEventClick={(field, event) => setSelectedEvent({ field, event })}
+      onAddClick={(field) => setAddField(field)}
+      onSeasonChange={(year) => periodFilter.selectSeason(year)}
     />
   );
 
