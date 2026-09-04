@@ -2903,9 +2903,34 @@ export function LevadaCopilotDrawer({
   const lastInvoiceFilesRef = useRef<File[]>([]);
   const listRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dragDepthRef = useRef(0);
   const dropLockRef = useRef(false);
   const activeFieldId = searchParams.get("field");
+
+  function resizeComposerTextarea() {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    const styles = window.getComputedStyle(el);
+    const lineHeight = Number.parseFloat(styles.lineHeight) || 24;
+    const padY =
+      (Number.parseFloat(styles.paddingTop) || 0) +
+      (Number.parseFloat(styles.paddingBottom) || 0);
+    const minH = lineHeight + padY;
+    // ~10 рядків або 40% екрана — далі скрол зверху, як у Gemini
+    const maxH = Math.min(
+      lineHeight * 10 + padY,
+      Math.round(window.innerHeight * 0.4)
+    );
+    const next = Math.min(Math.max(el.scrollHeight, minH), maxH);
+    el.style.height = `${next}px`;
+    el.style.overflowY = el.scrollHeight > maxH + 1 ? "auto" : "hidden";
+  }
+
+  useEffect(() => {
+    resizeComposerTextarea();
+  }, [input, effectiveOpen, fullscreen]);
 
   useEffect(() => {
     return () => {
@@ -3609,9 +3634,17 @@ export function LevadaCopilotDrawer({
             )}
           </button>
           <textarea
+            ref={textareaRef}
             value={input}
-            onChange={(event) => setInput(event.target.value)}
-            onPaste={onComposerPaste}
+            onChange={(event) => {
+              setInput(event.target.value);
+              requestAnimationFrame(resizeComposerTextarea);
+            }}
+            onInput={resizeComposerTextarea}
+            onPaste={(event) => {
+              onComposerPaste(event);
+              requestAnimationFrame(resizeComposerTextarea);
+            }}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
@@ -3624,7 +3657,7 @@ export function LevadaCopilotDrawer({
                 ? "Кидай файли…"
                 : "Запитай LEVADIUS або кинь фото…"
             }
-            className="max-h-28 min-h-11 min-w-0 flex-1 resize-none rounded-2xl border border-white/10 bg-white/[0.05] px-3.5 py-2.5 text-sm leading-6 text-zinc-50 outline-none placeholder:text-zinc-500 focus:border-emerald-500/40 focus:ring-2 focus:ring-emerald-500/15"
+            className="max-h-[min(40dvh,15rem)] min-h-11 min-w-0 flex-1 resize-none overflow-hidden rounded-2xl border border-white/10 bg-white/[0.05] px-3.5 py-2.5 text-sm leading-6 text-zinc-50 outline-none placeholder:text-zinc-500 focus:border-emerald-500/40 focus:ring-2 focus:ring-emerald-500/15"
           />
           {busy ? (
             <button
