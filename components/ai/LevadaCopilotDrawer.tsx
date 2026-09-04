@@ -634,20 +634,48 @@ function parseRowLine(rawLine: string): ParsedRow | null {
   };
 }
 
+function isCompactMetricValue(value: string): boolean {
+  const v = value.trim();
+  if (!v || v.length > 18) return false;
+  return /^[\d\s.,]+(?:\s*(?:га|л|кг|т|шт|грн|%))?$/i.test(v);
+}
+
 function MetricRow({ row }: { row: ParsedRow }) {
   const Icon = IconMap[row.icon];
+  const compact = isCompactMetricValue(row.value);
+
+  // Довгий «value» (опис здібностей тощо) — НЕ в один ряд зі shrink-0,
+  // інакше заголовок стискається в стовпчик по одній літері.
+  if (row.value && !compact) {
+    return (
+      <div className="flex min-w-0 items-start gap-2.5 rounded-xl border border-white/[0.06] bg-white/[0.03] px-2.5 py-2">
+        <Icon
+          className="mt-0.5 size-3.5 shrink-0 text-emerald-400/90"
+          strokeWidth={2.1}
+          aria-hidden
+        />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold leading-snug text-white">
+            {row.label}
+          </p>
+          <p className="mt-0.5 text-sm leading-snug text-zinc-300">{row.value}</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex min-w-0 items-start gap-2.5 rounded-xl border border-white/[0.06] bg-white/[0.03] px-2.5 py-2">
+    <div className="flex min-w-0 items-center gap-2.5 rounded-xl border border-white/[0.06] bg-white/[0.03] px-2.5 py-2">
       <Icon
-        className="mt-0.5 size-3.5 shrink-0 text-emerald-400/90"
+        className="size-3.5 shrink-0 text-emerald-400/90"
         strokeWidth={2.1}
         aria-hidden
       />
-      <span className="min-w-0 flex-1 break-words text-sm font-semibold leading-snug text-white">
+      <span className="min-w-0 flex-1 truncate text-sm font-semibold text-white">
         {row.label}
       </span>
       {row.value ? (
-        <span className="shrink-0 text-sm font-medium tabular-nums text-emerald-400">
+        <span className="shrink-0 pl-2 text-sm font-medium tabular-nums text-emerald-400">
           {row.value}
         </span>
       ) : null}
@@ -655,23 +683,53 @@ function MetricRow({ row }: { row: ParsedRow }) {
   );
 }
 
+/** Розбиває «**Заголовок** — опис» / «Заголовок — опис» для списків здібностей. */
+function splitTitleDescription(text: string): {
+  title: string;
+  body: string;
+} | null {
+  const trimmed = text.trim();
+  const bold = trimmed.match(/^\*\*(.+?)\*\*\s*[—–\-:]\s*(.+)$/s);
+  if (bold) {
+    return { title: bold[1]!.trim(), body: bold[2]!.trim() };
+  }
+  const plain = trimmed.match(/^([^—–\n]{2,40}?)\s+[—–]\s+(.+)$/s);
+  if (plain && !/^\d/.test(plain[2]!.trim())) {
+    return { title: plain[1]!.trim(), body: plain[2]!.trim() };
+  }
+  return null;
+}
+
 function ListIconRow({
   icon,
   children,
+  title,
+  body,
 }: {
   icon: IconName;
-  children: ReactNode;
+  children?: ReactNode;
+  title?: string;
+  body?: string;
 }) {
   const Icon = IconMap[icon];
   return (
-    <div className="flex min-w-0 items-start gap-2 rounded-xl border border-white/[0.06] bg-white/[0.03] px-2.5 py-2">
+    <div className="flex min-w-0 items-start gap-2.5 rounded-xl border border-white/[0.06] bg-white/[0.03] px-2.5 py-2">
       <Icon
         className="mt-0.5 size-3.5 shrink-0 text-emerald-400/90"
         strokeWidth={2.1}
         aria-hidden
       />
-      <div className="min-w-0 flex-1 break-words text-sm leading-snug text-zinc-300">
-        {children}
+      <div className="min-w-0 flex-1 text-sm leading-snug">
+        {title ? (
+          <>
+            <p className="font-semibold text-white">{title}</p>
+            {body ? (
+              <p className="mt-0.5 text-zinc-300">{body}</p>
+            ) : null}
+          </>
+        ) : (
+          <div className="text-zinc-300">{children}</div>
+        )}
       </div>
     </div>
   );
@@ -687,7 +745,7 @@ function AgentMarkdown({
   const blocks = text.split(/\n{2,}/);
 
   return (
-    <div className="min-w-0 max-w-full space-y-3 break-words text-sm leading-relaxed text-zinc-300">
+    <div className="min-w-0 max-w-full space-y-3 text-sm leading-relaxed text-zinc-300">
       {blocks.map((block, blockIndex) => {
         const lines = block.split("\n").filter((line) => line.trim().length > 0);
         const parsedRows = lines.map(parseRowLine);
@@ -726,6 +784,17 @@ function AgentMarkdown({
                 const content = iconMatch
                   ? trimmed.slice(iconMatch[0].length)
                   : trimmed;
+                const split = splitTitleDescription(content);
+                if (split) {
+                  return (
+                    <ListIconRow
+                      key={`li-${blockIndex}-${lineIndex}`}
+                      icon={iconName}
+                      title={split.title}
+                      body={split.body}
+                    />
+                  );
+                }
                 return (
                   <ListIconRow
                     key={`li-${blockIndex}-${lineIndex}`}
@@ -746,7 +815,7 @@ function AgentMarkdown({
         return (
           <div
             key={`block-${blockIndex}`}
-            className="min-w-0 space-y-1.5 text-sm leading-relaxed break-words text-zinc-300"
+            className="min-w-0 space-y-1.5 text-sm leading-relaxed text-zinc-300"
           >
             {lines.map((line, lineIndex) => {
               const row = parseRowLine(line);
@@ -758,10 +827,41 @@ function AgentMarkdown({
                   />
                 );
               }
+              const iconOnly = line.match(
+                /^\s*\[icon:([a-zA-Z0-9_-]+)\]\s*(.+)$/i
+              );
+              if (iconOnly) {
+                const iconName =
+                  resolveIconName(iconOnly[1]) ?? "MapPin";
+                const content = iconOnly[2]!.trim();
+                const split = splitTitleDescription(content);
+                if (split) {
+                  return (
+                    <ListIconRow
+                      key={`p-icon-${blockIndex}-${lineIndex}`}
+                      icon={iconName}
+                      title={split.title}
+                      body={split.body}
+                    />
+                  );
+                }
+                return (
+                  <ListIconRow
+                    key={`p-icon-${blockIndex}-${lineIndex}`}
+                    icon={iconName}
+                  >
+                    {renderInlineMarkdown(
+                      content,
+                      `p-icon-${blockIndex}-${lineIndex}`,
+                      accent
+                    )}
+                  </ListIconRow>
+                );
+              }
               return (
                 <p
                   key={`p-${blockIndex}-${lineIndex}`}
-                  className="min-w-0 break-words text-sm leading-relaxed text-zinc-300"
+                  className="min-w-0 text-sm leading-relaxed text-zinc-300"
                 >
                   {renderInlineMarkdown(
                     line,
