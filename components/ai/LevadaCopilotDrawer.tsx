@@ -97,6 +97,13 @@ function isAttachInvoiceChoice(text: string): boolean {
   return ATTACH_INVOICE_CHOICE_RE.test(text.trim());
 }
 
+function normalizeChoiceKey(text: string | null | undefined): string {
+  return (text ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
 const QUICK_CHIPS = [
   "Скільки палива на складі?",
   "Які площі під кукурудзою?",
@@ -2729,15 +2736,82 @@ function MessageBubble({
     [isUser, text]
   );
 
+  /** Кнопки вже є на картках підтвердження / превʼю — CHOICE не дублюємо. */
+  const cardOwnedChoiceKeys = useMemo(() => {
+    const keys = new Set<string>();
+    const own = (value: string | null | undefined) => {
+      const key = normalizeChoiceKey(value);
+      if (key) keys.add(key);
+    };
+    for (const item of deleteConfirmations) {
+      own(item.confirmChoice);
+      own(item.cancelChoice);
+    }
+    for (const item of fieldUpdateConfirmations) {
+      own(item.confirmChoice);
+      own(item.cancelChoice);
+    }
+    for (const item of receiptRollbackConfirmations) {
+      own(item.confirmChoice);
+      own(item.cancelChoice);
+    }
+    for (const item of serviceActDeleteConfirmations) {
+      own(item.confirmChoice);
+      own(item.cancelChoice);
+    }
+    if (invoicePreviews.length > 0) {
+      own("Підтвердити та оприбуткувати");
+      own("Оприбуткувати накладну");
+      own("Записати на склад");
+      own("Скасувати");
+    }
+    if (serviceActPreviews.length > 0) {
+      own("Підтвердити та зберегти акт");
+      own("Записати в Бухгалтерію");
+      own("Записати акт");
+      own("Зберегти акт");
+      own("Скасувати");
+    }
+    return keys;
+  }, [
+    deleteConfirmations,
+    fieldUpdateConfirmations,
+    receiptRollbackConfirmations,
+    serviceActDeleteConfirmations,
+    invoicePreviews,
+    serviceActPreviews,
+  ]);
+
+  const visibleChoices = useMemo(
+    () =>
+      choices.filter((choice) => {
+        if (isAttachInvoiceChoice(choice)) return true;
+        const key = normalizeChoiceKey(choice);
+        return !key || !cardOwnedChoiceKeys.has(key);
+      }),
+    [choices, cardOwnedChoiceKeys]
+  );
+
+  const visibleActions = useMemo(
+    () =>
+      actions.filter((action) => {
+        if (action.kind !== "reply") return true;
+        const key = normalizeChoiceKey(action.text || action.label);
+        return !key || !cardOwnedChoiceKeys.has(key);
+      }),
+    [actions, cardOwnedChoiceKeys]
+  );
+
   if (
     !body &&
     tools.length === 0 &&
-    actions.length === 0 &&
-    choices.length === 0 &&
+    visibleActions.length === 0 &&
+    visibleChoices.length === 0 &&
     drafts.length === 0 &&
     deleteConfirmations.length === 0 &&
     fieldUpdateConfirmations.length === 0 &&
     receiptRollbackConfirmations.length === 0 &&
+    serviceActDeleteConfirmations.length === 0 &&
     invoicePreviews.length === 0 &&
     serviceActPreviews.length === 0
   ) {
@@ -2860,9 +2934,9 @@ function MessageBubble({
             ))}
           </div>
         ) : null}
-        {!isUser && choices.length > 0 ? (
+        {!isUser && visibleChoices.length > 0 ? (
           <div className="mt-3 flex flex-wrap gap-2">
-            {choices.map((choice, index) => (
+            {visibleChoices.map((choice, index) => (
               <button
                 key={`${message.id}-choice-${index}-${choice}`}
                 type="button"
@@ -2888,9 +2962,9 @@ function MessageBubble({
             ))}
           </div>
         ) : null}
-        {!isUser && actions.length > 0 ? (
+        {!isUser && visibleActions.length > 0 ? (
           <div className="flex flex-wrap gap-2">
-            {actions.map((action, index) => {
+            {visibleActions.map((action, index) => {
               const ActionIcon = action.icon
                 ? IconMap[action.icon]
                 : ArrowUpRight;
