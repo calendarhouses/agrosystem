@@ -689,11 +689,11 @@ function splitTitleDescription(text: string): {
   body: string;
 } | null {
   const trimmed = text.trim();
-  const bold = trimmed.match(/^\*\*(.+?)\*\*\s*[—–\-:]\s*(.+)$/s);
+  const bold = trimmed.match(/^\*\*(.+?)\*\*\s*[—–\-:]\s*([\s\S]+)$/);
   if (bold) {
     return { title: bold[1]!.trim(), body: bold[2]!.trim() };
   }
-  const plain = trimmed.match(/^([^—–\n]{2,40}?)\s+[—–]\s+(.+)$/s);
+  const plain = trimmed.match(/^([^—–\n]{2,40}?)\s+[—–]\s*([\s\S]+)$/);
   if (plain && !/^\d/.test(plain[2]!.trim())) {
     return { title: plain[1]!.trim(), body: plain[2]!.trim() };
   }
