@@ -7,6 +7,7 @@ const OPTIONAL_UPSERT_COLUMNS = [
   "weather_context",
   "export_status",
   "equipment_id",
+  "implement_id",
   "wialon_unit_id",
   "implement_width_m",
   "tracker_distance_km",

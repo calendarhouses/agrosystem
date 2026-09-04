@@ -170,16 +170,19 @@ export type HourlyForecastHour = {
 /** Погодинний прогноз з вітром — для планування робіт (до 7 днів). */
 export type PlanningWeatherHour = HourlyForecastHour & {
   windMs: number;
+  /** Пориви 10 м (м/с), якщо є в Open-Meteo */
+  windGustMs?: number | null;
 };
 
 const HOURLY_VARS =
-  "temperature_2m,wind_speed_10m,precipitation_probability,precipitation,weather_code";
+  "temperature_2m,wind_speed_10m,wind_gusts_10m,precipitation_probability,precipitation,weather_code";
 
 function mapHourlyRows(data: {
   hourly?: {
     time?: string[];
     temperature_2m?: number[];
     wind_speed_10m?: number[];
+    wind_gusts_10m?: number[];
     precipitation_probability?: number[];
     precipitation?: number[];
     weather_code?: number[];
@@ -188,18 +191,25 @@ function mapHourlyRows(data: {
   const times = data.hourly?.time ?? [];
   const temps = data.hourly?.temperature_2m ?? [];
   const winds = data.hourly?.wind_speed_10m ?? [];
+  const gusts = data.hourly?.wind_gusts_10m ?? [];
   const probs = data.hourly?.precipitation_probability ?? [];
   const precip = data.hourly?.precipitation ?? [];
   const codes = data.hourly?.weather_code ?? [];
 
-  return times.map((time, index) => ({
-    time,
-    tempC: Math.round(Number(temps[index]) || 0),
-    windMs: Math.round((Number(winds[index]) || 0) * 10) / 10,
-    precipProbability: Math.round(Number(probs[index]) || 0),
-    precipitationMm: Number(precip[index]) || 0,
-    weatherCode: Number(codes[index]) || 0,
-  }));
+  return times.map((time, index) => {
+    const gustRaw = Number(gusts[index]);
+    return {
+      time,
+      tempC: Math.round(Number(temps[index]) || 0),
+      windMs: Math.round((Number(winds[index]) || 0) * 10) / 10,
+      windGustMs: Number.isFinite(gustRaw)
+        ? Math.round(gustRaw * 10) / 10
+        : null,
+      precipProbability: Math.round(Number(probs[index]) || 0),
+      precipitationMm: Number(precip[index]) || 0,
+      weatherCode: Number(codes[index]) || 0,
+    };
+  });
 }
 
 /** Найближча година прогнозу до обраної дати й часу. */
@@ -252,6 +262,229 @@ export function evaluateSprayWeatherConditions(
 ): SprayWeatherVerdict {
   if (windMs > 5 || tempC > 25) return "warning";
   return "optimal";
+}
+
+export type SprayingHourVerdict = "optimal" | "acceptable" | "blocked";
+
+export type SprayingHourSlot = {
+  time: string;
+  hourLabel: string;
+  period: "ранок" | "день" | "вечір" | "ніч";
+  tempC: number;
+  windMs: number;
+  windGustMs: number | null;
+  precipMm: number;
+  precipProb: number;
+  dryHoursAfter: number;
+  verdict: SprayingHourVerdict;
+  reasons: string[];
+};
+
+export type SprayingWindowBlock = {
+  period: SprayingHourSlot["period"];
+  from: string;
+  to: string;
+  hours: string[];
+  verdict: SprayingHourVerdict;
+  summary: string;
+};
+
+export type SprayingWeatherWindowResult = {
+  next24h: SprayingHourSlot[];
+  goodWindows: SprayingWindowBlock[];
+  blockedCount: number;
+  optimalCount: number;
+  advice: string;
+};
+
+function kyivHourFromIso(iso: string): number {
+  try {
+    return Number(
+      new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Europe/Kyiv",
+        hour: "numeric",
+        hour12: false,
+      }).format(new Date(iso))
+    );
+  } catch {
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime()) ? 0 : d.getHours();
+  }
+}
+
+function kyivHmFromIso(iso: string): string {
+  try {
+    return new Intl.DateTimeFormat("uk-UA", {
+      timeZone: "Europe/Kyiv",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(new Date(iso));
+  } catch {
+    return iso.slice(11, 16);
+  }
+}
+
+function sprayingPeriod(hour: number): SprayingHourSlot["period"] {
+  if (hour >= 5 && hour < 11) return "ранок";
+  if (hour >= 11 && hour < 17) return "день";
+  if (hour >= 17 && hour < 22) return "вечір";
+  return "ніч";
+}
+
+function dryHoursAhead(
+  hourly: PlanningWeatherHour[],
+  fromIndex: number,
+  needed = 4
+): number {
+  let dry = 0;
+  for (let i = fromIndex; i < hourly.length && dry < needed + 2; i += 1) {
+    const h = hourly[i]!;
+    const wet =
+      h.precipitationMm >= 0.2 ||
+      h.precipProbability >= 60 ||
+      h.weatherCode >= 51;
+    if (wet) break;
+    dry += 1;
+  }
+  return dry;
+}
+
+/**
+ * Вікно для обприскування ЗЗР на найближчі ~24 год.
+ * Вітер: оптимум 2–4 м/с, критично >5–6; температура 12–22°C; після — 4+ сухих годин.
+ */
+export function evaluateSprayingWeatherWindow(
+  hourlyInput: PlanningWeatherHour[],
+  options?: { hoursAhead?: number }
+): SprayingWeatherWindowResult {
+  const hoursAhead = options?.hoursAhead ?? 24;
+  const now = Date.now();
+  const hourly = hourlyInput
+    .filter((h) => {
+      const t = new Date(h.time).getTime();
+      return Number.isFinite(t) && t >= now - 30 * 60_000;
+    })
+    .slice(0, hoursAhead);
+
+  const slots: SprayingHourSlot[] = hourly.map((h, index) => {
+    const hour = kyivHourFromIso(h.time);
+    const gust = h.windGustMs ?? null;
+    const dryAfter = dryHoursAhead(hourly, index, 6);
+    const reasons: string[] = [];
+    let verdict: SprayingHourVerdict = "optimal";
+
+    if (h.weatherCode >= 95) {
+      verdict = "blocked";
+      reasons.push("гроза");
+    } else if (h.precipitationMm >= 0.2 || h.precipProbability >= 70) {
+      verdict = "blocked";
+      reasons.push("опади / висока ймовірність дощу");
+    } else if (h.windMs > 6 || (gust != null && gust > 8)) {
+      verdict = "blocked";
+      reasons.push(
+        `вітер ${h.windMs} м/с${gust != null ? ` (пориви ${gust})` : ""} — знесення краплі`
+      );
+    } else if (h.tempC > 25) {
+      verdict = "blocked";
+      reasons.push(`спека ${h.tempC}°C — випаровування`);
+    } else if (h.tempC < 8) {
+      verdict = "blocked";
+      reasons.push(`холодно ${h.tempC}°C`);
+    } else if (dryAfter < 4) {
+      verdict = "blocked";
+      reasons.push(`сухий інтервал після обробки лише ~${dryAfter} год (потрібно 4–6)`);
+    } else if (
+      h.windMs > 5 ||
+      (gust != null && gust > 6) ||
+      h.tempC > 22 ||
+      h.tempC < 12 ||
+      dryAfter < 6
+    ) {
+      verdict = "acceptable";
+      if (h.windMs > 4) reasons.push(`вітер ${h.windMs} м/с (оптимум 2–4)`);
+      if (h.tempC > 22 || h.tempC < 12)
+        reasons.push(`температура ${h.tempC}°C (оптимум 12–22)`);
+      if (dryAfter < 6) reasons.push(`сухий інтервал ~${dryAfter} год`);
+    } else if (h.windMs < 1.5) {
+      verdict = "acceptable";
+      reasons.push("майже штиль — гірше покриття");
+    } else {
+      reasons.push("умови сприятливі");
+    }
+
+    return {
+      time: h.time,
+      hourLabel: kyivHmFromIso(h.time),
+      period: sprayingPeriod(hour),
+      tempC: h.tempC,
+      windMs: h.windMs,
+      windGustMs: gust,
+      precipMm: h.precipitationMm,
+      precipProb: h.precipProbability,
+      dryHoursAfter: dryAfter,
+      verdict,
+      reasons,
+    };
+  });
+
+  const goodWindows: SprayingWindowBlock[] = [];
+  let run: SprayingHourSlot[] = [];
+  const flush = () => {
+    if (run.length === 0) return;
+    const best = run.every((s) => s.verdict === "optimal")
+      ? ("optimal" as const)
+      : ("acceptable" as const);
+    const first = run[0]!;
+    const last = run[run.length - 1]!;
+    goodWindows.push({
+      period: first.period,
+      from: first.hourLabel,
+      to: last.hourLabel,
+      hours: run.map((s) => s.hourLabel),
+      verdict: best,
+      summary:
+        best === "optimal"
+          ? `${first.period}: ${first.hourLabel}–${last.hourLabel} — можна кропити`
+          : `${first.period}: ${first.hourLabel}–${last.hourLabel} — обережно (див. умови)`,
+    });
+    run = [];
+  };
+
+  for (const slot of slots) {
+    if (slot.verdict === "blocked") {
+      flush();
+      continue;
+    }
+    if (run.length > 0 && run[0]!.period !== slot.period) flush();
+    run.push(slot);
+  }
+  flush();
+
+  const optimalCount = slots.filter((s) => s.verdict === "optimal").length;
+  const blockedCount = slots.filter((s) => s.verdict === "blocked").length;
+
+  let advice: string;
+  if (goodWindows.length === 0) {
+    advice =
+      "У найближчі 24 год безпечного вікна для обприскування немає — вітер, спека або опади.";
+  } else {
+    const top = goodWindows
+      .filter((w) => w.verdict === "optimal")
+      .concat(goodWindows.filter((w) => w.verdict !== "optimal"))
+      .slice(0, 3)
+      .map((w) => w.summary)
+      .join("; ");
+    advice = `Найкращі слоти: ${top}.`;
+  }
+
+  return {
+    next24h: slots,
+    goodWindows,
+    blockedCount,
+    optimalCount,
+    advice,
+  };
 }
 
 export type FieldWeatherAdvisoryTone = "good" | "caution" | "bad" | "neutral";
@@ -483,6 +716,7 @@ export async function fetchPlanningWeather(
       time?: string[];
       temperature_2m?: number[];
       wind_speed_10m?: number[];
+      wind_gusts_10m?: number[];
       precipitation_probability?: number[];
       precipitation?: number[];
       weather_code?: number[];

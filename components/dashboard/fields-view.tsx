@@ -790,7 +790,11 @@ export function FieldsView() {
       openFieldById(fieldId);
     }
     window.addEventListener("levada:open-field", onOpenField);
-    return () => window.removeEventListener("levada:open-field", onOpenField);
+    window.addEventListener("focus-field-map", onOpenField);
+    return () => {
+      window.removeEventListener("levada:open-field", onOpenField);
+      window.removeEventListener("focus-field-map", onOpenField);
+    };
   }, [openFieldById]);
 
   useEffect(() => {

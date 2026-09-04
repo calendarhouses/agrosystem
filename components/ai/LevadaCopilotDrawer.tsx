@@ -38,6 +38,7 @@ import {
   type ReactNode,
 } from "react";
 
+import { VoiceInputButton } from "@/components/ai/VoiceInputButton";
 import { executeWarehouseReceiptAction } from "@/app/admin/inventory/actions";
 import {
   attachServiceActDocumentsAction,
@@ -184,9 +185,35 @@ const TOOL_STATUS_LABELS: Record<string, string> = {
   getFleetAndImplements: "Дивлюсь техніку й знаряддя…",
   getDriversList: "Збираю механізаторів…",
   getFieldWeather: "Дивлюсь погоду по полю…",
+  checkSprayingWeatherWindow: "Оцінюю вікно для обприскування…",
+  getFieldNdviStatus: "Читаю NDVI / супутникові тривоги…",
   getFieldOperationsHistory: "Читаю історію робіт по полю…",
+  getDailyOperationsSummary: "Збираю диспетчерське зведення дня…",
+  getFuelStorageBalance: "Читаю залишки пального…",
+  logFuelRefueling: "Готую заправку техніки…",
+  getFieldFuelEfficiency: "Рахую витрату л/га…",
+  getEquipmentMaintenanceStatus: "Перевіряю ТО та мотогодини…",
+  linkServiceActToEquipment: "Привʼязую акт до техніки…",
+  logMaintenanceCompleted: "Фіксую проходження ТО…",
+  updateInventoryItemPrice: "Оновлюю ціну матеріалу…",
+  calculateDriverEarnings: "Рахую нарахування механізаторам…",
+  getFieldBudgetBurnRate: "Рахую burn rate бюджету поля…",
+  queueDocumentToBasSync: "Ставлю документ у чергу BAS…",
+  getFieldTechCardMatrix: "Будую техкарту / метро етапів…",
+  generateFieldExportReport: "Готую CSV-звіт по полю…",
+  syncFieldWialonGeofence: "Синхронізую геозону Wialon…",
+  searchFieldsCatalog: "Шукаю ділянки в каталозі…",
+  getFieldUnifiedTimeline: "Збираю хронологію поля…",
   getFieldCostAnalysis: "Рахую собівартість поля…",
+  getLandBankSummary: "Рахую земельний банк…",
+  getFieldLiveTelemetry: "Дивлюсь live GPS / хто на полі…",
+  focusFieldOnMap: "Відкриваю поле на карті…",
   updateFieldDetails: "Оновлюю паспорт поля…",
+  updateFieldPlannedBudget: "Оновлюю плановий бюджет поля…",
+  createField: "Створюю нове поле…",
+  deleteField: "Готую видалення / архів поля…",
+  analyzeAndSaveScoutingReport: "Аналізую фото посіву…",
+  createWorkOrderFromGpsVisit: "Готую наряд з GPS Wialon…",
   writeWarehouseItem: "Реєструю нову позицію складу…",
   writeOffInventoryToField: "Списую ТМЦ на поле…",
   previewInvoiceReceipt: "Читаю накладну…",
@@ -198,6 +225,7 @@ const TOOL_STATUS_LABELS: Record<string, string> = {
   prepareWorkOrder: "Готую чернетку наряду…",
   confirmWorkOrder: "Зберігаю наряд у Хронологію…",
   deleteWorkOrder: "Шукаю наряд для видалення…",
+  closeWorkOrder: "Закриваю наряд / фіксую факт…",
   getOperationRates: "Звіряю тарифи ₴/га…",
   setOperationRate: "Оновлюю ставку операції…",
   logUnsupportedRequest: "Записую в беклог Назару…",
@@ -893,8 +921,11 @@ type WorkOrderDraft = {
   equipmentId: string | null;
   equipmentName: string;
   equipmentFound: boolean;
+  implementId: string | null;
   implementName: string;
   implementWidthM: number | null;
+  hitchLabel: string | null;
+  implementAutoPicked: boolean;
   driverName: string;
   isNewDriver: boolean;
   warehouseItemId: string | null;
@@ -906,6 +937,8 @@ type WorkOrderDraft = {
   ratePerHa: number | null;
   calculatedFuel: number;
   calculatedSalary: number;
+  agronomistComment?: string | null;
+  source?: string | null;
 };
 
 function normalizeWorkOrderOutput(value: unknown): WorkOrderDraft | null {
@@ -949,9 +982,16 @@ function normalizeWorkOrderOutput(value: unknown): WorkOrderDraft | null {
         typeof form.equipmentId === "string" ? form.equipmentId : null,
       equipmentName: form.equipmentName,
       equipmentFound: Boolean(form.equipmentFound),
+      implementId:
+        typeof form.implementId === "string" ? form.implementId : null,
       implementName: String(form.implementName ?? ""),
       implementWidthM:
         typeof form.implementWidthM === "number" ? form.implementWidthM : null,
+      hitchLabel:
+        typeof form.hitchLabel === "string" && form.hitchLabel.trim()
+          ? form.hitchLabel.trim()
+          : null,
+      implementAutoPicked: Boolean(form.implementAutoPicked),
       driverName: form.driverName,
       isNewDriver: Boolean(form.isNewDriver),
       warehouseItemId:
@@ -974,6 +1014,11 @@ function normalizeWorkOrderOutput(value: unknown): WorkOrderDraft | null {
       ratePerHa: typeof form.ratePerHa === "number" ? form.ratePerHa : null,
       calculatedFuel: Number(form.calculatedFuel) || 0,
       calculatedSalary: Number(form.calculatedSalary) || 0,
+      agronomistComment:
+        typeof form.agronomistComment === "string"
+          ? form.agronomistComment
+          : null,
+      source: typeof form.source === "string" ? form.source : null,
     };
   }
 
@@ -1005,8 +1050,11 @@ function normalizeWorkOrderOutput(value: unknown): WorkOrderDraft | null {
         typeof raw.equipmentId === "string" ? raw.equipmentId : null,
       equipmentName: raw.equipmentName,
       equipmentFound: Boolean(raw.equipmentFound),
+      implementId: null,
       implementName: String(raw.implement ?? ""),
       implementWidthM: null,
+      hitchLabel: null,
+      implementAutoPicked: false,
       driverName: raw.driverName,
       isNewDriver: false,
       warehouseItemId: null,
@@ -1029,9 +1077,11 @@ function extractWorkOrderDrafts(message: UIMessage): WorkOrderDraft[] {
   for (const part of message.parts) {
     const isPrepare =
       part.type === "tool-prepareWorkOrder" ||
+      part.type === "tool-createWorkOrderFromGpsVisit" ||
       (part.type === "dynamic-tool" &&
         "toolName" in part &&
-        part.toolName === "prepareWorkOrder");
+        (part.toolName === "prepareWorkOrder" ||
+          part.toolName === "createWorkOrderFromGpsVisit"));
     if (!isPrepare) continue;
     if (!("state" in part) || part.state !== "output-available") continue;
     if (!("output" in part)) continue;
@@ -1560,6 +1610,1201 @@ function extractWriteOffPayload(message: UIMessage): {
     };
   }
   return null;
+}
+
+function extractInventoryPriceUpdatePayload(message: UIMessage): {
+  itemId: string;
+  itemName: string;
+  newPrice: number;
+  fieldsAffected: string[];
+} | null {
+  for (const part of message.parts) {
+    const isPrice =
+      part.type === "tool-updateInventoryItemPrice" ||
+      (part.type === "dynamic-tool" &&
+        "toolName" in part &&
+        part.toolName === "updateInventoryItemPrice");
+    if (!isPrice) continue;
+    if (!("state" in part) || part.state !== "output-available") continue;
+    if (!("output" in part) || !part.output || typeof part.output !== "object") {
+      continue;
+    }
+    const raw = part.output as Record<string, unknown>;
+    if (raw.success !== true && raw.status !== "updated") continue;
+    if (typeof raw.itemId !== "string") continue;
+    const fields = Array.isArray(raw.fieldsAffected)
+      ? raw.fieldsAffected.filter((id): id is string => typeof id === "string")
+      : [];
+    return {
+      itemId: raw.itemId,
+      itemName: typeof raw.itemName === "string" ? raw.itemName : "",
+      newPrice: Number(raw.newPrice) || 0,
+      fieldsAffected: fields,
+    };
+  }
+  return null;
+}
+
+function extractFuelRefuelPayload(message: UIMessage): {
+  transactionId: string | null;
+  equipmentId: string;
+  equipmentName: string;
+  storageId: string;
+  storageName: string;
+  liters: number;
+  volumeAfter: number;
+} | null {
+  for (const part of message.parts) {
+    const isRefuel =
+      part.type === "tool-logFuelRefueling" ||
+      (part.type === "dynamic-tool" &&
+        "toolName" in part &&
+        part.toolName === "logFuelRefueling");
+    if (!isRefuel) continue;
+    if (!("state" in part) || part.state !== "output-available") continue;
+    if (!("output" in part) || !part.output || typeof part.output !== "object") {
+      continue;
+    }
+    const raw = part.output as Record<string, unknown>;
+    if (raw.success !== true && raw.status !== "refueled") continue;
+    if (typeof raw.equipmentId !== "string" || typeof raw.storageId !== "string") {
+      continue;
+    }
+    return {
+      transactionId:
+        typeof raw.transactionId === "string" ? raw.transactionId : null,
+      equipmentId: raw.equipmentId,
+      equipmentName:
+        typeof raw.equipmentName === "string" ? raw.equipmentName : "",
+      storageId: raw.storageId,
+      storageName: typeof raw.storageName === "string" ? raw.storageName : "",
+      liters: Number(raw.liters) || 0,
+      volumeAfter: Number(raw.volumeAfter) || 0,
+    };
+  }
+  return null;
+}
+
+type FuelRefuelPreview = {
+  status: "requires_confirmation";
+  equipmentId: string;
+  equipmentName: string;
+  storageId: string;
+  storageName: string;
+  liters: number;
+  driverName: string | null;
+  volumeBefore: number;
+  volumeAfter: number;
+  pricePerLiter: number | null;
+  totalCost: number | null;
+  canConfirm: boolean;
+  confirmChoice: string;
+  cancelChoice: string;
+  badge: string;
+};
+
+function normalizeFuelRefuelPreview(value: unknown): FuelRefuelPreview | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Record<string, unknown>;
+  if (raw.status !== "requires_confirmation") return null;
+  if (
+    typeof raw.equipmentId !== "string" ||
+    typeof raw.equipmentName !== "string" ||
+    typeof raw.storageId !== "string" ||
+    typeof raw.storageName !== "string"
+  ) {
+    return null;
+  }
+  if (typeof raw.liters !== "number" || !Number.isFinite(raw.liters)) {
+    return null;
+  }
+  return {
+    status: "requires_confirmation",
+    equipmentId: raw.equipmentId,
+    equipmentName: raw.equipmentName,
+    storageId: raw.storageId,
+    storageName: raw.storageName,
+    liters: raw.liters,
+    driverName: typeof raw.driverName === "string" ? raw.driverName : null,
+    volumeBefore: Number(raw.volumeBefore) || 0,
+    volumeAfter: Number(raw.volumeAfter) || 0,
+    pricePerLiter:
+      typeof raw.pricePerLiter === "number" ? raw.pricePerLiter : null,
+    totalCost: typeof raw.totalCost === "number" ? raw.totalCost : null,
+    canConfirm: raw.canConfirm !== false,
+    confirmChoice:
+      typeof raw.confirmChoice === "string"
+        ? raw.confirmChoice
+        : "Підтвердити заправку",
+    cancelChoice:
+      typeof raw.cancelChoice === "string" ? raw.cancelChoice : "Скасувати",
+    badge: typeof raw.badge === "string" ? raw.badge : "Заправка техніки",
+  };
+}
+
+function extractFuelRefuelPreviews(message: UIMessage): FuelRefuelPreview[] {
+  const items: FuelRefuelPreview[] = [];
+  for (const part of message.parts) {
+    const isRefuel =
+      part.type === "tool-logFuelRefueling" ||
+      (part.type === "dynamic-tool" &&
+        "toolName" in part &&
+        part.toolName === "logFuelRefueling");
+    if (!isRefuel) continue;
+    if (!("state" in part) || part.state !== "output-available") continue;
+    if (!("output" in part)) continue;
+    const item = normalizeFuelRefuelPreview(part.output);
+    if (item) items.push(item);
+  }
+  return items;
+}
+
+function FuelRefuelCard({
+  item,
+  onReply,
+  disabled,
+  alreadyRefueled,
+}: {
+  item: FuelRefuelPreview;
+  onReply?: (text: string) => void;
+  disabled?: boolean;
+  alreadyRefueled?: boolean;
+}) {
+  const [resolved, setResolved] = useState<"confirm" | "cancel" | null>(
+    alreadyRefueled ? "confirm" : null
+  );
+
+  function choose(kind: "confirm" | "cancel") {
+    if (disabled || resolved) return;
+    if (kind === "confirm" && !item.canConfirm) return;
+    setResolved(kind);
+    onReply?.(kind === "confirm" ? item.confirmChoice : item.cancelChoice);
+  }
+
+  const done = alreadyRefueled || resolved === "confirm";
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-amber-400/30 bg-gradient-to-br from-amber-500/10 via-zinc-950/85 to-zinc-950/95 shadow-[0_0_0_1px_rgba(245,158,11,0.12)]">
+      <div className="flex items-center gap-2.5 border-b border-amber-500/15 px-3.5 py-3">
+        <div className="inline-flex size-8 items-center justify-center rounded-xl bg-amber-500/15 ring-1 ring-amber-400/25">
+          <Fuel className="size-4 text-amber-300" strokeWidth={2.1} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold tracking-tight text-white">
+            {item.equipmentName}
+          </p>
+          <p className="text-[11px] text-zinc-500">
+            з «{item.storageName}»
+            {item.driverName ? ` · ${item.driverName}` : ""}
+          </p>
+        </div>
+        <span
+          className={cn(
+            "shrink-0 rounded-md border px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase",
+            done
+              ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-300"
+              : "border-amber-400/40 bg-amber-500/15 text-amber-200"
+          )}
+        >
+          {done ? "Заправлено" : item.badge}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 px-3.5 py-3">
+        <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] px-2.5 py-2">
+          <p className="text-[10px] tracking-wide text-zinc-500 uppercase">
+            Літри
+          </p>
+          <p className="mt-0.5 text-sm font-semibold tabular-nums text-amber-300">
+            {item.liters} л
+          </p>
+        </div>
+        <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] px-2.5 py-2">
+          <p className="text-[10px] tracking-wide text-zinc-500 uppercase">
+            Залишок ємності
+          </p>
+          <p className="mt-0.5 text-sm font-semibold tabular-nums text-white">
+            {item.volumeBefore} → {item.volumeAfter} л
+          </p>
+        </div>
+        {item.totalCost != null ? (
+          <div className="col-span-2 rounded-xl border border-white/[0.06] bg-white/[0.03] px-2.5 py-2">
+            <p className="text-[10px] tracking-wide text-zinc-500 uppercase">
+              Вартість
+            </p>
+            <p className="mt-0.5 text-sm font-medium tabular-nums text-emerald-400">
+              {item.totalCost} ₴
+              {item.pricePerLiter != null
+                ? ` · ${item.pricePerLiter} ₴/л`
+                : ""}
+            </p>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="border-t border-amber-500/15 px-3.5 py-3">
+        {done ? (
+          <div className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-400/30 bg-emerald-500/15 px-3 py-2.5 text-xs font-semibold text-emerald-300">
+            <CheckCircle2 className="size-3.5" strokeWidth={2.2} />
+            Заправку зафіксовано
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              disabled={disabled || resolved === "cancel"}
+              onClick={() => choose("cancel")}
+              className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-xs font-semibold text-zinc-300 transition hover:bg-white/[0.07] disabled:opacity-50"
+            >
+              {item.cancelChoice}
+            </button>
+            <button
+              type="button"
+              disabled={disabled || !item.canConfirm}
+              onClick={() => choose("confirm")}
+              className="inline-flex items-center justify-center rounded-xl border border-amber-300/40 bg-gradient-to-r from-amber-500 to-amber-400 px-3 py-2.5 text-xs font-semibold text-zinc-950 transition hover:from-amber-400 hover:to-amber-300 disabled:opacity-50"
+            >
+              {item.confirmChoice}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+type MaintenanceCompletedPreview = {
+  status: "requires_confirmation";
+  equipmentId: string;
+  equipmentName: string;
+  serviceType: string;
+  serviceIntervalHours: number;
+  currentHours: number;
+  nextServiceHours: number;
+  canConfirm: boolean;
+  confirmChoice: string;
+  cancelChoice: string;
+  badge: string;
+};
+
+function normalizeMaintenanceCompletedPreview(
+  value: unknown
+): MaintenanceCompletedPreview | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Record<string, unknown>;
+  if (raw.status !== "requires_confirmation") return null;
+  if (
+    typeof raw.equipmentId !== "string" ||
+    typeof raw.equipmentName !== "string" ||
+    typeof raw.serviceType !== "string"
+  ) {
+    return null;
+  }
+  return {
+    status: "requires_confirmation",
+    equipmentId: raw.equipmentId,
+    equipmentName: raw.equipmentName,
+    serviceType: raw.serviceType,
+    serviceIntervalHours: Number(raw.serviceIntervalHours) || 250,
+    currentHours: Number(raw.currentHours) || 0,
+    nextServiceHours: Number(raw.nextServiceHours) || 0,
+    canConfirm: raw.canConfirm !== false,
+    confirmChoice:
+      typeof raw.confirmChoice === "string"
+        ? raw.confirmChoice
+        : "Підтвердити ТО",
+    cancelChoice:
+      typeof raw.cancelChoice === "string" ? raw.cancelChoice : "Скасувати",
+    badge: typeof raw.badge === "string" ? raw.badge : "Фіксація ТО",
+  };
+}
+
+function extractMaintenanceCompletedPreviews(
+  message: UIMessage
+): MaintenanceCompletedPreview[] {
+  const items: MaintenanceCompletedPreview[] = [];
+  for (const part of message.parts) {
+    const isMaint =
+      part.type === "tool-logMaintenanceCompleted" ||
+      (part.type === "dynamic-tool" &&
+        "toolName" in part &&
+        part.toolName === "logMaintenanceCompleted");
+    if (!isMaint) continue;
+    if (!("state" in part) || part.state !== "output-available") continue;
+    if (!("output" in part)) continue;
+    const item = normalizeMaintenanceCompletedPreview(part.output);
+    if (item) items.push(item);
+  }
+  return items;
+}
+
+function extractMaintenanceCompletedPayload(message: UIMessage): {
+  equipmentId: string;
+  equipmentName: string;
+  serviceType: string;
+  nextServiceHours: number;
+} | null {
+  for (const part of message.parts) {
+    const isMaint =
+      part.type === "tool-logMaintenanceCompleted" ||
+      (part.type === "dynamic-tool" &&
+        "toolName" in part &&
+        part.toolName === "logMaintenanceCompleted");
+    if (!isMaint) continue;
+    if (!("state" in part) || part.state !== "output-available") continue;
+    if (!("output" in part) || !part.output || typeof part.output !== "object") {
+      continue;
+    }
+    const raw = part.output as Record<string, unknown>;
+    if (raw.success !== true && raw.status !== "completed") continue;
+    if (typeof raw.equipmentId !== "string") continue;
+    return {
+      equipmentId: raw.equipmentId,
+      equipmentName:
+        typeof raw.equipmentName === "string" ? raw.equipmentName : "",
+      serviceType: typeof raw.serviceType === "string" ? raw.serviceType : "",
+      nextServiceHours: Number(raw.nextServiceHours) || 0,
+    };
+  }
+  return null;
+}
+
+function extractLinkedServiceActPayload(message: UIMessage): {
+  actId: string;
+  equipmentId: string;
+  equipmentName: string;
+  seasonRepairCostUah: number;
+} | null {
+  for (const part of message.parts) {
+    const isLink =
+      part.type === "tool-linkServiceActToEquipment" ||
+      (part.type === "dynamic-tool" &&
+        "toolName" in part &&
+        part.toolName === "linkServiceActToEquipment");
+    if (!isLink) continue;
+    if (!("state" in part) || part.state !== "output-available") continue;
+    if (!("output" in part) || !part.output || typeof part.output !== "object") {
+      continue;
+    }
+    const raw = part.output as Record<string, unknown>;
+    if (raw.success !== true && raw.status !== "linked") continue;
+    if (typeof raw.actId !== "string" || typeof raw.equipmentId !== "string") {
+      continue;
+    }
+    return {
+      actId: raw.actId,
+      equipmentId: raw.equipmentId,
+      equipmentName:
+        typeof raw.equipmentName === "string" ? raw.equipmentName : "",
+      seasonRepairCostUah: Number(raw.seasonRepairCostUah) || 0,
+    };
+  }
+  return null;
+}
+
+function MaintenanceCompletedCard({
+  item,
+  onReply,
+  disabled,
+  alreadyDone,
+}: {
+  item: MaintenanceCompletedPreview;
+  onReply?: (text: string) => void;
+  disabled?: boolean;
+  alreadyDone?: boolean;
+}) {
+  const [resolved, setResolved] = useState<"confirm" | "cancel" | null>(
+    alreadyDone ? "confirm" : null
+  );
+
+  function choose(kind: "confirm" | "cancel") {
+    if (disabled || resolved) return;
+    if (kind === "confirm" && !item.canConfirm) return;
+    setResolved(kind);
+    onReply?.(kind === "confirm" ? item.confirmChoice : item.cancelChoice);
+  }
+
+  const done = alreadyDone || resolved === "confirm";
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-sky-400/30 bg-gradient-to-br from-sky-500/10 via-zinc-950/85 to-zinc-950/95 shadow-[0_0_0_1px_rgba(56,189,248,0.12)]">
+      <div className="flex items-center gap-2.5 border-b border-sky-500/15 px-3.5 py-3">
+        <div className="inline-flex size-8 items-center justify-center rounded-xl bg-sky-500/15 ring-1 ring-sky-400/25">
+          <Tractor className="size-4 text-sky-300" strokeWidth={2.1} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold tracking-tight text-white">
+            {item.equipmentName}
+          </p>
+          <p className="text-[11px] text-zinc-500">{item.serviceType}</p>
+        </div>
+        <span
+          className={cn(
+            "shrink-0 rounded-md border px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase",
+            done
+              ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-300"
+              : "border-sky-400/40 bg-sky-500/15 text-sky-200"
+          )}
+        >
+          {done ? "ТО зафіксовано" : item.badge}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 px-3.5 py-3">
+        <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] px-2.5 py-2">
+          <p className="text-[10px] tracking-wide text-zinc-500 uppercase">
+            Зараз
+          </p>
+          <p className="mt-0.5 text-sm font-semibold tabular-nums text-white">
+            {item.currentHours} м/г
+          </p>
+        </div>
+        <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] px-2.5 py-2">
+          <p className="text-[10px] tracking-wide text-zinc-500 uppercase">
+            Наступне ТО
+          </p>
+          <p className="mt-0.5 text-sm font-semibold tabular-nums text-sky-300">
+            {item.nextServiceHours} м/г
+          </p>
+          <p className="text-[10px] text-zinc-500">
+            +{item.serviceIntervalHours} м/г
+          </p>
+        </div>
+      </div>
+
+      <div className="border-t border-sky-500/15 px-3.5 py-3">
+        {done ? (
+          <div className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-400/30 bg-emerald-500/15 px-3 py-2.5 text-xs font-semibold text-emerald-300">
+            <CheckCircle2 className="size-3.5" strokeWidth={2.2} />
+            Сервіс внесено
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              disabled={disabled || resolved === "cancel"}
+              onClick={() => choose("cancel")}
+              className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-xs font-semibold text-zinc-300 transition hover:bg-white/[0.07] disabled:opacity-50"
+            >
+              {item.cancelChoice}
+            </button>
+            <button
+              type="button"
+              disabled={disabled || !item.canConfirm}
+              onClick={() => choose("confirm")}
+              className="inline-flex items-center justify-center rounded-xl border border-sky-300/40 bg-gradient-to-r from-sky-500 to-sky-400 px-3 py-2.5 text-xs font-semibold text-zinc-950 transition hover:from-sky-400 hover:to-sky-300 disabled:opacity-50"
+            >
+              {item.confirmChoice}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+type InventoryWriteOffPreview = {
+  status: "requires_confirmation";
+  fieldId: string | null;
+  fieldName: string;
+  itemId: string;
+  itemName: string;
+  category: string;
+  quantity: number;
+  unit: string;
+  date: string;
+  currentStock: number;
+  projectedStock: number;
+  exceedsStock: boolean;
+  canConfirm: boolean;
+  warning: string | null;
+  confirmChoice: string;
+  cancelChoice: string;
+  badge: string;
+};
+
+function normalizeInventoryWriteOffPreview(
+  value: unknown
+): InventoryWriteOffPreview | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Record<string, unknown>;
+  if (raw.status !== "requires_confirmation") return null;
+  if (typeof raw.itemId !== "string" || typeof raw.itemName !== "string") {
+    return null;
+  }
+  if (typeof raw.quantity !== "number" || !Number.isFinite(raw.quantity)) {
+    return null;
+  }
+  return {
+    status: "requires_confirmation",
+    fieldId: typeof raw.fieldId === "string" ? raw.fieldId : null,
+    fieldName:
+      typeof raw.fieldName === "string" ? raw.fieldName : "поле",
+    itemId: raw.itemId,
+    itemName: raw.itemName,
+    category: typeof raw.category === "string" ? raw.category : "",
+    quantity: raw.quantity,
+    unit: typeof raw.unit === "string" ? raw.unit : "од.",
+    date: typeof raw.date === "string" ? raw.date : "",
+    currentStock: Number(raw.currentStock) || 0,
+    projectedStock: Number(raw.projectedStock) || 0,
+    exceedsStock: raw.exceedsStock === true,
+    canConfirm: raw.canConfirm !== false && raw.exceedsStock !== true,
+    warning: typeof raw.warning === "string" ? raw.warning : null,
+    confirmChoice:
+      typeof raw.confirmChoice === "string"
+        ? raw.confirmChoice
+        : "Підтвердити списання на поле",
+    cancelChoice:
+      typeof raw.cancelChoice === "string" ? raw.cancelChoice : "Скасувати",
+    badge:
+      typeof raw.badge === "string" ? raw.badge : "Списання ТМЦ на поле",
+  };
+}
+
+function extractInventoryWriteOffPreviews(
+  message: UIMessage
+): InventoryWriteOffPreview[] {
+  const items: InventoryWriteOffPreview[] = [];
+  for (const part of message.parts) {
+    const isWriteOff =
+      part.type === "tool-writeOffInventoryToField" ||
+      (part.type === "dynamic-tool" &&
+        "toolName" in part &&
+        part.toolName === "writeOffInventoryToField");
+    if (!isWriteOff) continue;
+    if (!("state" in part) || part.state !== "output-available") continue;
+    if (!("output" in part)) continue;
+    const item = normalizeInventoryWriteOffPreview(part.output);
+    if (item) items.push(item);
+  }
+  return items;
+}
+
+function InventoryWriteOffCard({
+  item,
+  onReply,
+  disabled,
+  alreadyWrittenOff,
+}: {
+  item: InventoryWriteOffPreview;
+  onReply?: (text: string) => void;
+  disabled?: boolean;
+  alreadyWrittenOff?: boolean;
+}) {
+  const [resolved, setResolved] = useState<"confirm" | "cancel" | null>(
+    alreadyWrittenOff ? "confirm" : null
+  );
+
+  function choose(kind: "confirm" | "cancel") {
+    if (disabled || resolved) return;
+    if (kind === "confirm" && !item.canConfirm) return;
+    setResolved(kind);
+    onReply?.(kind === "confirm" ? item.confirmChoice : item.cancelChoice);
+  }
+
+  const done = alreadyWrittenOff || resolved === "confirm";
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-violet-400/30 bg-gradient-to-br from-violet-500/10 via-zinc-950/85 to-zinc-950/95 shadow-[0_0_0_1px_rgba(167,139,250,0.12)]">
+      <div className="flex items-center gap-2.5 border-b border-violet-500/15 px-3.5 py-3">
+        <div className="inline-flex size-8 items-center justify-center rounded-xl bg-violet-500/15 ring-1 ring-violet-400/25">
+          <Warehouse className="size-4 text-violet-300" strokeWidth={2.1} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold tracking-tight text-white">
+            {item.itemName}
+          </p>
+          <p className="text-[11px] text-zinc-500">
+            → {item.fieldName}
+            {item.date ? ` · ${item.date}` : ""}
+          </p>
+        </div>
+        <span
+          className={cn(
+            "shrink-0 rounded-md border px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase",
+            done
+              ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-300"
+              : "border-violet-400/40 bg-violet-500/15 text-violet-200"
+          )}
+        >
+          {done ? "Списано" : item.badge}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 px-3.5 py-3">
+        <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] px-2.5 py-2">
+          <p className="text-[10px] tracking-wide text-zinc-500 uppercase">
+            Залишок зараз
+          </p>
+          <p className="mt-0.5 text-sm font-semibold tabular-nums text-white">
+            {item.currentStock} {item.unit}
+          </p>
+        </div>
+        <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] px-2.5 py-2">
+          <p className="text-[10px] tracking-wide text-zinc-500 uppercase">
+            Списати
+          </p>
+          <p className="mt-0.5 text-sm font-semibold tabular-nums text-violet-200">
+            {item.quantity} {item.unit}
+          </p>
+        </div>
+        <div className="col-span-2 rounded-xl border border-white/[0.06] bg-white/[0.03] px-2.5 py-2">
+          <p className="text-[10px] tracking-wide text-zinc-500 uppercase">
+            Залишок після
+          </p>
+          <p
+            className={cn(
+              "mt-0.5 text-sm font-semibold tabular-nums",
+              item.exceedsStock ? "text-rose-300" : "text-emerald-300"
+            )}
+          >
+            {item.projectedStock} {item.unit}
+          </p>
+        </div>
+      </div>
+
+      {item.exceedsStock || item.warning ? (
+        <div className="border-t border-rose-500/20 px-3.5 py-2.5">
+          <p className="flex items-start gap-1.5 text-xs leading-snug text-rose-200">
+            <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+            <span>
+              {item.warning ||
+                "Списання перевищує залишок на складі — підтвердження недоступне."}
+            </span>
+          </p>
+        </div>
+      ) : null}
+
+      {!done ? (
+        <div className="flex flex-wrap gap-2 border-t border-white/10 px-3.5 py-3">
+          <button
+            type="button"
+            disabled={disabled || resolved !== null || !item.canConfirm}
+            onClick={() => choose("confirm")}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-400/40 bg-emerald-500/20 px-3 py-1.5 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-500/30 disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            <Warehouse className="size-3.5" />
+            Підтвердити списання на поле
+          </button>
+          <button
+            type="button"
+            disabled={disabled || resolved !== null}
+            onClick={() => choose("cancel")}
+            className="rounded-xl border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-zinc-300 disabled:opacity-50"
+          >
+            {resolved === "cancel" ? "Скасовано" : item.cancelChoice}
+          </button>
+        </div>
+      ) : (
+        <div className="border-t border-emerald-500/20 px-3.5 py-2.5">
+          <p className="flex items-center gap-1.5 text-xs font-medium text-emerald-300">
+            <CheckCircle2 className="size-3.5" />
+            Списано на поле «{item.fieldName}»
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function extractFocusFieldPayload(message: UIMessage): {
+  fieldId: string;
+  openFieldPath: string;
+} | null {
+  for (const part of message.parts) {
+    const isFocus =
+      part.type === "tool-focusFieldOnMap" ||
+      (part.type === "dynamic-tool" &&
+        "toolName" in part &&
+        part.toolName === "focusFieldOnMap");
+    if (!isFocus) continue;
+    if (!("state" in part) || part.state !== "output-available") continue;
+    if (!("output" in part) || !part.output || typeof part.output !== "object") {
+      continue;
+    }
+    const raw = part.output as Record<string, unknown>;
+    if (raw.success !== true && raw.status !== "focus") continue;
+    if (typeof raw.fieldId !== "string" || !raw.fieldId) continue;
+    return {
+      fieldId: raw.fieldId,
+      openFieldPath:
+        typeof raw.openFieldPath === "string"
+          ? raw.openFieldPath
+          : `/?field=${raw.fieldId}`,
+    };
+  }
+  return null;
+}
+
+function extractClosedWorkOrderPayload(message: UIMessage): {
+  fieldId: string;
+  workOrderId: string;
+  factArea: number;
+} | null {
+  for (const part of message.parts) {
+    const isClose =
+      part.type === "tool-closeWorkOrder" ||
+      (part.type === "dynamic-tool" &&
+        "toolName" in part &&
+        part.toolName === "closeWorkOrder");
+    if (!isClose) continue;
+    if (!("state" in part) || part.state !== "output-available") continue;
+    if (!("output" in part) || !part.output || typeof part.output !== "object") {
+      continue;
+    }
+    const raw = part.output as Record<string, unknown>;
+    if (raw.success !== true && raw.status !== "closed") continue;
+    if (typeof raw.fieldId !== "string" || !raw.fieldId) continue;
+    return {
+      fieldId: raw.fieldId,
+      workOrderId:
+        typeof raw.workOrderId === "string" ? raw.workOrderId : "",
+      factArea: Number(raw.factArea) || 0,
+    };
+  }
+  return null;
+}
+
+function extractBudgetUpdatePayload(message: UIMessage): {
+  fieldId: string;
+  plannedBudgetPerHa: number;
+} | null {
+  for (const part of message.parts) {
+    const isBudget =
+      part.type === "tool-updateFieldPlannedBudget" ||
+      (part.type === "dynamic-tool" &&
+        "toolName" in part &&
+        part.toolName === "updateFieldPlannedBudget");
+    if (!isBudget) continue;
+    if (!("state" in part) || part.state !== "output-available") continue;
+    if (!("output" in part) || !part.output || typeof part.output !== "object") {
+      continue;
+    }
+    const raw = part.output as Record<string, unknown>;
+    if (raw.success !== true && raw.status !== "updated") continue;
+    if (typeof raw.fieldId !== "string" || !raw.fieldId) continue;
+    return {
+      fieldId: raw.fieldId,
+      plannedBudgetPerHa: Number(raw.plannedBudgetPerHa) || 0,
+    };
+  }
+  return null;
+}
+
+function extractGeofenceSyncPayload(message: UIMessage): {
+  fieldId: string;
+  wialonGeofenceId: string;
+} | null {
+  for (const part of message.parts) {
+    const isSync =
+      part.type === "tool-syncFieldWialonGeofence" ||
+      (part.type === "dynamic-tool" &&
+        "toolName" in part &&
+        part.toolName === "syncFieldWialonGeofence");
+    if (!isSync) continue;
+    if (!("state" in part) || part.state !== "output-available") continue;
+    if (!("output" in part) || !part.output || typeof part.output !== "object") {
+      continue;
+    }
+    const raw = part.output as Record<string, unknown>;
+    if (raw.success !== true && raw.status !== "synced") continue;
+    if (typeof raw.fieldId !== "string" || !raw.fieldId) continue;
+    return {
+      fieldId: raw.fieldId,
+      wialonGeofenceId:
+        typeof raw.wialonGeofenceId === "string" ? raw.wialonGeofenceId : "",
+    };
+  }
+  return null;
+}
+
+type CreatedFieldCardData = {
+  fieldId: string;
+  name: string;
+  area: number;
+  crop: string;
+  categoryLabel: string;
+  openFieldPath: string;
+};
+
+function normalizeCreatedField(value: unknown): CreatedFieldCardData | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Record<string, unknown>;
+  if (raw.success !== true && raw.status !== "created") return null;
+  if (typeof raw.fieldId !== "string" || !raw.fieldId) return null;
+  return {
+    fieldId: raw.fieldId,
+    name: typeof raw.name === "string" ? raw.name : "Поле",
+    area: Number(raw.area) || 0,
+    crop: typeof raw.crop === "string" ? raw.crop : "—",
+    categoryLabel:
+      typeof raw.categoryLabel === "string"
+        ? raw.categoryLabel
+        : "Товарне поле",
+    openFieldPath:
+      typeof raw.openFieldPath === "string"
+        ? raw.openFieldPath
+        : `/?field=${raw.fieldId}`,
+  };
+}
+
+function extractCreatedFields(message: UIMessage): CreatedFieldCardData[] {
+  const items: CreatedFieldCardData[] = [];
+  for (const part of message.parts) {
+    const isCreate =
+      part.type === "tool-createField" ||
+      (part.type === "dynamic-tool" &&
+        "toolName" in part &&
+        part.toolName === "createField");
+    if (!isCreate) continue;
+    if (!("state" in part) || part.state !== "output-available") continue;
+    if (!("output" in part)) continue;
+    const item = normalizeCreatedField(part.output);
+    if (item) items.push(item);
+  }
+  return items;
+}
+
+type DeleteFieldConfirmation = {
+  status: "requires_confirmation";
+  fieldId: string;
+  fieldName: string;
+  areaHa: number;
+  operationsCount: number;
+  movesCount: number;
+  mode: "archive" | "delete";
+  warning: string;
+  userHint: string;
+  confirmChoice: string;
+  cancelChoice: string;
+};
+
+function normalizeDeleteFieldConfirmation(
+  value: unknown
+): DeleteFieldConfirmation | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Record<string, unknown>;
+  if (raw.status !== "requires_confirmation") return null;
+  if (typeof raw.fieldId !== "string" || typeof raw.fieldName !== "string") {
+    return null;
+  }
+  return {
+    status: "requires_confirmation",
+    fieldId: raw.fieldId,
+    fieldName: raw.fieldName,
+    areaHa: Number(raw.areaHa) || 0,
+    operationsCount: Number(raw.operationsCount) || 0,
+    movesCount: Number(raw.movesCount) || 0,
+    mode: raw.mode === "archive" ? "archive" : "delete",
+    warning:
+      typeof raw.warning === "string"
+        ? raw.warning
+        : "Підтверди дію з полем.",
+    userHint:
+      typeof raw.userHint === "string"
+        ? raw.userHint
+        : `Підтверди дію з полем «${raw.fieldName}»`,
+    confirmChoice:
+      typeof raw.confirmChoice === "string"
+        ? raw.confirmChoice
+        : "Підтвердити",
+    cancelChoice:
+      typeof raw.cancelChoice === "string" ? raw.cancelChoice : "Скасувати",
+  };
+}
+
+function extractDeleteFieldConfirmations(
+  message: UIMessage
+): DeleteFieldConfirmation[] {
+  const items: DeleteFieldConfirmation[] = [];
+  for (const part of message.parts) {
+    const isDel =
+      part.type === "tool-deleteField" ||
+      (part.type === "dynamic-tool" &&
+        "toolName" in part &&
+        part.toolName === "deleteField");
+    if (!isDel) continue;
+    if (!("state" in part) || part.state !== "output-available") continue;
+    if (!("output" in part)) continue;
+    const item = normalizeDeleteFieldConfirmation(part.output);
+    if (item) items.push(item);
+  }
+  return items;
+}
+
+function extractDeletedOrArchivedFieldPayload(message: UIMessage): {
+  fieldId: string;
+  status: "deleted" | "archived";
+} | null {
+  for (const part of message.parts) {
+    const isDel =
+      part.type === "tool-deleteField" ||
+      (part.type === "dynamic-tool" &&
+        "toolName" in part &&
+        part.toolName === "deleteField");
+    if (!isDel) continue;
+    if (!("state" in part) || part.state !== "output-available") continue;
+    if (!("output" in part) || !part.output || typeof part.output !== "object") {
+      continue;
+    }
+    const raw = part.output as Record<string, unknown>;
+    if (raw.success !== true) continue;
+    if (raw.status !== "deleted" && raw.status !== "archived") continue;
+    if (typeof raw.fieldId !== "string" || !raw.fieldId) continue;
+    return {
+      fieldId: raw.fieldId,
+      status: raw.status,
+    };
+  }
+  return null;
+}
+
+function CreatedFieldCard({
+  item,
+  onNavigate,
+}: {
+  item: CreatedFieldCardData;
+  onNavigate?: (path: string) => void;
+}) {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-emerald-400/30 bg-gradient-to-br from-emerald-500/10 via-zinc-950/80 to-zinc-950/90">
+      <div className="flex items-center gap-2.5 border-b border-emerald-500/15 px-3.5 py-3">
+        <div className="inline-flex size-8 items-center justify-center rounded-xl bg-emerald-500/15 ring-1 ring-emerald-400/25">
+          <MapPin className="size-4 text-emerald-400" strokeWidth={2.1} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold tracking-tight text-white">
+            Нове поле: {item.name}
+          </p>
+          <p className="text-[11px] text-zinc-500">{item.categoryLabel}</p>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2 px-3.5 py-3">
+        <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] px-2.5 py-2">
+          <p className="text-[10px] tracking-wide text-zinc-500 uppercase">
+            Площа
+          </p>
+          <p className="mt-0.5 text-sm font-semibold tabular-nums text-emerald-300">
+            {item.area} га
+          </p>
+        </div>
+        <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] px-2.5 py-2">
+          <p className="text-[10px] tracking-wide text-zinc-500 uppercase">
+            Культура
+          </p>
+          <p className="mt-0.5 truncate text-sm font-semibold text-white">
+            {item.crop}
+          </p>
+        </div>
+      </div>
+      <div className="border-t border-white/10 px-3.5 py-3">
+        <button
+          type="button"
+          onClick={() => onNavigate?.(item.openFieldPath)}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-400/30 bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-200 transition hover:bg-emerald-500/25"
+        >
+          <MapPin className="size-3.5" />
+          Відкрити на карті
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function DeleteFieldConfirmCard({
+  item,
+  onReply,
+  disabled,
+}: {
+  item: DeleteFieldConfirmation;
+  onReply?: (text: string) => void;
+  disabled?: boolean;
+}) {
+  const [resolved, setResolved] = useState<"confirm" | "cancel" | null>(null);
+
+  function choose(kind: "confirm" | "cancel") {
+    if (disabled || resolved) return;
+    setResolved(kind);
+    onReply?.(kind === "confirm" ? item.confirmChoice : item.cancelChoice);
+  }
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-rose-400/35 bg-gradient-to-br from-rose-500/15 via-zinc-950/85 to-zinc-950/95">
+      <div className="flex items-start gap-2.5 border-b border-rose-500/20 px-3.5 py-3">
+        <div className="inline-flex size-8 shrink-0 items-center justify-center rounded-xl bg-rose-500/15 ring-1 ring-rose-400/25">
+          <AlertCircle className="size-4 text-rose-300" strokeWidth={2.1} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold tracking-tight text-white">
+            {item.mode === "archive" ? "Архівація поля" : "Видалення поля"}
+          </p>
+          <p className="mt-1 text-sm leading-relaxed text-zinc-300">
+            {item.userHint}
+          </p>
+        </div>
+      </div>
+      <div className="space-y-1.5 px-3.5 py-3 text-xs text-zinc-300">
+        <p>
+          Площа:{" "}
+          <span className="font-semibold text-white">{item.areaHa} га</span>
+        </p>
+        <p>
+          Наряди:{" "}
+          <span className="font-semibold text-white">
+            {item.operationsCount}
+          </span>
+          {" · "}
+          Списання ТМЦ:{" "}
+          <span className="font-semibold text-white">{item.movesCount}</span>
+        </p>
+        <p className="flex items-start gap-1.5 text-rose-200/90">
+          <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+          <span>{item.warning}</span>
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-2 border-t border-white/10 px-3.5 py-3">
+        <button
+          type="button"
+          disabled={disabled || resolved !== null}
+          onClick={() => choose("confirm")}
+          className="rounded-xl border border-rose-400/40 bg-rose-500/20 px-3 py-1.5 text-xs font-semibold text-rose-100 disabled:opacity-50"
+        >
+          {resolved === "confirm" ? "Підтверджено…" : item.confirmChoice}
+        </button>
+        <button
+          type="button"
+          disabled={disabled || resolved !== null}
+          onClick={() => choose("cancel")}
+          className="rounded-xl border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-zinc-300 disabled:opacity-50"
+        >
+          {resolved === "cancel" ? "Скасовано" : item.cancelChoice}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+type ScoutingDiagnosisResult = {
+  fieldId: string;
+  fieldName: string;
+  cropPhase: string;
+  visualState: string;
+  riskLevel: "ok" | "warning" | "critical";
+  riskBadge: string;
+  diagnosis: string;
+  reportId: string;
+};
+
+function normalizeScoutingDiagnosis(
+  value: unknown
+): ScoutingDiagnosisResult | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Record<string, unknown>;
+  if (raw.success !== true) return null;
+  if (typeof raw.fieldId !== "string" || !raw.fieldId) return null;
+  if (typeof raw.reportId !== "string" || !raw.reportId) return null;
+  const risk =
+    raw.riskLevel === "critical" || raw.riskLevel === "warning"
+      ? raw.riskLevel
+      : "ok";
+  return {
+    fieldId: raw.fieldId,
+    fieldName:
+      typeof raw.fieldName === "string" ? raw.fieldName : "Поле",
+    cropPhase:
+      typeof raw.cropPhase === "string" ? raw.cropPhase : "—",
+    visualState:
+      typeof raw.visualState === "string" ? raw.visualState : "",
+    riskLevel: risk,
+    riskBadge:
+      typeof raw.riskBadge === "string"
+        ? raw.riskBadge
+        : risk === "critical"
+          ? "Ризик"
+          : risk === "warning"
+            ? "Увага"
+            : "Норма",
+    diagnosis:
+      typeof raw.diagnosis === "string" ? raw.diagnosis : "",
+    reportId: raw.reportId,
+  };
+}
+
+function extractScoutingDiagnoses(
+  message: UIMessage
+): ScoutingDiagnosisResult[] {
+  const items: ScoutingDiagnosisResult[] = [];
+  for (const part of message.parts) {
+    const isScout =
+      part.type === "tool-analyzeAndSaveScoutingReport" ||
+      (part.type === "dynamic-tool" &&
+        "toolName" in part &&
+        part.toolName === "analyzeAndSaveScoutingReport");
+    if (!isScout) continue;
+    if (!("state" in part) || part.state !== "output-available") continue;
+    if (!("output" in part)) continue;
+    const item = normalizeScoutingDiagnosis(part.output);
+    if (item) items.push(item);
+  }
+  return items;
+}
+
+function ScoutingDiagnosisCard({ item }: { item: ScoutingDiagnosisResult }) {
+  const badgeClass =
+    item.riskLevel === "critical"
+      ? "border-rose-400/40 bg-rose-500/15 text-rose-300"
+      : item.riskLevel === "warning"
+        ? "border-amber-400/40 bg-amber-500/15 text-amber-300"
+        : "border-emerald-400/40 bg-emerald-500/15 text-emerald-300";
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-lime-400/25 bg-gradient-to-br from-lime-500/10 via-zinc-950/80 to-zinc-950/90 shadow-[0_0_0_1px_rgba(163,230,53,0.1)]">
+      <div className="flex items-center gap-2.5 border-b border-lime-500/15 px-3.5 py-3">
+        <div className="inline-flex size-8 items-center justify-center rounded-xl bg-lime-500/15 ring-1 ring-lime-400/25">
+          <Wheat className="size-4 text-lime-400" strokeWidth={2.1} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold tracking-tight text-white">
+            Діагностика посіву · {item.fieldName}
+          </p>
+          <p className="text-[11px] text-zinc-500">
+            Збережено в таймлайн поля
+          </p>
+        </div>
+        <span
+          className={`shrink-0 rounded-md border px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase ${badgeClass}`}
+        >
+          {item.riskBadge}
+        </span>
+      </div>
+      <div className="space-y-2 px-3.5 py-3">
+        <div>
+          <p className="text-[10px] tracking-wide text-zinc-500 uppercase">
+            Фаза і стан
+          </p>
+          <p className="mt-0.5 text-sm font-medium text-white">
+            {item.cropPhase}
+          </p>
+          {item.visualState ? (
+            <p className="mt-0.5 text-xs leading-snug text-zinc-400">
+              {item.visualState}
+            </p>
+          ) : null}
+        </div>
+        {item.diagnosis ? (
+          <div>
+            <p className="text-[10px] tracking-wide text-zinc-500 uppercase">
+              Висновок ШІ
+            </p>
+            <p className="mt-0.5 text-sm leading-snug text-zinc-200">
+              {item.diagnosis}
+            </p>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
 }
 
 type InvoicePreviewLine = {
@@ -2552,9 +3797,11 @@ function WorkOrderDraftCard({ draft }: { draft: WorkOrderDraft }) {
         mechanicName: draft.driverName,
         status: "planned",
         equipmentId: draft.equipmentId,
+        implementId: draft.implementId,
         implementWidthM: draft.implementWidthM,
         materials,
         exportStatus: "none",
+        agronomistComment: draft.agronomistComment ?? undefined,
       };
       await upsertFieldOperation(payload);
       setSaved(true);
@@ -2578,10 +3825,21 @@ function WorkOrderDraftCard({ draft }: { draft: WorkOrderDraft }) {
             Новий наряд: {draft.operationType}
           </p>
           <p className="text-[11px] text-zinc-500">
-            {draft.timeLabel} · готово до Хронології
+            {draft.timeLabel} ·{" "}
+            {draft.source === "wialon_gps"
+              ? "з телеметрії Wialon"
+              : "готово до Хронології"}
           </p>
         </div>
       </div>
+
+      {draft.agronomistComment ? (
+        <div className="border-b border-emerald-500/10 px-3.5 py-2">
+          <p className="text-[11px] leading-snug text-zinc-400">
+            {draft.agronomistComment}
+          </p>
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-2 gap-2 px-3.5 py-3">
         <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] px-2.5 py-2">
@@ -2603,12 +3861,18 @@ function WorkOrderDraftCard({ draft }: { draft: WorkOrderDraft }) {
         </div>
         <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] px-2.5 py-2">
           <p className="text-[10px] tracking-wide text-zinc-500 uppercase">
-            Техніка
+            Техніка / зчіпка
           </p>
           <p className="mt-0.5 truncate text-sm font-semibold text-white">
-            {draft.equipmentName}
+            {draft.hitchLabel || draft.equipmentName}
           </p>
-          {draft.implementName ? (
+          {draft.hitchLabel && draft.implementName ? (
+            <p className="truncate text-[10px] text-zinc-500">
+              {draft.implementAutoPicked
+                ? `Знаряддя підтягнуто: ${draft.implementName}`
+                : draft.implementName}
+            </p>
+          ) : draft.implementName ? (
             <p className="truncate text-[10px] text-zinc-500">
               {draft.implementName}
             </p>
@@ -2849,6 +4113,42 @@ function MessageBubble({
     () => (isUser ? [] : extractServiceActPreviews(message)),
     [isUser, message]
   );
+  const scoutingDiagnoses = useMemo(
+    () => (isUser ? [] : extractScoutingDiagnoses(message)),
+    [isUser, message]
+  );
+  const createdFields = useMemo(
+    () => (isUser ? [] : extractCreatedFields(message)),
+    [isUser, message]
+  );
+  const deleteFieldConfirmations = useMemo(
+    () => (isUser ? [] : extractDeleteFieldConfirmations(message)),
+    [isUser, message]
+  );
+  const writeOffPreviews = useMemo(
+    () => (isUser ? [] : extractInventoryWriteOffPreviews(message)),
+    [isUser, message]
+  );
+  const writeOffDone = useMemo(
+    () => (isUser ? null : extractWriteOffPayload(message)),
+    [isUser, message]
+  );
+  const fuelRefuelPreviews = useMemo(
+    () => (isUser ? [] : extractFuelRefuelPreviews(message)),
+    [isUser, message]
+  );
+  const fuelRefuelDone = useMemo(
+    () => (isUser ? null : extractFuelRefuelPayload(message)),
+    [isUser, message]
+  );
+  const maintenancePreviews = useMemo(
+    () => (isUser ? [] : extractMaintenanceCompletedPreviews(message)),
+    [isUser, message]
+  );
+  const maintenanceDone = useMemo(
+    () => (isUser ? null : extractMaintenanceCompletedPayload(message)),
+    [isUser, message]
+  );
   const { body, actions, choices } = useMemo(
     () =>
       isUser
@@ -2877,6 +4177,25 @@ function MessageBubble({
       own(item.confirmChoice);
       own(item.cancelChoice);
     }
+    for (const item of deleteFieldConfirmations) {
+      own(item.confirmChoice);
+      own(item.cancelChoice);
+    }
+    for (const item of writeOffPreviews) {
+      own(item.confirmChoice);
+      own(item.cancelChoice);
+      own("Підтвердити списання на поле");
+    }
+    for (const item of fuelRefuelPreviews) {
+      own(item.confirmChoice);
+      own(item.cancelChoice);
+      own("Підтвердити заправку");
+    }
+    for (const item of maintenancePreviews) {
+      own(item.confirmChoice);
+      own(item.cancelChoice);
+      own("Підтвердити ТО");
+    }
     for (const item of receiptRollbackConfirmations) {
       own(item.confirmChoice);
       own(item.cancelChoice);
@@ -2902,6 +4221,10 @@ function MessageBubble({
   }, [
     deleteConfirmations,
     fieldUpdateConfirmations,
+    deleteFieldConfirmations,
+    writeOffPreviews,
+    fuelRefuelPreviews,
+    maintenancePreviews,
     receiptRollbackConfirmations,
     serviceActDeleteConfirmations,
     invoicePreviews,
@@ -2981,6 +4304,91 @@ function MessageBubble({
             )}
           >
             {isUser ? body : <AgentMarkdown text={body} accent />}
+          </div>
+        ) : null}
+        {!isUser && writeOffPreviews.length > 0 ? (
+          <div className="space-y-2">
+            {writeOffPreviews.map((item) => (
+              <InventoryWriteOffCard
+                key={`${message.id}-wo-${item.itemId}-${item.quantity}`}
+                item={item}
+                onReply={onReply}
+                disabled={replyDisabled}
+                alreadyWrittenOff={
+                  writeOffDone != null &&
+                  writeOffDone.itemId === item.itemId &&
+                  Math.abs(writeOffDone.quantity - item.quantity) < 0.0001
+                }
+              />
+            ))}
+          </div>
+        ) : null}
+        {!isUser && fuelRefuelPreviews.length > 0 ? (
+          <div className="space-y-2">
+            {fuelRefuelPreviews.map((item) => (
+              <FuelRefuelCard
+                key={`${message.id}-fuel-${item.equipmentId}-${item.storageId}-${item.liters}`}
+                item={item}
+                onReply={onReply}
+                disabled={replyDisabled}
+                alreadyRefueled={
+                  fuelRefuelDone != null &&
+                  fuelRefuelDone.equipmentId === item.equipmentId &&
+                  fuelRefuelDone.storageId === item.storageId &&
+                  Math.abs(fuelRefuelDone.liters - item.liters) < 0.0001
+                }
+              />
+            ))}
+          </div>
+        ) : null}
+        {!isUser && maintenancePreviews.length > 0 ? (
+          <div className="space-y-2">
+            {maintenancePreviews.map((item) => (
+              <MaintenanceCompletedCard
+                key={`${message.id}-maint-${item.equipmentId}-${item.serviceType}`}
+                item={item}
+                onReply={onReply}
+                disabled={replyDisabled}
+                alreadyDone={
+                  maintenanceDone != null &&
+                  maintenanceDone.equipmentId === item.equipmentId &&
+                  maintenanceDone.serviceType === item.serviceType
+                }
+              />
+            ))}
+          </div>
+        ) : null}
+        {!isUser && createdFields.length > 0 ? (
+          <div className="space-y-2">
+            {createdFields.map((item) => (
+              <CreatedFieldCard
+                key={`${message.id}-create-${item.fieldId}`}
+                item={item}
+                onNavigate={onNavigate}
+              />
+            ))}
+          </div>
+        ) : null}
+        {!isUser && deleteFieldConfirmations.length > 0 ? (
+          <div className="space-y-2">
+            {deleteFieldConfirmations.map((item) => (
+              <DeleteFieldConfirmCard
+                key={`${message.id}-delfield-${item.fieldId}`}
+                item={item}
+                onReply={onReply}
+                disabled={replyDisabled}
+              />
+            ))}
+          </div>
+        ) : null}
+        {!isUser && scoutingDiagnoses.length > 0 ? (
+          <div className="space-y-2">
+            {scoutingDiagnoses.map((item) => (
+              <ScoutingDiagnosisCard
+                key={`${message.id}-scout-${item.reportId}`}
+                item={item}
+              />
+            ))}
           </div>
         ) : null}
         {!isUser && drafts.length > 0 ? (
@@ -3465,6 +4873,206 @@ export function LevadaCopilotDrawer({
         }
       }
 
+      const priceUpd = extractInventoryPriceUpdatePayload(message);
+      if (priceUpd) {
+        const key = `price:${message.id}:${priceUpd.itemId}:${priceUpd.newPrice}`;
+        if (!refreshedFieldUpdateKeysRef.current.has(key)) {
+          refreshedFieldUpdateKeysRef.current.add(key);
+          router.refresh();
+          window.dispatchEvent(
+            new CustomEvent("warehouse-updated", {
+              detail: {
+                itemId: priceUpd.itemId,
+                itemName: priceUpd.itemName,
+                newPrice: priceUpd.newPrice,
+              },
+            })
+          );
+          for (const fieldId of priceUpd.fieldsAffected.slice(0, 20)) {
+            window.dispatchEvent(
+              new CustomEvent("field-updated", { detail: { id: fieldId } })
+            );
+          }
+          if (priceUpd.fieldsAffected.length > 0) {
+            window.dispatchEvent(new CustomEvent("levada:fields-updated"));
+          }
+        }
+      }
+
+      const fuelRefuel = extractFuelRefuelPayload(message);
+      if (fuelRefuel) {
+        const key = `fuel:${message.id}:${fuelRefuel.transactionId ?? fuelRefuel.equipmentId}:${fuelRefuel.liters}`;
+        if (!refreshedFieldUpdateKeysRef.current.has(key)) {
+          refreshedFieldUpdateKeysRef.current.add(key);
+          router.refresh();
+          window.dispatchEvent(
+            new CustomEvent("fuel-updated", {
+              detail: {
+                transactionId: fuelRefuel.transactionId,
+                equipmentId: fuelRefuel.equipmentId,
+                equipmentName: fuelRefuel.equipmentName,
+                storageId: fuelRefuel.storageId,
+                storageName: fuelRefuel.storageName,
+                liters: fuelRefuel.liters,
+                volumeAfter: fuelRefuel.volumeAfter,
+              },
+            })
+          );
+        }
+      }
+
+      const linkedAct = extractLinkedServiceActPayload(message);
+      if (linkedAct) {
+        const key = `linkact:${message.id}:${linkedAct.actId}:${linkedAct.equipmentId}`;
+        if (!refreshedFieldUpdateKeysRef.current.has(key)) {
+          refreshedFieldUpdateKeysRef.current.add(key);
+          router.refresh();
+          window.dispatchEvent(
+            new CustomEvent("accounting-updated", { detail: linkedAct })
+          );
+          window.dispatchEvent(
+            new CustomEvent("equipment-updated", {
+              detail: { id: linkedAct.equipmentId },
+            })
+          );
+        }
+      }
+
+      const maintDone = extractMaintenanceCompletedPayload(message);
+      if (maintDone) {
+        const key = `maint:${message.id}:${maintDone.equipmentId}:${maintDone.serviceType}:${maintDone.nextServiceHours}`;
+        if (!refreshedFieldUpdateKeysRef.current.has(key)) {
+          refreshedFieldUpdateKeysRef.current.add(key);
+          router.refresh();
+          window.dispatchEvent(
+            new CustomEvent("equipment-updated", { detail: maintDone })
+          );
+        }
+      }
+
+      const closedOp = extractClosedWorkOrderPayload(message);
+      if (closedOp) {
+        const key = `close:${message.id}:${closedOp.workOrderId}:${closedOp.factArea}`;
+        if (!refreshedFieldUpdateKeysRef.current.has(key)) {
+          refreshedFieldUpdateKeysRef.current.add(key);
+          router.refresh();
+          window.dispatchEvent(
+            new CustomEvent("field-updated", {
+              detail: { id: closedOp.fieldId },
+            })
+          );
+          window.dispatchEvent(new CustomEvent("levada:fields-updated"));
+        }
+      }
+
+      const budgetOp = extractBudgetUpdatePayload(message);
+      if (budgetOp) {
+        const key = `budget:${message.id}:${budgetOp.fieldId}:${budgetOp.plannedBudgetPerHa}`;
+        if (!refreshedFieldUpdateKeysRef.current.has(key)) {
+          refreshedFieldUpdateKeysRef.current.add(key);
+          router.refresh();
+          window.dispatchEvent(
+            new CustomEvent("field-updated", {
+              detail: { id: budgetOp.fieldId },
+            })
+          );
+          window.dispatchEvent(new CustomEvent("levada:fields-updated"));
+        }
+      }
+
+      const geofenceSync = extractGeofenceSyncPayload(message);
+      if (geofenceSync) {
+        const key = `geofence:${message.id}:${geofenceSync.fieldId}:${geofenceSync.wialonGeofenceId}`;
+        if (!refreshedFieldUpdateKeysRef.current.has(key)) {
+          refreshedFieldUpdateKeysRef.current.add(key);
+          router.refresh();
+          window.dispatchEvent(
+            new CustomEvent("field-updated", {
+              detail: {
+                id: geofenceSync.fieldId,
+                wialonZoneId: geofenceSync.wialonGeofenceId,
+              },
+            })
+          );
+          window.dispatchEvent(new CustomEvent("levada:fields-updated"));
+        }
+      }
+
+      for (const scout of extractScoutingDiagnoses(message)) {
+        const key = `scout:${message.id}:${scout.reportId}`;
+        if (refreshedFieldUpdateKeysRef.current.has(key)) continue;
+        refreshedFieldUpdateKeysRef.current.add(key);
+        router.refresh();
+        window.dispatchEvent(
+          new CustomEvent("field-updated", {
+            detail: { id: scout.fieldId },
+          })
+        );
+        window.dispatchEvent(new CustomEvent("levada:fields-updated"));
+      }
+
+      for (const created of extractCreatedFields(message)) {
+        const key = `createfield:${message.id}:${created.fieldId}`;
+        if (refreshedFieldUpdateKeysRef.current.has(key)) continue;
+        refreshedFieldUpdateKeysRef.current.add(key);
+        router.refresh();
+        window.dispatchEvent(
+          new CustomEvent("field-updated", {
+            detail: {
+              id: created.fieldId,
+              name: created.name,
+              area: created.area,
+              crop: created.crop,
+            },
+          })
+        );
+        window.dispatchEvent(new CustomEvent("levada:fields-updated"));
+      }
+
+      const deletedField = extractDeletedOrArchivedFieldPayload(message);
+      if (deletedField) {
+        const key = `delfield:${message.id}:${deletedField.fieldId}:${deletedField.status}`;
+        if (!refreshedFieldUpdateKeysRef.current.has(key)) {
+          refreshedFieldUpdateKeysRef.current.add(key);
+          router.refresh();
+          window.dispatchEvent(
+            new CustomEvent("field-updated", {
+              detail: { id: deletedField.fieldId, status: deletedField.status },
+            })
+          );
+          window.dispatchEvent(new CustomEvent("levada:fields-updated"));
+        }
+      }
+
+      const focusField = extractFocusFieldPayload(message);
+      if (focusField) {
+        const key = `focus:${message.id}:${focusField.fieldId}`;
+        if (!refreshedFieldUpdateKeysRef.current.has(key)) {
+          refreshedFieldUpdateKeysRef.current.add(key);
+          const path = focusField.openFieldPath.startsWith("/")
+            ? focusField.openFieldPath
+            : `/?field=${focusField.fieldId}`;
+          // Не закриваємо drawer примусово — лише фокус карти
+          if (pathname === "/" || pathname === "") {
+            router.replace(path);
+          } else {
+            router.push(path);
+          }
+          window.setTimeout(() => {
+            window.dispatchEvent(
+              new CustomEvent("focus-field-map", {
+                detail: { fieldId: focusField.fieldId },
+              })
+            );
+            window.dispatchEvent(
+              new CustomEvent(LEVADA_OPEN_FIELD_EVENT, {
+                detail: { fieldId: focusField.fieldId },
+              })
+            );
+          }, 80);
+        }
+      }
+
       for (const part of message.parts) {
         const isExec =
           part.type === "tool-executeWarehouseReceipt" ||
@@ -3565,7 +5173,7 @@ export function LevadaCopilotDrawer({
         }
       }
     }
-  }, [messages, status, router]);
+  }, [messages, status, router, pathname]);
 
   const hideDraftCards = useMemo(
     () =>
@@ -3788,19 +5396,21 @@ export function LevadaCopilotDrawer({
         onDragOver={onComposerDragOver}
         onDrop={onComposerDrop}
       >
-        <div className="mb-3 flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {QUICK_CHIPS.map((chip) => (
-            <button
-              key={chip}
-              type="button"
-              disabled={busy}
-              onClick={() => void submitText(chip)}
-              className="shrink-0 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-zinc-300 transition hover:border-emerald-400/30 hover:bg-emerald-400/10 hover:text-emerald-100 disabled:opacity-50"
-            >
-              {chip}
-            </button>
-          ))}
-        </div>
+        {messages.length === 0 ? (
+          <div className="mb-3 flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {QUICK_CHIPS.map((chip) => (
+              <button
+                key={chip}
+                type="button"
+                disabled={busy}
+                onClick={() => void submitText(chip)}
+                className="shrink-0 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-zinc-300 transition hover:border-emerald-400/30 hover:bg-emerald-400/10 hover:text-emerald-100 disabled:opacity-50"
+              >
+                {chip}
+              </button>
+            ))}
+          </div>
+        ) : null}
 
         {attachments.length > 0 || attachError || compressingAttach ? (
           <div className="mb-2 space-y-1.5">
@@ -3928,6 +5538,17 @@ export function LevadaCopilotDrawer({
                 : "Запитай LEVADIUS або кинь фото…"
             }
             className="max-h-[min(40dvh,15rem)] min-h-11 min-w-0 flex-1 resize-none overflow-hidden rounded-2xl border border-white/10 bg-white/[0.05] px-3.5 py-2.5 text-sm leading-6 text-zinc-50 outline-none placeholder:text-zinc-500 focus:border-emerald-500/40 focus:ring-2 focus:ring-emerald-500/15"
+          />
+          <VoiceInputButton
+            disabled={busy || compressingAttach}
+            value={input}
+            onTranscript={(text) => {
+              setInput(text);
+              requestAnimationFrame(resizeComposerTextarea);
+            }}
+            onAutoSend={(text) => {
+              void submitText(text);
+            }}
           />
           {busy ? (
             <button

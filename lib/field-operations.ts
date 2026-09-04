@@ -42,6 +42,8 @@ export type FieldOperation = {
   agronomistComment?: string;
   /** UUID з довідника equipment (техніки без GPS теж) */
   equipmentId?: string | null;
+  /** UUID з довідника implements (причіпне) */
+  implementId?: string | null;
   wialonUnitId?: number | null;
   implementWidthM?: number | null;
   trackerDistanceKm?: number | null;
@@ -216,6 +218,10 @@ export function mapOperationRow(row: DbRow): FieldOperation {
     equipmentId:
       row.equipment_id != null && String(row.equipment_id).trim()
         ? String(row.equipment_id)
+        : null,
+    implementId:
+      row.implement_id != null && String(row.implement_id).trim()
+        ? String(row.implement_id)
         : null,
     wialonUnitId: optionalNum(row.wialon_unit_id),
     implementWidthM: optionalNum(row.implement_width_m),
@@ -413,6 +419,7 @@ export async function upsertFieldOperation(
     mechanicName: input.mechanicName?.trim() || null,
     agronomistComment: input.agronomistComment ?? null,
     equipmentId: input.equipmentId ?? null,
+    implementId: input.implementId ?? null,
     wialonUnitId: input.wialonUnitId ?? null,
     implementWidthM: input.implementWidthM ?? null,
     trackerDistanceKm: input.trackerDistanceKm ?? null,

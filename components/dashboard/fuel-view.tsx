@@ -1182,10 +1182,15 @@ export function FuelView({
     const onFocus = () => {
       void refreshAll();
     };
+    const onFuelUpdated = () => {
+      void refreshAll();
+    };
     window.addEventListener("focus", onFocus);
+    window.addEventListener("fuel-updated", onFuelUpdated);
 
     return () => {
       window.removeEventListener("focus", onFocus);
+      window.removeEventListener("fuel-updated", onFuelUpdated);
       void supabase.removeChannel(channel);
     };
   }, [refreshStorages, refreshTransactions, refreshAll]);

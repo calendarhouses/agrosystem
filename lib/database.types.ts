@@ -50,6 +50,8 @@ export type ScoutingReportRow = {
   date: string;
   image_url: string | null;
   notes: string;
+  /** ok | warning | critical — міграція 067 */
+  status: string | null;
   weather_context: WeatherContextJson | null;
   created_at: string;
 };

@@ -45,6 +45,7 @@ type UpsertBody = {
   mechanicName?: string | null;
   agronomistComment?: string | null;
   equipmentId?: string | null;
+  implementId?: string | null;
   wialonUnitId?: number | null;
   implementWidthM?: number | null;
   trackerDistanceKm?: number | null;
@@ -222,6 +223,10 @@ export async function POST(request: Request) {
       equipment_id:
         typeof body.equipmentId === "string" && isUuid(body.equipmentId)
           ? body.equipmentId
+          : null,
+      implement_id:
+        typeof body.implementId === "string" && isUuid(body.implementId)
+          ? body.implementId
           : null,
       wialon_unit_id:
         typeof body.wialonUnitId === "number" && Number.isFinite(body.wialonUnitId)
