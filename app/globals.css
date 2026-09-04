@@ -182,11 +182,17 @@ body {
     -webkit-touch-callout: default;
   }
 
-  /* PWA mobile: чорний фон лише в app/boot — логін лишається світлим */
+  /* PWA mobile: логін світлий; /copilot і boot — темний */
   @media (max-width: 767px) {
     html[data-app-nav="0"],
     html[data-app-nav="0"] body,
     html[data-app-nav="0"] #app-root {
+      background-color: #09090b !important;
+    }
+
+    html[data-app-nav="0"][data-auth-light="1"],
+    html[data-app-nav="0"][data-auth-light="1"] body,
+    html[data-app-nav="0"][data-auth-light="1"] #app-root {
       background-color: var(--background) !important;
     }
 

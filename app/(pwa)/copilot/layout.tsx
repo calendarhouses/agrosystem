@@ -44,7 +44,7 @@ export default function CopilotPwaLayout({
   children: ReactNode;
 }) {
   return (
-    <div className="h-[100dvh] min-h-0 overflow-hidden bg-zinc-950 text-zinc-50">
+    <div className="h-[100dvh] min-h-[100dvh] min-h-[-webkit-fill-available] overflow-hidden bg-zinc-950 text-zinc-50">
       {children}
     </div>
   );
