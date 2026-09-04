@@ -59,6 +59,7 @@ export async function updateSession(request: NextRequest) {
     pathname === "/login" ||
     pathname === "/install" ||
     pathname === "/manifest.webmanifest" ||
+    pathname === "/levadius.webmanifest" ||
     pathname === "/sw.js" ||
     pathname === "/icon" ||
     pathname === "/apple-icon" ||

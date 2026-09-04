@@ -647,6 +647,22 @@ function MetroFieldLine({
           "group w-full border-b border-white/5 hover:bg-white/[0.03] hover:no-underline [&>svg]:hidden",
           compact ? "px-3 py-2" : "px-4 py-3"
         )}
+        trailing={
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onAddClick?.(field);
+            }}
+            className={cn(
+              "inline-flex items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/15 text-emerald-200 transition hover:bg-emerald-500/25",
+              compact ? "size-8" : "size-9"
+            )}
+            aria-label={`Додати позицію для ${item.fieldName}`}
+          >
+            <Plus className={compact ? "size-3.5" : "size-4"} />
+          </button>
+        }
       >
         <div className="flex min-w-0 flex-1 items-start justify-between gap-2 pr-2 sm:gap-3">
           <div className="min-w-0 text-left">
@@ -700,21 +716,6 @@ function MetroFieldLine({
             >
               {ukStationLabel(events.length)}
             </span>
-
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onAddClick?.(field);
-              }}
-              className={cn(
-                "inline-flex items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/15 text-emerald-200 transition hover:bg-emerald-500/25",
-                compact ? "size-8" : "size-9"
-              )}
-              aria-label={`Додати позицію для ${item.fieldName}`}
-            >
-              <Plus className={compact ? "size-3.5" : "size-4"} />
-            </button>
 
             <ChevronDown
               className={cn(

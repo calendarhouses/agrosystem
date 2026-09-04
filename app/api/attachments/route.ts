@@ -11,6 +11,7 @@ export const runtime = "nodejs";
 const ENTITY_TYPES = new Set<AttachmentEntityType>([
   "inventory_move",
   "fuel_transaction",
+  "accounting_act",
 ]);
 
 function parseEntityType(raw: string | null): AttachmentEntityType | null {

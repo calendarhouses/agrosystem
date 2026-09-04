@@ -1,24 +1,18 @@
 {
-  "name": "LEVADA SYSTEM",
-  "short_name": "LEVADA",
-  "description": "Операційна система господарства",
-  "start_url": "/",
+  "name": "LEVADIUS Dispatcher",
+  "short_name": "LEVADIUS",
+  "description": "Автономний диспетчер агрогосподарства LEVADA",
+  "start_url": "/copilot",
   "scope": "/",
-  "id": "/",
+  "id": "/copilot",
   "display": "standalone",
-  "orientation": "portrait-primary",
+  "orientation": "portrait",
   "background_color": "#09090b",
-  "theme_color": "#18181b",
+  "theme_color": "#09090b",
   "lang": "uk",
   "prefer_related_applications": false,
   "categories": ["business", "productivity"],
   "icons": [
-    {
-      "src": "/apple-touch-icon.png?v=7",
-      "sizes": "180x180",
-      "type": "image/png",
-      "purpose": "any"
-    },
     {
       "src": "/icons/icon-192.png?v=7",
       "sizes": "192x192",
@@ -36,6 +30,12 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    },
+    {
+      "src": "/apple-touch-icon.png?v=7",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
     }
   ]
 }

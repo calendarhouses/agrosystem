@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 
+import { LevadaCopilotHost } from "@/components/ai/LevadaCopilotDrawer";
 import { BottomNav } from "@/components/layout/bottom-nav";
 import { AppDataWarmer } from "@/components/layout/app-data-warmer";
 import { PreventEdgeSwipeBack } from "@/components/layout/prevent-edge-swipe-back";
@@ -68,6 +69,7 @@ function AppShellChrome({
       </div>
 
       <BottomNav />
+      <LevadaCopilotHost />
       <AppDataWarmer />
       <PreventEdgeSwipeBack />
     </div>
@@ -77,7 +79,11 @@ function AppShellChrome({
 /** App Shell: фіксований viewport + згортання сайдбару */
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const isAuthScreen = pathname === "/login" || pathname === "/install";
+  const isAuthScreen =
+    pathname === "/login" ||
+    pathname === "/install" ||
+    pathname === "/copilot" ||
+    pathname.startsWith("/copilot/");
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
@@ -133,15 +139,23 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   useLayoutEffect(() => {
     document.documentElement.dataset.appNav = isAuthScreen ? "0" : "1";
+    if (
+      pathname === "/login" ||
+      pathname === "/install"
+    ) {
+      document.documentElement.dataset.authLight = "1";
+    } else {
+      delete document.documentElement.dataset.authLight;
+    }
     if (isAuthScreen) {
-      // Логін/install: жодного LEVADA-boot — splash ховається CSS (data-booting)
+      // Логін/install/copilot: жодного LEVADA-boot — splash ховається CSS (data-booting)
       delete document.documentElement.dataset.booting;
       delete document.documentElement.dataset.bootUi;
       delete document.documentElement.dataset.appReady;
     }
     // Без cleanup appNav=0: Strict Mode / remount на мить вмикає «логін» CSS
     // і html[data-app-nav=1]:not([data-app-ready]) лишає чорний екран.
-  }, [isAuthScreen]);
+  }, [isAuthScreen, pathname]);
 
   if (isAuthScreen) {
     return <>{children}</>;

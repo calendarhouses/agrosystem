@@ -71,9 +71,10 @@ export function InventoryItemEditDialog({
       }
       const meta = res.byRef[item.id.toLowerCase()];
       setCustomName(meta?.customName ?? "");
-      setPrice(
-        meta && meta.plannedPriceUah > 0 ? String(meta.plannedPriceUah) : ""
-      );
+      const planned = meta?.plannedPriceUah ?? 0;
+      const fromBas = meta?.unitCostUah ?? 0;
+      const effective = planned > 0 ? planned : fromBas > 0 ? fromBas : 0;
+      setPrice(effective > 0 ? String(effective) : "");
     });
     return () => {
       cancelled = true;

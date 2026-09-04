@@ -26,11 +26,11 @@ export const metadata: Metadata = {
   applicationName: "LEVADA SYSTEM",
   icons: {
     icon: [
-      { url: "/icons/icon-192.png?v=6", sizes: "192x192", type: "image/png" },
-      { url: "/icons/icon-512.png?v=6", sizes: "512x512", type: "image/png" },
+      { url: "/icons/icon-192.png?v=7", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512.png?v=7", sizes: "512x512", type: "image/png" },
     ],
     apple: [
-      { url: "/apple-touch-icon.png?v=6", sizes: "180x180", type: "image/png" },
+      { url: "/apple-touch-icon.png?v=7", sizes: "180x180", type: "image/png" },
     ],
   },
   appleWebApp: {
@@ -61,14 +61,15 @@ export const viewport: Viewport = {
 };
 
 /** Inline: шлях → auth vs app. Має бути ДО CSS, інакше логін на мить/назавжди чорний. */
-const BOOT_PATH_SCRIPT = `(function(){var p=location.pathname;var auth=p==='/login'||p==='/install';document.documentElement.dataset.appNav=auth?'0':'1';if(auth){delete document.documentElement.dataset.booting;delete document.documentElement.dataset.appReady;}else{document.documentElement.dataset.booting='1';}})();`;
+const BOOT_PATH_SCRIPT = `(function(){var p=location.pathname;var shellOff=p==='/login'||p==='/install'||p==='/copilot'||p.indexOf('/copilot/')===0;var light=p==='/login'||p==='/install';document.documentElement.dataset.appNav=shellOff?'0':'1';if(light){document.documentElement.dataset.authLight='1';}else{delete document.documentElement.dataset.authLight;}if(shellOff){delete document.documentElement.dataset.booting;delete document.documentElement.dataset.appReady;}else{document.documentElement.dataset.booting='1';}})();`;
 
 /**
  * Чорний boot-шар лише при data-booting=1 (після логіну в систему).
- * Логін/install (data-app-nav=0) — світлий фон, без splash.
+ * Логін/install — світлий; /copilot — темний без splash Farm OS.
  */
 const BOOT_CRITICAL_CSS = [
-  "html[data-app-nav='0'],html[data-app-nav='0'] body,html[data-app-nav='0'] #app-root{background-color:#f4f4f5!important}",
+  "html[data-app-nav='0'],html[data-app-nav='0'] body,html[data-app-nav='0'] #app-root{background-color:#09090b!important}",
+  "html[data-app-nav='0'][data-auth-light='1'],html[data-app-nav='0'][data-auth-light='1'] body,html[data-app-nav='0'][data-auth-light='1'] #app-root{background-color:#f4f4f5!important}",
   "html[data-booting='1'],html[data-booting='1'] body,html[data-booting='1'] #app-root{background-color:#09090b!important}",
   "html[data-app-nav='1'][data-app-ready='1'],html[data-app-nav='1'][data-app-ready='1'] body,html[data-app-nav='1'][data-app-ready='1'] #app-root{background-color:#18181b!important;transition:background-color .7s ease-out .5s}",
   "html[data-booting='1'] [data-bottom-nav],html[data-booting='1'] [data-fields-mobile-chrome]{opacity:0;pointer-events:none;transform:translateY(12px)}",

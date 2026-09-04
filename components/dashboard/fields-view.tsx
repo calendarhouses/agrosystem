@@ -764,10 +764,13 @@ export function FieldsView() {
     [mapFields, selectField]
   );
 
-  /** Deep-link з техніки: /?field={farmFieldId|mapFieldId} */
+  /** Deep-link: /?field=… або подія з LEVADIUS */
   const openedFieldDeepLinkRef = useRef<string | null>(null);
   useEffect(() => {
-    const raw = searchParams.get("field")?.trim();
+    const raw =
+      searchParams.get("field")?.trim() ||
+      searchParams.get("fieldId")?.trim() ||
+      "";
     if (!raw || mapFields.length === 0 || wialonLoading) return;
     if (openedFieldDeepLinkRef.current === raw) return;
     const item =
@@ -777,6 +780,83 @@ export function FieldsView() {
     openedFieldDeepLinkRef.current = raw;
     selectField(item, { fly: true });
   }, [searchParams, mapFields, wialonLoading, selectField]);
+
+  useEffect(() => {
+    function onOpenField(event: Event) {
+      const detail = (event as CustomEvent<{ fieldId?: string }>).detail;
+      const fieldId = detail?.fieldId?.trim();
+      if (!fieldId) return;
+      openedFieldDeepLinkRef.current = null;
+      openFieldById(fieldId);
+    }
+    window.addEventListener("levada:open-field", onOpenField);
+    return () => window.removeEventListener("levada:open-field", onOpenField);
+  }, [openFieldById]);
+
+  useEffect(() => {
+    function onFieldsUpdated() {
+      reloadFarmFields();
+      reloadFinanceOverview();
+      setRealtimeVersion((version) => version + 1);
+    }
+    function onFieldUpdated(event: Event) {
+      const detail = (event as CustomEvent<{
+        id?: string;
+        name?: string;
+        area?: number;
+        crop?: string | null;
+      }>).detail;
+      const id = detail?.id?.trim();
+      if (!id) {
+        onFieldsUpdated();
+        return;
+      }
+      // Миттєво патчимо локальний стан — заголовок картки без reload
+      setSavedFields((prev) =>
+        prev.map((field) => {
+          if (field.id !== id) return field;
+          return {
+            ...field,
+            name: detail.name?.trim() || field.name,
+            canonicalName: detail.name?.trim() || field.canonicalName,
+            areaHa:
+              detail.area != null && Number.isFinite(detail.area)
+                ? detail.area
+                : field.areaHa,
+            crop:
+              detail.crop != null && String(detail.crop).trim()
+                ? String(detail.crop).trim()
+                : field.crop,
+          };
+        })
+      );
+      if (detail.name?.trim()) {
+        setFieldName((prev) => {
+          // оновлюємо інпут паспорта, якщо відкрите це поле
+          const selected = mapFieldsRef.current.find(
+            (item) => item.farmField?.id === id || item.id === id
+          );
+          return selected ? detail.name!.trim() : prev;
+        });
+      }
+      if (detail.crop != null && String(detail.crop).trim()) {
+        setCrop(String(detail.crop).trim());
+      }
+      if (detail.area != null && Number.isFinite(detail.area)) {
+        setAreaHa(detail.area);
+      }
+      setRealtimeVersion((version) => version + 1);
+      // Підтягнути з сервера для узгодженості
+      reloadFarmFields();
+      reloadFinanceOverview();
+    }
+    window.addEventListener("levada:fields-updated", onFieldsUpdated);
+    window.addEventListener("field-updated", onFieldUpdated);
+    return () => {
+      window.removeEventListener("levada:fields-updated", onFieldsUpdated);
+      window.removeEventListener("field-updated", onFieldUpdated);
+    };
+  }, [reloadFarmFields, reloadFinanceOverview]);
 
   const handleDrawnFeaturesChange = useCallback(
     (features: FeatureCollection) => {

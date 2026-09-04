@@ -13,7 +13,10 @@ export const ALLOWED_ATTACHMENT_MIME = new Set([
   "image/heif",
 ]);
 
-export type AttachmentEntityType = "inventory_move" | "fuel_transaction";
+export type AttachmentEntityType =
+  | "inventory_move"
+  | "fuel_transaction"
+  | "accounting_act";
 
 export type OperationAttachment = {
   id: string;

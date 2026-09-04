@@ -125,6 +125,25 @@ const CATEGORY_ICONS: Record<InventoryCategory, LucideIcon> = {
   parts: Wrench,
 };
 
+/** planned → unit_cost (BAS) → середня з рухів costIn/qtyIn */
+function resolveDisplayUnitPriceUah(
+  cacheMeta: InventoryCacheMeta | undefined,
+  item?: Pick<InventoryItem, "qtyIn" | "costIn"> | null
+): number {
+  if (cacheMeta && cacheMeta.plannedPriceUah > 0) {
+    return cacheMeta.plannedPriceUah;
+  }
+  if (cacheMeta && cacheMeta.unitCostUah > 0) {
+    return cacheMeta.unitCostUah;
+  }
+  const qty = Number(item?.qtyIn) || 0;
+  const cost = Number(item?.costIn) || 0;
+  if (qty > 0.0005 && cost > 0) {
+    return Math.round((cost / qty) * 100) / 100;
+  }
+  return 0;
+}
+
 const CATEGORY_CARD_STYLE: Record<
   InventoryCategory,
   { card: string; icon: string; chip: string }
@@ -271,6 +290,16 @@ export function InventoryView({
       setMovesRefreshToken((token) => token + 1);
     },
   });
+
+  useEffect(() => {
+    function onWarehouseUpdated() {
+      void refreshOperational();
+      setMovesRefreshToken((token) => token + 1);
+    }
+    window.addEventListener("warehouse-updated", onWarehouseUpdated);
+    return () =>
+      window.removeEventListener("warehouse-updated", onWarehouseUpdated);
+  }, []);
 
   const isoRange = useMemo(
     () => getFinancePeriodRange(period, seasonYear, customRange),
@@ -1597,6 +1626,16 @@ function NomenclatureGrid({
       <ItemDocumentsSheet
         item={openItem}
         displayName={openDisplayName}
+        plannedPriceUah={
+          openId && openItem
+            ? resolveDisplayUnitPriceUah(
+                cacheMetaByRef[openId] ??
+                  cacheMetaByRef[openItem.id] ??
+                  cacheMetaByRef[openItem.id.toLowerCase()],
+                openItem
+              )
+            : 0
+        }
         basMoves={openBasMoves}
         localMoves={openLocalMoves}
         open={Boolean(openItem)}
@@ -1747,6 +1786,7 @@ function InventoryItemCard({
   const displayName = cacheMeta?.customName?.trim() || item.name;
   const hasCustomName = Boolean(cacheMeta?.customName?.trim());
   const isLocalSku = cacheMeta?.isLocal === true;
+  const displayUnitPrice = resolveDisplayUnitPriceUah(cacheMeta, item);
 
   const [editing, setEditing] = useState(false);
   const [customName, setCustomName] = useState("");
@@ -1756,12 +1796,8 @@ function InventoryItemCard({
   useEffect(() => {
     if (!editing) return;
     setCustomName(cacheMeta?.customName ?? "");
-    setPrice(
-      cacheMeta && cacheMeta.plannedPriceUah > 0
-        ? String(cacheMeta.plannedPriceUah)
-        : ""
-    );
-  }, [editing, cacheMeta]);
+    setPrice(displayUnitPrice > 0 ? String(displayUnitPrice) : "");
+  }, [editing, cacheMeta, displayUnitPrice]);
 
   const qtyInPeriod = periodItem?.qtyIn ?? 0;
   const qtyOutPeriod = periodItem?.qtyOut ?? 0;
@@ -2015,6 +2051,16 @@ function InventoryItemCard({
                 {hasCustomName ? item.name : null}
                 {!item.code && !hasCustomName ? meta.label : null}
               </p>
+              {displayUnitPrice > 0 ? (
+                <p className="mt-1 text-[12px] font-semibold tabular-nums text-emerald-800">
+                  {displayUnitPrice.toLocaleString("uk-UA", {
+                    maximumFractionDigits: 2,
+                  })}{" "}
+                  <span className="text-[10px] font-medium text-emerald-700/80">
+                    ₴/{item.unit?.trim() || "од."}
+                  </span>
+                </p>
+              ) : null}
             </div>
           </div>
 
@@ -2096,6 +2142,7 @@ function InventoryItemCard({
 function ItemDocumentsSheet({
   item,
   displayName,
+  plannedPriceUah = 0,
   basMoves,
   localMoves,
   open,
@@ -2108,6 +2155,7 @@ function ItemDocumentsSheet({
 }: {
   item: InventoryItem | null;
   displayName: string;
+  plannedPriceUah?: number;
   basMoves: ItemMove[];
   localMoves: LocalOutboundRow[];
   open: boolean;
@@ -2185,13 +2233,32 @@ function ItemDocumentsSheet({
       const isIn = r.type === "inbound";
       const isSale = r.type === "sale";
       const title = isIn
-        ? r.buyerName?.trim() || r.note?.trim() || "Прихід"
+        ? [
+            r.buyerName?.trim() || null,
+            r.invoiceNumber ? `№${r.invoiceNumber}` : null,
+          ]
+            .filter(Boolean)
+            .join(" · ") ||
+          r.note?.trim() ||
+          "Прихід"
         : isSale
           ? r.buyerName?.trim() || "Продаж"
           : r.fieldName?.trim() || r.note?.trim() || "Списання";
+      const invoiceLabel = r.invoiceNumber
+        ? `Накладна №${r.invoiceNumber}`
+        : null;
       const subtitleParts = [
         formatUaDate(r.dateYmd),
-        isIn && r.note?.trim() && r.buyerName ? r.note.trim() : null,
+        // номер уже в title — у subtitle лише якщо немає постачальника
+        isIn && invoiceLabel && !r.buyerName?.trim() ? invoiceLabel : null,
+        isIn && r.note?.trim() && r.buyerName && !r.invoiceNumber
+          ? r.note.trim()
+          : null,
+        isIn &&
+        r.unitPriceUah != null &&
+        Number.isFinite(r.unitPriceUah)
+          ? `${r.unitPriceUah.toLocaleString("uk-UA", { maximumFractionDigits: 2 })} ₴/${item.unit || "од."}`
+          : null,
         isSale && r.note?.trim() ? r.note.trim() : null,
         !isSale && !isIn && r.note?.trim() && r.fieldName
           ? r.note.trim()
@@ -2264,6 +2331,9 @@ function ItemDocumentsSheet({
           <>
             {item.code ? `${item.code} · ` : ""}
             {meta.label} · рухи за період
+            {plannedPriceUah > 0
+              ? ` · ${plannedPriceUah.toLocaleString("uk-UA", { maximumFractionDigits: 2 })} ₴/${item.unit || "од."}`
+              : ""}
           </>
         }
       />

@@ -15,6 +15,6 @@ export const config = {
     /*
      * Усі шляхи крім static assets і image optimizer.
      */
-    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|icon|apple-icon|apple-touch-icon|.*\\.(?:svg|png|jpg|jpeg|gif|webp|js|webmanifest)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|levadius.webmanifest|sw.js|icon|apple-icon|apple-touch-icon|.*\\.(?:svg|png|jpg|jpeg|gif|webp|js|webmanifest)$).*)",
   ],
 };

@@ -41,13 +41,20 @@ export type AccountantQueueTab =
   | "outbound"
   | "inbound"
   | "sale"
-  | "fuel";
+  | "fuel"
+  | "acts";
 
 export type AccountantQueueItem = {
   id: string;
-  source: "inventory" | "fuel";
+  source: "inventory" | "fuel" | "service_act";
   /** UI-тип */
-  kind: "outbound" | "inbound" | "sale" | "fuel_inbound" | "fuel_transfer";
+  kind:
+    | "outbound"
+    | "inbound"
+    | "sale"
+    | "fuel_inbound"
+    | "fuel_transfer"
+    | "service_act";
   date: string;
   season: string | null;
   title: string;
@@ -96,6 +103,7 @@ export type AccountantQueueStats = {
   inbound: number;
   sale: number;
   fuel: number;
+  acts: number;
   amountUah: number;
   withoutAttachment: number;
   newItems: number;
@@ -597,6 +605,7 @@ function buildStats(items: AccountantQueueItem[]): AccountantQueueStats {
   let inbound = 0;
   let sale = 0;
   let fuel = 0;
+  let acts = 0;
   let amountUah = 0;
   let withoutAttachment = 0;
   let newItems = 0;
@@ -606,7 +615,10 @@ function buildStats(items: AccountantQueueItem[]): AccountantQueueStats {
     if (item.kind === "outbound") outbound += 1;
     else if (item.kind === "inbound") inbound += 1;
     else if (item.kind === "sale") sale += 1;
-    else fuel += 1;
+    else if (item.kind === "service_act") acts += 1;
+    else if (item.kind === "fuel_inbound" || item.kind === "fuel_transfer") {
+      fuel += 1;
+    }
 
     if (item.amountUah != null) amountUah += item.amountUah;
     if (!item.hasAttachment) withoutAttachment += 1;
@@ -625,6 +637,7 @@ function buildStats(items: AccountantQueueItem[]): AccountantQueueStats {
     inbound,
     sale,
     fuel,
+    acts,
     amountUah: Math.round(amountUah),
     withoutAttachment,
     newItems,
@@ -632,8 +645,132 @@ function buildStats(items: AccountantQueueItem[]): AccountantQueueStats {
   };
 }
 
+async function fetchServiceActs(
+  startIso: string,
+  endIso: string,
+  status: "posted" | "sent_to_1c" = "posted"
+): Promise<AccountantQueueItem[]> {
+  const supabase = createServiceSupabase();
+  const { data, error } = await supabase
+    .from("accounting_acts")
+    .select(
+      "id, act_number, act_date, contractor_name, contractor_edrpou, category, total_amount, vat_amount, services, equipment_id, equipment_name_hint, status, created_at"
+    )
+    .eq("status", status)
+    .order("act_date", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(500);
+
+  if (error) {
+    if (
+      error.code === "PGRST205" ||
+      error.code === "42P01" ||
+      error.message?.includes("accounting_acts")
+    ) {
+      return [];
+    }
+    throw new Error(error.message);
+  }
+
+  const items: AccountantQueueItem[] = [];
+  for (const row of data ?? []) {
+    const dateRaw =
+      (typeof row.act_date === "string" && row.act_date) ||
+      (typeof row.created_at === "string" ? row.created_at.slice(0, 10) : "");
+    if (!dateRaw || !inDateRange(dateRaw, startIso, endIso)) continue;
+
+    const services = Array.isArray(row.services) ? row.services : [];
+    const firstService =
+      services[0] && typeof services[0] === "object"
+        ? String((services[0] as { name?: unknown }).name ?? "").trim()
+        : "";
+    const equipmentName =
+      (typeof row.equipment_name_hint === "string"
+        ? row.equipment_name_hint.trim()
+        : "") || null;
+
+    const actNumber =
+      typeof row.act_number === "string" && row.act_number.trim()
+        ? row.act_number.trim()
+        : null;
+    const contractor =
+      typeof row.contractor_name === "string" && row.contractor_name.trim()
+        ? row.contractor_name.trim()
+        : "Виконавець";
+    const category =
+      typeof row.category === "string" ? row.category : "Адміністративні";
+    const total =
+      row.total_amount != null && Number.isFinite(Number(row.total_amount))
+        ? Number(row.total_amount)
+        : null;
+
+    items.push({
+      id: String(row.id),
+      source: "service_act",
+      kind: "service_act",
+      date: dateRaw.slice(0, 10),
+      season: null,
+      title: firstService || category,
+      party: contractor,
+      qty: services.length > 0 ? services.length : 1,
+      unit: "послуга",
+      amountUah: total,
+      hasAttachment: false,
+      isLocalItem: false,
+      category,
+      note: [
+        actNumber ? `№${actNumber}` : null,
+        equipmentName ? `→ ${equipmentName}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ") || null,
+      basDraftSent: false,
+      basDraftRefKey: null,
+      basRefKey: null,
+      fieldId: null,
+      fieldName: null,
+      fieldBasRefKey: null,
+      buyerName: contractor,
+      unitPriceUah: null,
+      fromStorageName: null,
+      toStorageName: null,
+      fromStorageBasRefKey: null,
+      toStorageBasRefKey: null,
+      fromStorageType: null,
+      toStorageType: null,
+      pricePerLiter: null,
+    });
+  }
+
+  if (items.length > 0) {
+    try {
+      const ids = items.map((i) => i.id);
+      const { data: atts } = await supabase
+        .from("operation_attachments")
+        .select("entity_id")
+        .eq("entity_type", "accounting_act")
+        .in("entity_id", ids);
+      const withFile = new Set((atts ?? []).map((a) => String(a.entity_id)));
+      for (const item of items) {
+        if (withFile.has(item.id)) item.hasAttachment = true;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  return items;
+}
+
+async function fetchServiceActsArchive(
+  startIso: string,
+  endIso: string
+): Promise<AccountantQueueItem[]> {
+  return fetchServiceActs(startIso, endIso, "sent_to_1c");
+}
+
 /**
- * Черга бухгалтера: draft складу за сезоном + паливо pending у вікні сезону.
+ * Черга бухгалтера: draft складу за сезоном + паливо pending у вікні сезону + акти послуг.
  */
 export async function listAccountantQueue(input?: {
   season?: string;
@@ -650,19 +787,21 @@ export async function listAccountantQueue(input?: {
     const startIso = input?.startIso ?? full.startIso;
     const endIso = input?.endIso ?? full.endIso;
 
-    const [moves, fuel] = await Promise.all([
+    const [moves, fuel, acts] = await Promise.all([
       fetchInventoryMoves("draft", season),
       fetchFuelQueue("pending_1c", startIso, endIso),
+      fetchServiceActs(startIso, endIso),
     ]);
 
     const inventoryItems = moves
       .filter((m) => inDateRange(m.date, startIso, endIso))
       .map(inventoryToQueueItem);
 
-    // Паливу підставляємо сезон для відображення
+    // Паливу й актам підставляємо сезон для відображення / архіву
     for (const f of fuel) f.season = season;
+    for (const a of acts) a.season = season;
 
-    const items = [...inventoryItems, ...fuel].sort((a, b) =>
+    const items = [...inventoryItems, ...fuel, ...acts].sort((a, b) =>
       b.date.localeCompare(a.date)
     );
 
@@ -805,17 +944,21 @@ export async function markFuelPrepared(
   }
 }
 
-/** Позначити вибрані пункти черги (склад + паливо). */
+/** Позначити вибрані пункти черги (склад + паливо + акти). */
 export async function markAccountantQueuePrepared(
-  items: Array<{ id: string; source: "inventory" | "fuel" }>
-): Promise<ActionResult<{ inventory: number; fuel: number }>> {
+  items: Array<{ id: string; source: "inventory" | "fuel" | "service_act" }>
+): Promise<ActionResult<{ inventory: number; fuel: number; acts: number }>> {
   const invIds = items
     .filter((i) => i.source === "inventory")
     .map((i) => i.id);
   const fuelIds = items.filter((i) => i.source === "fuel").map((i) => i.id);
+  const actIds = items
+    .filter((i) => i.source === "service_act")
+    .map((i) => i.id);
 
   let inventory = 0;
   let fuel = 0;
+  let acts = 0;
 
   if (invIds.length > 0) {
     const res = await markMovesSentTo1c(invIds);
@@ -827,17 +970,58 @@ export async function markAccountantQueuePrepared(
     if (!res.ok) return res;
     fuel = res.data.updated;
   }
+  if (actIds.length > 0) {
+    const res = await markServiceActsPrepared(actIds);
+    if (!res.ok) return res;
+    acts = res.data.updated;
+  }
 
   const actor = await getCurrentActor();
   await logActivity({
     actor,
     action: "export",
     entityType: "accountant_queue",
-    summary: `${actor.label} позначив переданими ${inventory + fuel} операцій`,
-    meta: { inventory, fuel },
+    summary: `${actor.label} позначив переданими ${inventory + fuel + acts} операцій`,
+    meta: { inventory, fuel, acts },
   });
 
-  return { ok: true, data: { inventory, fuel } };
+  return { ok: true, data: { inventory, fuel, acts } };
+}
+
+async function markServiceActsPrepared(
+  ids: string[]
+): Promise<ActionResult<{ updated: number }>> {
+  if (ids.length === 0) return { ok: true, data: { updated: 0 } };
+  const supabase = createServiceSupabase();
+  const { data, error } = await supabase
+    .from("accounting_acts")
+    .update({ status: "sent_to_1c" })
+    .in("id", ids)
+    .eq("status", "posted")
+    .select("id");
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, data: { updated: data?.length ?? 0 } };
+}
+
+/** Скасувати акт послуг (прибрати з черги). */
+export async function cancelServiceAct(
+  id: string
+): Promise<ActionResult<{ id: string }>> {
+  try {
+    const supabase = createServiceSupabase();
+    const { error } = await supabase
+      .from("accounting_acts")
+      .update({ status: "cancelled" })
+      .eq("id", id);
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, data: { id } };
+  } catch (err) {
+    return {
+      ok: false,
+      error:
+        err instanceof Error ? err.message : "Не вдалося скасувати акт",
+    };
+  }
 }
 
 export type AccountantArchiveItem = AccountantQueueItem & {
@@ -907,9 +1091,10 @@ export async function listAccountantArchive(input?: {
     const season = String(year);
     const full = getSeasonRange(year);
 
-    const [moves, fuel, deletedRes] = await Promise.all([
+    const [moves, fuel, acts, deletedRes] = await Promise.all([
       fetchInventoryMoves("sent_to_1c", season),
       fetchFuelQueue("synced", full.startIso, full.endIso),
+      fetchServiceActsArchive(full.startIso, full.endIso),
       (async () => {
         try {
           const supabase = createServiceSupabase();
@@ -931,6 +1116,7 @@ export async function listAccountantArchive(input?: {
     const transferred: AccountantArchiveItem[] = [
       ...moves.map(inventoryToQueueItem),
       ...fuel,
+      ...acts,
     ].map((item) => ({
       ...item,
       archiveId: `t-${item.source}-${item.id}`,
@@ -943,12 +1129,16 @@ export async function listAccountantArchive(input?: {
     if (!deletedRes.error && Array.isArray(deletedRes.data)) {
       for (const row of deletedRes.data) {
         const snap = (row.snapshot ?? {}) as Partial<AccountantQueueItem>;
+        const sourceRaw = String(row.source ?? snap.source ?? "inventory");
+        const source: AccountantQueueItem["source"] =
+          sourceRaw === "fuel"
+            ? "fuel"
+            : sourceRaw === "service_act"
+              ? "service_act"
+              : "inventory";
         deleted.push({
           id: String(row.original_id ?? row.id),
-          source:
-            row.source === "fuel"
-              ? ("fuel" as const)
-              : ("inventory" as const),
+          source,
           kind: (snap.kind as AccountantQueueItem["kind"]) ||
             (String(row.kind) as AccountantQueueItem["kind"]),
           date: String(snap.date ?? row.created_at).slice(0, 10),

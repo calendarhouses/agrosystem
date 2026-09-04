@@ -25,6 +25,7 @@ function kindLabel(kind: AccountantQueueItem["kind"]): string {
   if (kind === "sale") return "Продаж";
   if (kind === "fuel_inbound") return "Закупівля ДП";
   if (kind === "fuel_transfer") return "Переміщення ДП";
+  if (kind === "service_act") return "Акт послуг";
   return "Списання";
 }
 
@@ -117,6 +118,19 @@ function fuelSheetRows(items: AccountantQueueItem[]) {
   }));
 }
 
+function actsSheetRows(items: AccountantQueueItem[]) {
+  return items.map((m) => ({
+    Тип: kindLabel(m.kind),
+    Категорія: m.category ?? "",
+    Послуга: m.title,
+    Виконавець: m.buyerName ?? m.party ?? "",
+    Послуг: m.qty,
+    "Сума ₴": m.amountUah ?? "",
+    Примітка: m.note ?? "",
+    Дата: m.date,
+  }));
+}
+
 function appendSheet(
   book: XLSX.WorkBook,
   name: string,
@@ -144,12 +158,14 @@ export function downloadAccountantPackageExcel(
   const fuel = items.filter(
     (i) => i.kind === "fuel_inbound" || i.kind === "fuel_transfer"
   );
+  const acts = items.filter((i) => i.kind === "service_act");
 
   const book = XLSX.utils.book_new();
   appendSheet(book, "Списання", inventorySheetRows(outbound));
   appendSheet(book, "Прихід", inventorySheetRows(inbound));
   appendSheet(book, "Продажі", inventorySheetRows(sale));
   appendSheet(book, "Паливо", fuelSheetRows(fuel));
+  appendSheet(book, "Акти", actsSheetRows(acts));
 
   if ((book.SheetNames?.length ?? 0) === 0) {
     const sheet = XLSX.utils.aoa_to_sheet([["Немає рядків для експорту"]]);

@@ -10,6 +10,7 @@ import {
   ChevronDown,
   Download,
   FileSpreadsheet,
+  FileText,
   Fuel,
   History,
   Loader2,
@@ -29,6 +30,7 @@ import { toast } from "sonner";
 
 import {
   archiveAccountantDeletion,
+  cancelServiceAct,
   listAccountantArchive,
   listAccountantQueue,
   markAccountantQueuePrepared,
@@ -74,6 +76,22 @@ import { cn } from "@/lib/utils";
 
 type FuelStorageTypeFilter = "stationary" | "mobile";
 
+const SERVICE_ACT_CATEGORIES = [
+  "Сервіс техніки",
+  "Логістика",
+  "Польові послуги",
+  "Адміністративні",
+] as const;
+
+type ActCategoryFilter = (typeof SERVICE_ACT_CATEGORIES)[number];
+
+const ACT_CATEGORY_SHORT: Record<ActCategoryFilter, string> = {
+  "Сервіс техніки": "Сервіс",
+  Логістика: "Логістика",
+  "Польові послуги": "Польові",
+  Адміністративні: "Адмін",
+};
+
 const FUEL_STORAGE_FILTERS: {
   id: FuelStorageTypeFilter;
   label: string;
@@ -104,7 +122,12 @@ const QUEUE_TABS: {
   { id: "inbound", label: "Прихід", short: "Прих.", icon: PackagePlus },
   { id: "sale", label: "Продажі", short: "Прод.", icon: ShoppingCart },
   { id: "fuel", label: "Паливо", short: "ДП", icon: Fuel },
+  { id: "acts", label: "Акти", short: "Акти", icon: FileText },
 ];
+
+function labelActs(n: number) {
+  return `${n} ${ukPlural(n, "акт", "акти", "актів")}`;
+}
 
 /** Українські форми: 1 / 2–4 / 5+ */
 function ukPlural(n: number, one: string, few: string, many: string): string {
@@ -148,7 +171,12 @@ function formatQty(qty: number, unit: string): string {
   const n = new Intl.NumberFormat("uk-UA", {
     maximumFractionDigits: qty >= 100 ? 0 : 2,
   }).format(qty);
-  return unit ? `${n} ${unit}` : n;
+  if (!unit) return n;
+  if (unit === "послуга" || unit === "посл." || unit === "послуги") {
+    const count = Math.abs(Math.trunc(qty));
+    return `${n} ${ukPlural(count, "послуга", "послуги", "послуг")}`;
+  }
+  return `${n} ${unit}`;
 }
 
 function formatUah(n: number): string {
@@ -212,6 +240,14 @@ function kindMeta(kind: AccountantQueueItem["kind"]): {
       well: "bg-orange-100 text-orange-800",
     };
   }
+  if (kind === "service_act") {
+    return {
+      label: "Акт",
+      icon: FileText,
+      chip: "bg-violet-100 text-violet-900 ring-violet-200/80",
+      well: "bg-violet-100 text-violet-800",
+    };
+  }
   return {
     label: "Списання",
     icon: PackageMinus,
@@ -227,6 +263,9 @@ function matchesTab(
   if (tab === "all") return true;
   if (tab === "fuel") {
     return item.kind === "fuel_inbound" || item.kind === "fuel_transfer";
+  }
+  if (tab === "acts") {
+    return item.kind === "service_act";
   }
   return item.kind === tab;
 }
@@ -251,10 +290,26 @@ function matchesFuelStorageType(
   );
 }
 
+function matchesActCategory(
+  item: AccountantQueueItem,
+  category: ActCategoryFilter | null
+): boolean {
+  if (!category) return true;
+  if (item.source !== "service_act") return false;
+  return item.category === category;
+}
+
 function isInventoryCategory(value: string | null): value is InventoryCategory {
   return (
     value != null &&
     (INVENTORY_CATEGORIES as readonly string[]).includes(value)
+  );
+}
+
+function isActCategory(value: string | null): value is ActCategoryFilter {
+  return (
+    value != null &&
+    (SERVICE_ACT_CATEGORIES as readonly string[]).includes(value)
   );
 }
 
@@ -263,12 +318,14 @@ function summarizeRows(rows: AccountantQueueItem[]) {
   let inbound = 0;
   let sale = 0;
   let fuel = 0;
+  let acts = 0;
   let amount = 0;
   for (const r of rows) {
     if (r.kind === "outbound") outbound += 1;
     else if (r.kind === "inbound") inbound += 1;
     else if (r.kind === "sale") sale += 1;
-    else fuel += 1;
+    else if (r.kind === "service_act") acts += 1;
+    else if (r.kind === "fuel_inbound" || r.kind === "fuel_transfer") fuel += 1;
     if (r.amountUah != null) amount += r.amountUah;
   }
   return {
@@ -277,6 +334,7 @@ function summarizeRows(rows: AccountantQueueItem[]) {
     inbound,
     sale,
     fuel,
+    acts,
     amount: Math.round(amount),
     rows,
   };
@@ -359,7 +417,11 @@ function QueueInvoiceTrigger({
   onToggle: () => void;
 }) {
   const entityType =
-    item.source === "fuel" ? "fuel_transaction" : "inventory_move";
+    item.source === "fuel"
+      ? "fuel_transaction"
+      : item.source === "service_act"
+        ? "accounting_act"
+        : "inventory_move";
 
   if (item.hasAttachment) {
     return (
@@ -384,7 +446,9 @@ function QueueInvoiceTrigger({
           ? "bg-[#276749]/15 text-[#276749]"
           : "bg-zinc-100 text-zinc-500 hover:bg-[#276749]/10 hover:text-[#276749]"
       )}
-      title="Додати накладну"
+      title={
+        item.source === "service_act" ? "Додати скан акта" : "Додати накладну"
+      }
       aria-expanded={open}
     >
       <Plus className="h-3.5 w-3.5" />
@@ -403,7 +467,11 @@ function QueueInvoicePanel({
   onChanged: () => void;
 }) {
   const entityType =
-    item.source === "fuel" ? "fuel_transaction" : "inventory_move";
+    item.source === "fuel"
+      ? "fuel_transaction"
+      : item.source === "service_act"
+        ? "accounting_act"
+        : "inventory_move";
 
   return (
     <div
@@ -411,7 +479,9 @@ function QueueInvoicePanel({
       onPointerDown={(e) => e.stopPropagation()}
     >
       <p className="mb-2 text-[11px] font-semibold text-zinc-600">
-        Накладна до операції
+        {item.source === "service_act"
+          ? "Скан акта до операції"
+          : "Накладна до операції"}
       </p>
       <AttachmentDropzone
         entityType={entityType}
@@ -460,6 +530,8 @@ export function AccountantHubView({
     useState<InventoryCategory | null>(null);
   const [fuelStorageFilter, setFuelStorageFilter] =
     useState<FuelStorageTypeFilter | null>(null);
+  const [actCategoryFilter, setActCategoryFilter] =
+    useState<ActCategoryFilter | null>(null);
 
   const warmSeason = defaultFinanceSeasonYear();
   const warmRange = getSeasonRange(warmSeason);
@@ -596,11 +668,26 @@ export function AccountantHubView({
     if (archiveOpen) void loadArchive();
   }, [archiveOpen, loadArchive]);
 
+  useEffect(() => {
+    const onAccountingUpdated = () => {
+      invalidateAppCache("api:inventory");
+      invalidateAppCache("api:fuel");
+      invalidateAppCache("api:accounting");
+      invalidateAppCache("api:finance");
+      void load({ force: true });
+    };
+    window.addEventListener("accounting-updated", onAccountingUpdated);
+    return () =>
+      window.removeEventListener("accounting-updated", onAccountingUpdated);
+  }, [load]);
+
   const visible = useMemo(() => {
     return items.filter((i) => {
       if (!matchesTab(i, tab)) return false;
       if (tab === "fuel") {
         if (!matchesFuelStorageType(i, fuelStorageFilter)) return false;
+      } else if (tab === "acts") {
+        if (!matchesActCategory(i, actCategoryFilter)) return false;
       } else if (!matchesInventoryCategory(i, categoryFilter)) {
         return false;
       }
@@ -614,7 +701,14 @@ export function AccountantHubView({
       }
       return true;
     });
-  }, [items, tab, insightFilter, categoryFilter, fuelStorageFilter]);
+  }, [
+    items,
+    tab,
+    insightFilter,
+    categoryFilter,
+    fuelStorageFilter,
+    actCategoryFilter,
+  ]);
 
   const tabItems = useMemo(
     () => items.filter((i) => matchesTab(i, tab)),
@@ -653,16 +747,34 @@ export function AccountantHubView({
     return counts;
   }, [tabItems]);
 
+  const actCategoryCounts = useMemo(() => {
+    const counts: Partial<Record<ActCategoryFilter, number>> = {};
+    for (const item of tabItems) {
+      if (!isActCategory(item.category)) continue;
+      counts[item.category] = (counts[item.category] ?? 0) + 1;
+    }
+    return counts;
+  }, [tabItems]);
+
   const visibleCategories = useMemo(
     () =>
       INVENTORY_CATEGORIES.filter((cat) => (categoryCounts[cat] ?? 0) > 0),
     [categoryCounts]
   );
 
+  const visibleActCategories = useMemo(
+    () =>
+      SERVICE_ACT_CATEGORIES.filter(
+        (cat) => (actCategoryCounts[cat] ?? 0) > 0
+      ),
+    [actCategoryCounts]
+  );
+
   function selectTab(next: AccountantQueueTab) {
     setTab(next);
     setCategoryFilter(null);
     setFuelStorageFilter(null);
+    setActCategoryFilter(null);
   }
 
   function toggleInsight(
@@ -747,7 +859,7 @@ export function AccountantHubView({
         return;
       }
       toast.success(
-        `Позначено ${res.data.inventory + res.data.fuel} операцій`
+        `Позначено ${res.data.inventory + res.data.fuel + (res.data.acts ?? 0)} операцій`
       );
       setConfirmOpen(false);
       await load({ force: true });
@@ -763,6 +875,10 @@ export function AccountantHubView({
   }
 
   async function openEdit(item: AccountantQueueItem) {
+    if (item.source === "service_act") {
+      toast.message("Акти послуг поки редагуються через LEVADIUS");
+      return;
+    }
     if (editingId === item.id) {
       closeInlineEdit();
       return;
@@ -835,6 +951,12 @@ export function AccountantHubView({
         );
         suppressLocalInventoryMovesRealtimeToast();
         const res = await deleteLocalMove(item.id);
+        if (!res.ok) {
+          toast.error(res.error);
+          return;
+        }
+      } else if (item.source === "service_act") {
+        const res = await cancelServiceAct(item.id);
         if (!res.ok) {
           toast.error(res.error);
           return;
@@ -1006,6 +1128,7 @@ export function AccountantHubView({
                       labelInbound(stats.inbound),
                       labelSale(stats.sale),
                       labelFuel(stats.fuel),
+                      labelActs(stats.acts),
                     ].join(" · ")
                   : "Операції до передачі"}
               </p>
@@ -1183,7 +1306,9 @@ export function AccountantHubView({
                           ? stats?.inbound
                           : t.id === "sale"
                             ? stats?.sale
-                            : stats?.fuel;
+                            : t.id === "acts"
+                              ? stats?.acts
+                              : stats?.fuel;
                   const active = tab === t.id;
                   return (
                     <button
@@ -1271,6 +1396,51 @@ export function AccountantHubView({
                   );
                 })}
               </div>
+            ) : tab === "acts" ? (
+              visibleActCategories.length > 0 || actCategoryFilter ? (
+                <div className="-mx-0.5 flex max-w-full gap-1 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible [&::-webkit-scrollbar]:hidden">
+                  <button
+                    type="button"
+                    onClick={() => setActCategoryFilter(null)}
+                    className={cn(
+                      "inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold transition sm:text-[11px]",
+                      actCategoryFilter == null
+                        ? "bg-[#276749] text-white shadow-sm"
+                        : "bg-white/80 text-zinc-600 ring-1 ring-[#E5DFD3] hover:bg-white hover:text-zinc-900"
+                    )}
+                  >
+                    Усі
+                    <span className="tabular-nums opacity-70">
+                      {tabItems.length}
+                    </span>
+                  </button>
+                  {SERVICE_ACT_CATEGORIES.map((cat) => {
+                    const count = actCategoryCounts[cat] ?? 0;
+                    if (count === 0 && actCategoryFilter !== cat) return null;
+                    const active = actCategoryFilter === cat;
+                    return (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() =>
+                          setActCategoryFilter((prev) =>
+                            prev === cat ? null : cat
+                          )
+                        }
+                        className={cn(
+                          "inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold transition sm:text-[11px]",
+                          active
+                            ? "bg-[#276749] text-white shadow-sm"
+                            : "bg-white/80 text-zinc-600 ring-1 ring-[#E5DFD3] hover:bg-white hover:text-zinc-900"
+                        )}
+                      >
+                        {isMobile ? ACT_CATEGORY_SHORT[cat] : cat}
+                        <span className="tabular-nums opacity-70">{count}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null
             ) : visibleCategories.length > 0 || categoryFilter ? (
               <div className="-mx-0.5 flex max-w-full gap-1 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible [&::-webkit-scrollbar]:hidden">
                 <button
@@ -1577,7 +1747,9 @@ export function AccountantHubView({
                                   </p>
                                   {(item.party || item.note) && (
                                     <p className="mt-0.5 text-[11px] leading-snug text-zinc-500">
-                                      {item.party || item.note}
+                                      {[item.party, item.note]
+                                        .filter(Boolean)
+                                        .join(" · ")}
                                     </p>
                                   )}
                                 </div>
@@ -1609,14 +1781,16 @@ export function AccountantHubView({
                                       )
                                     }
                                   />
-                                  <button
-                                    type="button"
-                                    onClick={() => void openEdit(item)}
-                                    className="inline-flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition hover:bg-[#F4F1EA] hover:text-zinc-800"
-                                    title="Редагувати"
-                                  >
-                                    <Pencil className="h-3.5 w-3.5" />
-                                  </button>
+                                  {item.source !== "service_act" ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => void openEdit(item)}
+                                      className="inline-flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition hover:bg-[#F4F1EA] hover:text-zinc-800"
+                                      title="Редагувати"
+                                    >
+                                      <Pencil className="h-3.5 w-3.5" />
+                                    </button>
+                                  ) : null}
                                   <button
                                     type="button"
                                     onClick={() => setDeleteTarget(item)}
@@ -1887,8 +2061,12 @@ export function AccountantHubView({
               <span className="font-semibold text-zinc-800">
                 «{deleteTarget.title}»
               </span>{" "}
-              зникне зі складу або палива. Запис про видалення залишиться в
-              архіві сезону {seasonYear}.
+              {deleteTarget.source === "service_act"
+                ? "зникне з черги актів."
+                : deleteTarget.source === "fuel"
+                  ? "зникне з палива."
+                  : "зникне зі складу."}{" "}
+              Запис про видалення залишиться в архіві сезону {seasonYear}.
             </>
           ) : null
         }

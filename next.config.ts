@@ -22,6 +22,15 @@ const nextConfig: NextConfig = {
         ],
       },
       {
+        source: "/levadius.webmanifest",
+        headers: [
+          {
+            key: "Content-Type",
+            value: "application/manifest+json; charset=utf-8",
+          },
+        ],
+      },
+      {
         source: "/sw.js",
         headers: [
           {

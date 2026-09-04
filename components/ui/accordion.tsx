@@ -23,9 +23,12 @@ AccordionItem.displayName = "AccordionItem";
 
 const AccordionTrigger = React.forwardRef<
   React.ElementRef<typeof AccordionPrimitive.Trigger>,
-  React.ComponentPropsWithoutRef<typeof AccordionPrimitive.Trigger>
->(({ className, children, ...props }, ref) => (
-  <AccordionPrimitive.Header className="flex">
+  React.ComponentPropsWithoutRef<typeof AccordionPrimitive.Trigger> & {
+    /** Елементи поруч із тригером (не всередині <button>) */
+    trailing?: React.ReactNode;
+  }
+>(({ className, children, trailing, ...props }, ref) => (
+  <AccordionPrimitive.Header className="flex items-stretch">
     <AccordionPrimitive.Trigger
       ref={ref}
       data-slot="accordion-trigger"
@@ -37,6 +40,11 @@ const AccordionTrigger = React.forwardRef<
     >
       {children}
     </AccordionPrimitive.Trigger>
+    {trailing ? (
+      <div className="flex shrink-0 items-center border-b border-white/5 bg-transparent pr-3">
+        {trailing}
+      </div>
+    ) : null}
   </AccordionPrimitive.Header>
 ));
 AccordionTrigger.displayName = AccordionPrimitive.Trigger.displayName;

@@ -334,3 +334,115 @@ export async function loadMappingCatalog(
     };
   }
 }
+
+/** Збереження акта послуг з картки LEVADIUS → accounting_acts */
+export async function executeServiceActSaveAction(input: {
+  previewId?: string | null;
+  actNumber?: string | null;
+  actDate?: string | null;
+  contractorName: string;
+  contractorEdrpou?: string | null;
+  category?: string | null;
+  totalAmount?: number | null;
+  vatAmount?: number | null;
+  targetAssetHint?: string | null;
+  equipmentId?: string | null;
+  linkEquipment?: boolean;
+  notes?: string | null;
+  services: {
+    name: string;
+    quantity?: number | null;
+    unit?: string | null;
+    pricePerUnit?: number | null;
+    totalAmount?: number | null;
+  }[];
+  /** Скан/фото акта (base64 без data: префікса) */
+  attachment?: {
+    fileName: string;
+    mimeType: string;
+    base64: string;
+  } | null;
+  /** Кілька сканів (пріоритетніше за attachment) */
+  attachments?: Array<{
+    fileName: string;
+    mimeType: string;
+    base64: string;
+  }> | null;
+}) {
+  const { revalidatePath } = await import("next/cache");
+  const { executeServiceActSave } = await import("@/lib/agent-service-act");
+  const result = await executeServiceActSave(input);
+  if (!result.success) return result;
+
+  const docs =
+    input.attachments?.filter((a) => a?.base64) ??
+    (input.attachment?.base64 ? [input.attachment] : []);
+
+  if (docs.length > 0) {
+    try {
+      const { uploadOperationAttachment } = await import(
+        "@/lib/operation-attachments"
+      );
+      for (const doc of docs) {
+        const bytes = Buffer.from(doc.base64, "base64");
+        await uploadOperationAttachment({
+          entityType: "accounting_act",
+          entityId: result.actId,
+          fileName: doc.fileName || "akt.jpg",
+          mimeType: doc.mimeType || "image/jpeg",
+          bytes,
+        });
+      }
+    } catch (err) {
+      console.error("[executeServiceActSaveAction] attachment", err);
+    }
+  }
+
+  revalidatePath("/accounting");
+  revalidatePath("/equipment");
+  revalidatePath("/");
+  return result;
+}
+
+/** Прикріпити скан(и) до вже збереженого акта. */
+export async function attachServiceActDocumentsAction(input: {
+  actId: string;
+  attachments: Array<{
+    fileName: string;
+    mimeType: string;
+    base64: string;
+  }>;
+}) {
+  const actId = input.actId?.trim();
+  const docs = (input.attachments ?? []).filter((a) => a?.base64);
+  if (!actId || docs.length === 0) {
+    return { ok: false as const, error: "Немає акта або файлу" };
+  }
+  try {
+    const {
+      countAttachments,
+      uploadOperationAttachment,
+      MAX_ATTACHMENTS_PER_ENTITY,
+    } = await import("@/lib/operation-attachments");
+    for (const doc of docs) {
+      const existing = await countAttachments("accounting_act", actId);
+      if (existing >= MAX_ATTACHMENTS_PER_ENTITY) break;
+      const bytes = Buffer.from(doc.base64, "base64");
+      const res = await uploadOperationAttachment({
+        entityType: "accounting_act",
+        entityId: actId,
+        fileName: doc.fileName || "akt.jpg",
+        mimeType: doc.mimeType || "image/jpeg",
+        bytes,
+      });
+      if (!res.ok) return { ok: false as const, error: res.error };
+    }
+    return { ok: true as const };
+  } catch (err) {
+    return {
+      ok: false as const,
+      error:
+        err instanceof Error ? err.message : "Не вдалося прикріпити файл",
+    };
+  }
+}

@@ -1143,6 +1143,8 @@ export type LocalOutboundRow = {
   unitPriceUah: number | null;
   fieldName: string | null;
   attachmentCount: number;
+  receiptId: string | null;
+  invoiceNumber: string | null;
 };
 
 export async function getLocalMoveQtyByItem(): Promise<
@@ -1160,7 +1162,7 @@ export async function getLocalMoveQtyByItem(): Promise<
     const { data, error } = await supabase
       .from("inventory_local_moves")
       .select(
-        "id, item_ref_key, qty, date, type, status, note, buyer_name, unit_price_uah, field_id, farm_fields ( name )"
+        "id, item_ref_key, qty, date, type, status, note, buyer_name, unit_price_uah, field_id, receipt_id, farm_fields ( name ), warehouse_receipts ( invoice_number, invoice_date, supplier_name )"
       );
 
     if (error) {
@@ -1172,6 +1174,31 @@ export async function getLocalMoveQtyByItem(): Promise<
           saleByRef: {},
           rows: [],
         };
+      }
+      // Fallback без receipt join (міграція 062 ще не застосована)
+      if (
+        error.message?.includes("receipt_id") ||
+        error.message?.includes("warehouse_receipts")
+      ) {
+        const mid = await supabase
+          .from("inventory_local_moves")
+          .select(
+            "id, item_ref_key, qty, date, type, status, note, buyer_name, unit_price_uah, field_id, farm_fields ( name )"
+          );
+        if (mid.error) {
+          const legacy = await supabase
+            .from("inventory_local_moves")
+            .select("id, item_ref_key, qty, date, type, status, note, field_id");
+          if (legacy.error) {
+            return { ok: false, error: legacy.error.message };
+          }
+          return aggregateLocalMoves(
+            (legacy.data ?? []) as Record<string, unknown>[]
+          );
+        }
+        return aggregateLocalMoves(
+          (mid.data ?? []) as Record<string, unknown>[]
+        );
       }
       // Fallback якщо 039 / join ще недоступні
       const legacy = await supabase
@@ -1245,6 +1272,22 @@ async function aggregateLocalMoves(
       priceRaw != null && Number.isFinite(Number(priceRaw))
         ? Number(priceRaw)
         : null;
+    const receiptRaw = row.warehouse_receipts as
+      | { invoice_number?: string | null; invoice_date?: string | null; supplier_name?: string | null }
+      | { invoice_number?: string | null; invoice_date?: string | null; supplier_name?: string | null }[]
+      | null
+      | undefined;
+    const receipt = Array.isArray(receiptRaw)
+      ? receiptRaw[0] ?? null
+      : receiptRaw;
+    const note =
+      typeof row.note === "string" && row.note.trim() ? String(row.note) : null;
+    const invoiceFromNote = note?.match(/№\s*([^\s·]+)/)?.[1]?.trim() || null;
+    const invoiceNumber =
+      (typeof receipt?.invoice_number === "string" &&
+      receipt.invoice_number.trim()
+        ? receipt.invoice_number.trim()
+        : null) || invoiceFromNote;
     rows.push({
       id: String(row.id ?? ""),
       ref: key,
@@ -1252,7 +1295,7 @@ async function aggregateLocalMoves(
       type,
       status,
       dateYmd: Number.isNaN(at.getTime()) ? "" : toKyivDayKey(at),
-      note: typeof row.note === "string" ? row.note : null,
+      note,
       buyerName:
         typeof row.buyer_name === "string" && row.buyer_name.trim()
           ? String(row.buyer_name)
@@ -1260,6 +1303,11 @@ async function aggregateLocalMoves(
       unitPriceUah,
       fieldName: field?.name ? String(field.name) : null,
       attachmentCount: 0,
+      receiptId:
+        typeof row.receipt_id === "string" && row.receipt_id.trim()
+          ? String(row.receipt_id)
+          : null,
+      invoiceNumber,
     });
   }
 
@@ -1420,6 +1468,8 @@ export type InventoryCacheMeta = {
   customName: string | null;
   isHidden: boolean;
   plannedPriceUah: number;
+  /** Ціна з BAS AGRO (unit_cost), якщо є в кеші */
+  unitCostUah: number;
   category: string;
   unit: string;
   isLocal: boolean;
@@ -1431,73 +1481,98 @@ export async function getInventoryCacheMetaMap(): Promise<
 > {
   try {
     const supabase = createServiceSupabase();
+
+    function mapRows(
+      rows: {
+        bas_ref_key: unknown;
+        name: unknown;
+        custom_name?: unknown;
+        is_hidden?: unknown;
+        planned_price_uah?: unknown;
+        unit_cost?: unknown;
+        category: unknown;
+        unit?: unknown;
+        is_local?: unknown;
+      }[],
+      isLocalDefault = false
+    ): Record<string, InventoryCacheMeta> {
+      const byRef: Record<string, InventoryCacheMeta> = {};
+      for (const row of rows) {
+        const key = String(row.bas_ref_key).toLowerCase();
+        const unitCostRaw = row.unit_cost;
+        byRef[key] = {
+          basRefKey: key,
+          basName: String(row.name),
+          customName: row.custom_name ? String(row.custom_name) : null,
+          isHidden: Boolean(row.is_hidden),
+          plannedPriceUah: Number(row.planned_price_uah) || 0,
+          unitCostUah:
+            unitCostRaw != null && Number(unitCostRaw) > 0
+              ? Number(unitCostRaw)
+              : 0,
+          category: String(row.category),
+          unit: String(row.unit ?? ""),
+          isLocal:
+            row.is_local != null ? Boolean(row.is_local) : isLocalDefault,
+        };
+      }
+      return byRef;
+    }
+
     const { data, error } = await supabase
       .from("inventory_items_cache")
       .select(
-        "bas_ref_key, name, custom_name, is_hidden, planned_price_uah, category, unit, is_local"
+        "bas_ref_key, name, custom_name, is_hidden, planned_price_uah, unit_cost, category, unit, is_local"
       );
 
-    if (error) {
-      if (
-        error.code === "PGRST205" ||
-        error.code === "42P01" ||
-        error.message?.includes("is_hidden") ||
-        error.message?.includes("custom_name") ||
-        error.message?.includes("is_local")
-      ) {
-        // Fallback без is_local
-        if (error.message?.includes("is_local")) {
-          const legacy = await supabase
-            .from("inventory_items_cache")
-            .select(
-              "bas_ref_key, name, custom_name, is_hidden, planned_price_uah, category, unit"
-            );
-          if (legacy.error) {
-            if (
-              legacy.error.code === "PGRST205" ||
-              legacy.error.code === "42P01" ||
-              legacy.error.message?.includes("is_hidden")
-            ) {
-              return { ok: true, byRef: {} };
-            }
-            return { ok: false, error: legacy.error.message };
-          }
-          const byRef: Record<string, InventoryCacheMeta> = {};
-          for (const row of legacy.data ?? []) {
-            const key = String(row.bas_ref_key).toLowerCase();
-            byRef[key] = {
-              basRefKey: key,
-              basName: String(row.name),
-              customName: row.custom_name ? String(row.custom_name) : null,
-              isHidden: Boolean(row.is_hidden),
-              plannedPriceUah: Number(row.planned_price_uah) || 0,
-              category: String(row.category),
-              unit: String(row.unit ?? ""),
-              isLocal: false,
-            };
-          }
-          return { ok: true, byRef };
-        }
-        return { ok: true, byRef: {} };
-      }
-      return { ok: false, error: error.message };
+    if (!error) {
+      return { ok: true, byRef: mapRows(data ?? []) };
     }
 
-    const byRef: Record<string, InventoryCacheMeta> = {};
-    for (const row of data ?? []) {
-      const key = String(row.bas_ref_key).toLowerCase();
-      byRef[key] = {
-        basRefKey: key,
-        basName: String(row.name),
-        customName: row.custom_name ? String(row.custom_name) : null,
-        isHidden: Boolean(row.is_hidden),
-        plannedPriceUah: Number(row.planned_price_uah) || 0,
-        category: String(row.category),
-        unit: String(row.unit ?? ""),
-        isLocal: Boolean((row as { is_local?: unknown }).is_local),
-      };
+    if (
+      error.code === "PGRST205" ||
+      error.code === "42P01" ||
+      error.message?.includes("is_hidden") ||
+      error.message?.includes("custom_name")
+    ) {
+      return { ok: true, byRef: {} };
     }
-    return { ok: true, byRef };
+
+    // Fallback без is_local / unit_cost
+    if (
+      error.message?.includes("is_local") ||
+      error.message?.includes("unit_cost")
+    ) {
+      const withCost = await supabase
+        .from("inventory_items_cache")
+        .select(
+          "bas_ref_key, name, custom_name, is_hidden, planned_price_uah, unit_cost, category, unit"
+        );
+      if (!withCost.error) {
+        return {
+          ok: true,
+          byRef: mapRows(withCost.data ?? [], false),
+        };
+      }
+      const legacy = await supabase
+        .from("inventory_items_cache")
+        .select(
+          "bas_ref_key, name, custom_name, is_hidden, planned_price_uah, category, unit"
+        );
+      if (legacy.error) {
+        if (
+          legacy.error.code === "PGRST205" ||
+          legacy.error.code === "42P01" ||
+          legacy.error.message?.includes("is_hidden")
+        ) {
+          return { ok: true, byRef: {} };
+        }
+        return { ok: false, error: legacy.error.message };
+      }
+      return { ok: true, byRef: mapRows(legacy.data ?? [], false) };
+    }
+
+    return { ok: false, error: error.message };
   } catch (err) {
     return {
       ok: false,
@@ -2063,4 +2138,70 @@ export async function deleteLocalMove(
       error: err instanceof Error ? err.message : "Не вдалося видалити рух",
     };
   }
+}
+
+/** Оприбуткування розпізнаної накладної з LEVADIUS-картки */
+export async function executeWarehouseReceiptAction(input: {
+  supplierName: string;
+  supplierEdrpou?: string | null;
+  invoiceNumber?: string | null;
+  invoiceDate?: string | null;
+  totalAmount?: number | null;
+  receiptId?: string | null;
+  items: {
+    name: string;
+    category: "ЗЗР" | "Добрива" | "Насіння" | "Паливо" | "Запчастини";
+    quantity: number;
+    unit: string;
+    pricePerUnit: number;
+    totalAmount?: number | null;
+  }[];
+  /** Скан/фото накладної (base64 без data: префікса) — прикріплюється до кожного приходу */
+  attachment?: {
+    fileName: string;
+    mimeType: string;
+    base64: string;
+  } | null;
+  /** Кілька сканів (пріоритетніше за attachment) */
+  attachments?: Array<{
+    fileName: string;
+    mimeType: string;
+    base64: string;
+  }> | null;
+}) {
+  const { executeWarehouseReceipt } = await import(
+    "@/lib/agent-warehouse-receipt"
+  );
+  const result = await executeWarehouseReceipt(input);
+  if (!result.success) return result;
+
+  const docs =
+    input.attachments?.filter((a) => a?.base64) ??
+    (input.attachment?.base64 ? [input.attachment] : []);
+
+  if (docs.length > 0 && result.moveIds.length > 0) {
+    try {
+      const { uploadOperationAttachment } = await import(
+        "@/lib/operation-attachments"
+      );
+      for (const moveId of result.moveIds) {
+        for (const doc of docs) {
+          const bytes = Buffer.from(doc.base64, "base64");
+          await uploadOperationAttachment({
+            entityType: "inventory_move",
+            entityId: moveId,
+            fileName: doc.fileName || "nakladna.jpg",
+            mimeType: doc.mimeType || "image/jpeg",
+            bytes,
+          });
+        }
+      }
+    } catch (err) {
+      console.error("[executeWarehouseReceiptAction] attachment", err);
+    }
+  }
+
+  revalidatePath("/inventory");
+  revalidatePath("/fields");
+  return result;
 }
