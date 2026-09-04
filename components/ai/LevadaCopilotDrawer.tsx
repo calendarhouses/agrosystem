@@ -55,11 +55,16 @@ import {
 } from "@/lib/field-operations";
 import { useIsMobile } from "@/lib/use-mobile";
 import { canAccessLevadius } from "@/lib/levadius-access";
+import {
+  compressAgentFiles,
+  formatFileKib,
+} from "@/lib/compress-image-file";
 import { cn } from "@/lib/utils";
 
 const ATTACH_INVOICE_CHOICE_RE = /прикріпити\s+накладн/i;
 
-const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024;
+/** Ліміт ДО стиснення (камера iPhone часто 5–12 МБ). Після — ~450 КБ. */
+const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const MAX_PENDING_ATTACHMENTS = 5;
 
 type PendingAttachment = {
@@ -316,6 +321,14 @@ function formatChatError(error: Error | undefined): string {
     lower.includes("the network connection was lost")
   ) {
     return "Немає звʼязку з сервером. Перевір інтернет і спробуй ще раз.";
+  }
+  if (
+    lower.includes("payload_too_large") ||
+    lower.includes("entity too large") ||
+    lower.includes("413") ||
+    lower.includes("request entity too large")
+  ) {
+    return "Фото завеликі для відправки. Спробуй ще раз — нові фото стискаються автоматично.";
   }
   if (lower.includes("авторизац") || lower.includes("unauthorized") || lower.includes("401")) {
     return "Сесія закінчилась. Відкрий LEVADA в Safari, увійди знову, потім PWA.";
@@ -2926,6 +2939,7 @@ export function LevadaCopilotDrawer({
   const [welcomeSeed, setWelcomeSeed] = useState(0);
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [attachError, setAttachError] = useState<string | null>(null);
+  const [compressingAttach, setCompressingAttach] = useState(false);
   const [dragOverComposer, setDragOverComposer] = useState(false);
   /** Файли накладної/акта після відправки в чат — щоб прикріпити при оприбуткуванні */
   const [lastInvoiceFiles, setLastInvoiceFiles] = useState<File[]>([]);
@@ -3001,10 +3015,26 @@ export function LevadaCopilotDrawer({
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
-  function addFiles(rawFiles: File[]) {
+  async function addFiles(rawFiles: File[]) {
     if (rawFiles.length === 0) return;
 
+    setAttachError(null);
+    setCompressingAttach(true);
+
     let errorMsg: string | null = null;
+    let prepared: File[] = [];
+
+    try {
+      const needsCompress = rawFiles.some((f) => f.type.startsWith("image/"));
+      prepared = needsCompress
+        ? await compressAgentFiles(rawFiles)
+        : rawFiles;
+    } catch {
+      prepared = rawFiles;
+      errorMsg = "Не вдалося стиснути фото — пробую як є.";
+    } finally {
+      setCompressingAttach(false);
+    }
 
     setAttachments((prev) => {
       const room = MAX_PENDING_ATTACHMENTS - prev.length;
@@ -3016,13 +3046,13 @@ export function LevadaCopilotDrawer({
       const accepted: PendingAttachment[] = [];
       let truncated = false;
 
-      for (const file of rawFiles) {
+      for (const file of prepared) {
         if (accepted.length >= room) {
           truncated = true;
           break;
         }
         if (file.size > MAX_ATTACHMENT_BYTES) {
-          errorMsg = `«${file.name}» завеликий (макс. 8 МБ).`;
+          errorMsg = `«${file.name}» завеликий навіть після стиснення.`;
           continue;
         }
         if (!isAcceptedAgentFile(file)) {
@@ -3056,7 +3086,7 @@ export function LevadaCopilotDrawer({
       }
 
       if (truncated && !errorMsg) {
-        errorMsg = `Додано лише ${room} з ${rawFiles.length} (ліміт ${MAX_PENDING_ATTACHMENTS}).`;
+        errorMsg = `Додано лише ${room} з ${prepared.length} (ліміт ${MAX_PENDING_ATTACHMENTS}).`;
       }
 
       return accepted.length > 0 ? [...prev, ...accepted] : prev;
@@ -3067,7 +3097,7 @@ export function LevadaCopilotDrawer({
 
   function onFileSelected(event: ChangeEvent<HTMLInputElement>) {
     const list = event.target.files ? Array.from(event.target.files) : [];
-    addFiles(list);
+    void addFiles(list);
     event.target.value = "";
   }
 
@@ -3102,12 +3132,12 @@ export function LevadaCopilotDrawer({
     event.stopPropagation();
     dragDepthRef.current = 0;
     setDragOverComposer(false);
-    if (busy || dropLockRef.current) return;
+    if (busy || compressingAttach || dropLockRef.current) return;
     dropLockRef.current = true;
     window.setTimeout(() => {
       dropLockRef.current = false;
     }, 400);
-    addFiles(filesFromDataTransfer(event.dataTransfer));
+    void addFiles(filesFromDataTransfer(event.dataTransfer));
   }
 
   function onComposerPaste(event: ClipboardEvent) {
@@ -3121,7 +3151,7 @@ export function LevadaCopilotDrawer({
     }
     if (files.length === 0) return;
     event.preventDefault();
-    addFiles(files);
+    void addFiles(files);
   }
 
   useEffect(() => {
@@ -3412,7 +3442,7 @@ export function LevadaCopilotDrawer({
           })()
         : undefined;
 
-    if ((!trimmed && !fileList?.length) || busy) return;
+    if ((!trimmed && !fileList?.length) || busy || compressingAttach) return;
     if (fileList?.length) {
       setLastInvoiceFiles(Array.from(fileList));
     }
@@ -3572,8 +3602,14 @@ export function LevadaCopilotDrawer({
           ))}
         </div>
 
-        {attachments.length > 0 || attachError ? (
+        {attachments.length > 0 || attachError || compressingAttach ? (
           <div className="mb-2 space-y-1.5">
+            {compressingAttach ? (
+              <p className="flex items-center gap-1.5 px-1 text-[11px] text-zinc-400">
+                <Loader2 className="size-3 animate-spin text-emerald-300" />
+                Стискаю фото перед відправкою…
+              </p>
+            ) : null}
             {attachments.length > 0 ? (
               <div className="flex gap-1.5 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 {attachments.map((item) => (
@@ -3598,7 +3634,7 @@ export function LevadaCopilotDrawer({
                         {item.file.name}
                       </p>
                       <p className="text-[10px] text-zinc-500">
-                        {(item.file.size / 1024).toFixed(0)} КБ
+                        {formatFileKib(item.file.size)}
                       </p>
                     </div>
                     <button
@@ -3652,7 +3688,7 @@ export function LevadaCopilotDrawer({
           <button
             type="button"
             onClick={openFilePicker}
-            disabled={busy || attachments.length >= MAX_PENDING_ATTACHMENTS}
+            disabled={busy || compressingAttach || attachments.length >= MAX_PENDING_ATTACHMENTS}
             className="inline-flex size-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.05] text-zinc-400 transition-colors hover:border-emerald-400/35 hover:bg-emerald-400/10 hover:text-emerald-400 disabled:pointer-events-none disabled:opacity-40"
             aria-label={fullscreen ? "Камера або файл" : "Прикріпити файли"}
             title={
@@ -3705,7 +3741,10 @@ export function LevadaCopilotDrawer({
           ) : (
             <button
               type="submit"
-              disabled={!input.trim() && attachments.length === 0}
+              disabled={
+                compressingAttach ||
+                (!input.trim() && attachments.length === 0)
+              }
               className="inline-flex size-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-500 text-zinc-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
               aria-label="Надіслати"
             >
