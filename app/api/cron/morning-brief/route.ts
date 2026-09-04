@@ -21,11 +21,12 @@ const JSON_UTF8 = {
  * НЕ в vercel.json (Hobby = max 1×/день на cron; тримаємо на cron-job.org).
  *
  * cron-job.org:
- *   URL: https://<domain>/api/cron/morning-brief?secret=$CRON_SECRET
- *   Schedule: 0 4 * * * (04:00 UTC ≈ 07:00 Kyiv влітку)
+ *   URL: https://<domain>/api/cron/morning-brief
  *   Method: GET
+ *   Schedule: 0 4 * * * (04:00 UTC ≈ 07:00 Kyiv влітку)
+ *   Headers:
+ *     Authorization: Bearer <CRON_SECRET>
  *
- * Auth також: Authorization: Bearer $CRON_SECRET
  * Env: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID (або profiles.telegram_chat_id)
  */
 async function handle(request: NextRequest) {

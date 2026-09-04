@@ -18,11 +18,11 @@ const JSON_UTF8 = {
  * Зовнішній планувальник: cron-job.org.
  *
  * cron-job.org:
- *   URL: https://<domain>/api/cron/telemetry-alerts?secret=$CRON_SECRET
- *   Schedule: */30 * * * * (кожні 30 хв)
+ *   URL: https://<domain>/api/cron/telemetry-alerts
  *   Method: GET
- *
- * Auth також: Authorization: Bearer $CRON_SECRET
+ *   Schedule: every 30 minutes (cron: star/30 * * * *)
+ *   Headers:
+ *     Authorization: Bearer <CRON_SECRET>
  */
 async function handle(request: NextRequest) {
   if (!authorizeCron(request)) {
