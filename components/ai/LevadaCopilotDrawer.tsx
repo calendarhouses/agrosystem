@@ -4066,7 +4066,12 @@ function AgentAvatar({ live }: { live: boolean }) {
   );
 }
 
-/** Прелоадер LEVADIUS (як boot Farm OS) — поки профіль/вітання не готові. */
+/** Мін. час boot-екрана = fade + stagger літер + shimmer (не відкривати раніше). */
+const LEVADIUS_BOOT_MIN_MS = 2600;
+
+const LEVADIUS_BOOT_LETTERS = ["L", "E", "V", "A", "D", "I", "U", "S"] as const;
+
+/** Прелоадер LEVADIUS — літери з нормальним ритмом, не сплющені spaces+tracking. */
 function LevadiusBootOverlay() {
   return (
     <div
@@ -4074,41 +4079,67 @@ function LevadiusBootOverlay() {
       aria-busy
       aria-label="Завантаження LEVADIUS"
     >
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(52,211,153,0.07),transparent_62%)]" aria-hidden />
+
       <motion.div
-        className="relative flex flex-col items-center px-6"
-        initial={{ opacity: 0, filter: "blur(10px)" }}
+        className="relative z-10 flex flex-col items-center px-6"
+        initial={{ opacity: 0, y: 10, filter: "blur(12px)" }}
         animate={{
           opacity: 1,
+          y: 0,
           filter: "blur(0px)",
-          transition: { duration: 0.7, ease: "easeOut" },
+          transition: { duration: 0.9, ease: [0.22, 1, 0.36, 1] },
         }}
       >
-        <div className="relative overflow-hidden">
+        <div className="relative overflow-hidden px-1 py-1">
           <h1
-            className="text-[1.35rem] font-thin tracking-[0.28em] text-white sm:text-[1.5rem]"
-            style={{ fontWeight: 200 }}
+            className="flex items-baseline justify-center text-[1.75rem] font-extralight text-white sm:text-[2.15rem]"
+            style={{ fontWeight: 200, letterSpacing: "0.02em" }}
           >
-            L E V A D I U S
+            {LEVADIUS_BOOT_LETTERS.map((letter, index) => (
+              <motion.span
+                key={`${letter}-${index}`}
+                className="inline-block"
+                style={{
+                  marginLeft: index === 0 ? 0 : "0.38em",
+                  marginRight: index === LEVADIUS_BOOT_LETTERS.length - 1 ? "0.06em" : 0,
+                }}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{
+                  duration: 0.45,
+                  delay: 0.12 + index * 0.05,
+                  ease: [0.22, 1, 0.36, 1],
+                }}
+              >
+                {letter}
+              </motion.span>
+            ))}
           </h1>
           <motion.span
             aria-hidden
-            className="pointer-events-none absolute inset-y-0 w-1/3 bg-gradient-to-r from-transparent via-emerald-300/50 to-transparent"
-            initial={{ x: "-120%", opacity: 0 }}
+            className="pointer-events-none absolute inset-y-0 w-[28%] bg-gradient-to-r from-transparent via-emerald-200/55 to-transparent"
+            initial={{ x: "-130%", opacity: 0 }}
             animate={{
-              x: ["-120%", "220%", "-120%", "220%"],
-              opacity: [0, 1, 0, 1, 0],
+              x: ["-130%", "230%"],
+              opacity: [0, 1, 1, 0],
             }}
             transition={{
-              duration: 2.4,
-              times: [0, 0.35, 0.5, 0.85, 1],
+              duration: 1.55,
+              times: [0, 0.18, 0.78, 1],
               ease: "easeInOut",
-              delay: 0.35,
+              delay: 0.85,
             }}
           />
         </div>
-        <p className="mt-3 text-[10px] tracking-[0.22em] text-zinc-500 uppercase">
-          Готую диспетчера…
-        </p>
+        <motion.p
+          className="mt-5 text-[11px] tracking-[0.28em] text-zinc-500 uppercase"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.85, duration: 0.5 }}
+        >
+          Диспетчер господарства
+        </motion.p>
       </motion.div>
     </div>
   );
@@ -4821,23 +4852,24 @@ export function LevadaCopilotDrawer({
 
   useEffect(() => {
     let cancelled = false;
-    const startedAt = Date.now();
-    void getMyProfileAction()
+
+    const profilePromise = getMyProfileAction()
       .then((actor) => {
-        if (cancelled) return;
-        setMe(actor);
-        const wait = Math.max(0, 420 - (Date.now() - startedAt));
-        window.setTimeout(() => {
-          if (!cancelled) setBootReady(true);
-        }, wait);
+        if (!cancelled) setMe(actor);
       })
       .catch(() => {
-        if (cancelled) return;
-        const wait = Math.max(0, 420 - (Date.now() - startedAt));
-        window.setTimeout(() => {
-          if (!cancelled) setBootReady(true);
-        }, wait);
+        /* профіль опційний для boot — вітання без імені */
       });
+
+    // Тримати boot до кінця анімації, навіть якщо профіль уже є
+    const minBootPromise = new Promise<void>((resolve) => {
+      window.setTimeout(resolve, LEVADIUS_BOOT_MIN_MS);
+    });
+
+    void Promise.all([profilePromise, minBootPromise]).then(() => {
+      if (!cancelled) setBootReady(true);
+    });
+
     return () => {
       cancelled = true;
     };
