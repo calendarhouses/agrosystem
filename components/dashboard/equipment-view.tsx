@@ -2090,7 +2090,7 @@ export function EquipmentView() {
     setSelectedUnit(null);
     setSelectedSessionId(null);
     window.setTimeout(() => commandMapRef.current?.fitAllUnits(), 40);
-  }, [playback]);
+  }, [playback.setIsPlaying, playback.setProgress]);
 
   const focusMainMap = (
     center: [number, number],

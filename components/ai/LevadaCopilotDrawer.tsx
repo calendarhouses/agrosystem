@@ -28,6 +28,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Suspense,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -4065,6 +4066,54 @@ function AgentAvatar({ live }: { live: boolean }) {
   );
 }
 
+/** Прелоадер LEVADIUS (як boot Farm OS) — поки профіль/вітання не готові. */
+function LevadiusBootOverlay() {
+  return (
+    <div
+      className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-zinc-950"
+      aria-busy
+      aria-label="Завантаження LEVADIUS"
+    >
+      <motion.div
+        className="relative flex flex-col items-center px-6"
+        initial={{ opacity: 0, filter: "blur(10px)" }}
+        animate={{
+          opacity: 1,
+          filter: "blur(0px)",
+          transition: { duration: 0.7, ease: "easeOut" },
+        }}
+      >
+        <div className="relative overflow-hidden">
+          <h1
+            className="text-[1.35rem] font-thin tracking-[0.28em] text-white sm:text-[1.5rem]"
+            style={{ fontWeight: 200 }}
+          >
+            L E V A D I U S
+          </h1>
+          <motion.span
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 w-1/3 bg-gradient-to-r from-transparent via-emerald-300/50 to-transparent"
+            initial={{ x: "-120%", opacity: 0 }}
+            animate={{
+              x: ["-120%", "220%", "-120%", "220%"],
+              opacity: [0, 1, 0, 1, 0],
+            }}
+            transition={{
+              duration: 2.4,
+              times: [0, 0.35, 0.5, 0.85, 1],
+              ease: "easeInOut",
+              delay: 0.35,
+            }}
+          />
+        </div>
+        <p className="mt-3 text-[10px] tracking-[0.22em] text-zinc-500 uppercase">
+          Готую диспетчера…
+        </p>
+      </motion.div>
+    </div>
+  );
+}
+
 function MessageBubble({
   message,
   onNavigate,
@@ -4543,8 +4592,12 @@ export function LevadaCopilotDrawer({
   const isMobile = useIsMobile();
   const effectiveOpen = fullscreen ? true : open;
   const [me, setMe] = useState<AppActor | null>(null);
+  const [bootReady, setBootReady] = useState(false);
   const [input, setInput] = useState("");
-  const [welcomeSeed, setWelcomeSeed] = useState(0);
+  const [welcome, setWelcome] = useState<{ hi: string; tip: string } | null>(
+    null
+  );
+  const frozenWelcomeRef = useRef<{ hi: string; tip: string } | null>(null);
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [attachError, setAttachError] = useState<string | null>(null);
   const [compressingAttach, setCompressingAttach] = useState(false);
@@ -4767,13 +4820,50 @@ export function LevadaCopilotDrawer({
   }, [lastInvoiceFiles]);
 
   useEffect(() => {
-    void getMyProfileAction().then(setMe);
+    let cancelled = false;
+    const startedAt = Date.now();
+    void getMyProfileAction()
+      .then((actor) => {
+        if (cancelled) return;
+        setMe(actor);
+        const wait = Math.max(0, 420 - (Date.now() - startedAt));
+        window.setTimeout(() => {
+          if (!cancelled) setBootReady(true);
+        }, wait);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        const wait = Math.max(0, 420 - (Date.now() - startedAt));
+        window.setTimeout(() => {
+          if (!cancelled) setBootReady(true);
+        }, wait);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  useEffect(() => {
-    if (!effectiveOpen) return;
-    setWelcomeSeed(Math.floor(Math.random() * 1000));
-  }, [effectiveOpen]);
+  // Вітання фіксуємо один раз на відкриття — не стрибає, коли підвантажився профіль / змінився field
+  useLayoutEffect(() => {
+    if (!effectiveOpen) {
+      frozenWelcomeRef.current = null;
+      setWelcome(null);
+      return;
+    }
+    if (!bootReady) return;
+    if (frozenWelcomeRef.current) {
+      setWelcome((prev) => prev ?? frozenWelcomeRef.current);
+      return;
+    }
+    const next = pickWelcomeGreeting({
+      seed: Math.floor(Math.random() * 1000),
+      name: greetingFirstName(me),
+      pathname: pathname || "/",
+      hasField: Boolean(activeFieldId),
+    });
+    frozenWelcomeRef.current = next;
+    setWelcome(next);
+  }, [effectiveOpen, bootReady, me, pathname, activeFieldId]);
 
   useEffect(() => {
     liveUserContext = {
@@ -4784,16 +4874,7 @@ export function LevadaCopilotDrawer({
     };
   }, [pathname, activeFieldId, me]);
 
-  const welcome = useMemo(
-    () =>
-      pickWelcomeGreeting({
-        seed: welcomeSeed,
-        name: greetingFirstName(me),
-        pathname: pathname || "/",
-        hasField: Boolean(activeFieldId),
-      }),
-    [welcomeSeed, me, pathname, activeFieldId]
-  );
+  const showBoot = !bootReady || (effectiveOpen && !welcome);
 
   const transport = useMemo(
     () =>
@@ -5277,7 +5358,7 @@ export function LevadaCopilotDrawer({
   const panel = (
     <div
       className={cn(
-        "flex min-h-0 flex-col overflow-hidden bg-zinc-950 text-zinc-50",
+        "relative flex min-h-0 flex-col overflow-hidden bg-zinc-950 text-zinc-50",
         fullscreen
           ? "h-[100dvh] w-full border-0"
           : cn(
@@ -5286,12 +5367,15 @@ export function LevadaCopilotDrawer({
             )
       )}
     >
+      {showBoot ? <LevadiusBootOverlay /> : null}
+
       <header
         className={cn(
           "flex shrink-0 items-center gap-3 border-b border-white/10 px-4",
           fullscreen
             ? "pt-[max(0.75rem,env(safe-area-inset-top))] pb-3"
-            : "py-3"
+            : "py-3",
+          showBoot && "invisible"
         )}
       >
         <AgentAvatar live={busy || effectiveOpen} />
@@ -5333,7 +5417,7 @@ export function LevadaCopilotDrawer({
         data-allow-select="true"
         className="custom-scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-4 py-4 select-text"
       >
-        {messages.length === 0 ? (
+        {messages.length === 0 && welcome ? (
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-5">
             <p className="text-sm font-medium text-zinc-100">{welcome.hi}</p>
             <p className="mt-1 text-sm leading-relaxed text-zinc-400">
@@ -5532,12 +5616,8 @@ export function LevadaCopilotDrawer({
               }
             }}
             rows={1}
-            placeholder={
-              dragOverComposer
-                ? "Кидай файли…"
-                : "Запитай LEVADIUS або кинь фото…"
-            }
-            className="max-h-[min(40dvh,15rem)] min-h-11 min-w-0 flex-1 resize-none overflow-hidden rounded-2xl border border-white/10 bg-white/[0.05] px-3.5 py-2.5 text-sm leading-6 text-zinc-50 outline-none placeholder:text-zinc-500 focus:border-emerald-500/40 focus:ring-2 focus:ring-emerald-500/15"
+            placeholder={dragOverComposer ? "Кидай файли…" : "Питай LEVADIUS…"}
+            className="max-h-[min(40dvh,15rem)] min-h-11 min-w-0 flex-1 resize-none overflow-hidden rounded-2xl border border-white/10 bg-white/[0.05] px-3.5 py-2.5 text-sm leading-6 text-zinc-50 outline-none placeholder:truncate placeholder:text-zinc-500 focus:border-emerald-500/40 focus:ring-2 focus:ring-emerald-500/15"
           />
           <VoiceInputButton
             disabled={busy || compressingAttach}
@@ -5636,9 +5716,8 @@ export function LevadaCopilotFullscreen(): ReactNode {
   return (
     <Suspense
       fallback={
-        <div className="flex h-[100dvh] items-center justify-center bg-zinc-950 text-sm text-zinc-400">
-          <Loader2 className="mr-2 size-4 animate-spin text-emerald-300" />
-          LEVADIUS…
+        <div className="relative flex h-[100dvh] w-full overflow-hidden bg-zinc-950">
+          <LevadiusBootOverlay />
         </div>
       }
     >

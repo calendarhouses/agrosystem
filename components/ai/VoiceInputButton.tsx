@@ -3,6 +3,7 @@
 import { Loader2, Mic, Square } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { ensureLevadiusMicPermission } from "@/lib/levadius-mic-permission";
 import { cn } from "@/lib/utils";
 
 const LANG = "uk-UA";
@@ -508,15 +509,28 @@ export function VoiceInputButton({
       stopListening();
       return;
     }
-    const started = startSpeechRecognition();
-    if (!started) {
-      void startFallbackRecording().catch((err) => {
-        setError(
-          err instanceof Error ? err.message : "Немає доступу до мікрофона"
-        );
-        setMode("idle");
-      });
-    }
+
+    void (async () => {
+      const perm = await ensureLevadiusMicPermission();
+      if (perm === "denied") {
+        setError("Немає доступу до мікрофона");
+        return;
+      }
+      if (perm === "unavailable") {
+        setError("Мікрофон недоступний у цьому браузері");
+        return;
+      }
+
+      const started = startSpeechRecognition();
+      if (!started) {
+        void startFallbackRecording().catch((err) => {
+          setError(
+            err instanceof Error ? err.message : "Немає доступу до мікрофона"
+          );
+          setMode("idle");
+        });
+      }
+    })();
   }, [
     disabled,
     mode,
