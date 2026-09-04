@@ -61,16 +61,17 @@ export const viewport: Viewport = {
 };
 
 /** Inline: шлях → auth vs app. Має бути ДО CSS, інакше логін на мить/назавжди чорний. */
-const BOOT_PATH_SCRIPT = `(function(){var p=location.pathname;var shellOff=p==='/login'||p==='/install'||p==='/copilot'||p.indexOf('/copilot/')===0;var light=p==='/login'||p==='/install';document.documentElement.dataset.appNav=shellOff?'0':'1';if(light){document.documentElement.dataset.authLight='1';}else{delete document.documentElement.dataset.authLight;}if(shellOff){delete document.documentElement.dataset.booting;delete document.documentElement.dataset.appReady;}else{document.documentElement.dataset.booting='1';}})();`;
+const BOOT_PATH_SCRIPT = `(function(){var p=location.pathname;var shellOff=p==='/login'||p==='/install'||p==='/copilot'||p.indexOf('/copilot/')===0;var light=p==='/login'||p==='/install';var levadius=p==='/copilot'||p.indexOf('/copilot/')===0;document.documentElement.dataset.appNav=shellOff?'0':'1';if(light){document.documentElement.dataset.authLight='1';}else{delete document.documentElement.dataset.authLight;}if(levadius){document.documentElement.dataset.levadiusBooting='1';}else{delete document.documentElement.dataset.levadiusBooting;delete document.documentElement.dataset.levadiusBootUi;}if(shellOff){delete document.documentElement.dataset.booting;delete document.documentElement.dataset.appReady;}else{document.documentElement.dataset.booting='1';}})();`;
 
 /**
  * Чорний boot-шар лише при data-booting=1 (після логіну в систему).
- * Логін/install — світлий; /copilot — темний без splash Farm OS.
+ * Логін/install — світлий; /copilot — темний + #levadius-boot-splash до React.
  */
 const BOOT_CRITICAL_CSS = [
-  "html[data-app-nav='0'],html[data-app-nav='0'] body,html[data-app-nav='0'] #app-root{background-color:#09090b!important}",
-  "html[data-app-nav='0'][data-auth-light='1'],html[data-app-nav='0'][data-auth-light='1'] body,html[data-app-nav='0'][data-auth-light='1'] #app-root{background-color:#f4f4f5!important}",
-  "html[data-booting='1'],html[data-booting='1'] body,html[data-booting='1'] #app-root{background-color:#09090b!important}",
+  "html[data-app-nav='0'],html[data-app-nav='0'] body,html[data-app-nav='0'] #app-root{background-color:#09090b!important;color-scheme:dark}",
+  "html[data-app-nav='0'][data-auth-light='1'],html[data-app-nav='0'][data-auth-light='1'] body,html[data-app-nav='0'][data-auth-light='1'] #app-root{background-color:#f4f4f5!important;color-scheme:light}",
+  "html[data-booting='1'],html[data-booting='1'] body,html[data-booting='1'] #app-root{background-color:#09090b!important;color-scheme:dark}",
+  "html[data-levadius-booting='1'],html[data-levadius-booting='1'] body,html[data-levadius-booting='1'] #app-root{background-color:#09090b!important;color-scheme:dark}",
   "html[data-app-nav='1'][data-app-ready='1'],html[data-app-nav='1'][data-app-ready='1'] body,html[data-app-nav='1'][data-app-ready='1'] #app-root{background-color:#18181b!important;transition:background-color .7s ease-out .5s}",
   "html[data-booting='1'] [data-bottom-nav],html[data-booting='1'] [data-fields-mobile-chrome]{opacity:0;pointer-events:none;transform:translateY(12px)}",
   /* Під React Preloader (z-9999). Не .remove() — інакше NotFoundError. */
@@ -79,6 +80,10 @@ const BOOT_CRITICAL_CSS = [
   "html[data-boot-ui='1'] #boot-splash{visibility:hidden}",
   "#boot-splash .boot-title{margin:0;color:#fff;font-size:1.65rem;font-weight:200;letter-spacing:.3em;font-family:ui-sans-serif,system-ui,-apple-system,sans-serif}",
   "#boot-splash .boot-sub{margin:.75rem 0 0;color:#71717a;font-size:.75rem;letter-spacing:.2em;font-family:ui-sans-serif,system-ui,-apple-system,sans-serif}",
+  /* LEVADIUS PWA: суцільний zinc-950 до гідрації — без сірого спалаху body. */
+  "#levadius-boot-splash{display:none;position:fixed;inset:0;z-index:9991;background:#09090b;pointer-events:none}",
+  "html[data-levadius-booting='1'] #levadius-boot-splash{display:block}",
+  "html[data-levadius-boot-ui='1'] #levadius-boot-splash{visibility:hidden}",
 ].join("");
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -99,6 +104,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <p className="boot-title">L E V A D A</p>
           <p className="boot-sub">AGRO OPERATING SYSTEM</p>
         </div>
+        {/* /copilot: тримає #09090b до React LevadiusBootOverlay (без сірого спалаху). */}
+        <div id="levadius-boot-splash" aria-hidden="true" />
         <PwaBootstrap />
         <div id="app-root" className="h-dvh min-h-0 overflow-hidden">
           <AppShell>{children}</AppShell>

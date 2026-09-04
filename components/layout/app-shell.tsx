@@ -152,6 +152,13 @@ export function AppShell({ children }: { children: ReactNode }) {
       delete document.documentElement.dataset.booting;
       delete document.documentElement.dataset.bootUi;
       delete document.documentElement.dataset.appReady;
+      if (
+        pathname !== "/copilot" &&
+        !pathname.startsWith("/copilot/")
+      ) {
+        delete document.documentElement.dataset.levadiusBooting;
+        delete document.documentElement.dataset.levadiusBootUi;
+      }
     }
     // Без cleanup appNav=0: Strict Mode / remount на мить вмикає «логін» CSS
     // і html[data-app-nav=1]:not([data-app-ready]) лишає чорний екран.

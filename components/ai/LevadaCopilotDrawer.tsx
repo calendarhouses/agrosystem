@@ -4073,6 +4073,11 @@ const LEVADIUS_BOOT_LETTERS = ["L", "E", "V", "A", "D", "I", "U", "S"] as const;
 
 /** Прелоадер LEVADIUS — літери з нормальним ритмом, не сплющені spaces+tracking. */
 function LevadiusBootOverlay() {
+  // Ховаємо HTML #levadius-boot-splash лише коли React-шар уже в DOM (без сірого кадру).
+  useLayoutEffect(() => {
+    document.documentElement.dataset.levadiusBootUi = "1";
+  }, []);
+
   return (
     <div
       className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-zinc-950"
@@ -4138,7 +4143,7 @@ function LevadiusBootOverlay() {
           animate={{ opacity: 1 }}
           transition={{ delay: 0.85, duration: 0.5 }}
         >
-          Диспетчер господарства
+          ЦИФРОВИЙ ПОМІЧНИК
         </motion.p>
       </motion.div>
     </div>
@@ -4907,6 +4912,17 @@ export function LevadaCopilotDrawer({
   }, [pathname, activeFieldId, me]);
 
   const showBoot = !bootReady || (effectiveOpen && !welcome);
+
+  // HTML #levadius-boot-splash: тримаємо до кінця React-boot, потім знімаємо.
+  useLayoutEffect(() => {
+    if (!fullscreen) return;
+    if (showBoot) {
+      document.documentElement.dataset.levadiusBooting = "1";
+      return;
+    }
+    delete document.documentElement.dataset.levadiusBooting;
+    delete document.documentElement.dataset.levadiusBootUi;
+  }, [fullscreen, showBoot]);
 
   const transport = useMemo(
     () =>
@@ -5745,20 +5761,16 @@ export function LevadaCopilotDrawer({
 }
 
 export function LevadaCopilotFullscreen(): ReactNode {
+  // Без Suspense-fallback: remount знімав overlay на 1 кадр → сірий/білий спалах.
+  // activeFieldId через useSearchParams у drawer; /copilot і так dynamic (auth).
   return (
-    <Suspense
-      fallback={
-        <div className="relative flex h-[100dvh] w-full overflow-hidden bg-zinc-950">
-          <LevadiusBootOverlay />
-        </div>
-      }
-    >
+    <div className="relative flex h-[100dvh] w-full overflow-hidden bg-zinc-950">
       <LevadaCopilotDrawer
         open
         onOpenChange={() => {}}
         variant="fullscreen"
       />
-    </Suspense>
+    </div>
   );
 }
 

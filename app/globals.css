@@ -182,29 +182,32 @@ body {
     -webkit-touch-callout: default;
   }
 
-  /* PWA mobile: логін світлий; /copilot і boot — темний */
+  /* Логін світлий; /copilot і boot — темний (усі viewport — без сірого спалаху на desktop) */
+  html[data-app-nav="0"],
+  html[data-app-nav="0"] body,
+  html[data-app-nav="0"] #app-root {
+    background-color: #09090b !important;
+  }
+
+  html[data-app-nav="0"][data-auth-light="1"],
+  html[data-app-nav="0"][data-auth-light="1"] body,
+  html[data-app-nav="0"][data-auth-light="1"] #app-root {
+    background-color: var(--background) !important;
+  }
+
+  html[data-booting="1"],
+  html[data-booting="1"] body,
+  html[data-booting="1"] #app-root,
+  html[data-levadius-booting="1"],
+  html[data-levadius-booting="1"] body,
+  html[data-levadius-booting="1"] #app-root,
+  html[data-app-nav="1"]:not([data-app-ready="1"]),
+  html[data-app-nav="1"]:not([data-app-ready="1"]) body,
+  html[data-app-nav="1"]:not([data-app-ready="1"]) #app-root {
+    background-color: #09090b !important;
+  }
+
   @media (max-width: 767px) {
-    html[data-app-nav="0"],
-    html[data-app-nav="0"] body,
-    html[data-app-nav="0"] #app-root {
-      background-color: #09090b !important;
-    }
-
-    html[data-app-nav="0"][data-auth-light="1"],
-    html[data-app-nav="0"][data-auth-light="1"] body,
-    html[data-app-nav="0"][data-auth-light="1"] #app-root {
-      background-color: var(--background) !important;
-    }
-
-    html[data-booting="1"],
-    html[data-booting="1"] body,
-    html[data-booting="1"] #app-root,
-    html[data-app-nav="1"]:not([data-app-ready="1"]),
-    html[data-app-nav="1"]:not([data-app-ready="1"]) body,
-    html[data-app-nav="1"]:not([data-app-ready="1"]) #app-root {
-      background-color: #09090b !important;
-    }
-
     html[data-app-nav="1"][data-app-ready="1"],
     html[data-app-nav="1"][data-app-ready="1"] body,
     html[data-app-nav="1"][data-app-ready="1"] #app-root {

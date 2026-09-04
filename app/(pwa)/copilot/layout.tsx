@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 
 export const metadata: Metadata = {
   title: "LEVADIUS",
-  description: "Автономний диспетчер агрогосподарства LEVADA",
+  description: "Цифровий помічник агрогосподарства LEVADA",
   applicationName: "LEVADIUS",
   manifest: "/levadius.webmanifest",
   icons: {
