@@ -53,8 +53,17 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 /** Flash only — без -pro. Thinking вимкнено через thinkingBudget: 0. */
-const DEFAULT_MODEL = "gemini-2.5-flash";
-const DEFAULT_FALLBACK_MODELS = ["gemini-3.7-flash", "gemini-2.0-flash"] as const;
+const DEFAULT_MODEL = "gemini-3.7-flash";
+const DEFAULT_FALLBACK_MODELS = ["gemini-3.6-flash"] as const;
+
+/** Старі Flash, які Google вже не дає новим ключам — не підставляти навіть з env. */
+const RETIRED_FLASH_MODELS = new Set([
+  "gemini-2.5-flash",
+  "gemini-2.0-flash",
+  "gemini-1.5-flash",
+  "gemini-1.5-flash-latest",
+  "gemini-flash-latest",
+]);
 
 /** Ковзне вікно історії для LLM (без системного — він окремо в system) */
 const MAX_LLM_HISTORY_MESSAGES = 6;
@@ -76,6 +85,11 @@ function isProModelId(modelId: string): boolean {
   );
 }
 
+function isRetiredFlashModelId(modelId: string): boolean {
+  const id = modelId.trim().toLowerCase().replace(/^models\//, "");
+  return RETIRED_FLASH_MODELS.has(id);
+}
+
 function resolveModelCandidates(): string[] {
   const primary =
     process.env.GOOGLE_GENERATIVE_AI_MODEL?.trim() || DEFAULT_MODEL;
@@ -86,20 +100,31 @@ function resolveModelCandidates(): string[] {
   const fallbacks = fromEnv.length > 0 ? fromEnv : [...DEFAULT_FALLBACK_MODELS];
   const unique = [...new Set([primary, ...fallbacks])].filter(Boolean);
   const flashOnly = unique.filter((id) => !isProModelId(id));
-  if (flashOnly.length === 0) {
+  const active = flashOnly.filter((id) => !isRetiredFlashModelId(id));
+  if (active.length < flashOnly.length) {
     console.warn(
-      "[LEVADIUS] Усі моделі були -pro або порожні → fallback на Flash defaults"
-    );
-    return [DEFAULT_MODEL, ...DEFAULT_FALLBACK_MODELS];
-  }
-  if (flashOnly.length < unique.length) {
-    console.warn(
-      `[LEVADIUS] Відхилено -pro моделі: ${unique
-        .filter((id) => isProModelId(id))
+      `[LEVADIUS] Відхилено застарілі Flash: ${flashOnly
+        .filter((id) => isRetiredFlashModelId(id))
         .join(", ")}`
     );
   }
-  return flashOnly;
+  if (active.length === 0) {
+    console.warn(
+      "[LEVADIUS] Немає валідних Flash → fallback на 3.7 / 3.6"
+    );
+    return [DEFAULT_MODEL, ...DEFAULT_FALLBACK_MODELS];
+  }
+  if (active.length < unique.length) {
+    const dropped = unique.filter((id) => !active.includes(id));
+    if (dropped.some((id) => isProModelId(id))) {
+      console.warn(
+        `[LEVADIUS] Відхилено -pro моделі: ${dropped
+          .filter((id) => isProModelId(id))
+          .join(", ")}`
+      );
+    }
+  }
+  return active;
 }
 
 function errorText(error: unknown): string {
@@ -107,10 +132,17 @@ function errorText(error: unknown): string {
   return String(error ?? "");
 }
 
+function isRetiredModelApiError(error: unknown): boolean {
+  const message = errorText(error).toLowerCase();
+  return (
+    message.includes("no longer available") ||
+    message.includes("update your code to use") ||
+    message.includes("interactions api")
+  );
+}
+
 function isCapacityError(error: unknown): boolean {
   const message = errorText(error).toLowerCase();
-  // Не ловимо голе "unavailable" / "no longer available" — маскували
-  // реальні баги (SW/auth/thinkingConfig) під «модель перевантажена».
   return (
     message.includes("high demand") ||
     message.includes("resource exhausted") ||
@@ -123,7 +155,15 @@ function isCapacityError(error: unknown): boolean {
   );
 }
 
+/** 503 / retired model — пробуємо наступну з ланцюжка fallback. */
+function isRetriableModelError(error: unknown): boolean {
+  return isCapacityError(error) || isRetiredModelApiError(error);
+}
+
 function humanizeAgentError(error: unknown): string {
+  if (isRetiredModelApiError(error)) {
+    return "Модель Gemini застаріла в конфігу. Оновіть GOOGLE_GENERATIVE_AI_MODEL на gemini-3.7-flash.";
+  }
   if (isCapacityError(error)) {
     return "Модель Google зараз перевантажена. Спробуй ще раз за кілька секунд.";
   }
@@ -4752,12 +4792,12 @@ export async function POST(request: Request) {
         );
 
         if (
-          isCapacityError(error) &&
+          isRetriableModelError(error) &&
           activeModelIndex < modelCandidates.length - 1
         ) {
           activeModelIndex += 1;
           console.warn(
-            `[LEVADIUS] high demand → fallback ${modelCandidates[activeModelIndex]}`
+            `[LEVADIUS] model retry → fallback ${modelCandidates[activeModelIndex]}`
           );
           return { retry: true };
         }
