@@ -11,14 +11,6 @@
     {
       "path": "/api/cron/sync-inventory-nomenclature",
       "schedule": "0 5 * * *"
-    },
-    {
-      "path": "/api/cron/morning-brief",
-      "schedule": "0 4 * * *"
-    },
-    {
-      "path": "/api/cron/telemetry-alerts",
-      "schedule": "*/30 * * * *"
     }
   ]
 }

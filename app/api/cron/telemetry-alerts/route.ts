@@ -13,12 +13,16 @@ const JSON_UTF8 = {
 /**
  * GET/POST /api/cron/telemetry-alerts
  *
- * Періодична перевірка аномалій (idle з запалюванням, злив пального) → Telegram.
- * Рекомендований інтервал: кожні 30 хв.
+ * Аномалії idle / злив пального → Telegram.
+ * НЕ в vercel.json: інтервал 30 хв ламає Hobby (лише 1 cron/день).
+ * Зовнішній планувальник: cron-job.org.
  *
- * Auth:
- *   Authorization: Bearer $CRON_SECRET
- *   ?secret=$CRON_SECRET
+ * cron-job.org:
+ *   URL: https://<domain>/api/cron/telemetry-alerts?secret=$CRON_SECRET
+ *   Schedule: */30 * * * * (кожні 30 хв)
+ *   Method: GET
+ *
+ * Auth також: Authorization: Bearer $CRON_SECRET
  */
 async function handle(request: NextRequest) {
   if (!authorizeCron(request)) {

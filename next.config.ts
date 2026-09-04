@@ -2,7 +2,9 @@ import type { NextConfig } from "next";
 
 /**
  * Секрети (не NEXT_PUBLIC_* — лише сервер):
- * - CRON_SECRET — Bearer для /api/cron/* (Vercel Cron: fuel + equipment-day + morning-brief + telemetry-alerts)
+ * - CRON_SECRET — Bearer / ?secret= для /api/cron/*
+ *   Vercel Hobby: лише daily crons у vercel.json (fuel / equipment-day / inventory).
+ *   morning-brief + telemetry-alerts — зовнішньо (cron-job.org), не в vercel.json.
  * - WIALON_API_TOKEN — Wialon Hosting token
  * - SUPABASE_SERVICE_ROLE_KEY — upsert логів палива / денної статистики
  * - TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID — проактивні сповіщення LEVADIUS

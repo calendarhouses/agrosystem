@@ -17,12 +17,15 @@ const JSON_UTF8 = {
 /**
  * GET/POST /api/cron/morning-brief
  *
- * Ранкове диспетчерське зведення → Telegram (щодня ~07:00 Kyiv).
+ * Ранкове диспетчерське зведення → Telegram.
+ * НЕ в vercel.json (Hobby = max 1×/день на cron; тримаємо на cron-job.org).
  *
- * Auth:
- *   Authorization: Bearer $CRON_SECRET
- *   ?secret=$CRON_SECRET
+ * cron-job.org:
+ *   URL: https://<domain>/api/cron/morning-brief?secret=$CRON_SECRET
+ *   Schedule: 0 4 * * * (04:00 UTC ≈ 07:00 Kyiv влітку)
+ *   Method: GET
  *
+ * Auth також: Authorization: Bearer $CRON_SECRET
  * Env: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID (або profiles.telegram_chat_id)
  */
 async function handle(request: NextRequest) {
