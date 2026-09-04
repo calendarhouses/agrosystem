@@ -281,17 +281,46 @@ type LevadaCopilotDrawerProps = {
 
 function formatChatError(error: Error | undefined): string {
   const raw = error?.message?.trim() || "";
+  if (!raw) {
+    return "Сервер повернув помилку. Спробуй ще раз або перефразуй запит.";
+  }
+
+  // AI SDK кидає response.text() як message — часто це JSON { error: "..." }
+  if (raw.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(raw) as { error?: unknown; message?: unknown };
+      const nested =
+        (typeof parsed.error === "string" && parsed.error.trim()) ||
+        (typeof parsed.message === "string" && parsed.message.trim()) ||
+        "";
+      if (nested) return nested;
+    } catch {
+      /* not JSON */
+    }
+  }
+
   const lower = raw.toLowerCase();
   if (
     lower.includes("high demand") ||
     lower.includes("resource exhausted") ||
     lower.includes("overloaded") ||
-    lower.includes("unavailable") ||
-    lower.includes("503")
+    lower.includes("503") ||
+    /\bunavailable\b/.test(lower)
   ) {
     return "Модель Google зараз перевантажена. Спробуй ще раз за кілька секунд.";
   }
-  return raw || "Сервер повернув помилку. Спробуй ще раз або перефразуй запит.";
+  if (
+    lower.includes("failed to fetch") ||
+    lower.includes("networkerror") ||
+    lower.includes("load failed") ||
+    lower.includes("the network connection was lost")
+  ) {
+    return "Немає звʼязку з сервером. Перевір інтернет і спробуй ще раз.";
+  }
+  if (lower.includes("авторизац") || lower.includes("unauthorized") || lower.includes("401")) {
+    return "Сесія закінчилась. Відкрий LEVADA в Safari, увійди знову, потім PWA.";
+  }
+  return raw;
 }
 
 function roleBadgeLabel(role: AppRole | null | undefined): string {
@@ -3132,6 +3161,8 @@ export function LevadaCopilotDrawer({
     () =>
       new DefaultChatTransport({
         api: "/api/agent",
+        // iOS standalone PWA: явно слати cookies (інакше /api/agent → 401)
+        credentials: "include",
         prepareSendMessagesRequest({ id, messages, body, trigger, messageId }) {
           return {
             body: {
@@ -3140,12 +3171,15 @@ export function LevadaCopilotDrawer({
               messages,
               trigger,
               messageId,
-              userContext: liveUserContext,
+              userContext: {
+                ...liveUserContext,
+                client: fullscreen ? "pwa" : "drawer",
+              },
             },
           };
         },
       }),
-    []
+    [fullscreen]
   );
 
   const { messages, sendMessage, status, error, stop, setMessages, clearError } =

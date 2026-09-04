@@ -1,4 +1,4 @@
-const CACHE = "levada-pwa-v5";
+const CACHE = "levada-pwa-v6";
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
@@ -14,5 +14,27 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-/** Порожній handler: Chrome вважає PWA «installable», запити не чіпаємо. */
-self.addEventListener("fetch", () => {});
+/**
+ * Fetch listener потрібен Chrome для installability.
+ * НЕ викликаємо respondWith для /api/* і non-GET — інакше iOS standalone PWA
+ * рве streaming (LEVADIUS /api/agent) і клієнт бачить фейкову «модель перевантажена».
+ */
+self.addEventListener("fetch", (event) => {
+  const req = event.request;
+  if (req.method !== "GET") return;
+
+  let pathname = "/";
+  try {
+    pathname = new URL(req.url).pathname;
+  } catch {
+    return;
+  }
+
+  if (
+    pathname.startsWith("/api/") ||
+    pathname.startsWith("/_next/") ||
+    pathname === "/sw.js"
+  ) {
+    return;
+  }
+});

@@ -109,15 +109,16 @@ function errorText(error: unknown): string {
 
 function isCapacityError(error: unknown): boolean {
   const message = errorText(error).toLowerCase();
+  // Не ловимо голе "unavailable" / "no longer available" — маскували
+  // реальні баги (SW/auth/thinkingConfig) під «модель перевантажена».
   return (
     message.includes("high demand") ||
     message.includes("resource exhausted") ||
     message.includes("overloaded") ||
-    message.includes("unavailable") ||
     message.includes("503") ||
     message.includes("429") ||
+    /\bunavailable\b/.test(message) ||
     message.includes("model_not_found") ||
-    message.includes("no longer available") ||
     (message.includes("model") && message.includes("not found"))
   );
 }
@@ -509,6 +510,7 @@ const userContextSchema = z
     activeFieldId: z.string().trim().max(100).nullish(),
     userName: z.string().trim().max(200).optional(),
     userRole: z.string().trim().max(100).optional(),
+    client: z.enum(["pwa", "drawer"]).optional(),
   })
   .optional();
 
@@ -4713,7 +4715,7 @@ export async function POST(request: Request) {
     let activeModelIndex = 0;
 
     console.log(
-      `[LEVADIUS] models=${modelCandidates.join(" → ")} (start: ${modelCandidates[0]}) attachment=${hasInvoiceAttachment} history=${uiMessages.length}→${llmMessages.length}`
+      `[LEVADIUS] client=${parsed.data.userContext?.client ?? "?"} models=${modelCandidates.join(" → ")} (start: ${modelCandidates[0]}) attachment=${hasInvoiceAttachment} history=${uiMessages.length}→${llmMessages.length}`
     );
 
     // AI SDK 7: кілька tool-кроків для наряду (склад → флот → водії → draft)

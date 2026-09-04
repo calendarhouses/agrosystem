@@ -4,7 +4,8 @@ export type BeforeInstallPromptEvent = Event & {
 };
 
 export const PWA_INSTALL_READY_EVENT = "levada-pwa-install-ready";
-const SW_RESET_KEY = "levada-sw-reset-v5";
+const SW_RESET_KEY = "levada-sw-reset-v6";
+const SW_SCRIPT = "/sw.js?v=6";
 
 let deferredPrompt: BeforeInstallPromptEvent | null = null;
 
@@ -81,12 +82,10 @@ export function registerServiceWorker(): Promise<ServiceWorkerRegistration | nul
   if (typeof window === "undefined" || !("serviceWorker" in navigator)) {
     return Promise.resolve(null);
   }
-  return navigator.serviceWorker
-    .register("/sw.js?v=5", { scope: "/" })
-    .catch((err) => {
-      console.warn("[pwa] service worker registration failed", err);
-      return null;
-    });
+  return navigator.serviceWorker.register(SW_SCRIPT, { scope: "/" }).catch((err) => {
+    console.warn("[pwa] service worker registration failed", err);
+    return null;
+  });
 }
 
 export function bootstrapPwaInstallCapture() {
@@ -96,10 +95,10 @@ export function bootstrapPwaInstallCapture() {
     (window as Window & { __levadaPwaCapture?: boolean }).__levadaPwaCapture = true;
   }
   void (async () => {
+    // Одноразово зносимо старі SW (порожній fetch ламав iOS streaming),
+    // потім реєструємо v6, який не чіпає /api/*.
+    await resetPoisonedServiceWorkers();
     await registerServiceWorker();
-    window.setTimeout(() => {
-      void resetPoisonedServiceWorkers();
-    }, 5000);
   })();
 }
 

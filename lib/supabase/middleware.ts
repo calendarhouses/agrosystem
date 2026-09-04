@@ -70,6 +70,14 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith("/api/cron/");
 
   if (!user && !isPublic) {
+    // API: JSON 401, не редірект на /login — інакше fetch у PWA їсть HTML
+    // і AI SDK показує безглузду помилку замість «потрібна авторизація».
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json(
+        { ok: false, error: "Потрібна авторизація" },
+        { status: 401 }
+      );
+    }
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/login";
     redirectUrl.searchParams.set("next", pathname);
