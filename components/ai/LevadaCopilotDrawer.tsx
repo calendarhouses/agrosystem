@@ -637,18 +637,42 @@ function parseRowLine(rawLine: string): ParsedRow | null {
 function MetricRow({ row }: { row: ParsedRow }) {
   const Icon = IconMap[row.icon];
   return (
-    <div className="flex items-center gap-2.5 rounded-xl border border-white/[0.06] bg-white/[0.03] px-2.5 py-2">
+    <div className="flex min-w-0 items-start gap-2.5 rounded-xl border border-white/[0.06] bg-white/[0.03] px-2.5 py-2">
       <Icon
-        className="size-3.5 shrink-0 text-emerald-400/90"
+        className="mt-0.5 size-3.5 shrink-0 text-emerald-400/90"
         strokeWidth={2.1}
         aria-hidden
       />
-      <span className="min-w-0 flex-1 truncate text-sm font-semibold text-white">
+      <span className="min-w-0 flex-1 break-words text-sm font-semibold leading-snug text-white">
         {row.label}
       </span>
-      <span className="shrink-0 text-sm font-medium tabular-nums text-emerald-400">
-        {row.value}
-      </span>
+      {row.value ? (
+        <span className="shrink-0 text-sm font-medium tabular-nums text-emerald-400">
+          {row.value}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function ListIconRow({
+  icon,
+  children,
+}: {
+  icon: IconName;
+  children: ReactNode;
+}) {
+  const Icon = IconMap[icon];
+  return (
+    <div className="flex min-w-0 items-start gap-2 rounded-xl border border-white/[0.06] bg-white/[0.03] px-2.5 py-2">
+      <Icon
+        className="mt-0.5 size-3.5 shrink-0 text-emerald-400/90"
+        strokeWidth={2.1}
+        aria-hidden
+      />
+      <div className="min-w-0 flex-1 break-words text-sm leading-snug text-zinc-300">
+        {children}
+      </div>
     </div>
   );
 }
@@ -663,7 +687,7 @@ function AgentMarkdown({
   const blocks = text.split(/\n{2,}/);
 
   return (
-    <div className="space-y-3 text-sm leading-relaxed text-zinc-300">
+    <div className="min-w-0 max-w-full space-y-3 break-words text-sm leading-relaxed text-zinc-300">
       {blocks.map((block, blockIndex) => {
         const lines = block.split("\n").filter((line) => line.trim().length > 0);
         const parsedRows = lines.map(parseRowLine);
@@ -672,7 +696,7 @@ function AgentMarkdown({
 
         if (isRowBlock) {
           return (
-            <div key={`block-${blockIndex}`} className="space-y-1.5">
+            <div key={`block-${blockIndex}`} className="min-w-0 space-y-1.5">
               {parsedRows.map((row, rowIndex) =>
                 row ? (
                   <MetricRow key={`row-${blockIndex}-${rowIndex}`} row={row} />
@@ -685,7 +709,7 @@ function AgentMarkdown({
         const isList = lines.every((line) => /^[-*•]\s+/.test(line.trim()));
         if (isList) {
           return (
-            <div key={`block-${blockIndex}`} className="space-y-1.5">
+            <div key={`block-${blockIndex}`} className="min-w-0 space-y-1.5">
               {lines.map((line, lineIndex) => {
                 const row = parseRowLine(line);
                 if (row) {
@@ -693,24 +717,26 @@ function AgentMarkdown({
                     <MetricRow key={`li-${blockIndex}-${lineIndex}`} row={row} />
                   );
                 }
+                const trimmed = line.replace(/^[-*•]\s+/, "");
+                const iconMatch = trimmed.match(
+                  /^\[icon:([a-zA-Z0-9_-]+)\]\s*/i
+                );
+                const iconName =
+                  resolveIconName(iconMatch?.[1] ?? "") ?? "MapPin";
+                const content = iconMatch
+                  ? trimmed.slice(iconMatch[0].length)
+                  : trimmed;
                 return (
-                  <div
+                  <ListIconRow
                     key={`li-${blockIndex}-${lineIndex}`}
-                    className="flex items-start gap-2 rounded-xl border border-white/[0.06] bg-white/[0.03] px-2.5 py-2"
+                    icon={iconName}
                   >
-                    <MapPin
-                      className="mt-0.5 size-3.5 shrink-0 text-emerald-400/90"
-                      strokeWidth={2.1}
-                      aria-hidden
-                    />
-                    <span className="min-w-0 flex-1 text-sm text-zinc-300">
-                      {renderInlineMarkdown(
-                        line.replace(/^[-*•]\s+/, ""),
-                        `li-${blockIndex}-${lineIndex}`,
-                        accent
-                      )}
-                    </span>
-                  </div>
+                    {renderInlineMarkdown(
+                      content,
+                      `li-${blockIndex}-${lineIndex}`,
+                      accent
+                    )}
+                  </ListIconRow>
                 );
               })}
             </div>
@@ -720,7 +746,7 @@ function AgentMarkdown({
         return (
           <div
             key={`block-${blockIndex}`}
-            className="space-y-1.5 text-sm leading-relaxed text-zinc-300"
+            className="min-w-0 space-y-1.5 text-sm leading-relaxed break-words text-zinc-300"
           >
             {lines.map((line, lineIndex) => {
               const row = parseRowLine(line);
@@ -735,7 +761,7 @@ function AgentMarkdown({
               return (
                 <p
                   key={`p-${blockIndex}-${lineIndex}`}
-                  className="text-sm leading-relaxed text-zinc-300"
+                  className="min-w-0 break-words text-sm leading-relaxed text-zinc-300"
                 >
                   {renderInlineMarkdown(
                     line,
@@ -2827,8 +2853,8 @@ function MessageBubble({
     >
       <div
         className={cn(
-          "max-w-[92%] space-y-2",
-          isUser ? "items-end" : "items-start"
+          "min-w-0 max-w-[92%] space-y-2",
+          isUser ? "w-auto items-end" : "w-full items-start"
         )}
       >
         {tools.length > 0 ? (
@@ -2836,10 +2862,10 @@ function MessageBubble({
             {tools.map((line, index) => (
               <div
                 key={`${message.id}-tool-${index}`}
-                className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/20 bg-amber-400/10 px-2.5 py-1 text-[11px] font-medium text-amber-200"
+                className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-amber-400/20 bg-amber-400/10 px-2.5 py-1 text-[11px] font-medium text-amber-200"
               >
                 <Zap className="size-3 shrink-0" />
-                {line}
+                <span className="min-w-0 break-words">{line}</span>
               </div>
             ))}
           </div>
@@ -2848,10 +2874,10 @@ function MessageBubble({
           <div
             data-allow-select="true"
             className={cn(
-              "rounded-2xl px-3.5 py-2.5 select-text",
+              "min-w-0 max-w-full rounded-2xl px-3.5 py-2.5 select-text",
               isUser
-                ? "whitespace-pre-wrap bg-emerald-500 text-sm leading-relaxed text-zinc-950"
-                : "border border-white/10 bg-white/[0.05]"
+                ? "whitespace-pre-wrap break-words bg-emerald-500 text-sm leading-relaxed text-zinc-950"
+                : "overflow-hidden border border-white/10 bg-white/[0.05]"
             )}
           >
             {isUser ? body : <AgentMarkdown text={body} accent />}
