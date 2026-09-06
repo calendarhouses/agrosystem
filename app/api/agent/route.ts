@@ -59,6 +59,9 @@ import { enqueueFieldOperationBasDraft } from "@/lib/bas-drafts/field-operation-
 import { enqueueBasSyncQueue } from "@/lib/bas-sync-queue";
 import { buildFieldTechCardMatrix } from "@/lib/field-tech-card";
 import { logActivity } from "@/lib/activity-log";
+import { listAgentRecentActivity } from "@/lib/agent-recent-activity";
+import { getAgentCompanyFinancialOverview } from "@/lib/agent-company-finance";
+import { getProactiveBriefing } from "@/lib/agent-proactive-briefing";
 import { resolveFieldCoordinates } from "@/lib/field-weather-context";
 import { shiftKyivYmd, todayKyivYmd } from "@/lib/kyiv-date";
 import { DEFAULT_SEASON, normalizeSeason } from "@/lib/season";
@@ -272,11 +275,23 @@ function humanizeAgentError(error: unknown): string {
 }
 
 const SYSTEM_PROMPT = `
-Роль: автономний диспетчер агрогосподарства LEVADIUS. Українською. Без канцеляриту й фамільярності.
+Роль: старший цифровий диспетчер агропідприємства LEVADIUS.
+Ти НЕ абстрактний AI, НЕ служба підтримки і НЕ «мовна модель». Ти штатний диспетчер машинного двору.
+Тон: діловий, чіткий, по-хорошому прискіпливий, партнерський. Лаконічно.
+Мова: українська агронома/інженера (гони, висів, перекриття, норма виливу, DUT, наряд, мотогодини, л/га).
+Стиль-якорі: «Прийнято», «Зафіксував», «Є нюанс», «Тримаю на контролі».
+ЗАБОРОНЕНО: «Як я можу вам допомогти?», «Я мовна модель», «Зверніться до адміністратора»,
+«Чудове запитання», канцелярит, фамільярність, емодзі-воду.
 
-Відповіді: максимум конкретики — цифри, статуси, списки. Мінімум розмовного тексту.
 Факти ЛИШЕ з Tools. BAS — тільки читання. Бракує даних — одне уточнення.
 Не вигадуй техніку, водіїв, ТМЦ, результати дій. CHOICE лише з даних Tools.
+
+Правило «+1 крок на випередження» (після КОЖНОЇ успішної дії — короткий супутній ризик/наступний крок):
+• Закрив наряд → auditOperationQuality (швидкість/л/га) + нагадай списати ТМЦ під наряд (якщо ЗЗР/посів/добрива).
+• Списав ТМЦ → getWarehouseStock по позиції; якщо залишок низький — попередь.
+• Зафіксував заправку → checkPredictiveRefuelNeeds / оціни чи вистачить до кінця зміни.
+• Питання по полю → getFieldWeather (вітер/дощ) у відповіді.
+• Відкрив зміну / «що по господарству?» → getProactiveBriefing.
 
 Мутації з підтвердженням (завжди draft confirmed=false → confirmed=true):
 deleteField, deleteWorkOrder, deleteServiceActs, closeWorkOrder,
@@ -330,6 +345,7 @@ previewServiceAct, executeServiceActSave, deleteServiceActs,
 prepareWorkOrder, confirmWorkOrder, startWorkOrder, updateWorkOrder,
 deleteWorkOrder, closeWorkOrder,
 getOperationRates, setOperationRate,
+listRecentActivity, getCompanyFinancialOverview, getProactiveBriefing,
 logUnsupportedRequest, getUnhandledRequests.
 
 Таблиці: farm_fields, equipment, implements, inventory_items_cache,
@@ -424,6 +440,13 @@ wialon_field_fuel_logs, field_ndvi_alerts, equipment_maintenance_logs.
   («Вивантаж повний Excel робіт», «Зроби таблицю експорту всіх станцій за сезон»)
 • Фенологія / BBCH / GDD / «phenology bar» / «скільки градусів набрало поле»
   → getCropPhenologyStage
+• Журнал дій команди («що робила команда сьогодні», «хто видалив наряд»,
+  «покажи останні дії») → listRecentActivity
+• Відкрити журнал подій → [[ACTION:NAVIGATE|/journal|…]]
+• Фінкартина господарства («скільки заробили проти витрат», «собівартість гектара по фірмі»)
+  → getCompanyFinancialOverview
+• Відкрити фінансовий дашборд → [[ACTION:NAVIGATE|/finance|…]]
+• Зведення зміни / «що по господарству зараз?» / «брифінг» → getProactiveBriefing
 • Невідома дія → logUnsupportedRequest, потім дослівно:
   «Повна халепа, такого я ще не вмію робити, але Назар навчить скоро!»
   Помилка існуючого tool ≠ «не вмію» — поясни і запропонуй повторити.
@@ -451,8 +474,8 @@ prepareWorkOrder лише коли всі слоти зібрані. Не виг
 • Іконки лише [icon:wheat|fuel|warehouse|tractor|check|alert|mappin|calendar|filetext]
 • Рядки: [row:mappin|Поле 11.2|78.9 га]
 • Кнопки: [[CHOICE:…]] | [[ACTION:REPLY|Icon|…]] | [[ACTION:NAVIGATE|/path|Icon|Текст]]
-• NAVIGATE лише за темою (макс. 1): /fuel /inventory /operations /equipment /accounting /?field=UUID
-• Після фактів — одна коротка пропозиція наступного кроку.
+• NAVIGATE лише за темою (макс. 1): /fuel /inventory /operations /equipment /accounting /finance /journal /?field=UUID
+• Після фактів — обовʼязково +1 крок на випередження (ризик / наступна дія), 1 коротке речення.
 • UI-картки (списання, наряд, акт, накладна, updateField) — НЕ дублюй їхні CHOICE.
 `.trim();
 
@@ -1678,12 +1701,130 @@ function countHeavyItems(value: unknown): number {
   return value.length;
 }
 
+/** Ідентифікатори / confirm-скаляри — ніколи не вирізати з історії LLM */
+const TOOL_HISTORY_PRESERVE_KEYS = [
+  "id",
+  "uuid",
+  "fieldId",
+  "workOrderId",
+  "moveId",
+  "equipmentId",
+  "reportId",
+  "storageId",
+  "transactionId",
+  "dbId",
+  "itemId",
+  "actId",
+  "actIds",
+  "receiptId",
+  "implementId",
+  "wialonUnitId",
+  "wialonGeofenceId",
+  "draftId",
+  "previewId",
+  "fromStorageId",
+  "toStorageId",
+  "clientKey",
+  "fieldIdOrName",
+  "equipmentIdOrName",
+  "fieldName",
+  "equipmentName",
+  "itemName",
+  "storageName",
+  "status",
+  "success",
+  "error",
+  "confirmChoice",
+  "cancelChoice",
+  "userHint",
+  "warning",
+  "message",
+  "badge",
+  "kind",
+  "canConfirm",
+  "confirmed",
+  "factArea",
+  "fuelUsed",
+  "plannedBudgetPerHa",
+  "quantity",
+  "liters",
+  "invoiceNumber",
+  "supplier",
+  "contractorName",
+  "totalAmount",
+  "deletedCount",
+  "count",
+  "fieldCount",
+  "empty",
+  "emptyHint",
+] as const;
+
+function pickHistoryPreserveFields(
+  row: Record<string, unknown>
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const key of TOOL_HISTORY_PRESERVE_KEYS) {
+    if (!(key in row) || row[key] == null) continue;
+    const value = row[key];
+    if (typeof value !== "object") {
+      out[key] = value;
+      continue;
+    }
+    // actIds та подібні масиви примітивів
+    if (
+      Array.isArray(value) &&
+      value.every((v) => typeof v === "string" || typeof v === "number")
+    ) {
+      out[key] = value;
+    }
+  }
+  if (row.pending && typeof row.pending === "object" && !Array.isArray(row.pending)) {
+    const pending: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(
+      row.pending as Record<string, unknown>
+    )) {
+      if (v != null && typeof v !== "object") pending[k] = v;
+    }
+    if (Object.keys(pending).length > 0) out.pending = pending;
+  }
+  return out;
+}
+
 function compactHeavyToolOutput(
   output: unknown,
   toolName: string
 ): unknown {
   if (!output || typeof output !== "object") return output;
   const row = output as Record<string, unknown>;
+
+  // Підтвердження: зберігаємо payload майже цілком (без важких списків кандидатів)
+  if (row.status === "requires_confirmation") {
+    const preserved = pickHistoryPreserveFields(row);
+    const slimRest: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(row)) {
+      if (k === "candidates" || k === "equipmentCandidates") continue;
+      if (k in preserved) continue;
+      if (v == null) continue;
+      if (typeof v !== "object") {
+        slimRest[k] = v;
+        continue;
+      }
+      if (k === "wialonTrack" && !Array.isArray(v)) {
+        const track = v as Record<string, unknown>;
+        slimRest.wialonTrack = {
+          distanceKm: track.distanceKm,
+          workHours: track.workHours,
+          unitId: track.unitId,
+          widthM: track.widthM,
+        };
+      }
+    }
+    return {
+      ...slimRest,
+      ...preserved,
+      tool: toolName,
+    };
+  }
 
   // Великі списки складу / флоту / полів / історії → компактний статус
   const arrayKeys = [
@@ -1727,35 +1868,7 @@ function compactHeavyToolOutput(
   }
 
   if (hadHeavyArray || raw.length > 500) {
-    // Зберігаємо критичні скаляри для підтверджень
-    for (const key of [
-      "status",
-      "success",
-      "error",
-      "receiptId",
-      "actId",
-      "actIds",
-      "fieldId",
-      "fieldName",
-      "confirmChoice",
-      "cancelChoice",
-      "userHint",
-      "warning",
-      "message",
-      "invoiceNumber",
-      "supplier",
-      "contractorName",
-      "totalAmount",
-      "deletedCount",
-      "count",
-      "fieldCount",
-      "empty",
-      "emptyHint",
-    ] as const) {
-      if (key in row && row[key] != null && typeof row[key] !== "object") {
-        compact[key] = row[key];
-      }
-    }
+    Object.assign(compact, pickHistoryPreserveFields(row));
     if (typeof row.status === "string") compact.status = row.status;
     compact.count =
       totalItems ||
@@ -1784,8 +1897,14 @@ function slimHistoricToolPart(part: Record<string, unknown>): Record<string, unk
   }
   if ("input" in next && next.input != null) {
     const raw = JSON.stringify(next.input);
-    if (raw.length > 300) {
-      next.input = { success: true, status: "loaded", count: 1 };
+    if (raw.length > 300 && typeof next.input === "object") {
+      const preserved = pickHistoryPreserveFields(
+        next.input as Record<string, unknown>
+      );
+      next.input =
+        Object.keys(preserved).length > 0
+          ? preserved
+          : { success: true, status: "loaded", count: 1 };
     }
   }
   return next;
@@ -16884,6 +17003,139 @@ function createAgentTools(options?: {
               error instanceof Error
                 ? error.message
                 : "Невідома помилка збереження ставки",
+          };
+        }
+      },
+    }),
+
+    listRecentActivity: tool({
+      description:
+        "Журнал дій команди (activity_log): хто що зробив — наряди, склад, паливо, техніка, бухгалтерія. Для запитів «що робила команда», «хто видалив», «останні дії».",
+      inputSchema: z.object({
+        category: z
+          .enum([
+            "all",
+            "operations",
+            "inventory",
+            "fuel",
+            "equipment",
+            "accounting",
+          ])
+          .default("all")
+          .describe("Категорія подій"),
+        actionType: z
+          .enum(["all", "create", "update", "delete", "close"])
+          .default("all")
+          .describe("Тип дії"),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(100)
+          .default(25)
+          .describe("Скільки подій повернути"),
+        period: z
+          .enum(["today", "yesterday", "last_7_days", "all"])
+          .default("today")
+          .describe("Період"),
+      }),
+      execute: async ({ category, actionType, limit, period }) => {
+        console.log("[TOOL: listRecentActivity]", {
+          category,
+          actionType,
+          limit,
+          period,
+        });
+        try {
+          return await listAgentRecentActivity({
+            category,
+            actionType,
+            limit,
+            period,
+          });
+        } catch (error) {
+          console.error(
+            "[TOOL: listRecentActivity] Unexpected error:",
+            error instanceof Error ? error.message : error
+          );
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка журналу дій",
+          };
+        }
+      },
+    }),
+
+    getCompanyFinancialOverview: tool({
+      description:
+        "Зведена фінкартина господарства: дохід (продажі), витрати (ТМЦ/паливо/ЗП/послуги), маржа, ₴/га. Для «фінансова картина», «заробили проти витрат», «собівартість гектара».",
+      inputSchema: z.object({
+        season: z
+          .number()
+          .int()
+          .default(2026)
+          .describe("Рік сезону"),
+        period: z
+          .enum([
+            "year_to_date",
+            "current_month",
+            "last_month",
+            "full_season",
+          ])
+          .default("full_season")
+          .describe("Період агрегації"),
+      }),
+      execute: async ({ season, period }) => {
+        console.log("[TOOL: getCompanyFinancialOverview]", {
+          season,
+          period,
+        });
+        try {
+          return await getAgentCompanyFinancialOverview({
+            season,
+            period,
+          });
+        } catch (error) {
+          console.error(
+            "[TOOL: getCompanyFinancialOverview] Unexpected error:",
+            error instanceof Error ? error.message : error
+          );
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка фінзвіту",
+          };
+        }
+      },
+    }),
+
+    getProactiveBriefing: tool({
+      description:
+        "Оперативне зведення зміни: техніка в полі, критичні баки (<15%), радар DUT, погодні ризики. Для «брифінг», «що по господарству зараз».",
+      inputSchema: z.object({}),
+      execute: async () => {
+        console.log("[TOOL: getProactiveBriefing]");
+        try {
+          return await getProactiveBriefing();
+        } catch (error) {
+          console.error(
+            "[TOOL: getProactiveBriefing] Unexpected error:",
+            error instanceof Error ? error.message : error
+          );
+          return {
+            ok: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка зведення зміни",
           };
         }
       },

@@ -5,7 +5,8 @@ import type { NextRequest } from "next/server";
  *
  * Підтримує:
  *   Authorization: Bearer $CRON_SECRET
- *   ?secret=$CRON_SECRET  (зручно для cron-job.org без custom headers)
+ *   ?secret=$CRON_SECRET
+ *   ?key=$CRON_SECRET       (cron-job.org без custom headers)
  */
 export function authorizeCron(request: NextRequest): boolean {
   const secret = process.env.CRON_SECRET?.trim();
@@ -17,6 +18,8 @@ export function authorizeCron(request: NextRequest): boolean {
   const header = request.headers.get("authorization") ?? "";
   if (header === `Bearer ${secret}`) return true;
 
-  const querySecret = new URL(request.url).searchParams.get("secret")?.trim();
+  const params = new URL(request.url).searchParams;
+  const querySecret =
+    params.get("key")?.trim() || params.get("secret")?.trim() || "";
   return querySecret === secret;
 }

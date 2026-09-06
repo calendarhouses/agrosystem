@@ -112,6 +112,62 @@ const QUICK_CHIPS = [
   "Чи є незакриті наряди?",
 ] as const;
 
+const BRIEFING_STALE_MS = 2 * 60 * 60 * 1000;
+const BRIEFING_LAST_CHAT_KEY = "levadius-last-chat-at";
+
+type ProactiveBriefPriority = {
+  id: string;
+  severity: "critical" | "warning" | "info";
+  title: string;
+  detail: string;
+};
+
+type ProactiveBriefAction = {
+  id: string;
+  label: string;
+  prompt: string;
+};
+
+type ProactiveBriefingUi = {
+  tone: "alert" | "calm";
+  headline: string;
+  summary: string;
+  priorities: ProactiveBriefPriority[];
+  actions: ProactiveBriefAction[];
+  stats: {
+    machinesInField: number;
+    lowFuelCount: number;
+    radarUnrecordedCount: number;
+    weatherRiskCount: number;
+  };
+};
+
+function readLastChatAt(): number | null {
+  try {
+    const raw = localStorage.getItem(BRIEFING_LAST_CHAT_KEY);
+    if (!raw) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeLastChatAt(ts = Date.now()) {
+  try {
+    localStorage.setItem(BRIEFING_LAST_CHAT_KEY, String(ts));
+  } catch {
+    /* ignore */
+  }
+}
+
+function shouldFetchProactiveBriefing(messageCount: number): boolean {
+  if (messageCount === 0) return true;
+  const last = readLastChatAt();
+  if (last == null) return true;
+  return Date.now() - last > BRIEFING_STALE_MS;
+}
+
 function greetingFirstName(me: AppActor | null): string | null {
   const raw = (me?.label || me?.fullName || "").trim();
   if (!raw || raw === "Користувач") return null;
@@ -165,6 +221,16 @@ function pickWelcomeGreeting(input: {
     tipPool = [
       "Можу допомогти зібрати наряд під техніку.",
       "Що перевіряємо по техніці?",
+    ];
+  } else if (path.startsWith("/finance")) {
+    tipPool = [
+      "Можу звести доходи й витрати по сезону.",
+      "Потрібна собівартість гектара по фірмі — пиши.",
+    ];
+  } else if (path.startsWith("/journal")) {
+    tipPool = [
+      "Можу показати, що робила команда сьогодні.",
+      "Хто що змінив у системі — питайте.",
     ];
   } else {
     tipPool = [
@@ -255,8 +321,11 @@ const TOOL_STATUS_LABELS: Record<string, string> = {
   deleteField: "Готую видалення / архів поля…",
   analyzeAndSaveScoutingReport: "Аналізую фото посіву…",
   createWorkOrderFromGpsVisit: "Готую наряд з GPS Wialon…",
+  registerWarehouseItem: "Реєструю нову позицію складу…",
   writeWarehouseItem: "Реєструю нову позицію складу…",
   writeOffInventoryToField: "Списую ТМЦ на поле…",
+  updateInventoryWriteOff: "Оновлюю списання ТМЦ…",
+  deleteInventoryWriteOff: "Скасовую списання ТМЦ…",
   listInventoryMoves: "Читаю журнал рухів ТМЦ…",
   createInventoryInbound: "Готую прихід ТМЦ…",
   createInventorySale: "Готую продаж врожаю…",
@@ -277,10 +346,17 @@ const TOOL_STATUS_LABELS: Record<string, string> = {
   deleteServiceActs: "Готую видалення актів…",
   prepareWorkOrder: "Готую чернетку наряду…",
   confirmWorkOrder: "Зберігаю наряд у Хронологію…",
+  startWorkOrder: "Стартую наряд…",
+  updateWorkOrder: "Оновлюю наряд…",
   deleteWorkOrder: "Шукаю наряд для видалення…",
   closeWorkOrder: "Закриваю наряд / фіксую факт…",
+  updateScoutingReport: "Оновлюю звіт скаутингу…",
+  deleteScoutingReport: "Видаляю звіт скаутингу…",
   getOperationRates: "Звіряю тарифи ₴/га…",
   setOperationRate: "Оновлюю ставку операції…",
+  listRecentActivity: "Дивлюсь журнал дій команди…",
+  getCompanyFinancialOverview: "Зводжу фінанси господарства…",
+  getProactiveBriefing: "Збираю оперативне зведення зміни…",
   logUnsupportedRequest: "Записую в беклог Назару…",
   getUnhandledRequests: "Читаю беклог фіч…",
 };
@@ -2282,6 +2358,292 @@ function FuelOpsConfirmCard({
           </button>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+type MutationConfirmPreview = {
+  toolName: string;
+  status: "requires_confirmation";
+  title: string;
+  subtitle: string;
+  details: string[];
+  confirmChoice: string;
+  cancelChoice: string;
+  canConfirm: boolean;
+  tone: "amber" | "rose";
+  badge: string;
+};
+
+const MUTATION_CONFIRM_TOOLS = [
+  "closeWorkOrder",
+  "unlinkEquipmentWialonUnit",
+  "unlinkFieldWialonGeofence",
+  "updateFieldPlannedBudget",
+  "deleteInventoryWriteOff",
+  "deleteScoutingReport",
+] as const;
+
+function extractMutationConfirmPreviews(
+  message: UIMessage
+): MutationConfirmPreview[] {
+  const items: MutationConfirmPreview[] = [];
+
+  for (const part of message.parts) {
+    const toolName =
+      part.type === "dynamic-tool" && "toolName" in part
+        ? String(part.toolName)
+        : part.type.startsWith("tool-")
+          ? part.type.slice("tool-".length)
+          : null;
+    if (
+      !toolName ||
+      !MUTATION_CONFIRM_TOOLS.includes(
+        toolName as (typeof MUTATION_CONFIRM_TOOLS)[number]
+      )
+    ) {
+      continue;
+    }
+    if (!("state" in part) || part.state !== "output-available") continue;
+    if (!("output" in part) || !part.output || typeof part.output !== "object") {
+      continue;
+    }
+    const raw = part.output as Record<string, unknown>;
+    if (raw.status !== "requires_confirmation") continue;
+    if (typeof raw.confirmChoice !== "string") continue;
+
+    const userHint =
+      typeof raw.userHint === "string" ? raw.userHint.trim() : "";
+    const details: string[] = [];
+    let title = "Підтвердження";
+    let badge = "Підтвердження";
+    let tone: "amber" | "rose" = "amber";
+
+    if (toolName === "closeWorkOrder") {
+      title =
+        typeof raw.operationType === "string" && typeof raw.fieldName === "string"
+          ? `Закрити: ${raw.operationType} · ${raw.fieldName}`
+          : "Закриття наряду";
+      badge = "Наряд · факт";
+      if (typeof raw.factArea === "number") {
+        details.push(`Факт: ${raw.factArea} га`);
+      }
+      if (typeof raw.plannedArea === "number") {
+        details.push(`План: ${raw.plannedArea} га`);
+      }
+      if (typeof raw.fuelUsed === "number") {
+        details.push(`Паливо: ${raw.fuelUsed} л`);
+      }
+      if (raw.useWialonTrackArea === true) {
+        details.push("Площа з треку Wialon");
+      }
+    } else if (toolName === "unlinkEquipmentWialonUnit") {
+      title =
+        typeof raw.equipmentName === "string"
+          ? `Відвʼязати GPS · ${raw.equipmentName}`
+          : "Відвʼязка Wialon від техніки";
+      badge = "Техніка · GPS";
+      tone = "rose";
+      if (raw.wialonUnitId != null) {
+        details.push(`Unit ID: ${String(raw.wialonUnitId)}`);
+      }
+    } else if (toolName === "unlinkFieldWialonGeofence") {
+      title =
+        typeof raw.fieldName === "string"
+          ? `Відвʼязати геозону · ${raw.fieldName}`
+          : "Відвʼязка геозони поля";
+      badge =
+        typeof raw.badge === "string" ? raw.badge : "Поле · Wialon";
+      tone = "rose";
+      if (typeof raw.wialonGeofenceId === "string") {
+        details.push(`Геозона: ${raw.wialonGeofenceId}`);
+      }
+    } else if (toolName === "updateFieldPlannedBudget") {
+      title =
+        typeof raw.fieldName === "string"
+          ? `Бюджет · ${raw.fieldName}`
+          : "Плановий бюджет поля";
+      badge = "Фінанси поля";
+      if (typeof raw.plannedBudgetPerHa === "number") {
+        details.push(`Новий план: ${raw.plannedBudgetPerHa} ₴/га`);
+      }
+      if (
+        typeof raw.currentPlannedBudgetPerHa === "number" &&
+        raw.currentPlannedBudgetPerHa > 0
+      ) {
+        details.push(`Було: ${raw.currentPlannedBudgetPerHa} ₴/га`);
+      }
+      if (typeof raw.totalPlannedBudgetUah === "number") {
+        details.push(
+          `≈ ${raw.totalPlannedBudgetUah.toLocaleString("uk-UA")} ₴ на поле`
+        );
+      }
+    } else if (toolName === "deleteInventoryWriteOff") {
+      title =
+        typeof raw.itemName === "string"
+          ? `Скасувати списання · ${raw.itemName}`
+          : "Скасування списання ТМЦ";
+      badge =
+        typeof raw.badge === "string" ? raw.badge : "Склад · повернення";
+      tone = "rose";
+      if (typeof raw.quantity === "number") {
+        const unit = typeof raw.unit === "string" ? ` ${raw.unit}` : "";
+        details.push(`Повернути: ${raw.quantity}${unit}`);
+      }
+      if (typeof raw.fieldName === "string" && raw.fieldName) {
+        details.push(`Поле: ${raw.fieldName}`);
+      }
+    } else if (toolName === "deleteScoutingReport") {
+      title =
+        typeof raw.fieldName === "string"
+          ? `Видалити скаутинг · ${raw.fieldName}`
+          : "Видалення звіту скаутингу";
+      badge =
+        typeof raw.badge === "string" ? raw.badge : "Скаутинг";
+      tone = "rose";
+      if (typeof raw.date === "string" && raw.date) {
+        details.push(`Дата: ${raw.date}`);
+      }
+      if (typeof raw.notes === "string" && raw.notes.trim()) {
+        details.push(raw.notes.trim().slice(0, 120));
+      }
+    }
+
+    items.push({
+      toolName,
+      status: "requires_confirmation",
+      title,
+      subtitle: userHint,
+      details,
+      confirmChoice: raw.confirmChoice,
+      cancelChoice:
+        typeof raw.cancelChoice === "string" ? raw.cancelChoice : "Скасувати",
+      canConfirm: raw.canConfirm !== false,
+      tone,
+      badge:
+        typeof raw.badge === "string" && raw.badge.trim()
+          ? raw.badge
+          : badge,
+    });
+  }
+
+  return items;
+}
+
+function MutationConfirmCard({
+  item,
+  onReply,
+  disabled,
+}: {
+  item: MutationConfirmPreview;
+  onReply?: (text: string) => void;
+  disabled?: boolean;
+}) {
+  const [resolved, setResolved] = useState<"confirm" | "cancel" | null>(null);
+
+  function choose(kind: "confirm" | "cancel") {
+    if (disabled || resolved) return;
+    if (kind === "confirm" && !item.canConfirm) return;
+    setResolved(kind);
+    onReply?.(kind === "confirm" ? item.confirmChoice : item.cancelChoice);
+  }
+
+  const rose = item.tone === "rose";
+  const border = rose ? "border-rose-400/35" : "border-amber-400/35";
+  const gradient = rose
+    ? "from-rose-500/15 via-zinc-950/85 to-zinc-950/95"
+    : "from-amber-500/15 via-zinc-950/85 to-zinc-950/95";
+  const ring = rose
+    ? "bg-rose-500/15 ring-rose-400/25"
+    : "bg-amber-500/15 ring-amber-400/25";
+  const iconTone = rose ? "text-rose-300" : "text-amber-300";
+  const headerBorder = rose ? "border-rose-500/20" : "border-amber-500/20";
+  const badgeCls = rose
+    ? "border-rose-500/30 bg-rose-500/10 text-rose-300"
+    : "border-amber-500/30 bg-amber-500/10 text-amber-300";
+  const confirmBtn = rose
+    ? "border border-rose-400/40 bg-rose-500/20 text-rose-100 hover:bg-rose-500/30"
+    : "border border-amber-400/40 bg-amber-500/20 text-amber-100 hover:bg-amber-500/30";
+
+  return (
+    <div
+      className={cn(
+        "overflow-hidden rounded-2xl border bg-gradient-to-br shadow-[0_0_0_1px_rgba(0,0,0,0.2)]",
+        border,
+        gradient
+      )}
+    >
+      <div
+        className={cn(
+          "flex items-start gap-2.5 border-b px-3.5 py-3",
+          headerBorder
+        )}
+      >
+        <div
+          className={cn(
+            "inline-flex size-8 shrink-0 items-center justify-center rounded-xl ring-1",
+            ring
+          )}
+        >
+          <AlertCircle className={cn("size-4", iconTone)} strokeWidth={2.1} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold tracking-tight text-white">
+            {item.title}
+          </p>
+          {item.subtitle ? (
+            <p className="mt-1 text-sm leading-relaxed text-zinc-300">
+              {item.subtitle}
+            </p>
+          ) : null}
+        </div>
+        <span
+          className={cn(
+            "shrink-0 rounded-md border px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase",
+            resolved === "confirm"
+              ? "border-emerald-500/30 bg-emerald-500/15 text-emerald-300"
+              : badgeCls
+          )}
+        >
+          {resolved === "confirm" ? "Готово" : item.badge}
+        </span>
+      </div>
+      {item.details.length > 0 ? (
+        <div className="space-y-1 px-3.5 py-2.5 text-xs text-zinc-300">
+          {item.details.map((line, i) => (
+            <p key={`${i}-${line}`}>
+              <span className="font-medium text-white/90">{line}</span>
+            </p>
+          ))}
+        </div>
+      ) : null}
+      {resolved === null ? (
+        <div className="flex flex-wrap gap-2 border-t border-white/10 px-3.5 py-3">
+          <button
+            type="button"
+            disabled={disabled || !item.canConfirm}
+            onClick={() => choose("confirm")}
+            className={cn(
+              "rounded-xl px-3 py-1.5 text-xs font-semibold transition disabled:opacity-40",
+              confirmBtn
+            )}
+          >
+            Підтвердити
+          </button>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => choose("cancel")}
+            className="rounded-xl border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-zinc-300 transition hover:bg-zinc-800 disabled:opacity-40"
+          >
+            Скасувати
+          </button>
+        </div>
+      ) : (
+        <div className="border-t border-white/10 px-3.5 py-2.5 text-xs text-zinc-400">
+          {resolved === "confirm" ? "Підтверджено…" : "Скасовано"}
+        </div>
+      )}
     </div>
   );
 }
@@ -4979,6 +5341,10 @@ function MessageBubble({
     () => (isUser ? [] : extractFuelOpsConfirmPreviews(message)),
     [isUser, message]
   );
+  const mutationConfirmPreviews = useMemo(
+    () => (isUser ? [] : extractMutationConfirmPreviews(message)),
+    [isUser, message]
+  );
   const fuelRefuelDone = useMemo(
     () => (isUser ? null : extractFuelRefuelPayload(message)),
     [isUser, message]
@@ -5041,6 +5407,12 @@ function MessageBubble({
       own(item.confirmChoice);
       own(item.cancelChoice);
     }
+    for (const item of mutationConfirmPreviews) {
+      own(item.confirmChoice);
+      own(item.cancelChoice);
+      own("Підтвердити");
+      own("Скасувати");
+    }
     for (const item of maintenancePreviews) {
       own(item.confirmChoice);
       own(item.cancelChoice);
@@ -5075,6 +5447,7 @@ function MessageBubble({
     writeOffPreviews,
     fuelRefuelPreviews,
     fuelOpsConfirmPreviews,
+    mutationConfirmPreviews,
     maintenancePreviews,
     receiptRollbackConfirmations,
     serviceActDeleteConfirmations,
@@ -5113,7 +5486,8 @@ function MessageBubble({
     receiptRollbackConfirmations.length === 0 &&
     serviceActDeleteConfirmations.length === 0 &&
     invoicePreviews.length === 0 &&
-    serviceActPreviews.length === 0
+    serviceActPreviews.length === 0 &&
+    mutationConfirmPreviews.length === 0
   ) {
     return null;
   }
@@ -5197,6 +5571,18 @@ function MessageBubble({
             {fuelOpsConfirmPreviews.map((item, index) => (
               <FuelOpsConfirmCard
                 key={`${message.id}-fuelops-${item.kind}-${index}`}
+                item={item}
+                onReply={onReply}
+                disabled={replyDisabled}
+              />
+            ))}
+          </div>
+        ) : null}
+        {!isUser && mutationConfirmPreviews.length > 0 ? (
+          <div className="space-y-2">
+            {mutationConfirmPreviews.map((item, index) => (
+              <MutationConfirmCard
+                key={`${message.id}-mut-${item.toolName}-${index}`}
                 item={item}
                 onReply={onReply}
                 disabled={replyDisabled}
@@ -5412,6 +5798,10 @@ export function LevadaCopilotDrawer({
   const [me, setMe] = useState<AppActor | null>(null);
   const [bootReady, setBootReady] = useState(false);
   const [input, setInput] = useState("");
+  const [briefing, setBriefing] = useState<ProactiveBriefingUi | null>(null);
+  const [briefingLoading, setBriefingLoading] = useState(false);
+  const [briefingError, setBriefingError] = useState<string | null>(null);
+  const briefingFetchedRef = useRef(false);
   const [welcome, setWelcome] = useState<{ hi: string; tip: string } | null>(
     null
   );
@@ -5662,11 +6052,15 @@ export function LevadaCopilotDrawer({
     };
   }, []);
 
-  // Вітання фіксуємо один раз на відкриття — не стрибає, коли підвантажився профіль / змінився field
+  // Вітання-фолбек (якщо бриф ще вантажиться / впав)
   useLayoutEffect(() => {
     if (!effectiveOpen) {
       frozenWelcomeRef.current = null;
       setWelcome(null);
+      briefingFetchedRef.current = false;
+      setBriefing(null);
+      setBriefingError(null);
+      setBriefingLoading(false);
       return;
     }
     if (!bootReady) return;
@@ -5738,6 +6132,74 @@ export function LevadaCopilotDrawer({
     });
 
   const busy = status === "submitted" || status === "streaming";
+
+  /** Проактивний бриф: порожній чат або пауза >2 год */
+  useEffect(() => {
+    if (!effectiveOpen || !bootReady) return;
+    if (briefingFetchedRef.current) return;
+
+    const stalePause =
+      messages.length > 0 && shouldFetchProactiveBriefing(messages.length);
+    const emptyChat = messages.length === 0;
+    if (!emptyChat && !stalePause) return;
+
+    if (stalePause) {
+      setMessages([]);
+    }
+
+    briefingFetchedRef.current = true;
+    let cancelled = false;
+    setBriefingLoading(true);
+    setBriefingError(null);
+
+    void fetch("/api/agent/proactive-briefing", { credentials: "include" })
+      .then(async (res) => {
+        const data = (await res.json()) as ProactiveBriefingUi & {
+          ok?: boolean;
+          error?: string;
+        };
+        if (cancelled) return;
+        if (!res.ok || data.ok === false) {
+          setBriefingError(
+            typeof data.error === "string"
+              ? data.error
+              : "Не вдалося зібрати зведення"
+          );
+          return;
+        }
+        setBriefing({
+          tone: data.tone === "alert" ? "alert" : "calm",
+          headline: data.headline || "Оперативне зведення зміни",
+          summary: data.summary || "",
+          priorities: Array.isArray(data.priorities) ? data.priorities : [],
+          actions: Array.isArray(data.actions) ? data.actions : [],
+          stats: data.stats ?? {
+            machinesInField: 0,
+            lowFuelCount: 0,
+            radarUnrecordedCount: 0,
+            weatherRiskCount: 0,
+          },
+        });
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setBriefingError(
+          err instanceof Error ? err.message : "Помилка зведення зміни"
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setBriefingLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveOpen, bootReady, messages.length, setMessages]);
+
+  useEffect(() => {
+    if (messages.length === 0) return;
+    writeLastChatAt();
+  }, [messages.length]);
 
   const refreshedFieldUpdateKeysRef = useRef<Set<string>>(new Set());
   useEffect(() => {
@@ -6464,8 +6926,14 @@ export function LevadaCopilotDrawer({
         {fullscreen ? (
           <button
             type="button"
-            onClick={() => setMessages([])}
-            disabled={messages.length === 0}
+            onClick={() => {
+              setMessages([]);
+              briefingFetchedRef.current = false;
+              setBriefing(null);
+              setBriefingError(null);
+              writeLastChatAt(0);
+            }}
+            disabled={messages.length === 0 && !briefing}
             className="inline-flex size-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-zinc-300 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
             aria-label="Очистити діалог"
             title="Очистити діалог"
@@ -6489,12 +6957,96 @@ export function LevadaCopilotDrawer({
         data-allow-select="true"
         className="custom-scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-4 py-4 select-text"
       >
-        {messages.length === 0 && welcome ? (
-          <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-5">
-            <p className="text-sm font-medium text-zinc-100">{welcome.hi}</p>
-            <p className="mt-1 text-sm leading-relaxed text-zinc-400">
-              {welcome.tip}
-            </p>
+        {messages.length === 0 ? (
+          <div className="space-y-3">
+            {briefingLoading ? (
+              <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-5">
+                <div className="inline-flex items-center gap-2 text-sm text-zinc-400">
+                  <Loader2 className="size-3.5 animate-spin text-emerald-300" />
+                  Збираю оперативне зведення зміни…
+                </div>
+              </div>
+            ) : null}
+
+            {briefing && !briefingLoading ? (
+              <div
+                className={cn(
+                  "overflow-hidden rounded-2xl border px-4 py-4",
+                  briefing.tone === "alert"
+                    ? "border-amber-400/30 bg-gradient-to-br from-amber-500/10 via-zinc-950/80 to-zinc-950/95"
+                    : "border-emerald-400/25 bg-gradient-to-br from-emerald-500/10 via-zinc-950/80 to-zinc-950/95"
+                )}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-bold tracking-[0.16em] text-zinc-500 uppercase">
+                      Диспетчер на зміні
+                    </p>
+                    <p className="mt-1 text-sm font-semibold tracking-tight text-white">
+                      {briefing.headline}
+                    </p>
+                  </div>
+                  <span
+                    className={cn(
+                      "shrink-0 rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase",
+                      briefing.tone === "alert"
+                        ? "border-amber-400/35 bg-amber-500/15 text-amber-200"
+                        : "border-emerald-400/35 bg-emerald-500/15 text-emerald-200"
+                    )}
+                  >
+                    {briefing.tone === "alert" ? "Увага" : "Норма"}
+                  </span>
+                </div>
+                <p className="mt-2 text-sm leading-relaxed text-zinc-300">
+                  {briefing.summary}
+                </p>
+                <div className="mt-3 flex flex-wrap gap-1.5 text-[10px] text-zinc-500">
+                  <span className="rounded-md border border-white/10 px-2 py-0.5">
+                    У полі: {briefing.stats.machinesInField}
+                  </span>
+                  <span className="rounded-md border border-white/10 px-2 py-0.5">
+                    Баки &lt;15%: {briefing.stats.lowFuelCount}
+                  </span>
+                  <span className="rounded-md border border-white/10 px-2 py-0.5">
+                    DUT: {briefing.stats.radarUnrecordedCount}
+                  </span>
+                  <span className="rounded-md border border-white/10 px-2 py-0.5">
+                    Погода: {briefing.stats.weatherRiskCount}
+                  </span>
+                </div>
+                {briefing.priorities.length > 0 ? (
+                  <ul className="mt-3 space-y-2">
+                    {briefing.priorities.slice(0, 5).map((item) => (
+                      <li
+                        key={item.id}
+                        className="rounded-xl border border-white/8 bg-black/20 px-3 py-2"
+                      >
+                        <p className="text-xs font-semibold text-zinc-100">
+                          {item.title}
+                        </p>
+                        <p className="mt-0.5 text-[11px] leading-relaxed text-zinc-400">
+                          {item.detail}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+            ) : null}
+
+            {!briefing && !briefingLoading && welcome ? (
+              <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-5">
+                <p className="text-sm font-medium text-zinc-100">{welcome.hi}</p>
+                <p className="mt-1 text-sm leading-relaxed text-zinc-400">
+                  {welcome.tip}
+                </p>
+                {briefingError ? (
+                  <p className="mt-2 text-[11px] text-amber-200/80">
+                    Зведення недоступне: {briefingError}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         ) : null}
 
@@ -6554,7 +7106,10 @@ export function LevadaCopilotDrawer({
       >
         {messages.length === 0 ? (
           <div className="mb-3 flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {QUICK_CHIPS.map((chip) => (
+            {(briefing?.actions?.length
+              ? briefing.actions.map((a) => a.prompt)
+              : QUICK_CHIPS
+            ).map((chip) => (
               <button
                 key={chip}
                 type="button"
@@ -6562,7 +7117,8 @@ export function LevadaCopilotDrawer({
                 onClick={() => void submitText(chip)}
                 className="shrink-0 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-zinc-300 transition hover:border-emerald-400/30 hover:bg-emerald-400/10 hover:text-emerald-100 disabled:opacity-50"
               >
-                {chip}
+                {briefing?.actions?.find((a) => a.prompt === chip)?.label ??
+                  chip}
               </button>
             ))}
           </div>

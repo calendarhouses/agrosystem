@@ -142,6 +142,20 @@ export function useFieldTimeline(season?: string) {
     void load({ force: true });
   }, [load, resolvedSeason]);
 
+  /** LEVADIUS / UI: після мутацій нарядів, полів, скаутингу — негайний refetch */
+  useEffect(() => {
+    function onFieldsMutated() {
+      timelineCache.delete(resolvedSeason);
+      void load({ force: true });
+    }
+    window.addEventListener("field-updated", onFieldsMutated);
+    window.addEventListener("levada:fields-updated", onFieldsMutated);
+    return () => {
+      window.removeEventListener("field-updated", onFieldsMutated);
+      window.removeEventListener("levada:fields-updated", onFieldsMutated);
+    };
+  }, [load, resolvedSeason]);
+
   return {
     fieldsWithTimeline,
     isLoading,

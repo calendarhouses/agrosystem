@@ -1582,6 +1582,18 @@ export function EquipmentView() {
     if (unit) setSelectedUnit(unit);
   }, [loading, units, searchParams]);
 
+  /** LEVADIUS: create/link/unlink/toggle/tank → reload fleet catalog */
+  useEffect(() => {
+    function onEquipmentUpdated() {
+      invalidateAppCache("api:equipment:fleet");
+      setFleetRefreshToken((n) => n + 1);
+    }
+    window.addEventListener("equipment-updated", onEquipmentUpdated);
+    return () => {
+      window.removeEventListener("equipment-updated", onEquipmentUpdated);
+    };
+  }, []);
+
   /** LEVADIUS: focus-equipment-map */
   useEffect(() => {
     function onFocusEquipment(event: Event) {

@@ -234,6 +234,19 @@ export function OperationsMatrixView() {
       window.removeEventListener("timeline-set-view", onTimelineSetView);
   }, [selectViewMode]);
 
+  /** LEVADIUS: закриття / створення / правка наряду → перемалювати станції */
+  useEffect(() => {
+    function onFieldUpdated() {
+      refresh();
+    }
+    window.addEventListener("field-updated", onFieldUpdated);
+    window.addEventListener("levada:fields-updated", onFieldUpdated);
+    return () => {
+      window.removeEventListener("field-updated", onFieldUpdated);
+      window.removeEventListener("levada:fields-updated", onFieldUpdated);
+    };
+  }, [refresh]);
+
   const searchQuery = normalizeSearch(search);
 
   const chronicleIsoRange = useMemo(

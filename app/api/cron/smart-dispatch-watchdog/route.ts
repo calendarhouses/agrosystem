@@ -18,9 +18,10 @@ const JSON_UTF8 = {
  *
  * cron-job.org:
  *   URL: https://<domain>/api/cron/smart-dispatch-watchdog
- *   Method: GET
+ *   Method: GET або POST
  *   Schedule: every 15–30 minutes
- *   Headers: Authorization: Bearer <CRON_SECRET>
+ *   Auth: Authorization: Bearer <CRON_SECRET>
+ *     або ?key=<CRON_SECRET> (якщо headers недоступні)
  *   Optional: ?dryRun=1
  */
 async function handle(request: NextRequest) {
