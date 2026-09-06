@@ -5741,7 +5741,7 @@ function AgentAvatar({ live }: { live: boolean }) {
       <div className="size-full overflow-hidden rounded-2xl ring-1 ring-emerald-400/35">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src="/icons/levadius-avatar.jpg"
+          src="/icons/levadius-avatar.jpg?v=8"
           alt=""
           className="size-full object-cover object-center"
         />

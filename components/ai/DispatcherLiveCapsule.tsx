@@ -1,6 +1,6 @@
 "use client";
 
-import { MessageCircle, X } from "lucide-react";
+import { X } from "lucide-react";
 import { usePathname } from "next/navigation";
 import {
   useCallback,
@@ -47,9 +47,59 @@ function writeFlag(key: string, value: boolean) {
   }
 }
 
-/** Спільна позиція стрічки: під notch / Dynamic Island, не перекриває контент. */
-const STRIP_POS =
-  "fixed left-1/2 z-[45] -translate-x-1/2 top-[max(0.5rem,env(safe-area-inset-top,0px))]";
+/**
+ * Окремий док: не top-center overlay.
+ * Моб — над bottom-nav / peek, зліва (zoom карти справа).
+ * ПК — правий низ, вище NavigationControl, осторонь лівих панелей.
+ */
+const DOCK_SHELL = cn(
+  "pointer-events-none fixed z-[35] flex flex-col gap-2",
+  "left-[max(0.75rem,env(safe-area-inset-left,0px))]",
+  "bottom-[calc(var(--app-bottom-inset)+5.5rem)]",
+  "items-start",
+  "md:left-auto md:items-end",
+  "md:right-[max(1rem,env(safe-area-inset-right,0px))]",
+  "md:bottom-[max(6.75rem,calc(env(safe-area-inset-bottom,0px)+5.75rem))]",
+  "max-w-[min(22rem,calc(100vw-1.5rem))]"
+);
+
+function AvatarButton({
+  onClick,
+  title,
+  ring,
+  pulse,
+}: {
+  onClick: () => void;
+  title: string;
+  ring?: boolean;
+  pulse?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "pointer-events-auto relative inline-flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-full",
+        "border bg-zinc-950/90 shadow-lg backdrop-blur-md transition",
+        ring
+          ? "border-emerald-400/45 ring-2 ring-emerald-500/20 hover:ring-emerald-400/35"
+          : "border-white/15 hover:border-emerald-400/40"
+      )}
+      title={title}
+      aria-label={title}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/icons/levadius-avatar.jpg?v=8"
+        alt=""
+        className="size-full object-cover"
+      />
+      {pulse ? (
+        <span className="absolute top-0.5 right-0.5 size-2.5 rounded-full border-2 border-zinc-950 bg-emerald-400" />
+      ) : null}
+    </button>
+  );
+}
 
 export function DispatcherLiveCapsule(): ReactNode {
   const pathname = usePathname();
@@ -119,141 +169,140 @@ export function DispatcherLiveCapsule(): ReactNode {
 
     lastSectionRef.current = section;
     setCollapsed(false);
-    setLoading(true);
     setFadeIn(false);
-    clearCollapseTimer();
+    setLoading(true);
+    setHidden(false);
 
     abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
+    const ac = new AbortController();
+    abortRef.current = ac;
 
-    void fetch(`/api/agent/section-briefing?section=${section}`, {
-      credentials: "include",
-      signal: controller.signal,
-    })
-      .then(async (res) => {
-        const data = (await res.json()) as SectionBriefPayload & {
-          ok?: boolean;
-          error?: string;
-        };
-        if (!res.ok || data.ok !== true) {
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/agent/section-briefing?section=${encodeURIComponent(section)}`,
+          { signal: ac.signal, cache: "no-store" }
+        );
+        if (!res.ok) {
           setBrief(null);
           setHidden(true);
           return;
         }
-        if (data.skip || !data.text?.trim()) {
-          setBrief({
-            ok: true,
-            section: data.section,
-            skip: true,
-            text: "",
-            followUpPrompt: "",
-          });
+        const data = (await res.json()) as SectionBriefPayload & {
+          error?: string;
+        };
+        if (ac.signal.aborted) return;
+        if (!data?.ok || data.skip || !data.text?.trim()) {
+          setBrief(data?.ok ? data : null);
           setHidden(true);
           return;
         }
-        setBrief({
-          ok: true,
-          section: data.section,
-          skip: false,
-          text: data.text,
-          followUpPrompt: data.followUpPrompt,
-          cached: data.cached,
-        });
+        setBrief(data);
         setHidden(false);
         requestAnimationFrame(() => setFadeIn(true));
         scheduleCollapse();
-      })
-      .catch((err: unknown) => {
+      } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
         setBrief(null);
         setHidden(true);
-      })
-      .finally(() => setLoading(false));
+      } finally {
+        if (!ac.signal.aborted) setLoading(false);
+      }
+    })();
 
     return () => {
-      controller.abort();
+      ac.abort();
       clearCollapseTimer();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- brief.section навмисно не в deps
-  }, [pathname, muted, clearCollapseTimer, scheduleCollapse]);
+    // brief навмисно не в deps — інакше цикл на кожному setBrief
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname, muted, scheduleCollapse, clearCollapseTimer]);
 
-  // М'ют: лише компактний вхід у чат
-  if (muted) {
+  const hideTip = useCallback(() => {
+    setMuted(true);
+    writeFlag(MUTE_KEY, true);
+    try {
+      if (brief?.section) {
+        sessionStorage.setItem(DISMISS_KEY, brief.section);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [brief?.section]);
+
+  // М'ют / тихий розділ — лише компактний вхід у чат у док-зоні
+  if (muted || (hidden && !loading)) {
     return (
-      <div
-        className={cn(
-          "pointer-events-none fixed z-[45]",
-          "top-[max(0.5rem,env(safe-area-inset-top,0px))]",
-          "right-[max(0.75rem,env(safe-area-inset-right,0px))]"
-        )}
-      >
-        <button
-          type="button"
+      <div className={DOCK_SHELL}>
+        <AvatarButton
           onClick={() => openLevadius()}
-          className={cn(
-            "pointer-events-auto inline-flex items-center gap-2 rounded-full",
-            "border border-emerald-500/30 bg-zinc-950/85 px-2.5 py-1.5",
-            "shadow-lg shadow-emerald-950/30 backdrop-blur-md transition hover:border-emerald-400/45"
-          )}
           title="Відкрити LEVADIUS"
-          aria-label="Відкрити LEVADIUS"
-        >
-          <span className="relative size-7 overflow-hidden rounded-full ring-1 ring-white/15">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/icons/levadius-avatar.jpg"
-              alt=""
-              className="size-full object-cover"
-            />
-          </span>
-          <span className="pr-0.5 text-[10px] font-bold tracking-wide text-emerald-300 uppercase">
-            Чат
-          </span>
-        </button>
+        />
       </div>
     );
   }
 
-  if (hidden && !loading) {
-    // Тихий розділ — лише компактний вхід в агента
-    return (
-      <div
-        className={cn(
-          "pointer-events-none fixed z-[45]",
-          "top-[max(0.5rem,env(safe-area-inset-top,0px))]",
-          "right-[max(0.75rem,env(safe-area-inset-right,0px))]"
-        )}
-      >
-        <button
-          type="button"
-          onClick={() => openLevadius()}
-          className={cn(
-            "pointer-events-auto inline-flex items-center gap-2 rounded-full",
-            "border border-white/12 bg-zinc-950/80 px-2.5 py-1.5",
-            "shadow-lg backdrop-blur-md transition hover:border-emerald-400/35"
-          )}
-          title="Відкрити LEVADIUS"
-          aria-label="Відкрити LEVADIUS"
-        >
-          <span className="relative size-7 overflow-hidden rounded-full ring-1 ring-white/15">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/icons/levadius-avatar.jpg"
-              alt=""
-              className="size-full object-cover"
-            />
-          </span>
-          <MessageCircle className="size-3.5 text-emerald-300" />
-        </button>
-      </div>
-    );
-  }
+  const showBubble =
+    !collapsed && (loading || (Boolean(brief?.text) && !brief?.skip));
 
-  if (collapsed && brief && !brief.skip) {
-    return (
-      <div className={cn(STRIP_POS, "pointer-events-none w-[min(96vw,520px)]")}>
-        <div className="pointer-events-auto flex items-center gap-1.5">
+  return (
+    <div className={DOCK_SHELL}>
+      {showBubble ? (
+        <div
+          className={cn(
+            "pointer-events-auto w-full rounded-2xl border border-emerald-500/30",
+            "bg-zinc-950/92 px-3 py-2.5 shadow-2xl shadow-emerald-950/30 backdrop-blur-md",
+            "transition-opacity duration-300",
+            fadeIn || loading ? "opacity-100" : "opacity-0"
+          )}
+        >
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5">
+              <span className="relative flex size-2">
+                <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-50" />
+                <span className="relative inline-flex size-2 rounded-full bg-emerald-400" />
+              </span>
+              <span className="text-[10px] font-bold tracking-[0.14em] text-emerald-300 uppercase">
+                LIVE
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={hideTip}
+              className="inline-flex size-7 items-center justify-center rounded-full border border-white/10 text-zinc-400 transition hover:bg-white/10 hover:text-white"
+              title="Сховати підказку"
+              aria-label="Сховати підказку"
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (!brief?.text) {
+                openLevadius();
+                return;
+              }
+              openLevadius(brief.followUpPrompt || brief.text);
+            }}
+            className="w-full text-left text-xs leading-snug text-zinc-100 transition hover:text-emerald-50"
+          >
+            {loading && !brief?.text
+              ? "Дивлюсь, що по зміні…"
+              : brief?.text || "…"}
+          </button>
+        </div>
+      ) : null}
+
+      <div className="pointer-events-auto flex flex-row items-center gap-2 md:flex-row-reverse">
+        <AvatarButton
+          onClick={() => openLevadius(brief?.followUpPrompt || brief?.text)}
+          title="Відкрити LEVADIUS"
+          ring
+          pulse={Boolean(brief?.text && !brief.skip)}
+        />
+
+        {collapsed && brief && !brief.skip ? (
           <button
             type="button"
             onClick={() => {
@@ -262,116 +311,16 @@ export function DispatcherLiveCapsule(): ReactNode {
               scheduleCollapse();
             }}
             className={cn(
-              "inline-flex min-w-0 flex-1 items-center gap-2 rounded-full",
-              "border border-emerald-500/30 bg-zinc-950/85 px-3 py-1.5",
-              "shadow-xl shadow-emerald-950/30 backdrop-blur-md transition hover:border-emerald-400/45"
+              "inline-flex max-w-[min(14rem,calc(100vw-5rem))] items-center gap-2 rounded-full",
+              "border border-emerald-500/30 bg-zinc-950/85 px-3 py-2",
+              "shadow-lg backdrop-blur-md transition hover:border-emerald-400/45"
             )}
             title={brief.text}
           >
             <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-emerald-400" />
             <span className="truncate text-xs text-zinc-200">{brief.text}</span>
           </button>
-          <button
-            type="button"
-            onClick={() => openLevadius(brief.followUpPrompt || brief.text)}
-            className={cn(
-              "inline-flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full",
-              "border border-emerald-500/35 bg-zinc-950/90 shadow-lg backdrop-blur-md",
-              "transition hover:border-emerald-400/50"
-            )}
-            title="Відкрити LEVADIUS"
-            aria-label="Відкрити LEVADIUS"
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/icons/levadius-avatar.jpg"
-              alt=""
-              className="size-full object-cover"
-            />
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className={cn(STRIP_POS, "pointer-events-none w-[min(96vw,720px)]")}>
-      <div
-        className={cn(
-          "pointer-events-auto flex items-center gap-2 rounded-2xl border border-emerald-500/30",
-          "bg-zinc-950/88 px-2.5 py-2 shadow-2xl shadow-emerald-950/35 backdrop-blur-md",
-          "sm:rounded-full sm:px-3"
-        )}
-      >
-        <div className="hidden shrink-0 items-center gap-1.5 pl-1 sm:flex">
-          <span className="relative flex size-2">
-            <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-50" />
-            <span className="relative inline-flex size-2 rounded-full bg-emerald-400" />
-          </span>
-          <span className="text-[10px] font-bold tracking-[0.14em] text-emerald-300 uppercase">
-            LIVE
-          </span>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => {
-            if (!brief?.text) {
-              openLevadius();
-              return;
-            }
-            openLevadius(brief.followUpPrompt || brief.text);
-          }}
-          className={cn(
-            "min-w-0 flex-1 text-left text-xs leading-snug text-zinc-100 transition",
-            "hover:text-emerald-50",
-            fadeIn || loading ? "opacity-100" : "opacity-0",
-            "duration-400"
-          )}
-        >
-          {loading && !brief?.text
-            ? "Дивлюсь, що по зміні…"
-            : brief?.text || "…"}
-        </button>
-
-        <button
-          type="button"
-          onClick={() => openLevadius(brief?.followUpPrompt || brief?.text)}
-          className={cn(
-            "inline-flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full",
-            "border border-emerald-400/40 ring-2 ring-emerald-500/15",
-            "transition hover:ring-emerald-400/30"
-          )}
-          title="Відкрити LEVADIUS"
-          aria-label="Відкрити LEVADIUS"
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/icons/levadius-avatar.jpg"
-            alt=""
-            className="size-full object-cover"
-          />
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            setMuted(true);
-            writeFlag(MUTE_KEY, true);
-            try {
-              if (brief?.section) {
-                sessionStorage.setItem(DISMISS_KEY, brief.section);
-              }
-            } catch {
-              /* ignore */
-            }
-          }}
-          className="inline-flex size-8 shrink-0 items-center justify-center rounded-full border border-white/10 text-zinc-400 transition hover:bg-white/10 hover:text-white"
-          title="Сховати підказку"
-          aria-label="Сховати підказку"
-        >
-          <X className="size-3.5" />
-        </button>
+        ) : null}
       </div>
     </div>
   );

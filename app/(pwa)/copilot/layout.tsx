@@ -8,11 +8,11 @@ export const metadata: Metadata = {
   manifest: "/levadius.webmanifest",
   icons: {
     icon: [
-      { url: "/icons/icon-192.png?v=7", sizes: "192x192", type: "image/png" },
-      { url: "/icons/icon-512.png?v=7", sizes: "512x512", type: "image/png" },
+      { url: "/icons/icon-192.png?v=8", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512.png?v=8", sizes: "512x512", type: "image/png" },
     ],
     apple: [
-      { url: "/apple-touch-icon.png?v=7", sizes: "180x180", type: "image/png" },
+      { url: "/apple-touch-icon.png?v=8", sizes: "180x180", type: "image/png" },
     ],
   },
   appleWebApp: {

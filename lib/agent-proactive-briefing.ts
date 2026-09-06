@@ -12,6 +12,7 @@ import { resolveFuelTankVolumeLiters } from "@/lib/equipment-fuel-tanks";
 import { findUnrecordedRefuelings } from "@/lib/fuel-unrecorded-refuelings";
 import { createServiceSupabase } from "@/lib/supabase/server";
 import { getCachedWialonUnitsFull } from "@/lib/wialon-live-cache";
+import { ukPlural, ukSuspicionLabel } from "@/lib/uk-plural";
 import {
   hasValidWialonPosition,
   parseWialonUnitTelemetry,
@@ -20,6 +21,12 @@ import {
 
 const LOW_FUEL_PCT = 15;
 const LOOKBACK_HOURS = 12;
+
+function shortEquipmentName(name: string, max = 28): string {
+  const t = name.trim();
+  if (t.length <= max) return t;
+  return `${t.slice(0, max - 1).trimEnd()}…`;
+}
 
 export type ProactiveBriefPriority = {
   id: string;
@@ -145,28 +152,53 @@ function buildActions(input: {
   radarCount: number;
   weatherCount: number;
   machinesInField: number;
+  topRadarName?: string | null;
+  topRadarLiters?: number | null;
 }): ProactiveBriefAction[] {
   const actions: ProactiveBriefAction[] = [];
+  const radarName = input.topRadarName?.trim() || null;
+  const radarL =
+    input.topRadarLiters != null && Number.isFinite(input.topRadarLiters)
+      ? Math.round(input.topRadarLiters)
+      : null;
 
-  if (input.radarCount > 0) {
+  if (input.radarCount === 1 && radarName) {
+    const short = shortEquipmentName(radarName);
     actions.push({
       id: "radar",
-      label: "Перевірити радар палива",
-      prompt: "Покажи підозри на заправку повз облік",
+      label: `Розберемо ${short}?`,
+      prompt: radarL
+        ? `Розбери підозру радара по «${radarName}» (+${radarL} л): запропонуй зафіксувати в облік або відхилити як хибне спрацювання`
+        : `Розбери підозру радара по «${radarName}»: запропонуй зафіксувати в облік або відхилити як хибне спрацювання`,
+    });
+  } else if (input.radarCount > 1) {
+    actions.push({
+      id: "radar",
+      label: "З найбільшого об'єму?",
+      prompt:
+        "Покажи підозри на заправку повз облік, почни з найбільшого об'єму і запропонуй що робити з першою",
+    });
+  } else if (input.radarCount > 0) {
+    actions.push({
+      id: "radar",
+      label: "Розберемо радар?",
+      prompt:
+        "Покажи підозри на заправку повз облік і запропонуй зафіксувати або відхилити",
     });
   }
   if (input.lowFuelCount > 0) {
     actions.push({
       id: "fuel-scout",
-      label: "Паливний штурман",
-      prompt: "Кому скоро кінчиться ДП у полі?",
+      label: "Кому кінчиться ДП?",
+      prompt: "Кому скоро кінчиться ДП у полі? Запропонуй кого заправити першим",
     });
   }
   if (input.weatherCount > 0) {
     actions.push({
       id: "weather",
-      label: "Погода на вечір",
-      prompt: "Перевір погодні ризики для відкритих нарядів",
+      label: "Що з погодою?",
+      prompt:
+        "Перевір погодні ризики для відкритих нарядів і скажи, чи варто згортати роботу",
     });
   }
   if (input.machinesInField > 0) {
@@ -181,8 +213,9 @@ function buildActions(input: {
   const defaults: ProactiveBriefAction[] = [
     {
       id: "radar-default",
-      label: "Перевірити радар палива",
-      prompt: "Покажи підозри на заправку повз облік",
+      label: "Радар палива",
+      prompt:
+        "Покажи підозри на заправку повз облік і запропонуй наступний крок",
     },
     {
       id: "fleet-default",
@@ -203,6 +236,99 @@ function buildActions(input: {
   }
 
   return actions.slice(0, 3);
+}
+
+function buildAlertSummary(input: {
+  machinesInField: number;
+  lowFuelCount: number;
+  radarCount: number;
+  weatherCount: number;
+  topRadarName?: string | null;
+  topRadarLiters?: number | null;
+  topLowFuelName?: string | null;
+}): string {
+  const {
+    machinesInField,
+    lowFuelCount,
+    radarCount,
+    weatherCount,
+    topRadarName,
+    topRadarLiters,
+    topLowFuelName,
+  } = input;
+
+  const radarName = topRadarName?.trim() || null;
+  const liters =
+    topRadarLiters != null && Number.isFinite(topRadarLiters)
+      ? Math.round(topRadarLiters)
+      : null;
+
+  // Одна підозра — без «по черзі», одразу питання з вибором
+  if (radarCount === 1 && lowFuelCount === 0 && weatherCount === 0) {
+    if (radarName && liters != null) {
+      return `Радар зловив доливання повз облік: «${radarName}» +${liters} л. Зафіксуємо в облік чи це хибне спрацювання?`;
+    }
+    if (radarName) {
+      return `Радар зловив доливання повз облік на «${radarName}». Зафіксуємо в облік чи відхилимо?`;
+    }
+    return `Є 1 підозра повз облік. Зафіксуємо в облік чи відхилимо як хибне спрацювання?`;
+  }
+
+  if (radarCount === 1 && radarName) {
+    const extra: string[] = [];
+    if (lowFuelCount > 0) {
+      extra.push(
+        `${lowFuelCount} ${ukPlural(lowFuelCount, "бак", "баки", "баків")} на межі`
+      );
+    }
+    if (weatherCount > 0) {
+      extra.push(
+        `погода тисне на ${weatherCount} ${ukPlural(weatherCount, "наряд", "наряди", "нарядів")}`
+      );
+    }
+    const litersBit = liters != null ? ` (+${liters} л)` : "";
+    const extraBit = extra.length ? ` Плюс: ${extra.join(", ")}.` : "";
+    return `Спочатку радар: «${radarName}»${litersBit} повз облік.${extraBit} Зафіксувати чи відхилити?`;
+  }
+
+  const bits: string[] = [];
+  if (machinesInField > 0) bits.push(`${machinesInField} у полі`);
+  if (lowFuelCount > 0) {
+    bits.push(
+      `${lowFuelCount} ${ukPlural(lowFuelCount, "критичний бак", "критичні баки", "критичних баків")}`
+    );
+  }
+  if (radarCount > 0) {
+    bits.push(`${ukSuspicionLabel(radarCount)} повз облік`);
+  }
+  if (weatherCount > 0) {
+    bits.push(
+      `погода тисне на ${weatherCount} ${ukPlural(weatherCount, "наряд", "наряди", "нарядів")}`
+    );
+  }
+
+  // Кілька підозр — конкретне питання, не «по черзі»
+  if (radarCount > 1 && lowFuelCount === 0 && weatherCount === 0) {
+    return `Дивись: ${ukSuspicionLabel(radarCount)} повз облік. З чого почнемо — з найбільшого об'єму?`;
+  }
+
+  if (lowFuelCount > 0 && radarCount === 0 && weatherCount === 0) {
+    const who = topLowFuelName ? ` («${shortEquipmentName(topLowFuelName)}»)` : "";
+    return `Дивись: ${lowFuelCount} ${ukPlural(lowFuelCount, "бак", "баки", "баків")} на межі${who}. Кого заправити першим?`;
+  }
+
+  if (weatherCount > 0 && radarCount === 0 && lowFuelCount === 0) {
+    return `Дивись: погода тисне на ${weatherCount} ${ukPlural(weatherCount, "наряд", "наряди", "нарядів")}. Глянемо, чи згортати роботу?`;
+  }
+
+  const lead = bits.length ? `Дивись: ${bits.join(", ")}.` : "Є нюанси по зміні.";
+  if (radarCount > 0) {
+    return `${lead} Почнемо з радара — показати першу підозру?`;
+  }
+  if (lowFuelCount > 0) {
+    return `${lead} Кого з критичних баків заправити першим?`;
+  }
+  return `${lead} З чого почнемо?`;
 }
 
 /**
@@ -275,7 +401,10 @@ export async function getProactiveBriefing(): Promise<ProactiveBriefing> {
     priorities.push({
       id: "radar",
       severity: radarEvents.length >= 3 ? "critical" : "warning",
-      title: `Підозри на заправку повз облік: ${radarEvents.length}`,
+      title:
+        radarEvents.length === 1
+          ? "Підозра на заправку повз облік"
+          : `${ukSuspicionLabel(radarEvents.length)} на заправку повз облік`,
       detail: top || "Потрібне рішення оператора",
     });
   }
@@ -294,6 +423,8 @@ export async function getProactiveBriefing(): Promise<ProactiveBriefing> {
   const lowFuelCount = lowFuelHits.length;
   const radarUnrecordedCount = radarEvents.length;
   const weatherRiskCount = weather.alerts.length;
+  const topRadar = radarEvents[0] ?? null;
+  const topLowFuel = lowFuelHits[0] ?? null;
   const hasIssues =
     lowFuelCount > 0 ||
     radarUnrecordedCount > 0 ||
@@ -305,6 +436,8 @@ export async function getProactiveBriefing(): Promise<ProactiveBriefing> {
     radarCount: radarUnrecordedCount,
     weatherCount: weatherRiskCount,
     machinesInField,
+    topRadarName: topRadar?.equipmentName ?? null,
+    topRadarLiters: topRadar?.volume ?? null,
   });
 
   if (!hasIssues) {
@@ -330,20 +463,20 @@ export async function getProactiveBriefing(): Promise<ProactiveBriefing> {
     };
   }
 
-  const bits: string[] = [];
-  if (machinesInField > 0) bits.push(`${machinesInField} у полі`);
-  if (lowFuelCount > 0) bits.push(`${lowFuelCount} з критичним баком`);
-  if (radarUnrecordedCount > 0) {
-    bits.push(`${radarUnrecordedCount} підозри повз облік`);
-  }
-  if (weatherRiskCount > 0) bits.push(`погода тисне на ${weatherRiskCount}`);
-
   return {
     ok: true,
     generatedAt: new Date().toISOString(),
     tone: "alert",
     headline: "Є нюанс по зміні",
-    summary: `Дивись: ${bits.join(", ")}. Давай розберемо по черзі.`,
+    summary: buildAlertSummary({
+      machinesInField,
+      lowFuelCount,
+      radarCount: radarUnrecordedCount,
+      weatherCount: weatherRiskCount,
+      topRadarName: topRadar?.equipmentName ?? null,
+      topRadarLiters: topRadar?.volume ?? null,
+      topLowFuelName: topLowFuel?.equipmentName ?? null,
+    }),
     priorities: priorities.slice(0, 8),
     actions,
     stats: {

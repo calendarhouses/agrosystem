@@ -16,6 +16,7 @@ import { fetchCompanyFinancialOverview } from "@/lib/company-finance";
 import { findUnrecordedRefuelings } from "@/lib/fuel-unrecorded-refuelings";
 import { todayKyivYmd } from "@/lib/kyiv-date";
 import { createServiceSupabase } from "@/lib/supabase/server";
+import { ukPlural, ukSuspicionLabel } from "@/lib/uk-plural";
 
 export type { SectionId };
 export { SECTION_IDS, pathnameToSection } from "@/lib/agent-section-briefing-shared";
@@ -227,24 +228,47 @@ async function briefFuel(): Promise<BuiltBrief> {
   if (radarN === 0 && lowTanks === 0) return quiet(facts);
 
   if (radarN > 0 && lowTanks > 0) {
+    const top = radar[0];
+    const who = top?.equipmentName ? ` («${top.equipmentName}»)` : "";
     return {
       skip: false,
-      text: `Є нюанс по солярці: ${radarN} підозри повз облік і ${lowTanks} ємності майже сухі.`,
-      followUpPrompt: "Покажи підозри на заправку повз облік і низькі ємності",
+      text:
+        radarN === 1
+          ? `Є нюанс по солярці: 1 підозра повз облік${who} і ${lowTanks} ${ukPlural(lowTanks, "ємність майже суха", "ємності майже сухі", "ємностей майже сухі")}. Зафіксувати чи спочатку глянути ємності?`
+          : `Є нюанс по солярці: ${ukSuspicionLabel(radarN)} повз облік і ${lowTanks} ${ukPlural(lowTanks, "ємність майже суха", "ємності майже сухі", "ємностей майже сухі")}. З чого почнемо — з радара?`,
+      followUpPrompt:
+        radarN === 1
+          ? "Покажи підозру на заправку повз облік і запропонуй зафіксувати або відхилити; також низькі ємності"
+          : "Покажи підозри на заправку повз облік (з найбільшого) і низькі ємності",
       facts,
     };
   }
   if (radarN > 0) {
+    const top = radar[0];
+    const liters =
+      top?.volume != null && Number.isFinite(top.volume)
+        ? Math.round(top.volume)
+        : null;
+    if (radarN === 1 && top?.equipmentName) {
+      const litersBit = liters != null ? ` (+${liters} л)` : "";
+      return {
+        skip: false,
+        text: `Радар зловив доливання повз облік: «${top.equipmentName}»${litersBit}. Зафіксуємо в облік чи це хибне спрацювання?`,
+        followUpPrompt: `Розбери підозру радара по «${top.equipmentName}»: запропонуй зафіксувати в облік або відхилити як хибне спрацювання`,
+        facts,
+      };
+    }
     return {
       skip: false,
-      text: `Дивись, яка історія: датчик зловив ${radarN} доливання без запису. Розберемо?`,
-      followUpPrompt: "Покажи підозри на заправку повз облік",
+      text: `Дивись: датчик зловив ${ukSuspicionLabel(radarN)} на доливання без запису. З чого почнемо — з найбільшого об'єму?`,
+      followUpPrompt:
+        "Покажи підозри на заправку повз облік, почни з найбільшого об'єму і запропонуй що робити з першою",
       facts,
     };
   }
   return {
     skip: false,
-    text: `На ємностях тісно: ${lowTanks} уже <15%. Краще не чекати вечора.`,
+    text: `На ємностях тісно: ${lowTanks} ${ukPlural(lowTanks, "ємність", "ємності", "ємностей")} уже <15%. Краще не чекати вечора — показати які?`,
     followUpPrompt: "Покажи ємності з низьким залишком палива",
     facts,
   };

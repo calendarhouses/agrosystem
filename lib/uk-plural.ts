@@ -20,3 +20,8 @@ export function ukStationLabel(n: number): string {
 export function ukFieldLabel(n: number): string {
   return `${n} ${ukPlural(n, "поле", "поля", "полів")}`;
 }
+
+/** 1 підозра / 2 підозри / 10 підозр */
+export function ukSuspicionLabel(n: number): string {
+  return `${n} ${ukPlural(n, "підозра", "підозри", "підозр")}`;
+}
