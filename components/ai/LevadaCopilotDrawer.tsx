@@ -446,6 +446,9 @@ type LevadaCopilotDrawerProps = {
   onOpenChange: (open: boolean) => void;
   /** drawer — шторка в Farm OS; fullscreen — автономний PWA /copilot */
   variant?: "drawer" | "fullscreen";
+  /** Автозапит при відкритті з капсули ефіру */
+  seedPrompt?: string | null;
+  onSeedPromptConsumed?: () => void;
 };
 
 function formatChatError(error: Error | undefined): string {
@@ -5788,6 +5791,8 @@ export function LevadaCopilotDrawer({
   open,
   onOpenChange,
   variant = "drawer",
+  seedPrompt = null,
+  onSeedPromptConsumed,
 }: LevadaCopilotDrawerProps) {
   const fullscreen = variant === "fullscreen";
   const pathname = usePathname();
@@ -6884,6 +6889,18 @@ export function LevadaCopilotDrawer({
     });
   }
 
+  useEffect(() => {
+    if (!effectiveOpen || !bootReady) return;
+    const prompt = seedPrompt?.trim();
+    if (!prompt || busy) return;
+    const t = window.setTimeout(() => {
+      void submitText(prompt);
+      onSeedPromptConsumed?.();
+    }, 350);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- лише на новий seedPrompt
+  }, [seedPrompt, effectiveOpen, bootReady]);
+
   function onSubmit(event: FormEvent) {
     event.preventDefault();
     void submitText(input);
@@ -7357,6 +7374,7 @@ export function LevadaCopilotFullscreen(): ReactNode {
 export function LevadaCopilotHost(): ReactNode {
   const [open, setOpen] = useState(false);
   const [allowed, setAllowed] = useState(false);
+  const [seedPrompt, setSeedPrompt] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -7369,6 +7387,18 @@ export function LevadaCopilotHost(): ReactNode {
     };
   }, []);
 
+  useEffect(() => {
+    function onOpen(event: Event) {
+      const detail = (event as CustomEvent<{ prompt?: string }>).detail;
+      const prompt =
+        detail && typeof detail.prompt === "string" ? detail.prompt.trim() : "";
+      setSeedPrompt(prompt || null);
+      setOpen(true);
+    }
+    window.addEventListener("levadius:open", onOpen);
+    return () => window.removeEventListener("levadius:open", onOpen);
+  }, []);
+
   if (!allowed) return null;
 
   return (
@@ -7376,7 +7406,10 @@ export function LevadaCopilotHost(): ReactNode {
       {!open ? (
         <button
           type="button"
-          onClick={() => setOpen(true)}
+          onClick={() => {
+            setSeedPrompt(null);
+            setOpen(true);
+          }}
           aria-label="Відкрити LEVADIUS"
           className={cn(
             "fixed z-[120] size-12 overflow-visible rounded-full",
@@ -7398,7 +7431,15 @@ export function LevadaCopilotHost(): ReactNode {
         </button>
       ) : null}
       <Suspense fallback={null}>
-        <LevadaCopilotDrawer open={open} onOpenChange={setOpen} />
+        <LevadaCopilotDrawer
+          open={open}
+          onOpenChange={(next) => {
+            setOpen(next);
+            if (!next) setSeedPrompt(null);
+          }}
+          seedPrompt={seedPrompt}
+          onSeedPromptConsumed={() => setSeedPrompt(null)}
+        />
       </Suspense>
     </>
   );
