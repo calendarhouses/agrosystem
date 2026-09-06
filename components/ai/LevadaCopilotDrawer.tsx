@@ -40,7 +40,6 @@ import {
   type ReactNode,
 } from "react";
 
-import { VoiceInputButton } from "@/components/ai/VoiceInputButton";
 import { executeWarehouseReceiptAction } from "@/app/admin/inventory/actions";
 import {
   attachServiceActDocumentsAction,
@@ -7558,7 +7557,7 @@ export function LevadaCopilotDrawer({
           ? "h-[100dvh] w-full border-0"
           : cn(
               "h-full border-white/10 bg-zinc-950/90 shadow-2xl backdrop-blur-xl",
-              isMobile ? "rounded-t-3xl border-t" : "rounded-l-3xl border-l"
+              isMobile ? "rounded-t-3xl border-t" : "rounded-2xl border"
             )
       )}
     >
@@ -7567,9 +7566,7 @@ export function LevadaCopilotDrawer({
       <header
         className={cn(
           "flex shrink-0 items-center gap-3 border-b border-white/10 px-4",
-          fullscreen
-            ? "pt-[max(0.75rem,env(safe-area-inset-top))] pb-3"
-            : "py-3",
+          "pt-[max(0.75rem,env(safe-area-inset-top,0px))] pb-3",
           showBoot && "invisible"
         )}
       >
@@ -7624,7 +7621,7 @@ export function LevadaCopilotDrawer({
               <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-5">
                 <div className="inline-flex items-center gap-2 text-sm text-zinc-400">
                   <Loader2 className="size-3.5 animate-spin text-emerald-300" />
-                  Збираю оперативне зведення зміни…
+                  Збираю, що по зміні…
                 </div>
               </div>
             ) : null}
@@ -7641,40 +7638,49 @@ export function LevadaCopilotDrawer({
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="text-[10px] font-bold tracking-[0.16em] text-zinc-500 uppercase">
-                      Диспетчер на зміні
+                      LEVADIUS
                     </p>
                     <p className="mt-1 text-sm font-semibold tracking-tight text-white">
                       {briefing.headline}
                     </p>
                   </div>
-                  <span
-                    className={cn(
-                      "shrink-0 rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase",
-                      briefing.tone === "alert"
-                        ? "border-amber-400/35 bg-amber-500/15 text-amber-200"
-                        : "border-emerald-400/35 bg-emerald-500/15 text-emerald-200"
-                    )}
-                  >
-                    {briefing.tone === "alert" ? "Увага" : "Норма"}
-                  </span>
+                  {briefing.tone === "alert" ? (
+                    <span className="shrink-0 rounded-md border border-amber-400/35 bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-200 uppercase">
+                      Увага
+                    </span>
+                  ) : null}
                 </div>
                 <p className="mt-2 text-sm leading-relaxed text-zinc-300">
                   {briefing.summary}
                 </p>
-                <div className="mt-3 flex flex-wrap gap-1.5 text-[10px] text-zinc-500">
-                  <span className="rounded-md border border-white/10 px-2 py-0.5">
-                    У полі: {briefing.stats.machinesInField}
-                  </span>
-                  <span className="rounded-md border border-white/10 px-2 py-0.5">
-                    Баки &lt;15%: {briefing.stats.lowFuelCount}
-                  </span>
-                  <span className="rounded-md border border-white/10 px-2 py-0.5">
-                    Радар: {briefing.stats.radarUnrecordedCount}
-                  </span>
-                  <span className="rounded-md border border-white/10 px-2 py-0.5">
-                    Погода: {briefing.stats.weatherRiskCount}
-                  </span>
-                </div>
+                {(briefing.stats.lowFuelCount > 0 ||
+                  briefing.stats.radarUnrecordedCount > 0 ||
+                  briefing.stats.weatherRiskCount > 0 ||
+                  briefing.stats.machinesInField > 0) &&
+                briefing.tone === "alert" ? (
+                  <div className="mt-3 flex flex-wrap gap-1.5 text-[10px] text-zinc-500">
+                    {briefing.stats.machinesInField > 0 ? (
+                      <span className="rounded-md border border-white/10 px-2 py-0.5">
+                        У полі: {briefing.stats.machinesInField}
+                      </span>
+                    ) : null}
+                    {briefing.stats.lowFuelCount > 0 ? (
+                      <span className="rounded-md border border-white/10 px-2 py-0.5">
+                        Баки &lt;15%: {briefing.stats.lowFuelCount}
+                      </span>
+                    ) : null}
+                    {briefing.stats.radarUnrecordedCount > 0 ? (
+                      <span className="rounded-md border border-white/10 px-2 py-0.5">
+                        Радар: {briefing.stats.radarUnrecordedCount}
+                      </span>
+                    ) : null}
+                    {briefing.stats.weatherRiskCount > 0 ? (
+                      <span className="rounded-md border border-white/10 px-2 py-0.5">
+                        Погода: {briefing.stats.weatherRiskCount}
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
                 {briefing.priorities.length > 0 ? (
                   <ul className="mt-3 space-y-2">
                     {briefing.priorities.slice(0, 5).map((item) => (
@@ -7908,17 +7914,6 @@ export function LevadaCopilotDrawer({
             placeholder={dragOverComposer ? "Кидай файли…" : "Питай LEVADIUS…"}
             className="max-h-[min(40dvh,15rem)] min-h-11 min-w-0 flex-1 resize-none overflow-hidden rounded-2xl border border-white/10 bg-white/[0.05] px-3.5 py-2.5 text-sm leading-6 text-zinc-50 outline-none placeholder:truncate placeholder:text-zinc-500 focus:border-emerald-500/40 focus:ring-2 focus:ring-emerald-500/15"
           />
-          <VoiceInputButton
-            disabled={busy || compressingAttach}
-            value={input}
-            onTranscript={(text) => {
-              setInput(text);
-              requestAnimationFrame(resizeComposerTextarea);
-            }}
-            onAutoSend={(text) => {
-              void submitText(text);
-            }}
-          />
           {busy ? (
             <button
               type="button"
@@ -7987,10 +7982,21 @@ export function LevadaCopilotDrawer({
             }
             transition={{ type: "spring", stiffness: 380, damping: 36 }}
             className={cn(
-              "fixed z-[250]",
+              "fixed z-[250] flex flex-col overflow-hidden",
               isMobile
-                ? "inset-x-0 bottom-0 h-[min(88dvh,44rem)]"
-                : "top-0 right-0 h-full w-full max-w-[26rem]"
+                ? [
+                    "inset-x-0 bottom-0",
+                    "max-h-[min(92dvh,calc(100dvh-env(safe-area-inset-top,0px)-0.5rem))]",
+                    "h-[min(88dvh,calc(100dvh-env(safe-area-inset-top,0px)-0.75rem))]",
+                    "pb-[env(safe-area-inset-bottom,0px)]",
+                  ].join(" ")
+                : [
+                    "top-[max(0.5rem,env(safe-area-inset-top,0px))]",
+                    "right-[max(0.5rem,env(safe-area-inset-right,0px))]",
+                    "bottom-[max(0.5rem,env(safe-area-inset-bottom,0px))]",
+                    "w-[min(26rem,calc(100vw-1rem))]",
+                    "rounded-2xl border border-white/10 shadow-2xl",
+                  ].join(" ")
             )}
           >
             {panel}
@@ -8046,45 +8052,16 @@ export function LevadaCopilotHost(): ReactNode {
   if (!allowed) return null;
 
   return (
-    <>
-      {!open ? (
-        <button
-          type="button"
-          onClick={() => {
-            setSeedPrompt(null);
-            setOpen(true);
-          }}
-          aria-label="Відкрити LEVADIUS"
-          className={cn(
-            "fixed z-[120] size-12 overflow-visible rounded-full",
-            "border border-white/15 bg-zinc-950/80 shadow-[0_12px_40px_-12px_rgba(16,185,129,0.55)]",
-            "backdrop-blur-xl transition hover:border-emerald-400/40 hover:bg-zinc-900/90",
-            "active:scale-[0.97]",
-            "right-4 bottom-[calc(var(--bottom-nav-height)+0.85rem)] md:right-6 md:bottom-6"
-          )}
-        >
-          <span className="absolute inset-0 overflow-hidden rounded-full">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/icons/levadius-avatar.jpg"
-              alt=""
-              className="size-full object-cover object-center"
-            />
-          </span>
-          <span className="absolute top-1.5 right-1.5 z-10 size-2 rounded-full bg-emerald-400 ring-2 ring-zinc-950" />
-        </button>
-      ) : null}
-      <Suspense fallback={null}>
-        <LevadaCopilotDrawer
-          open={open}
-          onOpenChange={(next) => {
-            setOpen(next);
-            if (!next) setSeedPrompt(null);
-          }}
-          seedPrompt={seedPrompt}
-          onSeedPromptConsumed={() => setSeedPrompt(null)}
-        />
-      </Suspense>
-    </>
+    <Suspense fallback={null}>
+      <LevadaCopilotDrawer
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) setSeedPrompt(null);
+        }}
+        seedPrompt={seedPrompt}
+        onSeedPromptConsumed={() => setSeedPrompt(null)}
+      />
+    </Suspense>
   );
 }

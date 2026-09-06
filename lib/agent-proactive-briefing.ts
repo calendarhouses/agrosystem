@@ -308,24 +308,18 @@ export async function getProactiveBriefing(): Promise<ProactiveBriefing> {
   });
 
   if (!hasIssues) {
-    const summary = `Диспетчер на зміні. У полі ${machinesInField} ${
-      machinesInField === 1 ? "агрегат" : machinesInField < 5 ? "агрегати" : "агрегатів"
-    }, відхилень по паливу та погоді немає. Працюємо за планом.`;
+    const summary =
+      machinesInField > 0
+        ? `У полі ${machinesInField} — усе спокійно по паливу й погоді. Якщо щось смикне, я одразу скажу.`
+        : `Поки тихо: техніки в полі немає, баків і радара без сюрпризів. Питай, якщо треба щось глянути.`;
     return {
       ok: true,
       generatedAt: new Date().toISOString(),
       tone: "calm",
-      headline: "Оперативне зведення зміни",
+      headline: "Я на зміні",
       summary,
-      priorities: [
-        {
-          id: "all-clear",
-          severity: "info",
-          title: "Контроль у нормі",
-          detail: "Критичних баків, підозр повз облік і штормових ризиків немає.",
-        },
-      ],
-      actions,
+      priorities: [],
+      actions: actions.slice(0, 2),
       stats: {
         machinesInField,
         lowFuelCount: 0,
@@ -336,28 +330,20 @@ export async function getProactiveBriefing(): Promise<ProactiveBriefing> {
     };
   }
 
-  const parts: string[] = [
-    `Прийнято зміну. У полі ${machinesInField} ${
-      machinesInField === 1 ? "агрегат" : "агрегатів"
-    }.`,
-  ];
-  if (lowFuelCount > 0) {
-    parts.push(`Критичний бак (<${LOW_FUEL_PCT}%): ${lowFuelCount}.`);
-  }
+  const bits: string[] = [];
+  if (machinesInField > 0) bits.push(`${machinesInField} у полі`);
+  if (lowFuelCount > 0) bits.push(`${lowFuelCount} з критичним баком`);
   if (radarUnrecordedCount > 0) {
-    parts.push(`Підозри на заправку повз облік: ${radarUnrecordedCount}.`);
+    bits.push(`${radarUnrecordedCount} підозри повз облік`);
   }
-  if (weatherRiskCount > 0) {
-    parts.push(`Погодний ризик на відкритих нарядах: ${weatherRiskCount}.`);
-  }
-  parts.push("Тримаю на контролі — пріоритети нижче.");
+  if (weatherRiskCount > 0) bits.push(`погода тисне на ${weatherRiskCount}`);
 
   return {
     ok: true,
     generatedAt: new Date().toISOString(),
     tone: "alert",
-    headline: "Оперативне зведення зміни",
-    summary: parts.join(" "),
+    headline: "Є нюанс по зміні",
+    summary: `Дивись: ${bits.join(", ")}. Давай розберемо по черзі.`,
     priorities: priorities.slice(0, 8),
     actions,
     stats: {

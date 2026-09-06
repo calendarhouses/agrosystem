@@ -1,6 +1,6 @@
 /**
- * Секційні брифінги диспетчера (Contextual Voice Capsule).
- * Без LLM — шаблони з живими цифрами + in-memory cache 2.5 хв.
+ * Секційні брифінги диспетчера (LIVE-стрічка).
+ * Без LLM — короткі живі фрази; якщо нічого цікавого — skip (не показуємо шум).
  */
 
 import "server-only";
@@ -23,10 +23,19 @@ export { SECTION_IDS, pathnameToSection } from "@/lib/agent-section-briefing-sha
 export type SectionBriefing = {
   ok: true;
   section: SectionId;
+  /** true = нема сенсу показувати стрічку */
+  skip: boolean;
   text: string;
   followUpPrompt: string;
   generatedAt: string;
   cached: boolean;
+  facts: Record<string, number | string | boolean | null>;
+};
+
+type BuiltBrief = {
+  skip: boolean;
+  text: string;
+  followUpPrompt: string;
   facts: Record<string, number | string | boolean | null>;
 };
 
@@ -44,7 +53,16 @@ function isSectionId(value: string): value is SectionId {
   return (SECTION_IDS as readonly string[]).includes(value);
 }
 
-async function briefFields() {
+function quiet(facts: BuiltBrief["facts"]): BuiltBrief {
+  return {
+    skip: true,
+    text: "",
+    followUpPrompt: "",
+    facts,
+  };
+}
+
+async function briefFields(): Promise<BuiltBrief> {
   const supabase = createServiceSupabase();
   const since = new Date(Date.now() - 24 * 3600_000).toISOString();
 
@@ -65,44 +83,39 @@ async function briefFields() {
   const ndviRows = ndviRes.error ? [] : ndviRes.data ?? [];
   const criticalNdvi = ndviRows.filter((r) => {
     const s = String(r.severity ?? "").toLowerCase();
-    return (
-      s === "critical" ||
-      s === "high" ||
-      s === "danger" ||
-      s === "alert"
-    );
+    return s === "critical" || s === "high" || s === "danger" || s === "alert";
   }).length;
 
-  const parts: string[] = [
-    openOps > 0
-      ? `На полях ${openOps} відкритих робіт.`
-      : "Відкритих робіт на полях немає.",
-  ];
-  if (criticalNdvi > 0) {
-    parts.push(`NDVI-тривоги за добу: ${criticalNdvi} критичних.`);
-  } else {
-    parts.push(
-      ndviRows.length > 0
-        ? `NDVI за добу: ${ndviRows.length} сповіщень без критичних.`
-        : "Критичних NDVI за добу немає."
-    );
-  }
+  const facts = { openOps, criticalNdvi, ndviAlerts: ndviRows.length };
+  // Тиша, якщо немає критичного NDVI і мало/нема робіт
+  if (criticalNdvi === 0 && openOps === 0) return quiet(facts);
+  if (criticalNdvi === 0 && openOps < 3) return quiet(facts);
 
+  if (criticalNdvi > 0 && openOps > 0) {
+    return {
+      skip: false,
+      text: `Дивись: на полях ${openOps} роботи в ході, плюс ${criticalNdvi} жорстких NDVI за добу — варто глянути.`,
+      followUpPrompt: "Покажи критичні NDVI і відкриті роботи на полях",
+      facts,
+    };
+  }
+  if (criticalNdvi > 0) {
+    return {
+      skip: false,
+      text: `Є нюанс по NDVI: ${criticalNdvi} критичних за добу. Підкажи, відкриваємо карту?`,
+      followUpPrompt: "Покажи критичні NDVI на полях",
+      facts,
+    };
+  }
   return {
-    text: parts.join(" "),
-    followUpPrompt:
-      criticalNdvi > 0
-        ? "Покажи критичні NDVI і відкриті роботи на полях"
-        : "Статус полів і відкриті роботи",
-    facts: {
-      openOps,
-      criticalNdvi,
-      ndviAlerts: ndviRows.length,
-    },
+    skip: false,
+    text: `На полях зараз ${openOps} відкритих робіт — якщо треба пріоритет, скажи.`,
+    followUpPrompt: "Статус полів і відкриті роботи",
+    facts,
   };
 }
 
-async function briefEquipment() {
+async function briefEquipment(): Promise<BuiltBrief> {
   const supabase = createServiceSupabase();
   const today = todayKyivYmd();
 
@@ -151,30 +164,25 @@ async function briefEquipment() {
   }
 
   const dueSoon = due.size;
-  const parts: string[] = [
-    machines > 0
-      ? `У полі ${machines} одиниць техніки.`
-      : "Техніки в активних нарядах зараз немає.",
-  ];
-  if (dueSoon > 0) parts.push(`ТО ближче 20 м/г: ${dueSoon}.`);
-  if (idleAnomalies > 0) {
-    parts.push(`Аномальні простої сьогодні: ${idleAnomalies}.`);
-  }
+  const facts = { machines, dueSoon, idleAnomalies };
+  // Показуємо лише якщо є ТО/простої — «просто N у полі» без ризику = шум
   if (dueSoon === 0 && idleAnomalies === 0) {
-    parts.push("По ТО і простоях відхилень немає.");
+    return quiet(facts);
   }
 
+  const bits: string[] = [];
+  if (machines > 0) bits.push(`${machines} у полі`);
+  if (dueSoon > 0) bits.push(`ТО близько в ${dueSoon}`);
+  if (idleAnomalies > 0) bits.push(`дивні простої: ${idleAnomalies}`);
   return {
-    text: parts.join(" "),
-    followUpPrompt:
-      dueSoon > 0 || idleAnomalies > 0
-        ? "Хто в полі, простої та наближення ТО"
-        : "Зведення парку за сьогодні",
-    facts: { machines, dueSoon, idleAnomalies },
+    skip: false,
+    text: `По парку: ${bits.join(", ")}. Давай розберемо?`,
+    followUpPrompt: "Хто в полі, простої та наближення ТО",
+    facts,
   };
 }
 
-async function briefFuel() {
+async function briefFuel(): Promise<BuiltBrief> {
   const supabase = createServiceSupabase();
   const since = new Date(Date.now() - 24 * 3600_000).toISOString();
 
@@ -209,37 +217,40 @@ async function briefFuel() {
   }
 
   const radarN = radar.length;
-  const parts: string[] = [
-    `На ємностях ${Math.round(stockL).toLocaleString("uk-UA")} л.`,
-  ];
-  if (burned > 0) {
-    parts.push(
-      `Витрата за добу ≈ ${Math.round(burned).toLocaleString("uk-UA")} л.`
-    );
+  const facts = {
+    stockL: Math.round(stockL),
+    burned: Math.round(burned),
+    radarN,
+    lowTanks,
+  };
+
+  if (radarN === 0 && lowTanks === 0) return quiet(facts);
+
+  if (radarN > 0 && lowTanks > 0) {
+    return {
+      skip: false,
+      text: `Є нюанс по солярці: ${radarN} підозри повз облік і ${lowTanks} ємності майже сухі.`,
+      followUpPrompt: "Покажи підозри на заправку повз облік і низькі ємності",
+      facts,
+    };
   }
   if (radarN > 0) {
-    parts.push(`Підозри на заправку повз облік: ${radarN}.`);
-  } else {
-    parts.push("Непідтверджених заправок у радарі немає.");
+    return {
+      skip: false,
+      text: `Дивись, яка історія: датчик зловив ${radarN} доливання без запису. Розберемо?`,
+      followUpPrompt: "Покажи підозри на заправку повз облік",
+      facts,
+    };
   }
-  if (lowTanks > 0) parts.push(`Ємностей <15%: ${lowTanks}.`);
-
   return {
-    text: parts.join(" "),
-    followUpPrompt:
-      radarN > 0
-        ? "Покажи невраховані заправки в радарі DUT"
-        : "Залишки палива та витрата за добу",
-    facts: {
-      stockL: Math.round(stockL),
-      burned: Math.round(burned),
-      radarN,
-      lowTanks,
-    },
+    skip: false,
+    text: `На ємностях тісно: ${lowTanks} уже <15%. Краще не чекати вечора.`,
+    followUpPrompt: "Покажи ємності з низьким залишком палива",
+    facts,
   };
 }
 
-async function briefInventory() {
+async function briefInventory(): Promise<BuiltBrief> {
   const supabase = createServiceSupabase();
   const since = new Date(Date.now() - 24 * 3600_000).toISOString();
 
@@ -281,24 +292,34 @@ async function briefInventory() {
     }
   }
 
-  const parts: string[] = [
-    critical > 0
-      ? `Низькі залишки (ЗЗР/насіння/добрива <5 од.): ${critical}.`
-      : "Критичних мінімумів по ключових ТМЦ не видно.",
-    `За добу: приходів ${inbound}, продажів зерна ${sales}.`,
-  ];
+  const facts = { critical, inbound, sales };
+  if (critical === 0 && inbound === 0 && sales === 0) return quiet(facts);
 
+  if (critical > 0) {
+    return {
+      skip: false,
+      text: `На складі ${critical} позицій уже на мінімумі — краще не проґавити.`,
+      followUpPrompt: "Які ТМЦ на мінімумі",
+      facts,
+    };
+  }
+  if (sales > 0) {
+    return {
+      skip: false,
+      text: `За добу пішло ${sales} продажів зерна${inbound > 0 ? ` і ${inbound} приходів` : ""}. Можу розкласти.`,
+      followUpPrompt: "Останні рухи складу за добу",
+      facts,
+    };
+  }
   return {
-    text: parts.join(" "),
-    followUpPrompt:
-      critical > 0
-        ? "Які ТМЦ на мінімумі і що рухалось на складі за добу"
-        : "Залишки складу та останні рухи за добу",
-    facts: { critical, inbound, sales },
+    skip: false,
+    text: `Сьогодні ${inbound} приходів на склад — якщо треба, пройдемось разом.`,
+    followUpPrompt: "Останні приходи на склад",
+    facts,
   };
 }
 
-async function briefOperations() {
+async function briefOperations(): Promise<BuiltBrief> {
   const supabase = createServiceSupabase();
   const since = new Date(Date.now() - 24 * 3600_000).toISOString();
 
@@ -320,96 +341,79 @@ async function briefOperations() {
   for (const row of completed.error ? [] : completed.data ?? []) {
     const fact = Number(row.fuel_fact);
     const plan = Number(row.fuel_plan);
-    if (Number.isFinite(fact) && Number.isFinite(plan) && plan > 0 && fact > plan * 1.2) {
+    if (
+      Number.isFinite(fact) &&
+      Number.isFinite(plan) &&
+      plan > 0 &&
+      fact > plan * 1.2
+    ) {
       fuelOveruse += 1;
     }
   }
 
-  const parts: string[] = [
-    activeN > 0
-      ? `Активних нарядів: ${activeN}.`
-      : "Активних нарядів зараз немає.",
-  ];
-  if (fuelOveruse > 0) {
-    parts.push(
-      `За добу ${fuelOveruse} закритих з перевищенням палива >20% плану.`
-    );
-  } else {
-    parts.push("Аномалій витрати палива по закритих за добу немає.");
-  }
+  const facts = { activeN, fuelOveruse };
+  // Без аномалій і без активних — тиша; лише активні теж не спамимо
+  if (fuelOveruse === 0) return quiet(facts);
 
   return {
-    text: parts.join(" "),
-    followUpPrompt:
-      fuelOveruse > 0
-        ? "Покажи наряди з перевищенням палива та активні роботи"
-        : "Активні наряди та підсумок дня",
-    facts: { activeN, fuelOveruse },
+    skip: false,
+    text: `Є нюанс: ${fuelOveruse} закритих нарядів спалили >20% над планом. Подивимось?`,
+    followUpPrompt: "Покажи наряди з перевищенням палива",
+    facts,
   };
 }
 
-async function briefAccounting() {
+async function briefAccounting(): Promise<BuiltBrief> {
   const queue = await listAgentAccountantQueue({
     status: "new",
     limit: 80,
   });
 
   if (!queue.ok) {
-    return {
-      text: "Чергу бухгалтерії зараз не вдалося прочитати.",
-      followUpPrompt: "Що висить у черзі бухгалтерії",
-      facts: { count: 0, sum: 0 },
-    };
+    return quiet({ count: 0, sum: 0 });
   }
 
   const count = queue.count;
   const sum = Math.round(queue.totalSumUah);
-  const text =
-    count > 0
-      ? `У черзі на 1С ${count} непереданих документів на ≈ ${sum.toLocaleString("uk-UA")} ₴.`
-      : "Черга на 1С порожня — непереданих документів немає.";
+  if (count === 0) return quiet({ count, sum });
 
   return {
-    text,
+    skip: false,
+    text: `У черзі на 1С висить ${count} док. ≈ ${sum.toLocaleString("uk-UA")} ₴ — не загубимо.`,
     followUpPrompt: "Що висить у черзі бухгалтерії на вивантаження",
     facts: { count, sum },
   };
 }
 
-async function briefFinance() {
+async function briefFinance(): Promise<BuiltBrief> {
   const overview = await getAgentCompanyFinancialOverview({
     period: "full_season",
   });
   const full = await fetchCompanyFinancialOverview(String(overview.season));
   const burnPct = full.globalBurnRate;
   const costHa = overview.costPerHectareUah;
+  const facts = {
+    burnPct: burnPct ?? null,
+    costHa: costHa ?? null,
+    expenses: overview.totalExpensesUah,
+  };
 
-  const parts: string[] = [];
-  if (burnPct != null) {
-    parts.push(`Освоєння бюджету ${round1(burnPct)}%.`);
-  } else {
-    parts.push(
-      "Плановий бюджет по полях ще не заданий — % освоєння недоступний."
-    );
-  }
-  if (costHa != null) {
-    parts.push(
-      `Середня собівартість ${costHa.toLocaleString("uk-UA")} ₴/га.`
-    );
-  }
+  // Показуємо лише якщо burn високий або є що сказати по собівартості з burn
+  if (burnPct == null || burnPct < 70) return quiet(facts);
 
   return {
-    text: parts.join(" ") || "Фінансових цифр за сезон ще недостатньо.",
+    skip: false,
+    text: `По грошах: бюджет уже на ${round1(burnPct)}%${
+      costHa != null
+        ? `, собівартість ≈ ${costHa.toLocaleString("uk-UA")} ₴/га`
+        : ""
+    }. Хочеш розклад?`,
     followUpPrompt: "Фінансова картина господарства за сезон",
-    facts: {
-      burnPct: burnPct ?? null,
-      costHa: costHa ?? null,
-      expenses: overview.totalExpensesUah,
-    },
+    facts,
   };
 }
 
-async function buildSection(section: SectionId) {
+async function buildSection(section: SectionId): Promise<BuiltBrief> {
   switch (section) {
     case "fields":
       return briefFields();
@@ -448,6 +452,7 @@ export async function getSectionBriefing(
     const payload: Omit<SectionBriefing, "cached"> = {
       ok: true,
       section: sectionRaw,
+      skip: built.skip,
       text: built.text,
       followUpPrompt: built.followUpPrompt,
       generatedAt: new Date().toISOString(),
