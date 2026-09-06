@@ -1582,6 +1582,100 @@ export function EquipmentView() {
     if (unit) setSelectedUnit(unit);
   }, [loading, units, searchParams]);
 
+  /** LEVADIUS: focus-equipment-map */
+  useEffect(() => {
+    function onFocusEquipment(event: Event) {
+      const detail = (event as CustomEvent<{
+        equipmentId?: string;
+        wialonUnitId?: number | null;
+      }>).detail;
+      if (!detail) return;
+      const unitId =
+        detail.wialonUnitId != null && Number.isFinite(Number(detail.wialonUnitId))
+          ? Number(detail.wialonUnitId)
+          : null;
+      if (unitId != null && unitId > 0) {
+        const unit = units.find((u) => u.id === unitId);
+        if (unit) {
+          setSelectedUnit(unit);
+          return;
+        }
+      }
+      if (detail.equipmentId) {
+        const unit = units.find((u) => u.equipmentId === detail.equipmentId);
+        if (unit) setSelectedUnit(unit);
+      }
+    }
+    window.addEventListener("focus-equipment-map", onFocusEquipment);
+    return () => {
+      window.removeEventListener("focus-equipment-map", onFocusEquipment);
+    };
+  }, [units]);
+
+  /** LEVADIUS: fleet-metric-highlight + equipment-track-playback */
+  useEffect(() => {
+    function onFleetMetric(event: Event) {
+      const detail = (event as CustomEvent<{
+        metric?: string;
+        date?: string | null;
+      }>).detail;
+      if (!detail?.metric) return;
+      const allowed = new Set([
+        "active",
+        "onField",
+        "distance",
+        "idling",
+        "drain",
+      ]);
+      if (!allowed.has(detail.metric)) return;
+      setSummaryMetric(detail.metric as FleetSummaryMetric);
+      if (detail.date && /^\d{4}-\d{2}-\d{2}$/.test(detail.date)) {
+        const [y, m, d] = detail.date.split("-").map(Number);
+        setFleetSummaryDate(new Date(y!, m! - 1, d!));
+        setTrackDate(new Date(y!, m! - 1, d!));
+      }
+    }
+
+    function onPlayback(event: Event) {
+      const detail = (event as CustomEvent<{
+        equipmentId?: string | null;
+        wialonUnitId?: number | null;
+        date?: string | null;
+        play?: boolean;
+        progress?: number | null;
+      }>).detail;
+      if (!detail) return;
+      const unitId =
+        detail.wialonUnitId != null && Number.isFinite(Number(detail.wialonUnitId))
+          ? Number(detail.wialonUnitId)
+          : null;
+      if (unitId != null && unitId > 0) {
+        const unit = units.find((u) => u.id === unitId);
+        if (unit) setSelectedUnit(unit);
+      } else if (detail.equipmentId) {
+        const unit = units.find((u) => u.equipmentId === detail.equipmentId);
+        if (unit) setSelectedUnit(unit);
+      }
+      if (detail.date && /^\d{4}-\d{2}-\d{2}$/.test(detail.date)) {
+        const [y, m, d] = detail.date.split("-").map(Number);
+        setTrackDate(new Date(y!, m! - 1, d!));
+      }
+      window.setTimeout(() => {
+        if (typeof detail.progress === "number") {
+          playback.setProgress(detail.progress);
+        }
+        playback.setIsPlaying(detail.play !== false);
+      }, 400);
+    }
+
+    window.addEventListener("fleet-metric-highlight", onFleetMetric);
+    window.addEventListener("equipment-track-playback", onPlayback);
+    return () => {
+      window.removeEventListener("fleet-metric-highlight", onFleetMetric);
+      window.removeEventListener("equipment-track-playback", onPlayback);
+    };
+  }, [units, playback.setIsPlaying, playback.setProgress]);
+
   /** Трек + аналітика обраної одиниці за trackDate */
   useEffect(() => {
     if (selectedUnitId == null) {

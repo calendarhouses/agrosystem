@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -213,14 +213,26 @@ export function OperationsMatrixView() {
     setViewMode(readStoredViewMode());
   }, []);
 
-  function selectViewMode(next: ChronicleViewMode) {
+  const selectViewMode = useCallback((next: ChronicleViewMode) => {
     setViewMode(next);
     try {
       localStorage.setItem(VIEW_MODE_KEY, next);
     } catch {
       /* ignore */
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    function onTimelineSetView(event: Event) {
+      const detail = (event as CustomEvent<{ view?: string }>).detail;
+      const view = detail?.view;
+      if (view !== "stations" && view !== "calendar") return;
+      selectViewMode(view);
+    }
+    window.addEventListener("timeline-set-view", onTimelineSetView);
+    return () =>
+      window.removeEventListener("timeline-set-view", onTimelineSetView);
+  }, [selectViewMode]);
 
   const searchQuery = normalizeSearch(search);
 

@@ -184,6 +184,23 @@ const TOOL_STATUS_LABELS: Record<string, string> = {
   getFieldsStatus: "Звіряю дані по полях…",
   getWarehouseStock: "Читаю залишки складу…",
   getFleetAndImplements: "Дивлюсь техніку й знаряддя…",
+  getFleetDaySummary: "Збираю KPI парку за день…",
+  getEquipmentDayTrack: "Читаю трек / зміну техніки…",
+  createLocalEquipment: "Додаю техніку без GPS…",
+  linkEquipmentWialonUnit: "Привʼязую Wialon до техніки…",
+  unlinkEquipmentWialonUnit: "Відвʼязую Wialon від техніки…",
+  updateImplementWorkingWidth: "Оновлюю ширину знаряддя…",
+  focusEquipmentOnMap: "Відкриваю техніку на карті…",
+  toggleEquipmentActive: "Змінюю статус техніки…",
+  updateEquipmentFuelTank: "Оновлюю обʼєм бака…",
+  exportEquipmentDayJournal: "Готую журнал флоту…",
+  exportEquipmentUnitJournal: "Готую журнал машини…",
+  openFuelDashboard: "Відкриваю Паливо…",
+  highlightFleetMetricOnMap: "Підсвічую метрику флоту…",
+  setEquipmentTrackPlayback: "Запускаю playback треку…",
+  reverifyFuelTransactions: "Звіряю заправки з GPS…",
+  syncEquipmentFromBas: "Синхронізую техніку з BAS…",
+  autoMapEquipmentWialon: "Авто-мапінг Wialon…",
   getDriversList: "Збираю механізаторів…",
   getFieldWeather: "Дивлюсь погоду по полю…",
   checkSprayingWeatherWindow: "Оцінюю вікно для обприскування…",
@@ -192,6 +209,22 @@ const TOOL_STATUS_LABELS: Record<string, string> = {
   getDailyOperationsSummary: "Збираю диспетчерське зведення дня…",
   getFuelStorageBalance: "Читаю залишки пального…",
   logFuelRefueling: "Готую заправку техніки…",
+  logFuelPurchase: "Готую закупівлю пального…",
+  transferFuelBetweenStorages: "Готую переміщення пального…",
+  createFuelStorage: "Створюю ємність пального…",
+  updateFuelStorage: "Оновлюю ємність пального…",
+  deleteFuelStorage: "Готую видалення ємності…",
+  getFuelPeriodKpis: "Збираю KPI палива за період…",
+  getUnrecordedRefuelings: "Читаю радар заправок Wialon…",
+  confirmRadarRefueling: "Підтверджую заправку з радара…",
+  dismissRadarRefueling: "Відхиляю подію радара…",
+  updateFuelTransaction: "Коригую операцію з пальним…",
+  deleteFuelTransaction: "Готую анулювання операції з пальним…",
+  getFuelTransactionHistory: "Читаю історію руху пального…",
+  checkPredictiveRefuelNeeds: "Паливний штурман: хто скоро без ДП…",
+  auditOperationQuality: "Аудитую швидкість і л/га наряду…",
+  checkWeatherRiskForActiveJobs: "Перевіряю погодний ризик нарядів…",
+  parseFieldVoiceDispatch: "Розбираю повідомлення з рації…",
   getFieldFuelEfficiency: "Рахую витрату л/га…",
   getEquipmentMaintenanceStatus: "Перевіряю ТО та мотогодини…",
   linkServiceActToEquipment: "Привʼязую акт до техніки…",
@@ -202,6 +235,8 @@ const TOOL_STATUS_LABELS: Record<string, string> = {
   queueDocumentToBasSync: "Ставлю документ у чергу BAS…",
   getFieldTechCardMatrix: "Будую техкарту / метро етапів…",
   generateFieldExportReport: "Готую CSV-звіт по полю…",
+  exportOperationsMatrixExcel: "Готую Excel-матрицю робіт…",
+  getCropPhenologyStage: "Рахую фенологію / GDD / BBCH…",
   syncFieldWialonGeofence: "Синхронізую геозону Wialon…",
   searchFieldsCatalog: "Шукаю ділянки в каталозі…",
   getFieldUnifiedTimeline: "Збираю хронологію поля…",
@@ -209,7 +244,12 @@ const TOOL_STATUS_LABELS: Record<string, string> = {
   getLandBankSummary: "Рахую земельний банк…",
   getFieldLiveTelemetry: "Дивлюсь live GPS / хто на полі…",
   focusFieldOnMap: "Відкриваю поле на карті…",
+  setMapDisplayMode: "Перемикаю режим карти…",
+  adjustMapView: "Налаштовую масштаб карти…",
+  setTimelineViewMode: "Перемикаю вид Хронології…",
   updateFieldDetails: "Оновлюю паспорт поля…",
+  updateFieldGeometry: "Оновлюю контур поля на карті…",
+  unlinkFieldWialonGeofence: "Відвʼязую геозону Wialon…",
   updateFieldPlannedBudget: "Оновлюю плановий бюджет поля…",
   createField: "Створюю нове поле…",
   deleteField: "Готую видалення / архів поля…",
@@ -217,6 +257,18 @@ const TOOL_STATUS_LABELS: Record<string, string> = {
   createWorkOrderFromGpsVisit: "Готую наряд з GPS Wialon…",
   writeWarehouseItem: "Реєструю нову позицію складу…",
   writeOffInventoryToField: "Списую ТМЦ на поле…",
+  listInventoryMoves: "Читаю журнал рухів ТМЦ…",
+  createInventoryInbound: "Готую прихід ТМЦ…",
+  createInventorySale: "Готую продаж врожаю…",
+  updateInventoryMove: "Оновлюю рух ТМЦ…",
+  deleteInventoryMove: "Скасовую рух ТМЦ…",
+  listAccountantQueue: "Читаю чергу бухгалтерії…",
+  markQueueDocumentsStatus: "Оновлюю статуси документів…",
+  exportAccountantPackage: "Формую Excel для бухгалтера…",
+  listServiceActs: "Шукаю акти послуг…",
+  getReconciliationGaps: "Перевіряю звірку з BAS…",
+  saveBasMapping: "Зберігаю bas_ref_key…",
+  exportBasChangeRequest: "Формую запит для бухгалтера…",
   previewInvoiceReceipt: "Читаю накладну…",
   executeWarehouseReceipt: "Оприбутковую на склад…",
   rollbackWarehouseReceipt: "Скасовую накладну…",
@@ -394,6 +446,12 @@ type AgentAction =
   | {
       kind: "reply";
       text: string;
+      label: string;
+      icon: IconName | null;
+    }
+  | {
+      kind: "download";
+      url: string;
       label: string;
       icon: IconName | null;
     };
@@ -1554,26 +1612,265 @@ function extractUpdatedFieldPayload(
   for (const part of message.parts) {
     const isUpdate =
       part.type === "tool-updateFieldDetails" ||
+      part.type === "tool-updateFieldGeometry" ||
+      part.type === "tool-unlinkFieldWialonGeofence" ||
       (part.type === "dynamic-tool" &&
         "toolName" in part &&
-        part.toolName === "updateFieldDetails");
+        (part.toolName === "updateFieldDetails" ||
+          part.toolName === "updateFieldGeometry" ||
+          part.toolName === "unlinkFieldWialonGeofence"));
     if (!isUpdate) continue;
     if (!("state" in part) || part.state !== "output-available") continue;
     if (!("output" in part) || !part.output || typeof part.output !== "object") {
       continue;
     }
     const raw = part.output as Record<string, unknown>;
-    if (raw.status !== "updated" && raw.success !== true) continue;
+    if (raw.status !== "updated" && raw.status !== "unlinked" && raw.success !== true) {
+      continue;
+    }
     const field =
       raw.updatedField && typeof raw.updatedField === "object"
         ? (raw.updatedField as Record<string, unknown>)
         : null;
-    if (!field || typeof field.id !== "string") continue;
+    if (field && typeof field.id === "string") {
+      return {
+        id: field.id,
+        name: typeof field.name === "string" ? field.name : "",
+        area: Number(field.area) || 0,
+        crop: typeof field.crop === "string" ? field.crop : null,
+      };
+    }
+    if (typeof raw.fieldId === "string" && raw.fieldId) {
+      return {
+        id: raw.fieldId,
+        name: typeof raw.fieldName === "string" ? raw.fieldName : "",
+        area: Number(raw.areaHa) || 0,
+        crop: null,
+      };
+    }
+  }
+  return null;
+}
+
+function extractGeometryFocusPayload(message: UIMessage): {
+  fieldId: string;
+  openFieldPath: string;
+} | null {
+  for (const part of message.parts) {
+    const isGeom =
+      part.type === "tool-updateFieldGeometry" ||
+      (part.type === "dynamic-tool" &&
+        "toolName" in part &&
+        part.toolName === "updateFieldGeometry");
+    if (!isGeom) continue;
+    if (!("state" in part) || part.state !== "output-available") continue;
+    if (!("output" in part) || !part.output || typeof part.output !== "object") {
+      continue;
+    }
+    const raw = part.output as Record<string, unknown>;
+    if (raw.success !== true) continue;
+    if (typeof raw.fieldId !== "string" || !raw.fieldId) continue;
     return {
-      id: field.id,
-      name: typeof field.name === "string" ? field.name : "",
-      area: Number(field.area) || 0,
-      crop: typeof field.crop === "string" ? field.crop : null,
+      fieldId: raw.fieldId,
+      openFieldPath:
+        typeof raw.openFieldPath === "string"
+          ? raw.openFieldPath
+          : `/?field=${raw.fieldId}`,
+    };
+  }
+  return null;
+}
+
+function extractMapUiDirective(message: UIMessage): {
+  kind:
+    | "map-set-mode"
+    | "map-fit-bounds"
+    | "timeline-set-view"
+    | "open-fuel-dashboard"
+    | "fleet-metric-highlight"
+    | "equipment-track-playback";
+  navigatePath: string | null;
+  detail: Record<string, string | number | boolean | null>;
+} | null {
+  for (const part of message.parts) {
+    const toolName =
+      part.type === "dynamic-tool" && "toolName" in part
+        ? String(part.toolName)
+        : part.type.startsWith("tool-")
+          ? part.type.slice("tool-".length)
+          : null;
+    if (
+      toolName !== "setMapDisplayMode" &&
+      toolName !== "adjustMapView" &&
+      toolName !== "setTimelineViewMode" &&
+      toolName !== "openFuelDashboard" &&
+      toolName !== "highlightFleetMetricOnMap" &&
+      toolName !== "setEquipmentTrackPlayback"
+    ) {
+      continue;
+    }
+    if (!("state" in part) || part.state !== "output-available") continue;
+    if (!("output" in part) || !part.output || typeof part.output !== "object") {
+      continue;
+    }
+    const raw = part.output as Record<string, unknown>;
+    if (raw.success !== true) continue;
+    const navigatePath =
+      typeof raw.navigatePath === "string" ? raw.navigatePath : null;
+    if (toolName === "setMapDisplayMode" && typeof raw.activeMode === "string") {
+      return {
+        kind: "map-set-mode",
+        navigatePath: navigatePath ?? "/",
+        detail: { mode: raw.activeMode },
+      };
+    }
+    if (toolName === "adjustMapView" && typeof raw.action === "string") {
+      return {
+        kind: "map-fit-bounds",
+        navigatePath: navigatePath ?? "/",
+        detail: { action: raw.action },
+      };
+    }
+    if (toolName === "setTimelineViewMode" && typeof raw.view === "string") {
+      return {
+        kind: "timeline-set-view",
+        navigatePath: navigatePath ?? "/operations",
+        detail: { view: raw.view },
+      };
+    }
+    if (toolName === "openFuelDashboard") {
+      return {
+        kind: "open-fuel-dashboard",
+        navigatePath: navigatePath ?? "/fuel",
+        detail: {
+          tab: typeof raw.tab === "string" ? raw.tab : null,
+        },
+      };
+    }
+    if (toolName === "highlightFleetMetricOnMap" && typeof raw.metric === "string") {
+      return {
+        kind: "fleet-metric-highlight",
+        navigatePath: navigatePath ?? "/equipment",
+        detail: {
+          metric: raw.metric,
+          date: typeof raw.date === "string" ? raw.date : null,
+        },
+      };
+    }
+    if (toolName === "setEquipmentTrackPlayback") {
+      return {
+        kind: "equipment-track-playback",
+        navigatePath: navigatePath ?? "/equipment",
+        detail: {
+          equipmentId:
+            typeof raw.equipmentId === "string" ? raw.equipmentId : null,
+          wialonUnitId:
+            raw.wialonUnitId != null && Number.isFinite(Number(raw.wialonUnitId))
+              ? Number(raw.wialonUnitId)
+              : null,
+          date: typeof raw.date === "string" ? raw.date : null,
+          play: raw.play !== false,
+          progress:
+            typeof raw.progress === "number" && Number.isFinite(raw.progress)
+              ? raw.progress
+              : null,
+        },
+      };
+    }
+  }
+  return null;
+}
+
+function extractEquipmentFocusPayload(message: UIMessage): {
+  equipmentId: string;
+  wialonUnitId: number | null;
+  navigatePath: string;
+} | null {
+  for (const part of message.parts) {
+    const toolName =
+      part.type === "dynamic-tool" && "toolName" in part
+        ? String(part.toolName)
+        : part.type.startsWith("tool-")
+          ? part.type.slice("tool-".length)
+          : null;
+    if (
+      toolName !== "focusEquipmentOnMap" &&
+      toolName !== "getEquipmentDayTrack"
+    ) {
+      continue;
+    }
+    if (!("state" in part) || part.state !== "output-available") continue;
+    if (!("output" in part) || !part.output || typeof part.output !== "object") {
+      continue;
+    }
+    const raw = part.output as Record<string, unknown>;
+    if (raw.success !== true) continue;
+    if (typeof raw.equipmentId !== "string" || !raw.equipmentId) continue;
+    const wialonRaw = raw.wialonUnitId;
+    const wialonUnitId =
+      wialonRaw != null && Number.isFinite(Number(wialonRaw))
+        ? Number(wialonRaw)
+        : null;
+    const navigatePath =
+      typeof raw.navigatePath === "string"
+        ? raw.navigatePath
+        : wialonUnitId != null && wialonUnitId > 0
+          ? `/equipment?id=${wialonUnitId}`
+          : "/equipment";
+    return {
+      equipmentId: raw.equipmentId,
+      wialonUnitId,
+      navigatePath,
+    };
+  }
+  return null;
+}
+
+const EQUIPMENT_MUTATION_TOOLS = new Set([
+  "createLocalEquipment",
+  "linkEquipmentWialonUnit",
+  "unlinkEquipmentWialonUnit",
+  "updateImplementWorkingWidth",
+  "toggleEquipmentActive",
+  "updateEquipmentFuelTank",
+  "parseFieldVoiceDispatch",
+  "syncEquipmentFromBas",
+  "autoMapEquipmentWialon",
+]);
+
+function extractEquipmentCatalogMutation(message: UIMessage): {
+  toolName: string;
+  equipmentId: string | null;
+  implementId: string | null;
+} | null {
+  for (const part of message.parts) {
+    const toolName =
+      part.type === "dynamic-tool" && "toolName" in part
+        ? String(part.toolName)
+        : part.type.startsWith("tool-")
+          ? part.type.slice("tool-".length)
+          : null;
+    if (!toolName || !EQUIPMENT_MUTATION_TOOLS.has(toolName)) continue;
+    if (!("state" in part) || part.state !== "output-available") continue;
+    if (!("output" in part) || !part.output || typeof part.output !== "object") {
+      continue;
+    }
+    const raw = part.output as Record<string, unknown>;
+    if (raw.success !== true) continue;
+    const identified =
+      raw.identifiedMachine && typeof raw.identifiedMachine === "object"
+        ? (raw.identifiedMachine as Record<string, unknown>)
+        : null;
+    return {
+      toolName,
+      equipmentId:
+        typeof raw.equipmentId === "string"
+          ? raw.equipmentId
+          : identified && typeof identified.id === "string"
+            ? identified.id
+            : null,
+      implementId:
+        typeof raw.implementId === "string" ? raw.implementId : null,
     };
   }
   return null;
@@ -1684,6 +1981,309 @@ function extractFuelRefuelPayload(message: UIMessage): {
     };
   }
   return null;
+}
+
+const FUEL_OPS_MUTATION_TOOLS = new Set([
+  "logFuelPurchase",
+  "transferFuelBetweenStorages",
+  "createFuelStorage",
+  "updateFuelStorage",
+  "deleteFuelStorage",
+  "confirmRadarRefueling",
+  "dismissRadarRefueling",
+  "updateFuelTransaction",
+  "deleteFuelTransaction",
+  "reverifyFuelTransactions",
+]);
+
+function extractFuelOpsMutationPayload(message: UIMessage): {
+  toolName: string;
+  kind: string | null;
+  storageId: string | null;
+  transactionId: string | null;
+  liters: number | null;
+} | null {
+  for (const part of message.parts) {
+    const toolName =
+      part.type === "dynamic-tool" && "toolName" in part
+        ? String(part.toolName)
+        : part.type.startsWith("tool-")
+          ? part.type.slice("tool-".length)
+          : null;
+    if (!toolName || !FUEL_OPS_MUTATION_TOOLS.has(toolName)) continue;
+    if (!("state" in part) || part.state !== "output-available") continue;
+    if (!("output" in part) || !part.output || typeof part.output !== "object") {
+      continue;
+    }
+    const raw = part.output as Record<string, unknown>;
+    if (raw.success !== true) continue;
+    return {
+      toolName,
+      kind: typeof raw.kind === "string" ? raw.kind : null,
+      storageId:
+        typeof raw.storageId === "string"
+          ? raw.storageId
+          : typeof raw.fromStorageId === "string"
+            ? raw.fromStorageId
+            : null,
+      transactionId:
+        typeof raw.transactionId === "string" ? raw.transactionId : null,
+      liters:
+        typeof raw.liters === "number" && Number.isFinite(raw.liters)
+          ? raw.liters
+          : null,
+    };
+  }
+  return null;
+}
+
+type FuelOpsConfirmPreview = {
+  toolName: string;
+  kind: string;
+  status: "requires_confirmation";
+  title: string;
+  subtitle: string;
+  liters: number | null;
+  confirmChoice: string;
+  cancelChoice: string;
+  canConfirm: boolean;
+  badge: string;
+};
+
+function extractFuelOpsConfirmPreviews(
+  message: UIMessage
+): FuelOpsConfirmPreview[] {
+  const items: FuelOpsConfirmPreview[] = [];
+  const toolNames = [
+    "logFuelPurchase",
+    "transferFuelBetweenStorages",
+    "deleteFuelStorage",
+    "confirmRadarRefueling",
+    "dismissRadarRefueling",
+    "deleteFuelTransaction",
+    "toggleEquipmentActive",
+    "syncEquipmentFromBas",
+    "autoMapEquipmentWialon",
+    "createInventoryInbound",
+    "createInventorySale",
+    "deleteInventoryMove",
+    "markQueueDocumentsStatus",
+  ] as const;
+
+  for (const part of message.parts) {
+    const toolName =
+      part.type === "dynamic-tool" && "toolName" in part
+        ? String(part.toolName)
+        : part.type.startsWith("tool-")
+          ? part.type.slice("tool-".length)
+          : null;
+    if (!toolName || !toolNames.includes(toolName as (typeof toolNames)[number])) {
+      continue;
+    }
+    if (!("state" in part) || part.state !== "output-available") continue;
+    if (!("output" in part) || !part.output || typeof part.output !== "object") {
+      continue;
+    }
+    const raw = part.output as Record<string, unknown>;
+    if (raw.status !== "requires_confirmation") continue;
+    if (typeof raw.confirmChoice !== "string") continue;
+
+    let title = "Операція з пальним";
+    let subtitle = typeof raw.userHint === "string" ? raw.userHint : "";
+    if (toolName === "logFuelPurchase") {
+      title =
+        typeof raw.storageName === "string"
+          ? `Закупівля → ${raw.storageName}`
+          : "Закупівля ДП";
+    } else if (toolName === "transferFuelBetweenStorages") {
+      const from =
+        typeof raw.fromStorageName === "string" ? raw.fromStorageName : "?";
+      const to =
+        typeof raw.toStorageName === "string" ? raw.toStorageName : "?";
+      title = `${from} → ${to}`;
+    } else if (toolName === "deleteFuelStorage") {
+      title =
+        typeof raw.storageName === "string"
+          ? `Видалити «${raw.storageName}»`
+          : "Видалення ємності";
+    } else if (toolName === "confirmRadarRefueling") {
+      title = "Радар · підтвердити заправку";
+    } else if (toolName === "dismissRadarRefueling") {
+      title = "Радар · відхилити";
+    } else if (toolName === "deleteFuelTransaction") {
+      const typeLabel =
+        typeof raw.typeLabel === "string" ? raw.typeLabel : "операцію";
+      title = `Анулювати ${typeLabel}`;
+      if (!subtitle && typeof raw.warning === "string") {
+        subtitle = raw.warning;
+      }
+    } else if (toolName === "toggleEquipmentActive") {
+      title =
+        typeof raw.equipmentName === "string"
+          ? String(raw.equipmentName)
+          : "Статус техніки";
+      if (!subtitle && typeof raw.userHint === "string") {
+        subtitle = raw.userHint;
+      }
+    } else if (toolName === "syncEquipmentFromBas") {
+      title = "Sync техніки з BAS";
+    } else if (toolName === "autoMapEquipmentWialon") {
+      title = "Авто-мапінг Wialon";
+    } else if (toolName === "createInventoryInbound") {
+      title =
+        typeof raw.itemName === "string"
+          ? String(raw.itemName)
+          : "Прихід ТМЦ";
+      if (!subtitle && typeof raw.userHint === "string") {
+        subtitle = raw.userHint;
+      }
+    } else if (toolName === "createInventorySale") {
+      title =
+        typeof raw.itemName === "string"
+          ? String(raw.itemName)
+          : "Продаж врожаю";
+      if (!subtitle && typeof raw.userHint === "string") {
+        subtitle = raw.userHint;
+      }
+    } else if (toolName === "deleteInventoryMove") {
+      const typeLabel =
+        typeof raw.type === "string" ? String(raw.type) : "рух";
+      title =
+        typeof raw.itemName === "string"
+          ? `Скасувати ${typeLabel}: ${raw.itemName}`
+          : "Скасувати рух ТМЦ";
+      if (!subtitle && typeof raw.userHint === "string") {
+        subtitle = raw.userHint;
+      }
+      if (!subtitle && typeof raw.warning === "string") {
+        subtitle = raw.warning;
+      }
+    } else if (toolName === "markQueueDocumentsStatus") {
+      title = "Статус черги бухгалтерії";
+      if (!subtitle && typeof raw.userHint === "string") {
+        subtitle = raw.userHint;
+      }
+    }
+
+    items.push({
+      toolName,
+      kind: typeof raw.kind === "string" ? raw.kind : toolName,
+      status: "requires_confirmation",
+      title,
+      subtitle,
+      liters:
+        typeof raw.liters === "number" && Number.isFinite(raw.liters)
+          ? raw.liters
+          : typeof raw.quantity === "number" && Number.isFinite(raw.quantity)
+            ? raw.quantity
+            : typeof raw.quantityTons === "number" &&
+                Number.isFinite(raw.quantityTons)
+              ? raw.quantityTons
+              : typeof raw.totalSumUah === "number" &&
+                  Number.isFinite(raw.totalSumUah)
+                ? raw.totalSumUah
+                : null,
+      confirmChoice: raw.confirmChoice,
+      cancelChoice:
+        typeof raw.cancelChoice === "string" ? raw.cancelChoice : "Скасувати",
+      canConfirm: raw.canConfirm !== false,
+      badge:
+        typeof raw.badge === "string"
+          ? raw.badge
+          : toolName === "toggleEquipmentActive"
+            ? "Техніка"
+            : toolName === "markQueueDocumentsStatus"
+              ? "Бухгалтерія"
+              : toolName.startsWith("createInventory") ||
+                  toolName === "deleteInventoryMove"
+                ? "Склад"
+                : "Паливо",
+    });
+  }
+  return items;
+}
+
+function FuelOpsConfirmCard({
+  item,
+  onReply,
+  disabled,
+  alreadyDone,
+}: {
+  item: FuelOpsConfirmPreview;
+  onReply?: (text: string) => void;
+  disabled?: boolean;
+  alreadyDone?: boolean;
+}) {
+  const [resolved, setResolved] = useState<"confirm" | "cancel" | null>(
+    alreadyDone ? "confirm" : null
+  );
+
+  function choose(kind: "confirm" | "cancel") {
+    if (disabled || resolved) return;
+    if (kind === "confirm" && !item.canConfirm) return;
+    setResolved(kind);
+    onReply?.(kind === "confirm" ? item.confirmChoice : item.cancelChoice);
+  }
+
+  const done = alreadyDone || resolved === "confirm";
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-sky-400/30 bg-gradient-to-br from-sky-500/10 via-zinc-950/85 to-zinc-950/95 shadow-[0_0_0_1px_rgba(56,189,248,0.12)]">
+      <div className="flex items-center gap-2.5 border-b border-sky-500/15 px-3.5 py-3">
+        <div className="inline-flex size-8 items-center justify-center rounded-xl bg-sky-500/15 ring-1 ring-sky-400/25">
+          <Fuel className="size-4 text-sky-300" strokeWidth={2.1} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold tracking-tight text-white">
+            {item.title}
+          </p>
+          {item.subtitle ? (
+            <p className="line-clamp-2 text-[11px] text-zinc-500">
+              {item.subtitle}
+            </p>
+          ) : null}
+        </div>
+        <span
+          className={cn(
+            "shrink-0 rounded-md border px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase",
+            done
+              ? "border-emerald-500/30 bg-emerald-500/15 text-emerald-300"
+              : "border-sky-500/30 bg-sky-500/10 text-sky-300"
+          )}
+        >
+          {done ? "Готово" : item.badge}
+        </span>
+      </div>
+      {item.liters != null ? (
+        <div className="px-3.5 py-2 text-xs text-zinc-300">
+          Обʼєм:{" "}
+          <span className="font-semibold text-white">
+            {item.liters.toLocaleString("uk-UA")} л
+          </span>
+        </div>
+      ) : null}
+      {!done ? (
+        <div className="flex flex-wrap gap-2 border-t border-white/5 px-3.5 py-3">
+          <button
+            type="button"
+            disabled={disabled || !item.canConfirm}
+            onClick={() => choose("confirm")}
+            className="rounded-xl bg-sky-500/90 px-3 py-1.5 text-xs font-semibold text-zinc-950 transition hover:bg-sky-400 disabled:opacity-40"
+          >
+            {item.confirmChoice}
+          </button>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => choose("cancel")}
+            className="rounded-xl border border-white/10 bg-zinc-900/80 px-3 py-1.5 text-xs font-medium text-zinc-300 transition hover:bg-zinc-800 disabled:opacity-40"
+          >
+            {item.cancelChoice}
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 type FuelRefuelPreview = {
@@ -2338,6 +2938,58 @@ function extractFocusFieldPayload(message: UIMessage): {
   return null;
 }
 
+function extractExportDownloadActions(message: UIMessage): AgentAction[] {
+  const actions: AgentAction[] = [];
+  for (const part of message.parts) {
+    const toolName =
+      part.type === "dynamic-tool" && "toolName" in part
+        ? String(part.toolName)
+        : part.type.startsWith("tool-")
+          ? part.type.slice("tool-".length)
+          : null;
+    if (
+      toolName !== "exportOperationsMatrixExcel" &&
+      toolName !== "generateFieldExportReport" &&
+      toolName !== "exportEquipmentDayJournal" &&
+      toolName !== "exportEquipmentUnitJournal" &&
+      toolName !== "exportAccountantPackage" &&
+      toolName !== "exportBasChangeRequest"
+    ) {
+      continue;
+    }
+    if (!("state" in part) || part.state !== "output-available") continue;
+    if (!("output" in part) || !part.output || typeof part.output !== "object") {
+      continue;
+    }
+    const raw = part.output as Record<string, unknown>;
+    if (raw.success !== true) continue;
+    const downloadUrl =
+      typeof raw.downloadUrl === "string" ? raw.downloadUrl.trim() : "";
+    if (!downloadUrl.startsWith("/")) continue;
+    const filename =
+      typeof raw.filename === "string" && raw.filename.trim()
+        ? raw.filename.trim()
+        : toolName === "exportOperationsMatrixExcel"
+          ? "LEVADIUS_Matrix.xlsx"
+          : toolName === "exportEquipmentDayJournal"
+            ? "Fleet_Journal.xlsx"
+            : toolName === "exportEquipmentUnitJournal"
+              ? "Unit_Journal.xlsx"
+              : toolName === "exportAccountantPackage"
+                ? "Buhgalteria_Export.xlsx"
+                : toolName === "exportBasChangeRequest"
+                  ? "BAS_Change_Request.xlsx"
+                  : "field-export.csv";
+    actions.push({
+      kind: "download",
+      url: downloadUrl,
+      label: `Завантажити ${filename}`,
+      icon: "FileText",
+    });
+  }
+  return actions;
+}
+
 function extractClosedWorkOrderPayload(message: UIMessage): {
   fieldId: string;
   workOrderId: string;
@@ -2362,6 +3014,107 @@ function extractClosedWorkOrderPayload(message: UIMessage): {
       workOrderId:
         typeof raw.workOrderId === "string" ? raw.workOrderId : "",
       factArea: Number(raw.factArea) || 0,
+    };
+  }
+  return null;
+}
+
+function extractStartedOrUpdatedWorkOrderPayload(message: UIMessage): {
+  fieldId: string;
+  workOrderId: string;
+} | null {
+  for (const part of message.parts) {
+    const isOp =
+      part.type === "tool-startWorkOrder" ||
+      part.type === "tool-updateWorkOrder" ||
+      (part.type === "dynamic-tool" &&
+        "toolName" in part &&
+        (part.toolName === "startWorkOrder" ||
+          part.toolName === "updateWorkOrder"));
+    if (!isOp) continue;
+    if (!("state" in part) || part.state !== "output-available") continue;
+    if (!("output" in part) || !part.output || typeof part.output !== "object") {
+      continue;
+    }
+    const raw = part.output as Record<string, unknown>;
+    if (raw.success !== true) continue;
+    if (typeof raw.fieldId !== "string" || !raw.fieldId) continue;
+    return {
+      fieldId: raw.fieldId,
+      workOrderId:
+        typeof raw.workOrderId === "string" ? raw.workOrderId : "",
+    };
+  }
+  return null;
+}
+
+function extractInventoryWriteOffMutationPayload(message: UIMessage): {
+  fieldId: string | null;
+  itemId: string;
+  itemName: string;
+  quantity: number;
+  unit: string;
+  newStockBalance: number;
+} | null {
+  for (const part of message.parts) {
+    const isMut =
+      part.type === "tool-updateInventoryWriteOff" ||
+      part.type === "tool-deleteInventoryWriteOff" ||
+      part.type === "tool-createInventoryInbound" ||
+      part.type === "tool-createInventorySale" ||
+      part.type === "tool-updateInventoryMove" ||
+      part.type === "tool-deleteInventoryMove" ||
+      (part.type === "dynamic-tool" &&
+        "toolName" in part &&
+        (part.toolName === "updateInventoryWriteOff" ||
+          part.toolName === "deleteInventoryWriteOff" ||
+          part.toolName === "createInventoryInbound" ||
+          part.toolName === "createInventorySale" ||
+          part.toolName === "updateInventoryMove" ||
+          part.toolName === "deleteInventoryMove"));
+    if (!isMut) continue;
+    if (!("state" in part) || part.state !== "output-available") continue;
+    if (!("output" in part) || !part.output || typeof part.output !== "object") {
+      continue;
+    }
+    const raw = part.output as Record<string, unknown>;
+    if (raw.success !== true) continue;
+    if (typeof raw.itemId !== "string") continue;
+    return {
+      fieldId: typeof raw.fieldId === "string" ? raw.fieldId : null,
+      itemId: raw.itemId,
+      itemName: typeof raw.itemName === "string" ? raw.itemName : "",
+      quantity: Number(raw.quantity ?? raw.newQuantity ?? raw.quantityTons) || 0,
+      unit: typeof raw.unit === "string" ? raw.unit : "",
+      newStockBalance: Number(raw.newStockBalance ?? raw.stockAfter) || 0,
+    };
+  }
+  return null;
+}
+
+function extractScoutingMutationPayload(message: UIMessage): {
+  fieldId: string;
+  reportId: string;
+} | null {
+  for (const part of message.parts) {
+    const isMut =
+      part.type === "tool-updateScoutingReport" ||
+      part.type === "tool-deleteScoutingReport" ||
+      (part.type === "dynamic-tool" &&
+        "toolName" in part &&
+        (part.toolName === "updateScoutingReport" ||
+          part.toolName === "deleteScoutingReport"));
+    if (!isMut) continue;
+    if (!("state" in part) || part.state !== "output-available") continue;
+    if (!("output" in part) || !part.output || typeof part.output !== "object") {
+      continue;
+    }
+    const raw = part.output as Record<string, unknown>;
+    if (raw.success !== true) continue;
+    if (typeof raw.fieldId !== "string" || !raw.fieldId) continue;
+    return {
+      fieldId: raw.fieldId,
+      reportId: typeof raw.reportId === "string" ? raw.reportId : "",
     };
   }
   return null;
@@ -4222,6 +4975,10 @@ function MessageBubble({
     () => (isUser ? [] : extractFuelRefuelPreviews(message)),
     [isUser, message]
   );
+  const fuelOpsConfirmPreviews = useMemo(
+    () => (isUser ? [] : extractFuelOpsConfirmPreviews(message)),
+    [isUser, message]
+  );
   const fuelRefuelDone = useMemo(
     () => (isUser ? null : extractFuelRefuelPayload(message)),
     [isUser, message]
@@ -4234,18 +4991,22 @@ function MessageBubble({
     () => (isUser ? null : extractMaintenanceCompletedPayload(message)),
     [isUser, message]
   );
-  const { body, actions, choices } = useMemo(
-    () =>
-      isUser
-        ? {
-            body: text,
-            actions: [] as AgentAction[],
-            choices: [] as string[],
-            dismissDraft: false,
-          }
-        : extractAgentActions(text),
-    [isUser, text]
-  );
+  const { body, actions, choices } = useMemo(() => {
+    if (isUser) {
+      return {
+        body: text,
+        actions: [] as AgentAction[],
+        choices: [] as string[],
+        dismissDraft: false,
+      };
+    }
+    const extracted = extractAgentActions(text);
+    const downloads = extractExportDownloadActions(message);
+    return {
+      ...extracted,
+      actions: [...extracted.actions, ...downloads],
+    };
+  }, [isUser, text, message]);
 
   /** Кнопки вже є на картках підтвердження / превʼю — CHOICE не дублюємо. */
   const cardOwnedChoiceKeys = useMemo(() => {
@@ -4275,6 +5036,10 @@ function MessageBubble({
       own(item.confirmChoice);
       own(item.cancelChoice);
       own("Підтвердити заправку");
+    }
+    for (const item of fuelOpsConfirmPreviews) {
+      own(item.confirmChoice);
+      own(item.cancelChoice);
     }
     for (const item of maintenancePreviews) {
       own(item.confirmChoice);
@@ -4309,6 +5074,7 @@ function MessageBubble({
     deleteFieldConfirmations,
     writeOffPreviews,
     fuelRefuelPreviews,
+    fuelOpsConfirmPreviews,
     maintenancePreviews,
     receiptRollbackConfirmations,
     serviceActDeleteConfirmations,
@@ -4422,6 +5188,18 @@ function MessageBubble({
                   fuelRefuelDone.storageId === item.storageId &&
                   Math.abs(fuelRefuelDone.liters - item.liters) < 0.0001
                 }
+              />
+            ))}
+          </div>
+        ) : null}
+        {!isUser && fuelOpsConfirmPreviews.length > 0 ? (
+          <div className="space-y-2">
+            {fuelOpsConfirmPreviews.map((item, index) => (
+              <FuelOpsConfirmCard
+                key={`${message.id}-fuelops-${item.kind}-${index}`}
+                item={item}
+                onReply={onReply}
+                disabled={replyDisabled}
               />
             ))}
           </div>
@@ -4590,7 +5368,9 @@ function MessageBubble({
               const key =
                 action.kind === "navigate"
                   ? `${message.id}-nav-${index}-${action.path}`
-                  : `${message.id}-reply-${index}-${action.label}`;
+                  : action.kind === "download"
+                    ? `${message.id}-dl-${index}-${action.url}`
+                    : `${message.id}-reply-${index}-${action.label}`;
               return (
                 <button
                   key={key}
@@ -4600,7 +5380,9 @@ function MessageBubble({
                   }
                   onClick={() => {
                     if (action.kind === "navigate") onNavigate?.(action.path);
-                    else onReply?.(action.text);
+                    else if (action.kind === "download") {
+                      window.open(action.url, "_blank", "noopener,noreferrer");
+                    } else onReply?.(action.text);
                   }}
                   className="inline-flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400 transition-all hover:bg-emerald-500/20 active:scale-95 disabled:pointer-events-none disabled:opacity-50"
                 >
@@ -5050,6 +5832,42 @@ export function LevadaCopilotDrawer({
         }
       }
 
+      const fuelOpsMutation = extractFuelOpsMutationPayload(message);
+      if (fuelOpsMutation) {
+        const key = `fuelops:${message.id}:${fuelOpsMutation.toolName}:${fuelOpsMutation.transactionId ?? fuelOpsMutation.storageId ?? "x"}:${fuelOpsMutation.liters ?? 0}`;
+        if (!refreshedFieldUpdateKeysRef.current.has(key)) {
+          refreshedFieldUpdateKeysRef.current.add(key);
+          router.refresh();
+          window.dispatchEvent(
+            new CustomEvent("fuel-updated", {
+              detail: {
+                toolName: fuelOpsMutation.toolName,
+                kind: fuelOpsMutation.kind,
+                transactionId: fuelOpsMutation.transactionId,
+                storageId: fuelOpsMutation.storageId,
+                liters: fuelOpsMutation.liters,
+              },
+            })
+          );
+          if (
+            fuelOpsMutation.toolName === "logFuelPurchase" ||
+            fuelOpsMutation.toolName === "createFuelStorage" ||
+            fuelOpsMutation.toolName === "updateFuelStorage" ||
+            fuelOpsMutation.toolName === "deleteFuelStorage"
+          ) {
+            window.dispatchEvent(
+              new CustomEvent("warehouse-updated", {
+                detail: {
+                  source: "fuel",
+                  toolName: fuelOpsMutation.toolName,
+                  storageId: fuelOpsMutation.storageId,
+                },
+              })
+            );
+          }
+        }
+      }
+
       const linkedAct = extractLinkedServiceActPayload(message);
       if (linkedAct) {
         const key = `linkact:${message.id}:${linkedAct.actId}:${linkedAct.equipmentId}`;
@@ -5088,6 +5906,64 @@ export function LevadaCopilotDrawer({
           window.dispatchEvent(
             new CustomEvent("field-updated", {
               detail: { id: closedOp.fieldId },
+            })
+          );
+          window.dispatchEvent(new CustomEvent("levada:fields-updated"));
+        }
+      }
+
+      const startedOrUpdated = extractStartedOrUpdatedWorkOrderPayload(message);
+      if (startedOrUpdated) {
+        const key = `opmut:${message.id}:${startedOrUpdated.workOrderId}:${startedOrUpdated.fieldId}`;
+        if (!refreshedFieldUpdateKeysRef.current.has(key)) {
+          refreshedFieldUpdateKeysRef.current.add(key);
+          router.refresh();
+          window.dispatchEvent(
+            new CustomEvent("field-updated", {
+              detail: { id: startedOrUpdated.fieldId },
+            })
+          );
+          window.dispatchEvent(new CustomEvent("levada:fields-updated"));
+        }
+      }
+
+      const invMut = extractInventoryWriteOffMutationPayload(message);
+      if (invMut) {
+        const key = `invmut:${message.id}:${invMut.itemId}:${invMut.quantity}:${invMut.newStockBalance}`;
+        if (!refreshedFieldUpdateKeysRef.current.has(key)) {
+          refreshedFieldUpdateKeysRef.current.add(key);
+          router.refresh();
+          window.dispatchEvent(
+            new CustomEvent("warehouse-updated", {
+              detail: {
+                itemId: invMut.itemId,
+                itemName: invMut.itemName,
+                quantity: invMut.quantity,
+                unit: invMut.unit,
+                newStockBalance: invMut.newStockBalance,
+              },
+            })
+          );
+          if (invMut.fieldId) {
+            window.dispatchEvent(
+              new CustomEvent("field-updated", {
+                detail: { id: invMut.fieldId },
+              })
+            );
+            window.dispatchEvent(new CustomEvent("levada:fields-updated"));
+          }
+        }
+      }
+
+      const scoutMut = extractScoutingMutationPayload(message);
+      if (scoutMut) {
+        const key = `scoutmut:${message.id}:${scoutMut.reportId}:${scoutMut.fieldId}`;
+        if (!refreshedFieldUpdateKeysRef.current.has(key)) {
+          refreshedFieldUpdateKeysRef.current.add(key);
+          router.refresh();
+          window.dispatchEvent(
+            new CustomEvent("field-updated", {
+              detail: { id: scoutMut.fieldId },
             })
           );
           window.dispatchEvent(new CustomEvent("levada:fields-updated"));
@@ -5202,6 +6078,109 @@ export function LevadaCopilotDrawer({
         }
       }
 
+      const geometryFocus = extractGeometryFocusPayload(message);
+      if (geometryFocus) {
+        const key = `geomfocus:${message.id}:${geometryFocus.fieldId}`;
+        if (!refreshedFieldUpdateKeysRef.current.has(key)) {
+          refreshedFieldUpdateKeysRef.current.add(key);
+          const path = geometryFocus.openFieldPath.startsWith("/")
+            ? geometryFocus.openFieldPath
+            : `/?field=${geometryFocus.fieldId}`;
+          if (pathname === "/" || pathname === "") {
+            router.replace(path);
+          } else {
+            router.push(path);
+          }
+          window.setTimeout(() => {
+            window.dispatchEvent(
+              new CustomEvent("focus-field-map", {
+                detail: { fieldId: geometryFocus.fieldId },
+              })
+            );
+            window.dispatchEvent(
+              new CustomEvent(LEVADA_OPEN_FIELD_EVENT, {
+                detail: { fieldId: geometryFocus.fieldId },
+              })
+            );
+          }, 80);
+        }
+      }
+
+      const mapUi = extractMapUiDirective(message);
+      if (mapUi) {
+        const key = `mapui:${message.id}:${mapUi.kind}:${JSON.stringify(mapUi.detail)}`;
+        if (!refreshedFieldUpdateKeysRef.current.has(key)) {
+          refreshedFieldUpdateKeysRef.current.add(key);
+          const target = mapUi.navigatePath;
+          let needsNav = false;
+          if (target) {
+            const onTarget =
+              target === "/"
+                ? pathname === "/" || pathname === ""
+                : pathname === target || pathname.startsWith(`${target}/`);
+            needsNav = !onTarget;
+            if (needsNav) {
+              router.push(target);
+            }
+          }
+          window.setTimeout(
+            () => {
+              window.dispatchEvent(
+                new CustomEvent(mapUi.kind, { detail: mapUi.detail })
+              );
+            },
+            needsNav ? 350 : 80
+          );
+        }
+      }
+
+      const equipmentFocus = extractEquipmentFocusPayload(message);
+      if (equipmentFocus) {
+        const key = `eqfocus:${message.id}:${equipmentFocus.equipmentId}:${equipmentFocus.wialonUnitId ?? "x"}`;
+        if (!refreshedFieldUpdateKeysRef.current.has(key)) {
+          refreshedFieldUpdateKeysRef.current.add(key);
+          const target = equipmentFocus.navigatePath;
+          const onEquipment =
+            pathname === "/equipment" || pathname.startsWith("/equipment?");
+          if (!onEquipment) {
+            router.push(target);
+          } else if (target.includes("?")) {
+            router.replace(target);
+          }
+          window.setTimeout(
+            () => {
+              window.dispatchEvent(
+                new CustomEvent("focus-equipment-map", {
+                  detail: {
+                    equipmentId: equipmentFocus.equipmentId,
+                    wialonUnitId: equipmentFocus.wialonUnitId,
+                  },
+                })
+              );
+            },
+            onEquipment ? 80 : 350
+          );
+        }
+      }
+
+      const equipmentMutation = extractEquipmentCatalogMutation(message);
+      if (equipmentMutation) {
+        const key = `eqmut:${message.id}:${equipmentMutation.toolName}:${equipmentMutation.equipmentId ?? equipmentMutation.implementId ?? "x"}`;
+        if (!refreshedFieldUpdateKeysRef.current.has(key)) {
+          refreshedFieldUpdateKeysRef.current.add(key);
+          router.refresh();
+          window.dispatchEvent(
+            new CustomEvent("equipment-updated", {
+              detail: {
+                toolName: equipmentMutation.toolName,
+                id: equipmentMutation.equipmentId,
+                implementId: equipmentMutation.implementId,
+              },
+            })
+          );
+        }
+      }
+
       for (const part of message.parts) {
         const isExec =
           part.type === "tool-executeWarehouseReceipt" ||
@@ -5243,6 +6222,51 @@ export function LevadaCopilotDrawer({
           refreshedFieldUpdateKeysRef.current.add(key);
           router.refresh();
           window.dispatchEvent(new Event("accounting-updated"));
+        }
+      }
+
+      for (const part of message.parts) {
+        const toolName =
+          part.type === "dynamic-tool" && "toolName" in part
+            ? String(part.toolName)
+            : part.type.startsWith("tool-")
+              ? part.type.slice("tool-".length)
+              : null;
+        if (
+          toolName !== "markQueueDocumentsStatus" &&
+          toolName !== "exportAccountantPackage" &&
+          toolName !== "saveBasMapping"
+        ) {
+          continue;
+        }
+        if (!("state" in part) || part.state !== "output-available") continue;
+        if (
+          !("output" in part) ||
+          !part.output ||
+          typeof part.output !== "object"
+        ) {
+          continue;
+        }
+        const raw = part.output as {
+          success?: boolean;
+          clientEvents?: string[];
+          entityId?: string;
+          entityType?: string;
+        };
+        if (raw.success !== true) continue;
+        const key = `acct:${message.id}:${toolName}:${raw.entityId ?? "x"}`;
+        if (refreshedFieldUpdateKeysRef.current.has(key)) continue;
+        refreshedFieldUpdateKeysRef.current.add(key);
+        router.refresh();
+        window.dispatchEvent(
+          new CustomEvent("accounting-updated", { detail: raw })
+        );
+        const events = Array.isArray(raw.clientEvents)
+          ? raw.clientEvents
+          : [];
+        for (const ev of events) {
+          if (ev === "accounting-updated") continue;
+          window.dispatchEvent(new CustomEvent(ev, { detail: raw }));
         }
       }
 

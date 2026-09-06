@@ -1162,7 +1162,7 @@ export async function getLocalMoveQtyByItem(): Promise<
     const { data, error } = await supabase
       .from("inventory_local_moves")
       .select(
-        "id, item_ref_key, qty, date, type, status, note, buyer_name, unit_price_uah, field_id, receipt_id, farm_fields ( name ), warehouse_receipts ( invoice_number, invoice_date, supplier_name )"
+        "id, item_ref_key, qty, date, type, status, note, buyer_name, unit_price_uah, field_id, receipt_id, is_reverted, farm_fields ( name ), warehouse_receipts ( invoice_number, invoice_date, supplier_name )"
       );
 
     if (error) {
@@ -1174,6 +1174,22 @@ export async function getLocalMoveQtyByItem(): Promise<
           saleByRef: {},
           rows: [],
         };
+      }
+      // Fallback без is_reverted (міграція 074)
+      if (
+        error.message?.includes("is_reverted") ||
+        error.code === "42703"
+      ) {
+        const midRev = await supabase
+          .from("inventory_local_moves")
+          .select(
+            "id, item_ref_key, qty, date, type, status, note, buyer_name, unit_price_uah, field_id, receipt_id, farm_fields ( name ), warehouse_receipts ( invoice_number, invoice_date, supplier_name )"
+          );
+        if (!midRev.error) {
+          return aggregateLocalMoves(
+            (midRev.data ?? []) as Record<string, unknown>[]
+          );
+        }
       }
       // Fallback без receipt join (міграція 062 ще не застосована)
       if (
@@ -1238,6 +1254,8 @@ async function aggregateLocalMoves(
   const saleByRef: Record<string, number> = {};
   const rows: LocalOutboundRow[] = [];
   for (const row of data) {
+    // Soft-cancel LEVADIUS: не враховуємо в залишку
+    if (row.is_reverted === true) continue;
     const key = String(row.item_ref_key).toLowerCase();
     const qty = Number(row.qty) || 0;
     const type =

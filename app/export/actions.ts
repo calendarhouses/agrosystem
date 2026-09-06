@@ -54,6 +54,7 @@ export type AccountantQueueItem = {
     | "sale"
     | "fuel_inbound"
     | "fuel_transfer"
+    | "fuel_outbound"
     | "service_act";
   date: string;
   season: string | null;

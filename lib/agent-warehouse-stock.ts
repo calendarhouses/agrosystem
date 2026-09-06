@@ -34,11 +34,24 @@ async function loadDraftLocalMoves(): Promise<
   DraftMoveMaps | { error: string }
 > {
   const supabase = createServiceSupabase();
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("inventory_local_moves")
-    .select("item_ref_key, type, qty, status")
+    .select("item_ref_key, type, qty, status, is_reverted")
     .eq("status", "draft")
     .limit(20_000);
+
+  if (
+    error &&
+    (error.message?.includes("is_reverted") || error.code === "42703")
+  ) {
+    const retry = await supabase
+      .from("inventory_local_moves")
+      .select("item_ref_key, type, qty, status")
+      .eq("status", "draft")
+      .limit(20_000);
+    data = retry.data as typeof data;
+    error = retry.error;
+  }
 
   if (error) {
     if (error.code === "PGRST205" || error.code === "42P01") {
@@ -50,6 +63,7 @@ async function loadDraftLocalMoves(): Promise<
   const inboundByRef: Record<string, number> = {};
   const outboundByRef: Record<string, number> = {};
   for (const row of data ?? []) {
+    if ((row as { is_reverted?: boolean }).is_reverted === true) continue;
     const key = String(row.item_ref_key ?? "")
       .trim()
       .toLowerCase();

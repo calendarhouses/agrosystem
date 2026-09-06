@@ -25,6 +25,7 @@ function kindLabel(kind: AccountantQueueItem["kind"]): string {
   if (kind === "sale") return "Продаж";
   if (kind === "fuel_inbound") return "Закупівля ДП";
   if (kind === "fuel_transfer") return "Переміщення ДП";
+  if (kind === "fuel_outbound") return "Роздача ДП";
   if (kind === "service_act") return "Акт послуг";
   return "Списання";
 }
@@ -152,11 +153,39 @@ function appendSheet(
 export function downloadAccountantPackageExcel(
   items: AccountantQueueItem[]
 ): string {
+  const { book, filename } = buildAccountantPackageWorkbook(items);
+  XLSX.writeFile(book, filename);
+  return filename;
+}
+
+/** Серверний буфер XLSX для /api/export/accountant-package */
+export function buildAccountantPackageXlsxBuffer(
+  items: AccountantQueueItem[]
+): { buffer: Buffer; filename: string; sheetCount: number } {
+  const { book, filename } = buildAccountantPackageWorkbook(items);
+  const buffer = XLSX.write(book, {
+    type: "buffer",
+    bookType: "xlsx",
+  }) as Buffer;
+  return {
+    buffer,
+    filename,
+    sheetCount: book.SheetNames?.length ?? 0,
+  };
+}
+
+function buildAccountantPackageWorkbook(items: AccountantQueueItem[]): {
+  book: XLSX.WorkBook;
+  filename: string;
+} {
   const outbound = items.filter((i) => i.kind === "outbound");
   const inbound = items.filter((i) => i.kind === "inbound");
   const sale = items.filter((i) => i.kind === "sale");
   const fuel = items.filter(
-    (i) => i.kind === "fuel_inbound" || i.kind === "fuel_transfer"
+    (i) =>
+      i.kind === "fuel_inbound" ||
+      i.kind === "fuel_transfer" ||
+      i.kind === "fuel_outbound"
   );
   const acts = items.filter((i) => i.kind === "service_act");
 
@@ -173,7 +202,6 @@ export function downloadAccountantPackageExcel(
   }
 
   const stamp = format(new Date(), "yyyy-MM-dd_HHmm");
-  const filename = `AgroSystem_buhgalteriya_${stamp}.xlsx`;
-  XLSX.writeFile(book, filename);
-  return filename;
+  const filename = `Buhgalteria_Export_${stamp}.xlsx`;
+  return { book, filename };
 }

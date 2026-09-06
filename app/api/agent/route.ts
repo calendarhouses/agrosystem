@@ -10,8 +10,32 @@ import {
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { createLocalOutboundMove } from "@/app/admin/inventory/actions";
+import {
+  createLocalOutboundMove,
+  deleteLocalMove,
+  updateLocalMove,
+} from "@/app/admin/inventory/actions";
+import { deleteScoutingReport as deleteScoutingReportRow } from "@/app/admin/scouting/actions";
 import { loadAgentInventoryStock } from "@/lib/agent-warehouse-stock";
+import {
+  deleteAgentInventoryMove,
+  listAgentInventoryMoves,
+  prepareOrCreateInventoryInbound,
+  prepareOrCreateInventorySale,
+  updateAgentInventoryMove,
+} from "@/lib/agent-inventory-moves";
+import {
+  collectAccountantPackageItems,
+  listAgentAccountantQueue,
+  listAgentServiceActs,
+  markAgentQueueDocumentsStatus,
+} from "@/lib/agent-accountant-ops";
+import {
+  collectBasChangeRequestRows,
+  getAgentReconciliationGaps,
+  saveAgentBasMapping,
+} from "@/lib/agent-bas-reconciliation";
+import { normalizeBasRefKey } from "@/lib/bas-mapping";
 import {
   buildInvoicePreview,
   executeWarehouseReceipt,
@@ -51,8 +75,53 @@ import {
   OPERATION_TYPES,
   WAGE_UAH_PER_HA,
 } from "@/lib/field-operation-norms";
+import { getCropPhenologyForField } from "@/lib/crop-phenology";
+import { buildOperationsMatrix } from "@/lib/operations-matrix-export";
+import { resolveWialonTrackAreaForOperation } from "@/lib/wialon-track-area";
+import type { FieldGeometry } from "@/lib/farm-fields";
 import { enqueueFuelBasDraft } from "@/lib/fuel-bas-sync";
 import { computeTotalCost, roundLiters, roundPrice } from "@/lib/fuel-wac";
+import {
+  computeFuelPeriodKpis,
+  confirmAgentRadarRefueling,
+  createFuelStorageRow,
+  deleteFuelStorageRow,
+  dismissAgentRadarRefueling,
+  executeFuelPurchase,
+  executeFuelTransfer,
+  fuelFillPercent,
+  listAgentUnrecordedRefuelings,
+  resolveFuelStorageByLookup,
+  updateFuelStorageRow,
+  decodeRadarEventId,
+} from "@/lib/agent-fuel-ops";
+import {
+  deleteAgentFuelTransaction,
+  getFuelTransactionHistory,
+  updateAgentFuelTransaction,
+} from "@/lib/agent-fuel-tx-ops";
+import {
+  buildEquipmentDayTrack,
+  buildFleetDaySummary,
+  createLocalEquipmentForAgent,
+  linkEquipmentWialonForAgent,
+  toggleEquipmentActiveForAgent,
+  unlinkEquipmentWialonForAgent,
+  updateEquipmentFuelTankForAgent,
+  updateImplementWidthForAgent,
+  syncEquipmentCatalogFromBasForAgent,
+  autoMapEquipmentWialonForAgent,
+} from "@/lib/agent-equipment-ops";
+import { buildFleetDayJournal } from "@/lib/fleet-journal-export";
+import { buildEquipmentUnitDayJournal } from "@/lib/equipment-unit-journal-export";
+import { reverifyFuelTransactions } from "@/lib/fuel-reverify";
+import {
+  auditOperationQuality,
+  checkPredictiveRefuelNeeds,
+  checkWeatherRiskForActiveJobs,
+  parseFieldVoiceDispatch,
+} from "@/lib/agent-smart-dispatch";
+import { resolveDieselPriceUah } from "@/lib/fuel-price";
 import {
   evaluateFieldWeatherAdvisory,
   evaluateSprayingWeatherWindow,
@@ -211,26 +280,55 @@ const SYSTEM_PROMPT = `
 
 Мутації з підтвердженням (завжди draft confirmed=false → confirmed=true):
 deleteField, deleteWorkOrder, deleteServiceActs, closeWorkOrder,
-writeOffInventoryToField, logFuelRefueling, rollbackWarehouseReceipt,
+writeOffInventoryToField, deleteInventoryWriteOff, deleteInventoryMove, createInventoryInbound, createInventorySale,
+markQueueDocumentsStatus, deleteScoutingReport,
+unlinkFieldWialonGeofence, logFuelRefueling, logFuelPurchase,
+transferFuelBetweenStorages, deleteFuelStorage, confirmRadarRefueling,
+dismissRadarRefueling, deleteFuelTransaction, toggleEquipmentActive,
+syncEquipmentFromBas, autoMapEquipmentWialon,
+unlinkEquipmentWialonUnit, rollbackWarehouseReceipt,
 updateFieldDetails (name/area/crop/category), updateFieldPlannedBudget,
 logMaintenanceCompleted. Не стверджуй успіх без success:true.
 
 Tools:
 getFieldsStatus, getWarehouseStock, getFleetAndImplements, getDriversList,
+getFleetDaySummary, getEquipmentDayTrack, createLocalEquipment,
+linkEquipmentWialonUnit, unlinkEquipmentWialonUnit, updateImplementWorkingWidth,
+focusEquipmentOnMap, toggleEquipmentActive, updateEquipmentFuelTank,
+exportEquipmentDayJournal, exportEquipmentUnitJournal,
+openFuelDashboard, highlightFleetMetricOnMap, setEquipmentTrackPlayback,
+syncEquipmentFromBas, autoMapEquipmentWialon,
+reverifyFuelTransactions,
 getFieldWeather, checkSprayingWeatherWindow, getFieldNdviStatus,
 getFieldOperationsHistory, getDailyOperationsSummary, getFieldUnifiedTimeline,
 getFieldCostAnalysis, getLandBankSummary, getFieldLiveTelemetry, focusFieldOnMap,
-getFuelStorageBalance, logFuelRefueling, getFieldFuelEfficiency,
+setMapDisplayMode, adjustMapView, setTimelineViewMode,
+getFuelStorageBalance, logFuelRefueling, logFuelPurchase,
+transferFuelBetweenStorages, createFuelStorage, updateFuelStorage, deleteFuelStorage,
+getFuelPeriodKpis, getUnrecordedRefuelings, confirmRadarRefueling, dismissRadarRefueling,
+updateFuelTransaction, deleteFuelTransaction, getFuelTransactionHistory,
+checkPredictiveRefuelNeeds, auditOperationQuality, checkWeatherRiskForActiveJobs,
+parseFieldVoiceDispatch,
+getFieldFuelEfficiency,
 getEquipmentMaintenanceStatus, linkServiceActToEquipment, logMaintenanceCompleted,
 updateInventoryItemPrice, calculateDriverEarnings, getFieldBudgetBurnRate,
 queueDocumentToBasSync, getFieldTechCardMatrix, generateFieldExportReport,
-syncFieldWialonGeofence, searchFieldsCatalog,
-updateFieldDetails, updateFieldPlannedBudget, createField, deleteField,
-analyzeAndSaveScoutingReport, createWorkOrderFromGpsVisit,
-writeOffInventoryToField, registerWarehouseItem,
+exportOperationsMatrixExcel, getCropPhenologyStage,
+syncFieldWialonGeofence, unlinkFieldWialonGeofence, searchFieldsCatalog,
+updateFieldDetails, updateFieldGeometry, updateFieldPlannedBudget, createField, deleteField,
+analyzeAndSaveScoutingReport, updateScoutingReport, deleteScoutingReport,
+createWorkOrderFromGpsVisit,
+writeOffInventoryToField, updateInventoryWriteOff, deleteInventoryWriteOff,
+listInventoryMoves, createInventoryInbound, createInventorySale,
+updateInventoryMove, deleteInventoryMove,
+listAccountantQueue, markQueueDocumentsStatus, exportAccountantPackage,
+listServiceActs,
+getReconciliationGaps, saveBasMapping, exportBasChangeRequest,
+registerWarehouseItem,
 previewInvoiceReceipt, executeWarehouseReceipt, rollbackWarehouseReceipt,
 previewServiceAct, executeServiceActSave, deleteServiceActs,
-prepareWorkOrder, confirmWorkOrder, deleteWorkOrder, closeWorkOrder,
+prepareWorkOrder, confirmWorkOrder, startWorkOrder, updateWorkOrder,
+deleteWorkOrder, closeWorkOrder,
 getOperationRates, setOperationRate,
 logUnsupportedRequest, getUnhandledRequests.
 
@@ -243,25 +341,89 @@ wialon_field_fuel_logs, field_ndvi_alerts, equipment_maintenance_logs.
 Маршрутизація (викликай tool, потім короткий звіт):
 • Поля/статус → getFieldsStatus | пошук ділянок → searchFieldsCatalog
 • Земельний банк → getLandBankSummary | карта → focusFieldOnMap
+• Режим карти (бюджет / культури / NDVI) → setMapDisplayMode
+  «покажи по бюджету / перевитратах» → budget_burn;
+  «звичайні кольори / по культурах» → crops;
+  NDVI → ndvi
+• Усі поля / загальний план → adjustMapView(fit_all); скинути zoom → reset_zoom
+• Хронологія: «календар» / «станції» → setTimelineViewMode (+ /operations)
 • Погода → getFieldWeather | обприскування → checkSprayingWeatherWindow
 • NDVI → getFieldNdviStatus | телеметрія → getFieldLiveTelemetry
 • Історія/наряди → getFieldOperationsHistory | день → getDailyOperationsSummary
 • Хронологія → getFieldUnifiedTimeline | собівартість → getFieldCostAnalysis
 • Бюджет burn → getFieldBudgetBurnRate | техкарта → getFieldTechCardMatrix
 • Паливо залишки → getFuelStorageBalance | л/га → getFieldFuelEfficiency
-• Заправка → logFuelRefueling (confirm) | ТО → getEquipmentMaintenanceStatus
+• Заправка техніки → logFuelRefueling (confirm)
+• Закупівля ДП («прийми N тонн/л на нафтобазу») → logFuelPurchase (confirm)
+• Перекачування між ємностями → transferFuelBetweenStorages (confirm)
+• KPI палива за період («що по паливу за тиждень») → getFuelPeriodKpis
+• Радар DUT («ліві заправки», «що зловив радар») → getUnrecordedRefuelings
+  → confirmRadarRefueling / dismissRadarRefueling
+• Історія заправок / руху ДП («історія трактора», «хто брав із бензовоза»)
+  → getFuelTransactionHistory
+• Виправити літри/ціну заправки («помилково внесли 500 замість 50»)
+  → updateFuelTransaction
+• Анулювати заправку / закупівлю → deleteFuelTransaction (confirm)
+• Повторна звірка GPS/DUT → reverifyFuelTransactions
+• Відкрити розділ Паливо → openFuelDashboard
+• Паливний штурман («кому скоро кінчиться ДП», «хто потребує заправки»)
+  → checkPredictiveRefuelNeeds
+• Аудит швидкості / л/га наряду («чи не гнав на дискуванні»)
+  → auditOperationQuality
+• Погода для активних ЗЗР/посіву/добрив → checkWeatherRiskForActiveJobs
+• Рація / поломка з поля (текст) → parseFieldVoiceDispatch
+• Ємності CRUD → createFuelStorage / updateFuelStorage / deleteFuelStorage (confirm)
+• Парк за день / зливи / простої → getFleetDaySummary
+• Підсвітка метрики флоту на карті → highlightFleetMetricOnMap
+• Playback треку → setEquipmentTrackPlayback
+• Трек машини за день («де їздив», мотогодини) → getEquipmentDayTrack
+• Журнал флоту Excel/CSV за день → exportEquipmentDayJournal
+• Журнал однієї машини Excel/CSV → exportEquipmentUnitJournal
+• Локальна техніка без GPS → createLocalEquipment
+• Привʼязка Wialon → linkEquipmentWialonUnit / unlinkEquipmentWialonUnit (confirm)
+• Sync довідника з BAS / bulk auto-map → syncEquipmentFromBas / autoMapEquipmentWialon
+• Ширина знаряддя → updateImplementWorkingWidth
+• Архів / ремонт / повернути в роботу → toggleEquipmentActive (confirm)
+• Обʼєм бака техніки → updateEquipmentFuelTank
+• Відкрити техніку на карті → focusEquipmentOnMap (+ /equipment?id=)
+• ТО → getEquipmentMaintenanceStatus
 • Акт→техніка → linkServiceActToEquipment | ТО done → logMaintenanceCompleted
 • Склад → getWarehouseStock | списання → writeOffInventoryToField (confirm)
+• Журнал рухів ТМЦ («що оприбутковували», «останні списання») → listInventoryMoves
+• Ручний прихід без фото («оприбуткуй селітру…») → createInventoryInbound (confirm)
+• Продаж врожаю («продали N т кукурудзи…») → createInventorySale (confirm)
+• Коригування списання → updateInventoryWriteOff | скасувати outbound → deleteInventoryWriteOff (confirm)
+• Правка/скасування приходу чи продажу → listInventoryMoves → updateInventoryMove / deleteInventoryMove (confirm)
+• Черга бухгалтерії («що висить на вивантаження») → listAccountantQueue
+• Статус черги prepared / sent_to_1c / new → markQueueDocumentsStatus (confirm)
+• Excel-пакет для бухгалтера / 1С → exportAccountantPackage
+• Акти послуг / СТО / ремонт → listServiceActs
+• Звірка BAS («що не привʼязано до 1С») → getReconciliationGaps
+• Привʼязка bas_ref_key у нашій БД (НЕ OData) → saveBasMapping
+• Файл-запит бухгалтеру на нові позиції 1С → exportBasChangeRequest
 • Ціна ТМЦ → updateInventoryItemPrice | ЗП → calculateDriverEarnings
 • Тарифи → getOperationRates / setOperationRate
-• Паспорт поля → updateFieldDetails (confirm для name/area/crop/category)
+• Паспорт поля → updateFieldDetails (confirm для name/area/crop/category;
+  previousCrop / fieldNumber / tract / basRefKey — без confirm)
+• Контур координат / GeoJSON / WKT → updateFieldGeometry
 • Бюджет ₴/га → updateFieldPlannedBudget (confirm) | create/deleteField
-• Скаутинг фото → analyzeAndSaveScoutingReport | GPS-наряд → createWorkOrderFromGpsVisit
-• Накладна → previewInvoiceReceipt → executeWarehouseReceipt / rollback
+• Wialon зона → syncFieldWialonGeofence | відвʼязати → unlinkFieldWialonGeofence (confirm)
+• Скаутинг фото → analyzeAndSaveScoutingReport | правка → updateScoutingReport | видалити → deleteScoutingReport (confirm)
+• GPS-наряд → createWorkOrderFromGpsVisit
+• Накладна (фото) → previewInvoiceReceipt → executeWarehouseReceipt / rollback
 • Акт послуг → previewServiceAct → executeServiceActSave / deleteServiceActs
 • Наряд: слоти → getWarehouseStock/getFleetAndImplements/getDriversList → prepareWorkOrder → confirmWorkOrder
+• Старт наряду («почни роботу», «запусти наряд») → startWorkOrder
+• Редагувати наряд / дати з–по → updateWorkOrder
 • Закрити наряд → closeWorkOrder (confirm) | BAS черга → queueDocumentToBasSync
-• Експорт → generateFieldExportReport | Wialon зона → syncFieldWialonGeofence
+  (work_order | inventory_write_off | fuel_dispense | fuel_purchase | fuel_transfer)
+• «Відправ закупівлю пального в BAS» → queueDocumentToBasSync({ documentType: 'fuel_purchase', ... })
+• Закрити наряд по площі з трекера Wialon → closeWorkOrder({ useWialonTrackArea: true })
+• Експорт одного поля CSV → generateFieldExportReport
+• Повний Excel/CSV матриці робіт / усіх станцій за сезон → exportOperationsMatrixExcel
+  («Вивантаж повний Excel робіт», «Зроби таблицю експорту всіх станцій за сезон»)
+• Фенологія / BBCH / GDD / «phenology bar» / «скільки градусів набрало поле»
+  → getCropPhenologyStage
 • Невідома дія → logUnsupportedRequest, потім дослівно:
   «Повна халепа, такого я ще не вмію робити, але Назар навчить скоро!»
   Помилка існуючого tool ≠ «не вмію» — поясни і запропонуй повторити.
@@ -273,6 +435,7 @@ wialon_field_fuel_logs, field_ndvi_alerts, equipment_maintenance_logs.
 Механіка (оранка/культивація/дискування) — ТМЦ не вимагай.
 Знаряддя — підтягуй з implements де доречно.
 Дата: сьогодні/завтра/післязавтра лише з календаря контексту (Kyiv). Час 08:00–18:00.
+Мультидень (з 10 по 12) → updateWorkOrder(dateFrom, dateTo) або prepare з однією датою старту.
 prepareWorkOrder лише коли всі слоти зібрані. Не вигадуй техніку/водіїв/ТМЦ.
 Новий механізатор — прийми імʼя. Новий ТМЦ без залишку — НЕ registerWarehouseItem(0);
 попроси накладну або кількість+ціну.
@@ -655,6 +818,8 @@ type AgentFieldRow = {
   geometry?: unknown;
   tract?: string | null;
   previous_crop?: string | null;
+  field_no?: string | null;
+  bas_ref_key?: string | null;
 };
 
 type ResolveAgentFieldResult =
@@ -855,6 +1020,10 @@ async function applyFieldDetailsUpdate(
     notes?: string;
     color?: string;
     category?: "field" | "garden" | "base";
+    previousCrop?: string | null;
+    fieldNumber?: string | null;
+    tract?: string | null;
+    basRefKey?: string | null;
   }
 ) {
   const patch: Record<string, unknown> = {};
@@ -885,6 +1054,35 @@ async function applyFieldDetailsUpdate(
     patch.plot_category = patchInput.category;
     patch.is_field = patchInput.category === "field";
   }
+  if (patchInput.previousCrop !== undefined) {
+    const v = patchInput.previousCrop?.trim() || null;
+    patch.previous_crop = v;
+  }
+  if (patchInput.fieldNumber !== undefined) {
+    const v = patchInput.fieldNumber?.trim() || null;
+    patch.field_no = v;
+  }
+  if (patchInput.tract !== undefined) {
+    const v = patchInput.tract?.trim() || null;
+    patch.tract = v;
+  }
+  if (patchInput.basRefKey !== undefined) {
+    // Пишемо лише в нашу БД (bas_ref_key) — BAS каталог не чіпаємо
+    if (patchInput.basRefKey === null || patchInput.basRefKey.trim() === "") {
+      patch.bas_ref_key = null;
+    } else {
+      const normalized = normalizeBasRefKey(patchInput.basRefKey);
+      if (!normalized) {
+        return {
+          success: false as const,
+          status: "needs_slots" as const,
+          error:
+            "basRefKey має бути UUID Ref_Key з BAS (не довільний код на кшталт BAS-0042).",
+        };
+      }
+      patch.bas_ref_key = normalized;
+    }
+  }
 
   if (Object.keys(patch).length === 0) {
     return {
@@ -895,7 +1093,7 @@ async function applyFieldDetailsUpdate(
   }
 
   const selectCols =
-    "id, name, canonical_name, crop, area_ha, season, notes, color, is_field, plot_category";
+    "id, name, canonical_name, crop, area_ha, season, notes, color, is_field, plot_category, previous_crop, field_no, tract, bas_ref_key";
 
   const { data, error } = await supabase
     .from("farm_fields")
@@ -908,7 +1106,15 @@ async function applyFieldDetailsUpdate(
     // Поступово знімаємо колонки, яких ще немає
     let retryPatch = { ...patch };
     let lastError = error;
-    for (const col of ["plot_category", "notes", "color"] as const) {
+    for (const col of [
+      "plot_category",
+      "notes",
+      "color",
+      "previous_crop",
+      "field_no",
+      "tract",
+      "bas_ref_key",
+    ] as const) {
       if (
         !(col in retryPatch) ||
         !(
@@ -955,6 +1161,7 @@ async function applyFieldDetailsUpdate(
           },
           warning: `Частина полів не збережена (немає колонки ${col}).`,
           openFieldPath: `/?field=${row.id}`,
+          clientEvents: ["field-updated"],
         };
       }
       lastError = retry.error ?? lastError;
@@ -966,7 +1173,12 @@ async function applyFieldDetailsUpdate(
     };
   }
 
-  const row = data as unknown as AgentFieldRow;
+  const row = data as unknown as AgentFieldRow & {
+    previous_crop?: string | null;
+    field_no?: string | null;
+    tract?: string | null;
+    bas_ref_key?: string | null;
+  };
   const area = finiteNumber(row.area_ha);
   const name =
     (row.canonical_name && row.canonical_name.trim()) ||
@@ -985,8 +1197,13 @@ async function applyFieldDetailsUpdate(
       color: row.color ?? null,
       category: (row.plot_category as string | null) ?? null,
       isField: row.is_field !== false,
+      previousCrop: row.previous_crop ?? null,
+      fieldNumber: row.field_no ?? null,
+      tract: row.tract ?? null,
+      basRefKey: row.bas_ref_key ?? null,
     },
     openFieldPath: `/?field=${row.id}`,
+    clientEvents: ["field-updated"],
   };
 }
 
@@ -1042,6 +1259,224 @@ function toFieldPolygonFeature(
     type: "Feature",
     properties: {},
     geometry: geometry as Polygon | MultiPolygon,
+  };
+}
+
+/** Закрити кільце полігону (перша == остання). */
+function closeLngLatRing(ring: [number, number][]): [number, number][] {
+  if (ring.length < 3) return ring;
+  const first = ring[0]!;
+  const last = ring[ring.length - 1]!;
+  if (first[0] === last[0] && first[1] === last[1]) return ring;
+  return [...ring, first];
+}
+
+/**
+ * Користувач часто дає [[lat,lng],…]; GeoJSON — [[lng,lat],…].
+ * Україна: lat≈44–53, lng≈22–41.
+ */
+function normalizePairsToLngLat(
+  pairs: number[][]
+): { ok: true; ring: [number, number][] } | { ok: false; error: string } {
+  if (pairs.length < 3) {
+    return {
+      ok: false,
+      error: "Потрібно щонайменше 3 точки для полігону.",
+    };
+  }
+  const cleaned: [number, number][] = [];
+  for (const pair of pairs) {
+    if (!Array.isArray(pair) || pair.length < 2) {
+      return { ok: false, error: "Кожна точка має бути парою чисел [a, b]." };
+    }
+    const a = Number(pair[0]);
+    const b = Number(pair[1]);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) {
+      return { ok: false, error: "Координати мають бути числами." };
+    }
+    cleaned.push([a, b]);
+  }
+
+  let latLngVotes = 0;
+  let lngLatVotes = 0;
+  for (const [a, b] of cleaned) {
+    const looksLatLng = a >= 44 && a <= 53 && b >= 22 && b <= 41;
+    const looksLngLat = a >= 22 && a <= 41 && b >= 44 && b <= 53;
+    if (looksLatLng) latLngVotes += 1;
+    if (looksLngLat) lngLatVotes += 1;
+  }
+
+  const asLatLng = latLngVotes > lngLatVotes;
+  const ring: [number, number][] = cleaned.map(([a, b]) =>
+    asLatLng ? [b, a] : [a, b]
+  );
+
+  for (const [lng, lat] of ring) {
+    if (Math.abs(lng) > 180 || Math.abs(lat) > 90) {
+      return {
+        ok: false,
+        error: `Невалідна точка [${lng}, ${lat}] (очікується lng/lat у межах світу).`,
+      };
+    }
+  }
+
+  return { ok: true, ring: closeLngLatRing(ring) };
+}
+
+function parseWktPolygon(
+  raw: string
+): { ok: true; ring: [number, number][] } | { ok: false; error: string } {
+  const text = raw.trim();
+  const m = text.match(/^POLYGON\s*\(\s*\((.+)\)\s*\)$/i);
+  if (!m?.[1]) {
+    return {
+      ok: false,
+      error: "Підтримується WKT виду POLYGON((lng lat, …)).",
+    };
+  }
+  const pairs = m[1]
+    .split(",")
+    .map((part) =>
+      part
+        .trim()
+        .split(/\s+/)
+        .map(Number)
+        .filter((n) => Number.isFinite(n))
+    )
+    .filter((p) => p.length >= 2)
+    .map((p) => [p[0]!, p[1]!]);
+  // WKT зазвичай lng lat
+  return normalizePairsToLngLat(
+    pairs.map(([lng, lat]) => {
+      // якщо схоже на lat lng — normalizePairs розбере
+      return [lng, lat];
+    })
+  );
+}
+
+function extractPolygonRingFromGeoJson(
+  parsed: unknown
+): { ok: true; ring: [number, number][] } | { ok: false; error: string } {
+  if (!parsed || typeof parsed !== "object") {
+    return { ok: false, error: "GeoJSON має бути обʼєктом." };
+  }
+  const obj = parsed as Record<string, unknown>;
+  let geometry: Record<string, unknown> | null = null;
+
+  if (obj.type === "Feature" && obj.geometry && typeof obj.geometry === "object") {
+    geometry = obj.geometry as Record<string, unknown>;
+  } else if (
+    obj.type === "FeatureCollection" &&
+    Array.isArray(obj.features) &&
+    obj.features[0] &&
+    typeof obj.features[0] === "object"
+  ) {
+    const f = obj.features[0] as Record<string, unknown>;
+    if (f.geometry && typeof f.geometry === "object") {
+      geometry = f.geometry as Record<string, unknown>;
+    }
+  } else if (obj.type === "Polygon" || obj.type === "MultiPolygon") {
+    geometry = obj;
+  }
+
+  if (!geometry) {
+    return {
+      ok: false,
+      error: "Очікую GeoJSON Feature / Polygon / FeatureCollection.",
+    };
+  }
+
+  if (geometry.type === "Polygon" && Array.isArray(geometry.coordinates)) {
+    const outer = geometry.coordinates[0];
+    if (!Array.isArray(outer)) {
+      return { ok: false, error: "Порожній Polygon.coordinates." };
+    }
+    // GeoJSON уже lng,lat — не свапати евристикою UA якщо вже в форматі
+    const pairs = outer.map((p) => {
+      if (!Array.isArray(p) || p.length < 2) return [NaN, NaN];
+      return [Number(p[0]), Number(p[1])];
+    });
+    const ring: [number, number][] = [];
+    for (const p of pairs) {
+      if (!Number.isFinite(p[0]) || !Number.isFinite(p[1])) {
+        return { ok: false, error: "Невалідні координати в GeoJSON." };
+      }
+      ring.push([p[0]!, p[1]!]);
+    }
+    return { ok: true, ring: closeLngLatRing(ring) };
+  }
+
+  if (geometry.type === "MultiPolygon" && Array.isArray(geometry.coordinates)) {
+    const firstPoly = geometry.coordinates[0];
+    const outer = Array.isArray(firstPoly) ? firstPoly[0] : null;
+    if (!Array.isArray(outer)) {
+      return { ok: false, error: "Порожній MultiPolygon." };
+    }
+    const ring: [number, number][] = [];
+    for (const p of outer) {
+      if (!Array.isArray(p) || p.length < 2) {
+        return { ok: false, error: "Невалідні координати MultiPolygon." };
+      }
+      const lng = Number(p[0]);
+      const lat = Number(p[1]);
+      if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
+        return { ok: false, error: "Невалідні координати MultiPolygon." };
+      }
+      ring.push([lng, lat]);
+    }
+    return { ok: true, ring: closeLngLatRing(ring) };
+  }
+
+  return { ok: false, error: "Підтримуються лише Polygon / MultiPolygon." };
+}
+
+function parseAgentFieldGeometryInput(input: {
+  coordinates?: number[][];
+  geoJson?: string;
+}):
+  | { ok: true; geometry: Polygon; pointsCount: number }
+  | { ok: false; error: string } {
+  const geoRaw = input.geoJson?.trim() || "";
+  if (geoRaw) {
+    if (/^POLYGON\s*\(/i.test(geoRaw)) {
+      const wkt = parseWktPolygon(geoRaw);
+      if (!wkt.ok) return wkt;
+      return {
+        ok: true,
+        geometry: { type: "Polygon", coordinates: [wkt.ring] },
+        pointsCount: wkt.ring.length,
+      };
+    }
+    try {
+      const parsed = JSON.parse(geoRaw) as unknown;
+      const extracted = extractPolygonRingFromGeoJson(parsed);
+      if (!extracted.ok) return extracted;
+      return {
+        ok: true,
+        geometry: { type: "Polygon", coordinates: [extracted.ring] },
+        pointsCount: extracted.ring.length,
+      };
+    } catch {
+      return {
+        ok: false,
+        error: "geoJson не є валідним JSON і не схожий на WKT POLYGON.",
+      };
+    }
+  }
+
+  if (input.coordinates && input.coordinates.length > 0) {
+    const normalized = normalizePairsToLngLat(input.coordinates);
+    if (!normalized.ok) return normalized;
+    return {
+      ok: true,
+      geometry: { type: "Polygon", coordinates: [normalized.ring] },
+      pointsCount: normalized.ring.length,
+    };
+  }
+
+  return {
+    ok: false,
+    error: "Передай coordinates [[…],[…]] або geoJson (GeoJSON / WKT).",
   };
 }
 
@@ -2152,6 +2587,1063 @@ function createAgentTools(options?: {
       },
     }),
 
+    getFleetDaySummary: tool({
+      description:
+        "KPI парку за добу: активні, на полі/базі/дорозі, км, мотогодини, спалене ДП, зливи/простої.",
+      inputSchema: z.object({
+        date: z
+          .string()
+          .trim()
+          .optional()
+          .describe("Дата зрізу YYYY-MM-DD. За замовчуванням — сьогодні"),
+        includeAlerts: z
+          .boolean()
+          .optional()
+          .default(true)
+          .describe(
+            "Чи включати смарт-тривоги: зливи пального, довгий простій"
+          ),
+      }),
+      execute: async ({ date, includeAlerts }) => {
+        console.log("[TOOL: getFleetDaySummary]", { date, includeAlerts });
+        try {
+          const summary = await buildFleetDaySummary({
+            supabase,
+            date,
+            includeAlerts: includeAlerts !== false,
+          });
+          return {
+            success: true as const,
+            status: "ok" as const,
+            ...summary,
+            navigatePath: "/equipment",
+            message: `Парк **${summary.date}**: активних **${summary.totalActive}/${summary.totalUnits}**, на полі **${summary.inFieldCount}**, км **${summary.totalMileageKm}**, ДП **${summary.totalFuelBurnedLiters} л**, тривог **${summary.alerts.length}**.`,
+          };
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка зведення флоту",
+          };
+        }
+      },
+    }),
+
+    getEquipmentDayTrack: tool({
+      description:
+        "Денний трек/зміна техніки: км, idle, DUT паливо, відвідані зони/поля.",
+      inputSchema: z.object({
+        equipmentIdOrName: z
+          .string()
+          .trim()
+          .min(1)
+          .describe("Назва або держномер машини"),
+        date: z
+          .string()
+          .trim()
+          .optional()
+          .describe("Дата YYYY-MM-DD"),
+      }),
+      execute: async ({ equipmentIdOrName, date }) => {
+        console.log("[TOOL: getEquipmentDayTrack]", {
+          equipmentIdOrName,
+          date,
+        });
+        try {
+          const resolved = await resolveAgentEquipmentByLookup(
+            supabase,
+            equipmentIdOrName
+          );
+          if (!resolved.ok) {
+            return {
+              success: false as const,
+              status: resolved.status,
+              error: resolved.error,
+              candidates: resolved.candidates,
+            };
+          }
+          const eq = resolved.equipment;
+          const track = await buildEquipmentDayTrack({
+            supabase,
+            equipmentId: eq.id,
+            equipmentName: String(eq.name ?? "Техніка"),
+            wialonId: eq.wialon_id,
+            date,
+          });
+          if (!track.ok) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: track.error,
+              equipmentId: eq.id,
+              equipmentName: eq.name,
+            };
+          }
+          const openPath =
+            track.wialonUnitId > 0
+              ? `/equipment?id=${track.wialonUnitId}`
+              : "/equipment";
+          return {
+            success: true as const,
+            status: "ok" as const,
+            ...track,
+            navigatePath: openPath,
+            clientEvents: ["focus-equipment-map"] as const,
+            clientDirective: {
+              type: "focus-equipment-map" as const,
+              equipmentId: eq.id,
+              wialonUnitId: track.wialonUnitId,
+            },
+            message: `**${track.equipmentName}** · ${track.date}: **${track.distanceKm} км**, робота **${track.workHours} год**, idle **${track.idleHours} год**, ДП **${track.fuelBurnedLiters ?? "—"} л**.`,
+          };
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка треку техніки",
+          };
+        }
+      },
+    }),
+
+    createLocalEquipment: tool({
+      description:
+        "Додає локальну техніку без GPS (has_tracker=false) у equipment.",
+      inputSchema: z.object({
+        name: z
+          .string()
+          .trim()
+          .min(1)
+          .describe("Назва/модель техніки (наприклад, МТЗ-82)"),
+        type: z
+          .enum([
+            "tractor",
+            "combine",
+            "truck",
+            "sprayer",
+            "car",
+            "loader",
+            "other",
+          ])
+          .describe("Тип техніки"),
+        inventoryNumber: z
+          .string()
+          .trim()
+          .optional()
+          .describe("Інвентарний або держномер"),
+        fuelTankCapacity: z
+          .number()
+          .positive()
+          .optional()
+          .describe("Об'єм паливного бака в літрах"),
+        initialMotohours: z
+          .number()
+          .nonnegative()
+          .optional()
+          .default(0)
+          .describe("Початкові мотогодини"),
+        workScope: z
+          .enum(["field", "base"])
+          .optional()
+          .default("field")
+          .describe("field|base"),
+      }),
+      execute: async ({
+        name,
+        type,
+        inventoryNumber,
+        fuelTankCapacity,
+        initialMotohours,
+        workScope,
+      }) => {
+        console.log("[TOOL: createLocalEquipment]", {
+          name,
+          type,
+          inventoryNumber,
+          fuelTankCapacity,
+          initialMotohours,
+          workScope,
+        });
+        try {
+          const result = await createLocalEquipmentForAgent({
+            name,
+            type,
+            inventoryNumber,
+            fuelTankCapacity,
+            initialMotohours: initialMotohours ?? 0,
+            workScope: workScope ?? "field",
+          });
+          if (!result.ok) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: result.error,
+            };
+          }
+          return {
+            success: true as const,
+            status: "created" as const,
+            equipmentId: result.id,
+            equipmentName: result.name,
+            type: result.type,
+            code: result.code,
+            fuelTankVolume: result.fuelTankVolume,
+            currentMotohours: result.currentMotohours,
+            hasTracker: false,
+            workScope: result.workScope,
+            clientEvents: ["equipment-updated"] as const,
+            navigatePath: "/equipment",
+            message: `Додав техніку «${result.name}» без трекера (бак ${result.fuelTankVolume ?? "—"} л).`,
+          };
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка створення техніки",
+          };
+        }
+      },
+    }),
+
+    linkEquipmentWialonUnit: tool({
+      description:
+        "Привʼязує Wialon unit до техніки (wialon_id + has_tracker=true).",
+      inputSchema: z.object({
+        equipmentIdOrName: z
+          .string()
+          .trim()
+          .min(1)
+          .describe("Техніка ID/назва"),
+        wialonUnitId: z
+          .union([z.number().int().positive(), z.string().trim().min(1)])
+          .describe("Числовий або рядковий ID об'єкта з Wialon"),
+      }),
+      execute: async ({ equipmentIdOrName, wialonUnitId }) => {
+        const unitId = Number(wialonUnitId);
+        console.log("[TOOL: linkEquipmentWialonUnit]", {
+          equipmentIdOrName,
+          unitId,
+        });
+        try {
+          const resolved = await resolveAgentEquipmentByLookup(
+            supabase,
+            equipmentIdOrName
+          );
+          if (!resolved.ok) {
+            return {
+              success: false as const,
+              status: resolved.status,
+              error: resolved.error,
+              candidates: resolved.candidates,
+            };
+          }
+          const linked = await linkEquipmentWialonForAgent({
+            equipmentId: resolved.equipment.id,
+            wialonUnitId: unitId,
+          });
+          if (!linked.ok) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: linked.error,
+            };
+          }
+          return {
+            success: true as const,
+            status: "linked" as const,
+            equipmentId: resolved.equipment.id,
+            equipmentName: resolved.equipment.name,
+            wialonUnitId: linked.wialonUnitId,
+            wialonName: linked.wialonName,
+            hasTracker: true,
+            clientEvents: ["equipment-updated"] as const,
+            navigatePath: `/equipment?id=${linked.wialonUnitId}`,
+            message: `Привʼязав Wialon **${linked.wialonUnitId}**${
+              linked.wialonName ? ` («${linked.wialonName}»)` : ""
+            } до «${resolved.equipment.name}».`,
+          };
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка привʼязки Wialon",
+          };
+        }
+      },
+    }),
+
+    unlinkEquipmentWialonUnit: tool({
+      description:
+        "Знімає привʼязку Wialon з техніки (wialon_id=null). Потрібне confirmed.",
+      inputSchema: z.object({
+        equipmentIdOrName: z
+          .string()
+          .trim()
+          .min(1)
+          .describe("Техніка ID/назва"),
+        confirmed: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe("Підтвердження"),
+      }),
+      execute: async ({ equipmentIdOrName, confirmed }) => {
+        const isConfirmed = confirmed === true;
+        console.log("[TOOL: unlinkEquipmentWialonUnit]", {
+          equipmentIdOrName,
+          isConfirmed,
+        });
+        try {
+          const resolved = await resolveAgentEquipmentByLookup(
+            supabase,
+            equipmentIdOrName
+          );
+          if (!resolved.ok) {
+            return {
+              success: false as const,
+              status: resolved.status,
+              error: resolved.error,
+              candidates: resolved.candidates,
+            };
+          }
+          const eq = resolved.equipment;
+          const confirmChoice = "Підтвердити відвʼязку Wialon";
+          const cancelChoice = "Скасувати";
+
+          if (!isConfirmed) {
+            return {
+              success: false as const,
+              status: "requires_confirmation" as const,
+              equipmentId: eq.id,
+              equipmentName: eq.name,
+              wialonUnitId: eq.wialon_id,
+              confirmChoice,
+              cancelChoice,
+              canConfirm: true,
+              userHint: `Відвʼязати Wialon від «${eq.name}»${
+                eq.wialon_id != null ? ` (unit ${eq.wialon_id})` : ""
+              }?`,
+            };
+          }
+
+          const unlinked = await unlinkEquipmentWialonForAgent({
+            equipmentId: eq.id,
+          });
+          if (!unlinked.ok) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: unlinked.error,
+            };
+          }
+          return {
+            success: true as const,
+            status: "unlinked" as const,
+            equipmentId: eq.id,
+            equipmentName: eq.name,
+            hasTracker: false,
+            clientEvents: ["equipment-updated"] as const,
+            message: `Відвʼязав Wialon від «${eq.name}».`,
+          };
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка відвʼязки Wialon",
+          };
+        }
+      },
+    }),
+
+    updateImplementWorkingWidth: tool({
+      description:
+        "Оновлює робочу ширину захвату знаряддя (working_width_m) для розрахунку площі з GPS.",
+      inputSchema: z.object({
+        implementIdOrName: z
+          .string()
+          .trim()
+          .min(1)
+          .describe("Назва або ID агрегата (сівалка, плуг, борона)"),
+        workingWidthMeters: z
+          .number()
+          .positive()
+          .describe("Робоча ширина захвату в метрах"),
+      }),
+      execute: async ({ implementIdOrName, workingWidthMeters }) => {
+        console.log("[TOOL: updateImplementWorkingWidth]", {
+          implementIdOrName,
+          workingWidthMeters,
+        });
+        try {
+          const result = await updateImplementWidthForAgent({
+            supabase,
+            implementIdOrName,
+            workingWidthMeters,
+          });
+          if (!result.ok) {
+            return {
+              success: false as const,
+              status: result.status,
+              error: result.error,
+              candidates: result.candidates,
+            };
+          }
+          return {
+            success: true as const,
+            status: "updated" as const,
+            implementId: result.implementId,
+            implementName: result.implementName,
+            workingWidthMeters: result.workingWidthMeters,
+            message: `Ширину захвату оновлено: «${result.implementName}» → **${result.workingWidthMeters} м**.`,
+          };
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка оновлення ширини",
+          };
+        }
+      },
+    }),
+
+    focusEquipmentOnMap: tool({
+      description:
+        "Відкриває /equipment і фокусує техніку на карті (focus-equipment-map).",
+      inputSchema: z.object({
+        equipmentIdOrName: z
+          .string()
+          .trim()
+          .min(1)
+          .describe("Техніка для показу"),
+      }),
+      execute: async ({ equipmentIdOrName }) => {
+        console.log("[TOOL: focusEquipmentOnMap]", { equipmentIdOrName });
+        try {
+          const resolved = await resolveAgentEquipmentByLookup(
+            supabase,
+            equipmentIdOrName
+          );
+          if (!resolved.ok) {
+            return {
+              success: false as const,
+              status: resolved.status,
+              error: resolved.error,
+              candidates: resolved.candidates,
+            };
+          }
+          const eq = resolved.equipment;
+          const wialonUnitId = eq.wialon_id;
+          const navigatePath =
+            wialonUnitId != null && wialonUnitId > 0
+              ? `/equipment?id=${wialonUnitId}`
+              : "/equipment";
+          return {
+            success: true as const,
+            status: "ok" as const,
+            equipmentId: eq.id,
+            equipmentName: eq.name,
+            wialonUnitId,
+            navigatePath,
+            clientEvents: ["focus-equipment-map"] as const,
+            clientDirective: {
+              type: "focus-equipment-map" as const,
+              equipmentId: eq.id,
+              wialonUnitId,
+            },
+            message: `Відкриваю «${eq.name}» у розділі Техніка.`,
+          };
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка фокусу техніки",
+          };
+        }
+      },
+    }),
+
+    toggleEquipmentActive: tool({
+      description:
+        "Вмикає або тимчасово виводить техніку з експлуатації (архів/ремонт).",
+      inputSchema: z.object({
+        equipmentIdOrName: z
+          .string()
+          .trim()
+          .min(1)
+          .describe("Назва або ID машини"),
+        isActive: z.boolean().describe("true = в роботі, false = архів/ремонт"),
+        confirmed: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe("Підтвердження зміни статусу"),
+      }),
+      execute: async ({ equipmentIdOrName, isActive, confirmed }) => {
+        const isConfirmed = confirmed === true;
+        console.log("[TOOL: toggleEquipmentActive]", {
+          equipmentIdOrName,
+          isActive,
+          isConfirmed,
+        });
+        try {
+          const resolved = await resolveAgentEquipmentByLookup(
+            supabase,
+            equipmentIdOrName
+          );
+          if (!resolved.ok) {
+            return {
+              success: false as const,
+              status: resolved.status,
+              error: resolved.error,
+              candidates: resolved.candidates,
+            };
+          }
+          const eq = resolved.equipment;
+          const confirmChoice = isActive
+            ? "Так, повернути в роботу"
+            : "Так, вивести з експлуатації";
+          const cancelChoice = "Скасувати";
+          if (!isConfirmed) {
+            return {
+              success: false as const,
+              status: "requires_confirmation" as const,
+              kind: "equipment_toggle_active" as const,
+              equipmentId: eq.id,
+              equipmentName: eq.name,
+              isActive,
+              confirmChoice,
+              cancelChoice,
+              canConfirm: true,
+              badge: isActive ? "Техніка · у роботу" : "Техніка · архів",
+              userHint: isActive
+                ? `Повернути «${eq.name}» в експлуатацію?`
+                : `Вивести «${eq.name}» з експлуатації (архів/ремонт)?`,
+            };
+          }
+          const saved = await toggleEquipmentActiveForAgent({
+            equipmentId: eq.id,
+            isActive,
+          });
+          if (!saved.ok) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: saved.error,
+            };
+          }
+          return {
+            success: true as const,
+            status: "updated" as const,
+            kind: "equipment_toggle_active" as const,
+            equipmentId: eq.id,
+            equipmentName: eq.name,
+            isActive,
+            clientEvents: ["equipment-updated"] as const,
+            message: isActive
+              ? `«${eq.name}» знову в експлуатації.`
+              : `«${eq.name}» виведено з експлуатації (архів/ремонт).`,
+          };
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка статусу техніки",
+          };
+        }
+      },
+    }),
+
+    updateEquipmentFuelTank: tool({
+      description: "Оновлює обʼєм паливного бака техніки (л).",
+      inputSchema: z.object({
+        equipmentIdOrName: z
+          .string()
+          .trim()
+          .min(1)
+          .describe("Назва або ID машини"),
+        tankCapacityLiters: z
+          .number()
+          .positive()
+          .describe("Місткість бака, л"),
+      }),
+      execute: async ({ equipmentIdOrName, tankCapacityLiters }) => {
+        console.log("[TOOL: updateEquipmentFuelTank]", {
+          equipmentIdOrName,
+          tankCapacityLiters,
+        });
+        try {
+          const resolved = await resolveAgentEquipmentByLookup(
+            supabase,
+            equipmentIdOrName
+          );
+          if (!resolved.ok) {
+            return {
+              success: false as const,
+              status: resolved.status,
+              error: resolved.error,
+              candidates: resolved.candidates,
+            };
+          }
+          const eq = resolved.equipment;
+          const saved = await updateEquipmentFuelTankForAgent({
+            equipmentId: eq.id,
+            tankCapacityLiters,
+          });
+          if (!saved.ok) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: saved.error,
+            };
+          }
+          return {
+            success: true as const,
+            status: "updated" as const,
+            kind: "equipment_fuel_tank" as const,
+            equipmentId: eq.id,
+            equipmentName: eq.name,
+            tankCapacityLiters: saved.fuelTankVolume,
+            clientEvents: ["equipment-updated"] as const,
+            message: `Бак «${eq.name}»: **${saved.fuelTankVolume}** л.`,
+          };
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка бака",
+          };
+        }
+      },
+    }),
+
+    exportEquipmentDayJournal: tool({
+      description:
+        "Excel/CSV журнал роботи всього автопарку за зміну (км, мотогодини, DUT, idle).",
+      inputSchema: z.object({
+        date: z
+          .string()
+          .trim()
+          .optional()
+          .describe("Дата YYYY-MM-DD. За замовчуванням — поточна"),
+        format: z
+          .enum(["xlsx", "csv"])
+          .optional()
+          .default("xlsx")
+          .describe("Формат файлу"),
+      }),
+      execute: async ({ date, format }) => {
+        const formatValue = format ?? "xlsx";
+        console.log("[TOOL: exportEquipmentDayJournal]", { date, formatValue });
+        try {
+          const journal = await buildFleetDayJournal(supabase, date);
+          const params = new URLSearchParams({
+            date: journal.date,
+            format: formatValue,
+          });
+          const year = journal.date.slice(0, 4);
+          const filename = `Fleet_Journal_${year}.${formatValue === "csv" ? "csv" : "xlsx"}`;
+          const downloadUrl = `/api/export/fleet-journal?${params.toString()}`;
+          return {
+            success: true as const,
+            status: "ok" as const,
+            downloadUrl,
+            filename,
+            totalMachines: journal.totalMachines,
+            date: journal.date,
+            format: formatValue,
+            message: `Журнал флоту **${journal.date}**: **${journal.totalMachines}** машин. Завантаження: ${downloadUrl}`,
+          };
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка журналу флоту",
+          };
+        }
+      },
+    }),
+
+
+    exportEquipmentUnitJournal: tool({
+      description:
+        "Excel/CSV денний журнал однієї машини (сесії локацій + KPI).",
+      inputSchema: z.object({
+        equipmentIdOrName: z
+          .string()
+          .trim()
+          .min(1)
+          .describe("Машина"),
+        date: z
+          .string()
+          .trim()
+          .optional()
+          .describe("YYYY-MM-DD"),
+        format: z.enum(["xlsx", "csv"]).optional().default("xlsx"),
+      }),
+      execute: async ({ equipmentIdOrName, date, format }) => {
+        const formatValue = format ?? "xlsx";
+        console.log("[TOOL: exportEquipmentUnitJournal]", {
+          equipmentIdOrName,
+          date,
+          formatValue,
+        });
+        try {
+          const resolved = await resolveAgentEquipmentByLookup(
+            supabase,
+            equipmentIdOrName
+          );
+          if (!resolved.ok) {
+            return {
+              success: false as const,
+              status: resolved.status,
+              error: resolved.error,
+              candidates: resolved.candidates,
+            };
+          }
+          const eq = resolved.equipment;
+          const journal = await buildEquipmentUnitDayJournal({
+            supabase,
+            equipmentId: eq.id,
+            equipmentName: eq.name,
+            wialonId: eq.wialon_id,
+            date,
+          });
+          const params = new URLSearchParams({
+            equipmentId: eq.id,
+            date: journal.date,
+            format: formatValue,
+          });
+          const filename = `${journal.filenameBase}.${formatValue === "csv" ? "csv" : "xlsx"}`;
+          const downloadUrl = `/api/export/equipment-day-journal?${params.toString()}`;
+          return {
+            success: true as const,
+            status: "ok" as const,
+            downloadUrl,
+            filename,
+            equipmentId: eq.id,
+            equipmentName: eq.name,
+            date: journal.date,
+            sessionCount: journal.sessionCount,
+            distanceKm: journal.distanceKm,
+            workHours: journal.workHours,
+            format: formatValue,
+            message: `Журнал «${eq.name}» за **${journal.date}**: ${journal.sessionCount} сесій. ${downloadUrl}`,
+          };
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Помилка журналу машини",
+          };
+        }
+      },
+    }),
+
+    openFuelDashboard: tool({
+      description: "Відкриває розділ Паливо (/fuel) у UI.",
+      inputSchema: z.object({
+        tab: z
+          .enum(["storages", "journal", "radar"])
+          .optional()
+          .describe("Опційна вкладка"),
+      }),
+      execute: async ({ tab }) => {
+        const navigatePath = tab ? `/fuel?tab=${tab}` : "/fuel";
+        return {
+          success: true as const,
+          status: "ok" as const,
+          navigatePath,
+          tab: tab ?? null,
+          clientEvents: ["open-fuel-dashboard"] as const,
+          clientDirective: {
+            type: "open-fuel-dashboard" as const,
+            tab: tab ?? null,
+          },
+          message: `Відкриваю розділ Паливо${tab ? ` · ${tab}` : ""}.`,
+        };
+      },
+    }),
+
+    highlightFleetMetricOnMap: tool({
+      description:
+        "Підсвічує на карті техніки одиниці за метрикою денного зведення (active/onField/distance/idling/drain).",
+      inputSchema: z.object({
+        metric: z
+          .enum(["active", "onField", "distance", "idling", "drain"])
+          .describe("Метрика флоту"),
+        date: z
+          .string()
+          .trim()
+          .optional()
+          .describe("YYYY-MM-DD для зведення"),
+      }),
+      execute: async ({ metric, date }) => {
+        const navigatePath = "/equipment";
+        return {
+          success: true as const,
+          status: "ok" as const,
+          metric,
+          date: date?.trim() || null,
+          navigatePath,
+          clientEvents: ["fleet-metric-highlight"] as const,
+          clientDirective: {
+            type: "fleet-metric-highlight" as const,
+            metric,
+            date: date?.trim() || null,
+          },
+          message: `Підсвічую на карті метрику **${metric}**.`,
+        };
+      },
+    }),
+
+    setEquipmentTrackPlayback: tool({
+      description:
+        "Відкриває техніку й керує playback денного треку (дата / play / прогрес).",
+      inputSchema: z.object({
+        equipmentIdOrName: z.string().trim().min(1),
+        date: z.string().trim().optional().describe("YYYY-MM-DD"),
+        play: z.boolean().optional().default(true),
+        progress: z
+          .number()
+          .min(0)
+          .max(1)
+          .optional()
+          .describe("0..1 позиція scrub"),
+      }),
+      execute: async ({ equipmentIdOrName, date, play, progress }) => {
+        try {
+          const resolved = await resolveAgentEquipmentByLookup(
+            supabase,
+            equipmentIdOrName
+          );
+          if (!resolved.ok) {
+            return {
+              success: false as const,
+              status: resolved.status,
+              error: resolved.error,
+              candidates: resolved.candidates,
+            };
+          }
+          const eq = resolved.equipment;
+          const wialonUnitId = eq.wialon_id;
+          const navigatePath =
+            wialonUnitId != null && wialonUnitId > 0
+              ? `/equipment?id=${wialonUnitId}`
+              : "/equipment";
+          return {
+            success: true as const,
+            status: "ok" as const,
+            equipmentId: eq.id,
+            equipmentName: eq.name,
+            wialonUnitId,
+            date: date?.trim() || null,
+            play: play !== false,
+            progress: progress ?? null,
+            navigatePath,
+            clientEvents: [
+              "focus-equipment-map",
+              "equipment-track-playback",
+            ] as const,
+            clientDirective: {
+              type: "equipment-track-playback" as const,
+              equipmentId: eq.id,
+              wialonUnitId,
+              date: date?.trim() || null,
+              play: play !== false,
+              progress: progress ?? null,
+            },
+            message: `Playback треку «${eq.name}»${date ? ` за ${date}` : ""}.`,
+          };
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error ? error.message : "Помилка playback",
+          };
+        }
+      },
+    }),
+
+    reverifyFuelTransactions: tool({
+      description:
+        "Повторна звірка outbound заправок з Wialon DUT (очікування GPS → variance).",
+      inputSchema: z.object({
+        transactionId: z
+          .string()
+          .trim()
+          .optional()
+          .describe("Одна транзакція UUID"),
+        from: z.string().trim().optional().describe("Дата з ISO"),
+        to: z.string().trim().optional().describe("Дата по ISO"),
+        limit: z.number().optional().default(50),
+      }),
+      execute: async ({ transactionId, from, to, limit }) => {
+        console.log("[TOOL: reverifyFuelTransactions]", {
+          transactionId,
+          from,
+          to,
+          limit,
+        });
+        try {
+          const result = await reverifyFuelTransactions({
+            supabase,
+            transactionId,
+            from,
+            to,
+            limit: limit ?? 50,
+          });
+          return {
+            success: true as const,
+            status: "ok" as const,
+            checked: result.checked,
+            updated: result.updated,
+            results: result.results,
+            clientEvents: ["fuel-updated"] as const,
+            message: `Reverify GPS: перевірено **${result.checked}**, оновлено **${result.updated}**.`,
+          };
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Помилка reverify",
+          };
+        }
+      },
+    }),
+
+    syncEquipmentFromBas: tool({
+      description:
+        "Синхронізує довідник техніки/знарядь з BAS (GET OData → upsert у нашу БД).",
+      inputSchema: z.object({
+        confirmed: z.boolean().optional().default(false),
+      }),
+      execute: async ({ confirmed }) => {
+        if (confirmed !== true) {
+          return {
+            success: false as const,
+            status: "requires_confirmation" as const,
+            kind: "equipment_bas_sync" as const,
+            confirmChoice: "Так, синхронізувати з BAS",
+            cancelChoice: "Скасувати",
+            canConfirm: true,
+            badge: "BAS · sync техніки",
+            userHint:
+              "Оновити каталог техніки та знарядь із BAS (лише читання 1С)?",
+          };
+        }
+        try {
+          const result = await syncEquipmentCatalogFromBasForAgent();
+          if (!result.ok) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: result.error,
+            };
+          }
+          return {
+            success: true as const,
+            status: "synced" as const,
+            equipmentUpserted: result.equipmentUpserted,
+            implementsUpserted: result.implementsUpserted,
+            clientEvents: ["equipment-updated"] as const,
+            message: result.message,
+          };
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error ? error.message : "Помилка BAS sync",
+          };
+        }
+      },
+    }),
+
+    autoMapEquipmentWialon: tool({
+      description:
+        "Авто-маппінг Wialon → equipment за моделлю (лише однозначні збіги).",
+      inputSchema: z.object({
+        confirmed: z.boolean().optional().default(false),
+      }),
+      execute: async ({ confirmed }) => {
+        if (confirmed !== true) {
+          return {
+            success: false as const,
+            status: "requires_confirmation" as const,
+            kind: "equipment_wialon_automap" as const,
+            confirmChoice: "Так, авто-мапінг Wialon",
+            cancelChoice: "Скасувати",
+            canConfirm: true,
+            badge: "Wialon · auto-map",
+            userHint:
+              "Привʼязати Wialon-юніти до техніки за однозначними збігами моделей?",
+          };
+        }
+        try {
+          const result = await autoMapEquipmentWialonForAgent();
+          if (!result.ok) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: result.error,
+            };
+          }
+          return {
+            success: true as const,
+            status: "mapped" as const,
+            mapped: result.mapped,
+            details: result.details,
+            clientEvents: ["equipment-updated"] as const,
+            message: result.message,
+          };
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error ? error.message : "Помилка auto-map",
+          };
+        }
+      },
+    }),
+
     getDriversList: tool({
       description: "Читає список механізаторів.",
       inputSchema: z.object({
@@ -2402,6 +3894,726 @@ function createAgentTools(options?: {
       },
     }),
 
+    listInventoryMoves: tool({
+      description:
+        "Журнал локальних рухів ТМЦ (прихід / списання / продаж) з пошуком і періодом — без сліпих UUID.",
+      inputSchema: z.object({
+        moveType: z
+          .enum(["all", "inbound", "outbound", "sale"])
+          .optional()
+          .default("all")
+          .describe("Тип руху: прихід, списання чи продаж"),
+        query: z
+          .string()
+          .trim()
+          .optional()
+          .describe(
+            "Пошук за назвою матеріалу, контрагентом, полем чи коментарем"
+          ),
+        period: z
+          .enum(["all", "today", "week", "month", "season"])
+          .optional()
+          .default("all")
+          .describe("Період"),
+        limit: z.number().int().positive().optional().default(20),
+      }),
+      execute: async ({ moveType, query, period, limit }) => {
+        console.log("[TOOL: listInventoryMoves]", {
+          moveType,
+          query,
+          period,
+          limit,
+        });
+        try {
+          const result = await listAgentInventoryMoves({
+            moveType: moveType ?? "all",
+            query,
+            period: period ?? "all",
+            limit: limit ?? 20,
+          });
+          if (!result.ok) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: result.error,
+              moves: [],
+            };
+          }
+          return {
+            success: true as const,
+            status: "ok" as const,
+            moveType: moveType ?? "all",
+            period: period ?? "all",
+            query: query?.trim() || null,
+            totalMatched: result.totalMatched,
+            count: result.moves.length,
+            moves: result.moves,
+            message:
+              result.moves.length === 0
+                ? "Рухів за фільтром не знайдено."
+                : `Знайдено ${result.totalMatched} рухів, показано ${result.moves.length}.`,
+          };
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Помилка журналу рухів ТМЦ",
+            moves: [],
+          };
+        }
+      },
+    }),
+
+    createInventoryInbound: tool({
+      description:
+        "Ручний прихід ТМЦ без OCR/фото (confirmed). Збільшує віртуальний залишок через inventory_local_moves.",
+      inputSchema: z.object({
+        itemIdOrName: z
+          .string()
+          .trim()
+          .min(1)
+          .describe("Назва або ID матеріалу з довідника"),
+        quantity: z.number().positive().describe("Кількість, що надійшла"),
+        pricePerUnit: z
+          .number()
+          .positive()
+          .optional()
+          .describe("Ціна за одиницю (грн)"),
+        supplier: z
+          .string()
+          .trim()
+          .optional()
+          .describe("Постачальник або номер прибуткової накладної"),
+        notes: z.string().trim().optional(),
+        confirmed: z.boolean().optional().default(false),
+      }),
+      execute: async ({
+        itemIdOrName,
+        quantity,
+        pricePerUnit,
+        supplier,
+        notes,
+        confirmed,
+      }) => {
+        console.log("[TOOL: createInventoryInbound]", {
+          itemIdOrName,
+          quantity,
+          pricePerUnit,
+          supplier,
+          confirmed,
+        });
+        try {
+          return await prepareOrCreateInventoryInbound({
+            itemIdOrName,
+            quantity,
+            pricePerUnit,
+            supplier,
+            notes,
+            confirmed,
+          });
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Помилка приходу ТМЦ",
+          };
+        }
+      },
+    }),
+
+    createInventorySale: tool({
+      description:
+        "Продаж врожаю / commodity sale (confirmed). Списує зерно зі складу через type=sale.",
+      inputSchema: z.object({
+        cropOrCommodity: z
+          .string()
+          .trim()
+          .min(1)
+          .describe(
+            "Культура/товар: наприклад, Кукурудза, Пшениця 3 кл, Соняшник"
+          ),
+        quantityTons: z
+          .number()
+          .positive()
+          .describe("Об'єм продажу в тоннах"),
+        pricePerTonUah: z
+          .number()
+          .positive()
+          .describe("Ціна за тонну в гривнях"),
+        buyer: z
+          .string()
+          .trim()
+          .min(1)
+          .describe("Покупець / елеватор / трейдер"),
+        storageLocation: z
+          .string()
+          .trim()
+          .optional()
+          .describe("Звідки відвантажено: Центральний склад, Ток, Елеватор"),
+        confirmed: z.boolean().optional().default(false),
+      }),
+      execute: async ({
+        cropOrCommodity,
+        quantityTons,
+        pricePerTonUah,
+        buyer,
+        storageLocation,
+        confirmed,
+      }) => {
+        console.log("[TOOL: createInventorySale]", {
+          cropOrCommodity,
+          quantityTons,
+          pricePerTonUah,
+          buyer,
+          confirmed,
+        });
+        try {
+          return await prepareOrCreateInventorySale({
+            cropOrCommodity,
+            quantityTons,
+            pricePerTonUah,
+            buyer,
+            storageLocation,
+            confirmed,
+          });
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Помилка продажу врожаю",
+          };
+        }
+      },
+    }),
+
+    updateInventoryMove: tool({
+      description:
+        "Коригує qty/ціну/notes будь-якого локального руху ТМЦ (inbound/outbound/sale), draft only.",
+      inputSchema: z.object({
+        moveId: z.string().trim().min(1).describe("UUID inventory_local_moves"),
+        newQuantity: z.number().positive().optional(),
+        newPrice: z
+          .number()
+          .nonnegative()
+          .optional()
+          .describe("Нова ціна ₴/од."),
+        notes: z.string().optional(),
+      }),
+      execute: async ({ moveId, newQuantity, newPrice, notes }) => {
+        console.log("[TOOL: updateInventoryMove]", {
+          moveId,
+          newQuantity,
+          newPrice,
+          notes: notes != null,
+        });
+        try {
+          return await updateAgentInventoryMove({
+            moveId,
+            newQuantity,
+            newPrice,
+            notes,
+          });
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Помилка оновлення руху ТМЦ",
+          };
+        }
+      },
+    }),
+
+    deleteInventoryMove: tool({
+      description:
+        "Скасовує локальний рух ТМЦ (inbound/sale/outbound). sent_to_1c — заборонено. confirmed.",
+      inputSchema: z.object({
+        moveId: z.string().trim().min(1).describe("UUID руху"),
+        confirmed: z.boolean().optional().default(false),
+      }),
+      execute: async ({ moveId, confirmed }) => {
+        console.log("[TOOL: deleteInventoryMove]", { moveId, confirmed });
+        try {
+          return await deleteAgentInventoryMove({ moveId, confirmed });
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Помилка видалення руху ТМЦ",
+          };
+        }
+      },
+    }),
+
+    listAccountantQueue: tool({
+      description:
+        "Черга документів для бухгалтерії / вивантаження в 1С (склад, паливо, акти).",
+      inputSchema: z.object({
+        status: z
+          .enum(["all", "new", "prepared", "sent_to_1c"])
+          .optional()
+          .default("new")
+          .describe("Статус обробки документів бухгалтерією"),
+        documentType: z
+          .enum([
+            "all",
+            "inventory_write_off",
+            "fuel_dispense",
+            "service_act",
+            "inventory_sale",
+            "fuel_purchase",
+          ])
+          .optional()
+          .default("all"),
+        period: z
+          .enum(["all", "today", "week", "month", "season"])
+          .optional()
+          .default("all"),
+        limit: z.number().int().positive().optional().default(25),
+      }),
+      execute: async ({ status, documentType, period, limit }) => {
+        console.log("[TOOL: listAccountantQueue]", {
+          status,
+          documentType,
+          period,
+          limit,
+        });
+        try {
+          const result = await listAgentAccountantQueue({
+            status: status ?? "new",
+            documentType: documentType ?? "all",
+            period: period ?? "all",
+            limit: limit ?? 25,
+          });
+          if (!result.ok) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: result.error,
+              count: 0,
+              documents: [],
+            };
+          }
+          return {
+            success: true as const,
+            status: "ok" as const,
+            count: result.count,
+            totalMatched: result.totalMatched,
+            totalSumUah: result.totalSumUah,
+            filterStatus: status ?? "new",
+            documentType: documentType ?? "all",
+            period: period ?? "all",
+            documents: result.documents,
+            message:
+              result.count === 0
+                ? "У черзі немає документів за фільтром."
+                : `У черзі **${result.totalMatched}** док., показано ${result.count} (≈ ${result.totalSumUah} ₴).`,
+            navigatePath: "/accounting",
+          };
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Помилка черги бухгалтерії",
+            count: 0,
+            documents: [],
+          };
+        }
+      },
+    }),
+
+    markQueueDocumentsStatus: tool({
+      description:
+        "Змінює статус документів черги: prepared (перевірено), sent_to_1c, або new. confirmed.",
+      inputSchema: z.object({
+        documentIds: z
+          .array(z.string().trim().min(1))
+          .min(1)
+          .describe("Масив ID документів для оновлення"),
+        newStatus: z
+          .enum(["prepared", "sent_to_1c", "new"])
+          .describe(
+            "prepared = перевірено; sent_to_1c = вивантажено; new = повернути в чергу"
+          ),
+        confirmed: z.boolean().optional().default(false),
+      }),
+      execute: async ({ documentIds, newStatus, confirmed }) => {
+        console.log("[TOOL: markQueueDocumentsStatus]", {
+          count: documentIds.length,
+          newStatus,
+          confirmed,
+        });
+        try {
+          return await markAgentQueueDocumentsStatus({
+            documentIds,
+            newStatus,
+            confirmed,
+          });
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Помилка оновлення статусів черги",
+          };
+        }
+      },
+    }),
+
+    exportAccountantPackage: tool({
+      description:
+        "Формує Excel-пакет для бухгалтера (BAS handoff). Повертає downloadUrl.",
+      inputSchema: z.object({
+        period: z
+          .enum(["today", "week", "month", "season", "custom"])
+          .optional()
+          .default("month"),
+        status: z
+          .enum(["all", "new", "prepared"])
+          .optional()
+          .default("prepared")
+          .describe("Які документи включити в пакет експорту"),
+        markAsSent: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe(
+            "Автоматично перевести включені документи в sent_to_1c після вивантаження"
+          ),
+        dateFrom: z.string().trim().optional().describe("YYYY-MM-DD для custom"),
+        dateTo: z.string().trim().optional().describe("YYYY-MM-DD для custom"),
+      }),
+      execute: async ({ period, status, markAsSent, dateFrom, dateTo }) => {
+        const periodValue = period ?? "month";
+        const statusValue = status ?? "prepared";
+        const mark = markAsSent === true;
+        console.log("[TOOL: exportAccountantPackage]", {
+          periodValue,
+          statusValue,
+          mark,
+        });
+        try {
+          const collected = await collectAccountantPackageItems({
+            period: periodValue,
+            status: statusValue,
+            dateFrom,
+            dateTo,
+          });
+          if (!collected.ok) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: collected.error,
+            };
+          }
+          if (collected.items.length === 0) {
+            return {
+              success: false as const,
+              status: "empty" as const,
+              error: "Немає документів для експорту за обраним періодом.",
+            };
+          }
+
+          const params = new URLSearchParams({
+            period: periodValue,
+            status: statusValue,
+            markAsSent: mark ? "1" : "0",
+          });
+          if (dateFrom?.trim()) params.set("dateFrom", dateFrom.trim());
+          if (dateTo?.trim()) params.set("dateTo", dateTo.trim());
+
+          const year = new Date().getFullYear();
+          const filename = `Buhgalteria_Export_${year}.xlsx`;
+          const downloadUrl = `/api/export/accountant-package?${params.toString()}`;
+
+          return {
+            success: true as const,
+            status: "ready" as const,
+            downloadUrl,
+            filename,
+            totalDocuments: collected.items.length,
+            totalSumUah: collected.totalSumUah,
+            markAsSent: mark,
+            period: periodValue,
+            filterStatus: statusValue,
+            message: `Пакет готовий: **${collected.items.length}** док. (≈ **${collected.totalSumUah}** ₴). ${downloadUrl}`,
+            clientEvents: mark
+              ? (["accounting-updated"] as const)
+              : (["accounting-updated"] as const),
+            navigatePath: "/accounting",
+          };
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Помилка формування пакета",
+          };
+        }
+      },
+    }),
+
+    listServiceActs: tool({
+      description:
+        "Реєстр актів сторонніх послуг (СТО, підрядники) з accounting_acts.",
+      inputSchema: z.object({
+        query: z
+          .string()
+          .trim()
+          .optional()
+          .describe("Пошук за назвою СТО, підрядника, послуги чи техніки"),
+        equipmentIdOrName: z.string().trim().optional(),
+        limit: z.number().int().positive().optional().default(20),
+      }),
+      execute: async ({ query, equipmentIdOrName, limit }) => {
+        console.log("[TOOL: listServiceActs]", {
+          query,
+          equipmentIdOrName,
+          limit,
+        });
+        try {
+          const result = await listAgentServiceActs({
+            query,
+            equipmentIdOrName,
+            limit: limit ?? 20,
+          });
+          if (!result.ok) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: result.error,
+              acts: [],
+            };
+          }
+          return {
+            success: true as const,
+            status: "ok" as const,
+            count: result.count,
+            acts: result.acts,
+            message:
+              result.count === 0
+                ? "Актів за запитом не знайдено."
+                : `Знайдено **${result.count}** актів послуг.`,
+            navigatePath: "/accounting",
+          };
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Помилка реєстру актів",
+            acts: [],
+          };
+        }
+      },
+    }),
+
+    getReconciliationGaps: tool({
+      description:
+        "Аудит готовності до 1С/BAS: сутності без bas_ref_key + операційні дірки (ціна списань, незакриті наряди з паливом).",
+      inputSchema: z.object({
+        category: z
+          .enum(["all", "fields", "equipment", "inventory", "fuel_storages"])
+          .optional()
+          .default("all")
+          .describe(
+            "Категорія для перевірки наявності зв'язку з BAS"
+          ),
+      }),
+      execute: async ({ category }) => {
+        console.log("[TOOL: getReconciliationGaps]", { category });
+        try {
+          const result = await getAgentReconciliationGaps({
+            category: category ?? "all",
+          });
+          if (!result.ok) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: result.error,
+              gaps: [],
+            };
+          }
+          return {
+            success: true as const,
+            status: "ok" as const,
+            category: category ?? "all",
+            totalChecked: result.totalChecked,
+            unmappedCount: result.unmappedCount,
+            gapCount: result.gaps.length,
+            counts: result.counts,
+            basError: result.basError,
+            gaps: result.gaps.slice(0, 80),
+            message:
+              result.gaps.length === 0
+                ? "Розбіжностей не знайдено — готовність до звірки висока."
+                : `Знайдено **${result.gaps.length}** gap(s), без bas_ref_key: **${result.unmappedCount}**.`,
+            navigatePath: "/accounting",
+          };
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Помилка звірки BAS",
+            gaps: [],
+          };
+        }
+      },
+    }),
+
+    saveBasMapping: tool({
+      description:
+        "Зберігає bas_ref_key у НАШІЙ БД (field/equipment/inventory/fuel_storage). Ніколи не пише в OData Catalog_*.",
+      inputSchema: z.object({
+        entityType: z
+          .enum(["field", "equipment", "inventory_item", "fuel_storage"])
+          .describe("Тип сутності"),
+        entityIdOrName: z
+          .string()
+          .trim()
+          .min(1)
+          .describe("Назва або ID у системі LEVADIUS"),
+        basRefKey: z
+          .string()
+          .trim()
+          .min(1)
+          .describe("Код, GUID або артикул із BAS АГРО / 1C"),
+        basName: z
+          .string()
+          .trim()
+          .optional()
+          .describe(
+            "Офіційна назва позиції в плані рахунків/довіднику BAS"
+          ),
+      }),
+      execute: async ({
+        entityType,
+        entityIdOrName,
+        basRefKey,
+        basName,
+      }) => {
+        console.log("[TOOL: saveBasMapping]", {
+          entityType,
+          entityIdOrName,
+          basRefKey,
+        });
+        try {
+          return await saveAgentBasMapping({
+            entityType,
+            entityIdOrName,
+            basRefKey,
+            basName,
+          });
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Помилка збереження мапінгу",
+          };
+        }
+      },
+    }),
+
+    exportBasChangeRequest: tool({
+      description:
+        "Excel/CSV запит бухгалтеру на створення/уточнення позицій у BAS (без запису в 1С).",
+      inputSchema: z.object({
+        category: z
+          .enum(["all", "inventory", "equipment", "fields"])
+          .optional()
+          .default("all"),
+        format: z.enum(["xlsx", "csv"]).optional().default("xlsx"),
+      }),
+      execute: async ({ category, format }) => {
+        const categoryValue = category ?? "all";
+        const formatValue = format ?? "xlsx";
+        console.log("[TOOL: exportBasChangeRequest]", {
+          categoryValue,
+          formatValue,
+        });
+        try {
+          const collected = await collectBasChangeRequestRows({
+            category: categoryValue,
+          });
+          if (!collected.ok) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: collected.error,
+            };
+          }
+          if (collected.rows.length === 0) {
+            return {
+              success: true as const,
+              status: "empty" as const,
+              downloadUrl: null,
+              filename: null,
+              totalGaps: 0,
+              previewRows: [],
+              message: "Немає незамаплених позицій для запиту.",
+            };
+          }
+
+          const params = new URLSearchParams({
+            category: categoryValue,
+            format: formatValue,
+          });
+          const year = new Date().getFullYear();
+          const filename = `BAS_Change_Request_${year}.${formatValue === "csv" ? "csv" : "xlsx"}`;
+          const downloadUrl = `/api/export/bas-change-request?${params.toString()}`;
+
+          return {
+            success: true as const,
+            status: "ready" as const,
+            downloadUrl,
+            filename,
+            totalGaps: collected.rows.length,
+            previewRows: collected.rows.slice(0, 15),
+            message: `Запит готовий: **${collected.rows.length}** позицій. ${downloadUrl}`,
+            navigatePath: "/accounting",
+          };
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Помилка формування запиту BAS",
+          };
+        }
+      },
+    }),
+
     previewInvoiceReceipt: tool({
       description: "Готує превʼю прибуткової накладної ТМЦ.",
       inputSchema: z.object({
@@ -2416,7 +4628,7 @@ function createAgentTools(options?: {
           .string()
           .trim()
           .optional()
-          .describe("Дата YYYY-MM-DD"),
+          .describe("YYYY-MM-DD"),
         totalAmount: z
           .number()
           .finite()
@@ -4067,7 +6279,7 @@ function createAgentTools(options?: {
 
     closeWorkOrder: tool({
       description:
-        "Закриває наряд і фіксує факт (площа, паливо). Потрібне підтвердження.",
+        "Закриває наряд і фіксує факт (площа, паливо). Може взяти площу з GPS-треку Wialon у геозоні поля. Потрібне підтвердження.",
       inputSchema: z.object({
         workOrderId: z
           .string()
@@ -4083,7 +6295,15 @@ function createAgentTools(options?: {
         factArea: z
           .number()
           .positive()
-          .describe("Факт га"),
+          .optional()
+          .describe("Факт га (необовʼязково, якщо useWialonTrackArea)"),
+        useWialonTrackArea: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe(
+            "Чи взяти оброблену площу автоматично з обчисленого GPS-треку Wialon"
+          ),
         fuelUsed: z
           .number()
           .nonnegative()
@@ -4104,16 +6324,19 @@ function createAgentTools(options?: {
         workOrderId,
         fieldIdOrName,
         factArea,
+        useWialonTrackArea,
         fuelUsed,
         notes,
         confirmed,
       }) => {
         const isConfirmed = confirmed === true;
+        const wantWialonArea = useWialonTrackArea === true;
         const lookup = (fieldIdOrName?.trim() || defaultFieldId || "").trim();
         console.log("[TOOL: closeWorkOrder]", {
           workOrderId,
           lookup,
           factArea,
+          useWialonTrackArea: wantWialonArea,
           fuelUsed,
           isConfirmed,
         });
@@ -4123,7 +6346,7 @@ function createAgentTools(options?: {
           id, client_key, field_id, field_key, work_type, crop, status,
           occurred_at, machinery, implement, mechanic_name, equipment_id,
           area_plan, area_fact, fuel_plan, fuel_fact, wage_plan, wage_fact,
-          time_label, season_year, season, area_total
+          time_label, season_year, season, area_total, implement_width_m
         `;
 
         type CloseOpRow = {
@@ -4149,10 +6372,15 @@ function createAgentTools(options?: {
           season_year: number | null;
           season: string | null;
           area_total: number | null;
+          implement_width_m: number | null;
         };
 
         try {
-          const resolved = await resolveAgentFieldByLookup(supabase, lookup);
+          const resolved = await resolveAgentFieldByLookup(
+            supabase,
+            lookup,
+            "id, name, canonical_name, crop, area_ha, geometry"
+          );
           if (!resolved.ok) {
             return {
               status: resolved.status,
@@ -4199,7 +6427,6 @@ function createAgentTools(options?: {
               };
             }
           } else {
-            // Спочатку in_progress / assigned, потім planned
             const activeRes = await supabase
               .from("field_operations")
               .select(opSelect)
@@ -4240,6 +6467,60 @@ function createAgentTools(options?: {
             };
           }
 
+          let resolvedFactArea =
+            factArea != null && Number.isFinite(factArea) && factArea > 0
+              ? factArea
+              : null;
+          let wialonMeta: {
+            distanceKm: number;
+            workHours: number;
+            unitId: number;
+            widthM: number;
+          } | null = null;
+
+          if (wantWialonArea) {
+            const trackArea = await resolveWialonTrackAreaForOperation(
+              supabase,
+              {
+                fieldId: field.id,
+                fieldGeometry: (field as { geometry?: FieldGeometry | null })
+                  .geometry,
+                equipmentId: op.equipment_id,
+                machinery: op.machinery,
+                workType: op.work_type,
+                implementWidthM: finiteNumber(op.implement_width_m) || null,
+                occurredAt: op.occurred_at,
+                areaCapHa:
+                  finiteNumber(op.area_total) ||
+                  finiteNumber(field.area_ha) ||
+                  null,
+              }
+            );
+            if (!trackArea.ok) {
+              return {
+                status: "error" as const,
+                success: false as const,
+                error: trackArea.error,
+                hint: "Вкажіть factArea вручну або перевірте Wialon / геометрію поля.",
+              };
+            }
+            resolvedFactArea = trackArea.areaHa;
+            wialonMeta = {
+              distanceKm: trackArea.distanceKm,
+              workHours: trackArea.workHours,
+              unitId: trackArea.unitId,
+              widthM: trackArea.widthM,
+            };
+          }
+
+          if (resolvedFactArea == null || resolvedFactArea <= 0) {
+            return {
+              status: "needs_slots" as const,
+              error:
+                "Потрібна фактична площа (factArea) або useWialonTrackArea=true.",
+            };
+          }
+
           const workType = String(op.work_type ?? "Операція");
           const plannedArea = finiteNumber(op.area_plan);
           const fuelPlan = finiteNumber(op.fuel_plan);
@@ -4258,15 +6539,17 @@ function createAgentTools(options?: {
               operationType: workType,
               currentStatus: opStatus,
               plannedArea: plannedArea || null,
-              factArea,
+              factArea: resolvedFactArea,
+              useWialonTrackArea: wantWialonArea,
+              wialonTrack: wialonMeta,
               fuelPlan: fuelPlan || null,
               fuelUsed: fuelUsed ?? null,
               notes: notes?.trim() || null,
               confirmChoice,
               cancelChoice,
-              userHint: `Закрити наряд на ${workType} (Поле ${fieldName}) з фактичною площею ${factArea} га${
-                fuelUsed != null ? ` та пальним ${fuelUsed} л` : ""
-              }?`,
+              userHint: `Закрити наряд на ${workType} (Поле ${fieldName}) з фактичною площею ${resolvedFactArea} га${
+                wantWialonArea ? " (з треку Wialon)" : ""
+              }${fuelUsed != null ? ` та пальним ${fuelUsed} л` : ""}?`,
             };
           }
 
@@ -4286,7 +6569,7 @@ function createAgentTools(options?: {
             status: "completed",
             export_status: "pending",
             area_plan: plannedArea || null,
-            area_fact: factArea,
+            area_fact: resolvedFactArea,
             fuel_plan: fuelPlan || null,
             fuel_fact: fuelUsed ?? null,
             wage_plan: finiteNumber(op.wage_plan) || null,
@@ -4301,7 +6584,7 @@ function createAgentTools(options?: {
               ? String(op.occurred_at).slice(0, 10)
               : todayKyivYmd(),
             time_label: op.time_label,
-            area_total: finiteNumber(op.area_total) || factArea,
+            area_total: finiteNumber(op.area_total) || resolvedFactArea,
             ...actorCloseColumns(actor),
           };
           if (op.equipment_id) row.equipment_id = op.equipment_id;
@@ -4331,7 +6614,13 @@ function createAgentTools(options?: {
             entityType: "field_operation",
             entityId: operationId,
             summary: `${actor.label} закрив наряд «${workType} · ${crop}» (LEVADIUS)`,
-            meta: { areaFact: factArea, fuelUsed: fuelUsed ?? null, fieldId: field.id },
+            meta: {
+              areaFact: resolvedFactArea,
+              fuelUsed: fuelUsed ?? null,
+              fieldId: field.id,
+              useWialonTrackArea: wantWialonArea,
+              wialonTrack: wialonMeta,
+            },
           });
 
           return {
@@ -4342,14 +6631,16 @@ function createAgentTools(options?: {
             fieldId: field.id,
             fieldName,
             operationType: workType,
-            factArea,
+            factArea: resolvedFactArea,
+            useWialonTrackArea: wantWialonArea,
+            wialonTrack: wialonMeta,
             fuelUsed: fuelUsed ?? null,
             notes: notes?.trim() || null,
             closedAt,
             openFieldPath: `/?field=${field.id}`,
-            message: `Закрив наряд «${workType}» на полі «${fieldName}»: факт **${factArea} га**${
-              fuelUsed != null ? `, паливо **${fuelUsed} л**` : ""
-            }.`,
+            message: `Закрив наряд «${workType}» на полі «${fieldName}»: факт **${resolvedFactArea} га**${
+              wantWialonArea ? " (Wialon)" : ""
+            }${fuelUsed != null ? `, паливо **${fuelUsed} л**` : ""}.`,
           };
         } catch (error) {
           console.error(
@@ -4363,6 +6654,1291 @@ function createAgentTools(options?: {
               error instanceof Error
                 ? error.message
                 : "Невідома помилка закриття наряду",
+          };
+        }
+      },
+    }),
+
+    startWorkOrder: tool({
+      description:
+        "Стартує наряд: planned → in_progress, фіксує started_at.",
+      inputSchema: z.object({
+        workOrderId: z
+          .string()
+          .trim()
+          .min(1)
+          .optional()
+          .describe("UUID або client_key наряду"),
+        fieldIdOrName: z
+          .string()
+          .trim()
+          .min(1)
+          .optional()
+          .describe("Назва або UUID поля"),
+      }),
+      execute: async ({ workOrderId, fieldIdOrName }) => {
+        const lookup = (fieldIdOrName?.trim() || defaultFieldId || "").trim();
+        console.log("[TOOL: startWorkOrder]", { workOrderId, lookup });
+
+        const opSelect = `
+          id, client_key, field_id, field_key, work_type, crop, status,
+          occurred_at, machinery, mechanic_name, area_plan, started_at
+        `;
+
+        type StartOpRow = {
+          id: string;
+          client_key: string | null;
+          field_id: string | null;
+          field_key: string | null;
+          work_type: string | null;
+          crop: string | null;
+          status: string | null;
+          occurred_at: string | null;
+          machinery: string | null;
+          mechanic_name: string | null;
+          area_plan: number | null;
+          started_at: string | null;
+        };
+
+        try {
+          let op: StartOpRow | null = null;
+          let fieldId: string | null = null;
+          let fieldName = "Поле";
+
+          if (lookup) {
+            const resolved = await resolveAgentFieldByLookup(supabase, lookup);
+            if (!resolved.ok) {
+              return {
+                status: resolved.status,
+                error: resolved.error,
+                candidates: resolved.candidates,
+              };
+            }
+            fieldId = resolved.field.id;
+            fieldName = resolved.fieldName;
+          }
+
+          if (workOrderId?.trim()) {
+            const key = workOrderId.trim();
+            if (isUuid(key)) {
+              const byId = await supabase
+                .from("field_operations")
+                .select(opSelect)
+                .eq("id", key)
+                .maybeSingle();
+              op = (byId.data as StartOpRow | null) ?? null;
+            }
+            if (!op) {
+              const byClient = await supabase
+                .from("field_operations")
+                .select(opSelect)
+                .eq("client_key", key)
+                .maybeSingle();
+              op = (byClient.data as StartOpRow | null) ?? null;
+            }
+            if (!op) {
+              return {
+                status: "not_found" as const,
+                error: `Наряд «${key}» не знайдено.`,
+              };
+            }
+          } else if (fieldId) {
+            const fieldKey = `farm:${fieldId}`;
+            const planned = await supabase
+              .from("field_operations")
+              .select(opSelect)
+              .eq("status", "planned")
+              .or(`field_id.eq.${fieldId},field_key.eq.${fieldKey}`)
+              .order("occurred_at", { ascending: false })
+              .limit(5);
+            const rows = (planned.data as StartOpRow[] | null) ?? [];
+            if (rows.length === 0) {
+              return {
+                status: "not_found" as const,
+                error: `На полі «${fieldName}» немає наряду зі статусом planned.`,
+              };
+            }
+            if (rows.length > 1) {
+              return {
+                status: "ambiguous" as const,
+                error: `Кілька запланованих нарядів на «${fieldName}». Вкажи workOrderId.`,
+                candidates: rows.map((r) => ({
+                  workOrderId: String(r.client_key || r.id),
+                  operationType: String(r.work_type ?? "Операція"),
+                  date: String(r.occurred_at ?? "").slice(0, 10) || null,
+                })),
+              };
+            }
+            op = rows[0]!;
+          } else {
+            return {
+              status: "needs_slots" as const,
+              error: "Вкажи workOrderId або поле (fieldIdOrName).",
+            };
+          }
+
+          if (fieldId && op.field_id && String(op.field_id) !== fieldId) {
+            return {
+              status: "error" as const,
+              error: "Цей наряд належить іншому полю.",
+              workOrderId: String(op.client_key || op.id),
+            };
+          }
+
+          if (!fieldId && op.field_id) {
+            fieldId = String(op.field_id);
+            const { data: field } = await supabase
+              .from("farm_fields")
+              .select("name, canonical_name")
+              .eq("id", fieldId)
+              .maybeSingle();
+            fieldName =
+              (field?.canonical_name && String(field.canonical_name).trim()) ||
+              (field?.name && String(field.name).trim()) ||
+              "Поле";
+          }
+
+          const status = String(op.status ?? "planned");
+          if (status === "in_progress") {
+            return {
+              success: true as const,
+              status: "already_started" as const,
+              workOrderId: String(op.client_key || op.id),
+              dbId: op.id,
+              fieldId,
+              fieldName,
+              operationType: String(op.work_type ?? "Операція"),
+              startedAt: op.started_at,
+              message: `Наряд «${op.work_type ?? "операція"}» уже в роботі на «${fieldName}».`,
+              clientEvents: ["field-updated"],
+            };
+          }
+          if (status !== "planned" && status !== "assigned") {
+            return {
+              status: "error" as const,
+              error: `Старт можливий лише для planned. Зараз: «${status}».`,
+              workOrderId: String(op.client_key || op.id),
+              opStatus: status,
+            };
+          }
+
+          const startedAt = new Date().toISOString();
+          const patch: Record<string, unknown> = {
+            status: "in_progress",
+            started_at: startedAt,
+            updated_at: startedAt,
+          };
+
+          let { error } = await supabase
+            .from("field_operations")
+            .update(patch)
+            .eq("id", op.id);
+
+          if (
+            error &&
+            (error.message?.includes("started_at") || error.code === "42703")
+          ) {
+            const { started_at: _s, ...withoutStarted } = patch;
+            const retry = await supabase
+              .from("field_operations")
+              .update(withoutStarted)
+              .eq("id", op.id);
+            error = retry.error;
+          }
+
+          if (error) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: error.message,
+            };
+          }
+
+          const workType = String(op.work_type ?? "Операція");
+          return {
+            success: true as const,
+            status: "started" as const,
+            workOrderId: String(op.client_key || op.id),
+            dbId: op.id,
+            fieldId,
+            fieldName,
+            operationType: workType,
+            previousStatus: status,
+            startedAt,
+            openFieldPath: fieldId ? `/?field=${fieldId}` : null,
+            message: `Запустив «${workType}» на полі «${fieldName}» — статус in_progress.`,
+            clientEvents: ["field-updated"],
+          };
+        } catch (error) {
+          console.error(
+            "[TOOL: startWorkOrder] Unexpected error:",
+            error instanceof Error ? error.message : error
+          );
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка старту наряду",
+          };
+        }
+      },
+    }),
+
+    updateWorkOrder: tool({
+      description:
+        "Редагує збережений наряд: тип, техніка, знаряддя, механізатор, площа, дати з–по, нотатки.",
+      inputSchema: z.object({
+        workOrderId: z
+          .string()
+          .trim()
+          .min(1)
+          .describe("UUID або client_key наряду"),
+        workType: z
+          .string()
+          .trim()
+          .min(1)
+          .optional()
+          .describe("Тип робіт"),
+        machineIdOrName: z
+          .string()
+          .trim()
+          .min(1)
+          .optional()
+          .describe("Техніка ID/назва"),
+        implementIdOrName: z
+          .string()
+          .trim()
+          .min(1)
+          .optional()
+          .describe("Знаряддя ID/назва"),
+        driverIdOrName: z
+          .string()
+          .trim()
+          .min(1)
+          .optional()
+          .describe("Механізатор"),
+        plannedArea: z
+          .number()
+          .positive()
+          .optional()
+          .describe("План га"),
+        dateFrom: z
+          .string()
+          .trim()
+          .optional()
+          .describe("Дата від YYYY-MM-DD"),
+        dateTo: z
+          .string()
+          .trim()
+          .optional()
+          .describe("Дата до YYYY-MM-DD"),
+        notes: z
+          .string()
+          .trim()
+          .optional()
+          .describe("Коментар агронома"),
+      }),
+      execute: async ({
+        workOrderId,
+        workType,
+        machineIdOrName,
+        implementIdOrName,
+        driverIdOrName,
+        plannedArea,
+        dateFrom,
+        dateTo,
+        notes,
+      }) => {
+        const key = workOrderId.trim();
+        console.log("[TOOL: updateWorkOrder]", {
+          key,
+          workType,
+          machineIdOrName,
+          dateFrom,
+          dateTo,
+        });
+
+        const opSelect = `
+          id, client_key, field_id, field_key, work_type, crop, status,
+          occurred_at, machinery, implement, mechanic_name, equipment_id,
+          implement_id, area_plan, agronomist_comment, date_from, date_to,
+          season_year, season
+        `;
+
+        type UpdateOpRow = {
+          id: string;
+          client_key: string | null;
+          field_id: string | null;
+          field_key: string | null;
+          work_type: string | null;
+          crop: string | null;
+          status: string | null;
+          occurred_at: string | null;
+          machinery: string | null;
+          implement: string | null;
+          mechanic_name: string | null;
+          equipment_id: string | null;
+          implement_id: string | null;
+          area_plan: number | null;
+          agronomist_comment: string | null;
+          date_from: string | null;
+          date_to: string | null;
+          season_year: number | null;
+          season: string | null;
+        };
+
+        const ymd = (raw: string | undefined | null) => {
+          const s = String(raw ?? "").trim().slice(0, 10);
+          return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+        };
+
+        try {
+          let op: UpdateOpRow | null = null;
+          if (isUuid(key)) {
+            const byId = await supabase
+              .from("field_operations")
+              .select(opSelect)
+              .eq("id", key)
+              .maybeSingle();
+            op = (byId.data as UpdateOpRow | null) ?? null;
+          }
+          if (!op) {
+            const byClient = await supabase
+              .from("field_operations")
+              .select(opSelect)
+              .eq("client_key", key)
+              .maybeSingle();
+            op = (byClient.data as UpdateOpRow | null) ?? null;
+          }
+          // Fallback select без date_from/date_to/implement_id
+          if (!op) {
+            const fallbackSelect = `
+              id, client_key, field_id, field_key, work_type, crop, status,
+              occurred_at, machinery, implement, mechanic_name, equipment_id,
+              area_plan, agronomist_comment, season_year, season
+            `;
+            if (isUuid(key)) {
+              const byId = await supabase
+                .from("field_operations")
+                .select(fallbackSelect)
+                .eq("id", key)
+                .maybeSingle();
+              op = (byId.data as UpdateOpRow | null) ?? null;
+            }
+            if (!op) {
+              const byClient = await supabase
+                .from("field_operations")
+                .select(fallbackSelect)
+                .eq("client_key", key)
+                .maybeSingle();
+              op = (byClient.data as UpdateOpRow | null) ?? null;
+            }
+          }
+
+          if (!op) {
+            return {
+              status: "not_found" as const,
+              error: `Наряд «${key}» не знайдено.`,
+            };
+          }
+
+          const status = String(op.status ?? "planned");
+          if (status === "cancelled") {
+            return {
+              status: "error" as const,
+              error: "Скасований наряд редагувати не можна.",
+            };
+          }
+
+          const patch: Record<string, unknown> = {
+            updated_at: new Date().toISOString(),
+          };
+
+          if (workType?.trim()) {
+            patch.work_type = workType.trim();
+          }
+
+          if (plannedArea != null && Number.isFinite(plannedArea)) {
+            patch.area_plan = round2(plannedArea);
+          }
+
+          if (notes !== undefined) {
+            patch.agronomist_comment = notes?.trim() || null;
+          }
+
+          if (driverIdOrName?.trim()) {
+            patch.mechanic_name = driverIdOrName.trim();
+          }
+
+          const from = ymd(dateFrom);
+          const to = ymd(dateTo);
+          if (from || to) {
+            const start = from || to!;
+            const end = to || from!;
+            if (end < start) {
+              return {
+                status: "error" as const,
+                error: "dateTo не може бути раніше dateFrom.",
+              };
+            }
+            patch.occurred_at = start;
+            patch.date_from = start;
+            patch.date_to = end === start ? null : end;
+            const seasonYear = Number(start.slice(0, 4));
+            if (Number.isFinite(seasonYear)) {
+              patch.season_year = seasonYear;
+              patch.season = String(seasonYear);
+            }
+          }
+
+          if (machineIdOrName?.trim()) {
+            const needle = machineIdOrName.trim();
+            let equipmentId: string | null = null;
+            let equipmentName = needle;
+            if (isUuid(needle)) {
+              const { data } = await supabase
+                .from("equipment")
+                .select("id, name")
+                .eq("id", needle)
+                .maybeSingle();
+              if (data) {
+                equipmentId = String(data.id);
+                equipmentName = String(data.name ?? needle);
+              }
+            } else {
+              const { data: rows } = await supabase
+                .from("equipment")
+                .select("id, name")
+                .ilike("name", `%${needle}%`)
+                .order("name")
+                .limit(8);
+              const candidates = rows ?? [];
+              const exact = candidates.find(
+                (r) =>
+                  String(r.name ?? "").toLocaleLowerCase("uk-UA") ===
+                  needle.toLocaleLowerCase("uk-UA")
+              );
+              const chosen = exact ?? (candidates.length === 1 ? candidates[0] : null);
+              if (!chosen && candidates.length > 1) {
+                return {
+                  status: "ambiguous_equipment" as const,
+                  error: `Кілька одиниць техніки для «${needle}».`,
+                  candidates: candidates.map((r) => ({
+                    id: String(r.id),
+                    name: String(r.name ?? ""),
+                  })),
+                };
+              }
+              if (chosen) {
+                equipmentId = String(chosen.id);
+                equipmentName = String(chosen.name ?? needle);
+              }
+            }
+            patch.machinery = equipmentName;
+            if (equipmentId) patch.equipment_id = equipmentId;
+          }
+
+          if (implementIdOrName?.trim()) {
+            const needle = implementIdOrName.trim();
+            let implementId: string | null = null;
+            let implementName = needle;
+            if (isUuid(needle)) {
+              const { data } = await supabase
+                .from("implements")
+                .select("id, name")
+                .eq("id", needle)
+                .maybeSingle();
+              if (data) {
+                implementId = String(data.id);
+                implementName = String(data.name ?? needle);
+              }
+            } else {
+              const { data: rows } = await supabase
+                .from("implements")
+                .select("id, name")
+                .ilike("name", `%${needle}%`)
+                .order("name")
+                .limit(8);
+              const candidates = rows ?? [];
+              const exact = candidates.find(
+                (r) =>
+                  String(r.name ?? "").toLocaleLowerCase("uk-UA") ===
+                  needle.toLocaleLowerCase("uk-UA")
+              );
+              const chosen = exact ?? (candidates.length === 1 ? candidates[0] : null);
+              if (!chosen && candidates.length > 1) {
+                return {
+                  status: "ambiguous_implement" as const,
+                  error: `Кілька знарядь для «${needle}».`,
+                  candidates: candidates.map((r) => ({
+                    id: String(r.id),
+                    name: String(r.name ?? ""),
+                  })),
+                };
+              }
+              if (chosen) {
+                implementId = String(chosen.id);
+                implementName = String(chosen.name ?? needle);
+              }
+            }
+            patch.implement = implementName;
+            if (implementId) patch.implement_id = implementId;
+          }
+
+          const mutableKeys = Object.keys(patch).filter((k) => k !== "updated_at");
+          if (mutableKeys.length === 0) {
+            return {
+              status: "needs_slots" as const,
+              error:
+                "Вкажи що змінити: тип, техніку, знаряддя, механізатора, площу, дати або нотатки.",
+            };
+          }
+
+          let { data: updated, error } = await supabase
+            .from("field_operations")
+            .update(patch)
+            .eq("id", op.id)
+            .select(
+              "id, client_key, field_id, work_type, status, occurred_at, machinery, implement, mechanic_name, area_plan, agronomist_comment, date_from, date_to"
+            )
+            .maybeSingle();
+
+          if (
+            error &&
+            (error.message?.includes("date_from") ||
+              error.message?.includes("date_to") ||
+              error.message?.includes("implement_id") ||
+              error.code === "42703")
+          ) {
+            const soft = { ...patch };
+            delete soft.date_from;
+            delete soft.date_to;
+            delete soft.implement_id;
+            const retry = await supabase
+              .from("field_operations")
+              .update(soft)
+              .eq("id", op.id)
+              .select(
+                "id, client_key, field_id, work_type, status, occurred_at, machinery, implement, mechanic_name, area_plan, agronomist_comment"
+              )
+              .maybeSingle();
+            updated = retry.data as typeof updated;
+            error = retry.error;
+          }
+
+          if (error) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: error.message,
+            };
+          }
+
+          let fieldName = "Поле";
+          const fieldId = updated?.field_id
+            ? String(updated.field_id)
+            : op.field_id
+              ? String(op.field_id)
+              : null;
+          if (fieldId) {
+            const { data: field } = await supabase
+              .from("farm_fields")
+              .select("name, canonical_name")
+              .eq("id", fieldId)
+              .maybeSingle();
+            fieldName =
+              (field?.canonical_name && String(field.canonical_name).trim()) ||
+              (field?.name && String(field.name).trim()) ||
+              "Поле";
+          }
+
+          const row = updated ?? op;
+          const dateFromOut =
+            (row as { date_from?: string | null }).date_from ??
+            (typeof patch.date_from === "string" ? patch.date_from : null) ??
+            (String(row.occurred_at ?? "").slice(0, 10) || null);
+          const dateToOut =
+            (row as { date_to?: string | null }).date_to ??
+            (typeof patch.date_to === "string" ? patch.date_to : null);
+
+          return {
+            success: true as const,
+            status: "updated" as const,
+            workOrderId: String(row.client_key || row.id),
+            dbId: String(row.id),
+            fieldId,
+            fieldName,
+            operationType: String(row.work_type ?? op.work_type ?? "Операція"),
+            opStatus: String(row.status ?? status),
+            machinery: String(row.machinery ?? "").trim() || null,
+            implement: String(row.implement ?? "").trim() || null,
+            mechanicName: String(row.mechanic_name ?? "").trim() || null,
+            plannedArea: finiteNumber(row.area_plan) || null,
+            dateFrom: dateFromOut,
+            dateTo: dateToOut,
+            notes:
+              String(
+                (row as { agronomist_comment?: string | null })
+                  .agronomist_comment ?? ""
+              ).trim() || null,
+            openFieldPath: fieldId ? `/?field=${fieldId}` : null,
+            message: `Оновив наряд на «${fieldName}».`,
+            clientEvents: ["field-updated"],
+          };
+        } catch (error) {
+          console.error(
+            "[TOOL: updateWorkOrder] Unexpected error:",
+            error instanceof Error ? error.message : error
+          );
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка оновлення наряду",
+          };
+        }
+      },
+    }),
+
+    updateInventoryWriteOff: tool({
+      description:
+        "Коригує кількість або коментар списання ТМЦ (inventory_local_moves).",
+      inputSchema: z.object({
+        moveId: z.string().trim().min(1).describe("UUID руху"),
+        newQuantity: z
+          .number()
+          .positive()
+          .optional()
+          .describe("Нова кількість"),
+        notes: z
+          .string()
+          .trim()
+          .optional()
+          .describe("Коментар / note"),
+      }),
+      execute: async ({ moveId, newQuantity, notes }) => {
+        const id = moveId.trim();
+        console.log("[TOOL: updateInventoryWriteOff]", {
+          id,
+          newQuantity,
+          notes: notes != null,
+        });
+
+        try {
+          if (newQuantity == null && notes === undefined) {
+            return {
+              status: "needs_slots" as const,
+              error: "Вкажи newQuantity і/або notes.",
+            };
+          }
+
+          const { data: existing, error: readErr } = await supabase
+            .from("inventory_local_moves")
+            .select(
+              "id, qty, type, status, note, item_ref_key, field_id, is_reverted"
+            )
+            .eq("id", id)
+            .maybeSingle();
+
+          let move = existing as {
+            id: string;
+            qty: number;
+            type: string;
+            status: string;
+            note: string | null;
+            item_ref_key: string;
+            field_id: string | null;
+            is_reverted?: boolean;
+          } | null;
+
+          if (
+            readErr &&
+            (readErr.message?.includes("is_reverted") ||
+              readErr.code === "42703")
+          ) {
+            const retry = await supabase
+              .from("inventory_local_moves")
+              .select("id, qty, type, status, note, item_ref_key, field_id")
+              .eq("id", id)
+              .maybeSingle();
+            move = retry.data as typeof move;
+            if (retry.error) {
+              return {
+                success: false as const,
+                status: "error" as const,
+                error: retry.error.message,
+              };
+            }
+          } else if (readErr) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: readErr.message,
+            };
+          }
+
+          if (!move) {
+            return {
+              status: "not_found" as const,
+              error: `Списання «${id}» не знайдено.`,
+            };
+          }
+          if (move.is_reverted === true) {
+            return {
+              status: "error" as const,
+              error: "Це списання вже анульовано.",
+            };
+          }
+          if (String(move.type) !== "outbound") {
+            return {
+              status: "error" as const,
+              error: "Редагувати можна лише outbound-списання на поле.",
+            };
+          }
+
+          const oldQty = Number(move.qty) || 0;
+          const result = await updateLocalMove({
+            id,
+            ...(newQuantity != null ? { qty: newQuantity } : {}),
+            ...(notes !== undefined ? { note: notes } : {}),
+          });
+
+          if (!result.ok) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: result.error,
+            };
+          }
+
+          const { data: item } = await supabase
+            .from("inventory_items_cache")
+            .select("bas_ref_key, name, custom_name, unit")
+            .eq("bas_ref_key", String(move.item_ref_key).toLowerCase())
+            .maybeSingle();
+
+          const itemName =
+            (item?.custom_name && String(item.custom_name).trim()) ||
+            (item?.name && String(item.name).trim()) ||
+            String(move.item_ref_key);
+          const unit = (item?.unit && String(item.unit).trim()) || "";
+          const nextQty = newQuantity != null ? round2(newQuantity) : oldQty;
+          const delta = round2(nextQty - oldQty);
+
+          let fieldName: string | null = null;
+          if (move.field_id) {
+            const { data: field } = await supabase
+              .from("farm_fields")
+              .select("name, canonical_name")
+              .eq("id", move.field_id)
+              .maybeSingle();
+            fieldName =
+              (field?.canonical_name && String(field.canonical_name).trim()) ||
+              (field?.name && String(field.name).trim()) ||
+              null;
+          }
+
+          const stock = await loadAgentInventoryStock({
+            includeZero: true,
+            limit: 300,
+          });
+          const after = stock.items.find(
+            (row) =>
+              row.ref.toLowerCase() ===
+              String(move.item_ref_key).toLowerCase()
+          );
+
+          return {
+            success: true as const,
+            status: "updated" as const,
+            moveId: id,
+            itemId: String(move.item_ref_key).toLowerCase(),
+            itemName,
+            unit,
+            oldQuantity: oldQty,
+            newQuantity: nextQty,
+            quantityDelta: delta,
+            notes: notes !== undefined ? notes?.trim() || null : move.note,
+            fieldId: move.field_id,
+            fieldName,
+            newStockBalance: after?.quantity ?? null,
+            message: `Списання «${itemName}» оновлено: ${oldQty} → ${nextQty}${
+              unit ? ` ${unit}` : ""
+            } (Δ ${delta > 0 ? "+" : ""}${delta}).`,
+            clientEvents: ["warehouse-updated", "field-updated"],
+          };
+        } catch (error) {
+          console.error(
+            "[TOOL: updateInventoryWriteOff] Unexpected error:",
+            error instanceof Error ? error.message : error
+          );
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка коригування списання",
+          };
+        }
+      },
+    }),
+
+    deleteInventoryWriteOff: tool({
+      description:
+        "Анулює списання ТМЦ з поверненням на склад (confirmed).",
+      inputSchema: z.object({
+        moveId: z.string().trim().min(1).describe("UUID руху"),
+        confirmed: z
+          .boolean()
+          .default(false)
+          .describe("Підтвердження"),
+      }),
+      execute: async ({ moveId, confirmed }) => {
+        const id = moveId.trim();
+        const isConfirmed = confirmed === true;
+        console.log("[TOOL: deleteInventoryWriteOff]", { id, isConfirmed });
+
+        try {
+          type MoveRow = {
+            id: string;
+            qty: number;
+            type: string;
+            status: string;
+            note: string | null;
+            item_ref_key: string;
+            field_id: string | null;
+            is_reverted?: boolean;
+          };
+
+          let move: MoveRow | null = null;
+          let { data: moveData, error: readErr } = await supabase
+            .from("inventory_local_moves")
+            .select(
+              "id, qty, type, status, note, item_ref_key, field_id, is_reverted"
+            )
+            .eq("id", id)
+            .maybeSingle();
+          move = (moveData as MoveRow | null) ?? null;
+
+          if (
+            readErr &&
+            (readErr.message?.includes("is_reverted") ||
+              readErr.code === "42703")
+          ) {
+            const retry = await supabase
+              .from("inventory_local_moves")
+              .select("id, qty, type, status, note, item_ref_key, field_id")
+              .eq("id", id)
+              .maybeSingle();
+            move = (retry.data as MoveRow | null) ?? null;
+            readErr = retry.error;
+          }
+
+          if (readErr) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: readErr.message,
+            };
+          }
+          if (!move) {
+            return {
+              status: "not_found" as const,
+              error: `Списання «${id}» не знайдено.`,
+            };
+          }
+          if (move.is_reverted === true) {
+            return {
+              status: "error" as const,
+              error: "Списання вже анульовано.",
+            };
+          }
+          if (String(move.type) !== "outbound") {
+            return {
+              status: "error" as const,
+              error: "Скасувати можна лише outbound-списання.",
+            };
+          }
+          if (String(move.status) !== "draft") {
+            return {
+              status: "error" as const,
+              error:
+                "Рух уже передано бухгалтеру — анулювання через агента заборонено.",
+            };
+          }
+
+          const qty = Number(move.qty) || 0;
+          const { data: item } = await supabase
+            .from("inventory_items_cache")
+            .select("bas_ref_key, name, custom_name, unit")
+            .eq("bas_ref_key", String(move.item_ref_key).toLowerCase())
+            .maybeSingle();
+          const itemName =
+            (item?.custom_name && String(item.custom_name).trim()) ||
+            (item?.name && String(item.name).trim()) ||
+            String(move.item_ref_key);
+          const unit = (item?.unit && String(item.unit).trim()) || "";
+
+          let fieldName: string | null = null;
+          if (move.field_id) {
+            const { data: field } = await supabase
+              .from("farm_fields")
+              .select("name, canonical_name")
+              .eq("id", move.field_id)
+              .maybeSingle();
+            fieldName =
+              (field?.canonical_name && String(field.canonical_name).trim()) ||
+              (field?.name && String(field.name).trim()) ||
+              null;
+          }
+
+          if (!isConfirmed) {
+            return {
+              success: false as const,
+              status: "requires_confirmation" as const,
+              moveId: id,
+              itemId: String(move.item_ref_key).toLowerCase(),
+              itemName,
+              quantity: qty,
+              unit,
+              fieldId: move.field_id,
+              fieldName,
+              confirmChoice: `Повернути ${qty}${unit ? ` ${unit}` : ""} «${itemName}» на склад`,
+              cancelChoice: "Скасувати",
+              userHint: `Помилкове списання: ${qty}${
+                unit ? ` ${unit}` : ""
+              } «${itemName}»${
+                fieldName ? ` → ${fieldName}` : ""
+              }. Повернути на склад?`,
+              pending: { moveId: id },
+              badge: "Скасування списання ТМЦ",
+            };
+          }
+
+          // Soft-cancel (is_reverted) — повертає qty у віртуальний залишок
+          let { error: revertErr } = await supabase
+            .from("inventory_local_moves")
+            .update({
+              is_reverted: true,
+              updated_at: new Date().toISOString(),
+              note: [
+                String(move.note ?? "").trim(),
+                "[анульовано LEVADIUS]",
+              ]
+                .filter(Boolean)
+                .join(" "),
+            })
+            .eq("id", id)
+            .eq("status", "draft");
+
+          if (
+            revertErr &&
+            (revertErr.message?.includes("is_reverted") ||
+              revertErr.code === "42703")
+          ) {
+            const hard = await deleteLocalMove(id);
+            if (!hard.ok) {
+              return {
+                success: false as const,
+                status: "error" as const,
+                error: hard.error,
+              };
+            }
+            revertErr = null;
+          }
+
+          if (revertErr) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: revertErr.message,
+            };
+          }
+
+          const stock = await loadAgentInventoryStock({
+            includeZero: true,
+            limit: 300,
+          });
+          const after = stock.items.find(
+            (row) =>
+              row.ref.toLowerCase() ===
+              String(move!.item_ref_key).toLowerCase()
+          );
+
+          return {
+            success: true as const,
+            status: "reverted" as const,
+            moveId: id,
+            itemId: String(move.item_ref_key).toLowerCase(),
+            itemName,
+            quantity: qty,
+            unit,
+            fieldId: move.field_id,
+            fieldName,
+            newStockBalance: after?.quantity ?? null,
+            isReverted: true,
+            message: `Повернув ${qty}${
+              unit ? ` ${unit}` : ""
+            } «${itemName}» на склад${
+              fieldName ? ` (було з «${fieldName}»)` : ""
+            }.`,
+            clientEvents: ["warehouse-updated", "field-updated"],
+          };
+        } catch (error) {
+          console.error(
+            "[TOOL: deleteInventoryWriteOff] Unexpected error:",
+            error instanceof Error ? error.message : error
+          );
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка скасування списання",
+          };
+        }
+      },
+    }),
+
+    updateScoutingReport: tool({
+      description: "Оновлює нотатки або статус звіту скаутингу.",
+      inputSchema: z.object({
+        reportId: z.string().trim().min(1).describe("UUID звіту"),
+        notes: z
+          .string()
+          .trim()
+          .optional()
+          .describe("Нотатки"),
+        status: z
+          .string()
+          .trim()
+          .optional()
+          .describe("ok|warning|critical або текст"),
+      }),
+      execute: async ({ reportId, notes, status }) => {
+        const id = reportId.trim();
+        console.log("[TOOL: updateScoutingReport]", {
+          id,
+          notes: notes != null,
+          status,
+        });
+
+        try {
+          if (notes === undefined && !status?.trim()) {
+            return {
+              status: "needs_slots" as const,
+              error: "Вкажи notes і/або status.",
+            };
+          }
+
+          const { data: existing, error: readErr } = await supabase
+            .from("scouting_reports")
+            .select("id, field_id, notes, status, date")
+            .eq("id", id)
+            .maybeSingle();
+
+          if (readErr) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: readErr.message,
+            };
+          }
+          if (!existing) {
+            return {
+              status: "not_found" as const,
+              error: `Звіт скаутингу «${id}» не знайдено.`,
+            };
+          }
+
+          const patch: Record<string, unknown> = {};
+          if (notes !== undefined) patch.notes = notes.trim();
+          if (status?.trim()) patch.status = status.trim();
+
+          let { data: updated, error } = await supabase
+            .from("scouting_reports")
+            .update(patch)
+            .eq("id", id)
+            .select("id, field_id, notes, status, date")
+            .maybeSingle();
+
+          if (
+            error &&
+            (error.message?.includes("status") || error.code === "42703")
+          ) {
+            delete patch.status;
+            if (Object.keys(patch).length === 0) {
+              return {
+                success: false as const,
+                status: "error" as const,
+                error: "Колонка status ще не застосована (міграція 067).",
+              };
+            }
+            const retry = await supabase
+              .from("scouting_reports")
+              .update(patch)
+              .eq("id", id)
+              .select("id, field_id, notes, date")
+              .maybeSingle();
+            updated = retry.data as typeof updated;
+            error = retry.error;
+          }
+
+          if (error) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: error.message,
+            };
+          }
+
+          const fieldId = updated?.field_id
+            ? String(updated.field_id)
+            : String(existing.field_id);
+          let fieldName = "Поле";
+          const { data: field } = await supabase
+            .from("farm_fields")
+            .select("name, canonical_name")
+            .eq("id", fieldId)
+            .maybeSingle();
+          fieldName =
+            (field?.canonical_name && String(field.canonical_name).trim()) ||
+            (field?.name && String(field.name).trim()) ||
+            "Поле";
+
+          return {
+            success: true as const,
+            status: "updated" as const,
+            reportId: id,
+            fieldId,
+            fieldName,
+            notes: updated?.notes != null ? String(updated.notes) : null,
+            reportStatus:
+              updated && "status" in updated && updated.status != null
+                ? String(updated.status)
+                : status?.trim() || null,
+            message: `Оновив звіт скаутингу на «${fieldName}».`,
+            clientEvents: ["field-updated"],
+          };
+        } catch (error) {
+          console.error(
+            "[TOOL: updateScoutingReport] Unexpected error:",
+            error instanceof Error ? error.message : error
+          );
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка оновлення скаутингу",
+          };
+        }
+      },
+    }),
+
+    deleteScoutingReport: tool({
+      description: "Видаляє звіт скаутингу (потрібне confirmed).",
+      inputSchema: z.object({
+        reportId: z.string().trim().min(1).describe("UUID звіту"),
+        confirmed: z
+          .boolean()
+          .default(false)
+          .describe("Підтвердження"),
+      }),
+      execute: async ({ reportId, confirmed }) => {
+        const id = reportId.trim();
+        const isConfirmed = confirmed === true;
+        console.log("[TOOL: deleteScoutingReport]", { id, isConfirmed });
+
+        try {
+          const { data: existing, error: readErr } = await supabase
+            .from("scouting_reports")
+            .select("id, field_id, notes, status, date")
+            .eq("id", id)
+            .maybeSingle();
+
+          if (readErr) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: readErr.message,
+            };
+          }
+          if (!existing) {
+            return {
+              status: "not_found" as const,
+              error: `Звіт скаутингу «${id}» не знайдено.`,
+            };
+          }
+
+          const fieldId = String(existing.field_id);
+          let fieldName = "Поле";
+          const { data: field } = await supabase
+            .from("farm_fields")
+            .select("name, canonical_name")
+            .eq("id", fieldId)
+            .maybeSingle();
+          fieldName =
+            (field?.canonical_name && String(field.canonical_name).trim()) ||
+            (field?.name && String(field.name).trim()) ||
+            "Поле";
+
+          if (!isConfirmed) {
+            return {
+              success: false as const,
+              status: "requires_confirmation" as const,
+              reportId: id,
+              fieldId,
+              fieldName,
+              notes: existing.notes != null ? String(existing.notes) : null,
+              reportStatus:
+                existing.status != null ? String(existing.status) : null,
+              date: String(existing.date ?? "").slice(0, 10) || null,
+              confirmChoice: `Видалити звіт скаутингу на «${fieldName}»`,
+              cancelChoice: "Скасувати",
+              userHint: `Видалити звіт скаутингу на полі «${fieldName}»?`,
+              pending: { reportId: id },
+              badge: "Видалення скаутингу",
+            };
+          }
+
+          const result = await deleteScoutingReportRow(id);
+          if (!result.ok) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: result.error,
+            };
+          }
+
+          return {
+            success: true as const,
+            status: "deleted" as const,
+            reportId: id,
+            fieldId,
+            fieldName,
+            message: `Видалив звіт скаутингу на «${fieldName}».`,
+            clientEvents: ["field-updated"],
+          };
+        } catch (error) {
+          console.error(
+            "[TOOL: deleteScoutingReport] Unexpected error:",
+            error instanceof Error ? error.message : error
+          );
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка видалення скаутингу",
           };
         }
       },
@@ -5703,6 +9279,16 @@ function createAgentTools(options?: {
           .min(1)
           .optional()
           .describe("Водій ID/ПІБ"),
+        transactionDate: z
+          .string()
+          .trim()
+          .optional()
+          .describe("Дата/час операції ISO або YYYY-MM-DD"),
+        fieldOperationId: z
+          .string()
+          .trim()
+          .optional()
+          .describe("UUID активного наряду для привʼязки"),
         confirmed: z
           .boolean()
           .optional()
@@ -5714,6 +9300,8 @@ function createAgentTools(options?: {
         storageIdOrName,
         liters,
         driverIdOrName,
+        transactionDate,
+        fieldOperationId,
         confirmed,
       }) => {
         const isConfirmed = confirmed === true;
@@ -5726,6 +9314,8 @@ function createAgentTools(options?: {
           storageIdOrName,
           amount,
           driverIdOrName,
+          transactionDate,
+          fieldOperationId,
           isConfirmed,
         });
 
@@ -5939,6 +9529,33 @@ function createAgentTools(options?: {
             };
           }
 
+          let txDateIso = new Date().toISOString();
+          if (transactionDate?.trim()) {
+            const parsed = new Date(transactionDate.trim());
+            if (Number.isNaN(parsed.getTime())) {
+              return {
+                success: false as const,
+                status: "error" as const,
+                error: "Некоректна transactionDate.",
+              };
+            }
+            txDateIso = parsed.toISOString();
+          }
+
+          let linkedOpId: string | null = null;
+          if (fieldOperationId?.trim()) {
+            const opId = fieldOperationId.trim();
+            let opQ = supabase
+              .from("field_operations")
+              .select("id, status, equipment_id")
+              .limit(1);
+            opQ = isUuid(opId)
+              ? opQ.or(`id.eq.${opId},client_key.eq.${opId}`)
+              : opQ.eq("client_key", opId);
+            const { data: opRow } = await opQ.maybeSingle();
+            if (opRow?.id) linkedOpId = String(opRow.id);
+          }
+
           const actor = await getCurrentActor();
           const insertPayload: Record<string, unknown> = {
             // У схемі: outbound = заправка / видача на техніку (не «dispense»)
@@ -5949,12 +9566,13 @@ function createAgentTools(options?: {
             wialon_unit_id: equipment.wialon_id,
             amount_liters: amount,
             operator_name: driverName || actorName || null,
-            transaction_date: new Date().toISOString(),
+            transaction_date: txDateIso,
             wialon_verified: false,
             wialon_variance: 0,
             price_per_liter: donorPrice,
             total_cost: totalCost,
             sync_status: "pending_1c",
+            ...(linkedOpId ? { field_operation_id: linkedOpId } : {}),
             ...actorCreateColumns(actor),
           };
           if (actorUserId) insertPayload.actor_id = actorUserId;
@@ -6073,6 +9691,1402 @@ function createAgentTools(options?: {
               error instanceof Error
                 ? error.message
                 : "Невідома помилка заправки",
+          };
+        }
+      },
+    }),
+
+    logFuelPurchase: tool({
+      description:
+        "Закупівля / прихід ДП на ємність (inbound). Потрібне confirmed.",
+      inputSchema: z.object({
+        storageIdOrName: z
+          .string()
+          .trim()
+          .min(1)
+          .describe("Назва або ID ємності/АЗС, куди зливають пальне"),
+        liters: z
+          .number()
+          .positive()
+          .describe("Кількість літрів закупленого пального"),
+        pricePerLiter: z
+          .number()
+          .positive()
+          .optional()
+          .describe("Ціна за літр у грн"),
+        supplier: z
+          .string()
+          .trim()
+          .optional()
+          .describe("Постачальник або номер ТТН"),
+        transactionDate: z
+          .string()
+          .trim()
+          .optional()
+          .describe("Дата операції ISO або YYYY-MM-DD"),
+        confirmed: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe("Прапорець підтвердження"),
+      }),
+      execute: async ({
+        storageIdOrName,
+        liters,
+        pricePerLiter,
+        supplier,
+        transactionDate,
+        confirmed,
+      }) => {
+        const isConfirmed = confirmed === true;
+        const amount = roundLiters(Number(liters));
+        console.log("[TOOL: logFuelPurchase]", {
+          storageIdOrName,
+          amount,
+          pricePerLiter,
+          supplier,
+          transactionDate,
+          isConfirmed,
+        });
+
+        try {
+          const resolved = await resolveFuelStorageByLookup(
+            supabase,
+            storageIdOrName
+          );
+          if (!resolved.ok) {
+            return {
+              success: false as const,
+              status: resolved.status,
+              error: resolved.error,
+              candidates: resolved.candidates,
+            };
+          }
+
+          let buyPrice =
+            pricePerLiter != null && pricePerLiter > 0
+              ? roundPrice(pricePerLiter)
+              : 0;
+          if (!(buyPrice > 0)) {
+            const diesel = await resolveDieselPriceUah();
+            buyPrice = roundPrice(diesel.priceUah);
+          }
+          if (!(buyPrice > 0)) {
+            return {
+              success: false as const,
+              status: "needs_slots" as const,
+              error: "Вкажи pricePerLiter (₴/л) для закупівлі.",
+            };
+          }
+
+          const storage = resolved.storage;
+          const volumeBefore = roundLiters(Number(storage.current_volume) || 0);
+          const capacity = Number(storage.capacity) || 0;
+          const volumeAfter = roundLiters(volumeBefore + amount);
+          const overflow = volumeAfter > capacity + 0.001;
+          const fillPercentAfter = fuelFillPercent(volumeAfter, capacity);
+          const totalCost = computeTotalCost(amount, buyPrice);
+          const confirmChoice = "Підтвердити закупівлю пального";
+          const cancelChoice = "Скасувати";
+
+          if (!isConfirmed) {
+            return {
+              success: false as const,
+              status: "requires_confirmation" as const,
+              kind: "fuel_purchase" as const,
+              storageId: storage.id,
+              storageName: storage.name,
+              liters: amount,
+              pricePerLiter: buyPrice,
+              totalCost,
+              supplier: supplier?.trim() || null,
+              volumeBefore,
+              volumeAfter,
+              fillPercentAfter,
+              capacity,
+              overflow,
+              canConfirm: !overflow,
+              confirmChoice,
+              cancelChoice,
+              badge: "Закупівля ДП",
+              userHint: overflow
+                ? `Перелив «${storage.name}»: ${volumeAfter} л > місткості ${capacity} л.`
+                : `Прийняти ${amount} л ДП на «${storage.name}» по ${buyPrice} ₴/л (${totalCost} ₴)? Рівень ${volumeBefore} → ${volumeAfter} л (${fillPercentAfter}%).`,
+              clientEvents: ["fuel-updated", "warehouse-updated"] as const,
+            };
+          }
+
+          if (overflow) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: `Перелив «${storage.name}»: місткість ${capacity} л.`,
+            };
+          }
+
+          const result = await executeFuelPurchase({
+            supabase,
+            storage,
+            liters: amount,
+            pricePerLiter: buyPrice,
+            supplier,
+            transactionDate,
+          });
+          if (!result.ok) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: result.error,
+            };
+          }
+
+          void attachDocumentsToEntity(
+            "fuel_transaction",
+            result.transactionId
+          );
+
+          return {
+            success: true as const,
+            status: "purchased" as const,
+            kind: "fuel_purchase" as const,
+            transactionId: result.transactionId,
+            transactionType: "inbound",
+            storageId: storage.id,
+            storageName: storage.name,
+            liters: amount,
+            pricePerLiter: result.pricePerLiter,
+            totalCost: result.totalCost,
+            supplier: supplier?.trim() || null,
+            volumeBefore: result.volumeBefore,
+            volumeAfter: result.volumeAfter,
+            fillPercentAfter: result.fillPercentAfter,
+            clientEvents: ["fuel-updated", "warehouse-updated"] as const,
+            navigatePath: "/fuel",
+            message: `Прийняв **${amount} л** ДП на «${storage.name}» по **${result.pricePerLiter} ₴/л**. Залишок: **${result.volumeAfter} л** (${result.fillPercentAfter}%).`,
+          };
+        } catch (error) {
+          console.error(
+            "[TOOL: logFuelPurchase]",
+            error instanceof Error ? error.message : error
+          );
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка закупівлі",
+          };
+        }
+      },
+    }),
+
+    transferFuelBetweenStorages: tool({
+      description:
+        "Перекачування ДП між ємностями (transfer). Потрібне confirmed.",
+      inputSchema: z.object({
+        fromStorageIdOrName: z
+          .string()
+          .trim()
+          .min(1)
+          .describe("Звідки перекачуємо (стаціонарна ємність/АЗС)"),
+        toStorageIdOrName: z
+          .string()
+          .trim()
+          .min(1)
+          .describe("Куди перекачуємо (бензовоз/інша ємність)"),
+        liters: z.number().positive().describe("Об'єм перекачування"),
+        transactionDate: z
+          .string()
+          .trim()
+          .optional()
+          .describe("Дата/час операції ISO або YYYY-MM-DD"),
+        confirmed: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe("Підтвердження"),
+      }),
+      execute: async ({
+        fromStorageIdOrName,
+        toStorageIdOrName,
+        liters,
+        transactionDate,
+        confirmed,
+      }) => {
+        const isConfirmed = confirmed === true;
+        const amount = roundLiters(Number(liters));
+        console.log("[TOOL: transferFuelBetweenStorages]", {
+          fromStorageIdOrName,
+          toStorageIdOrName,
+          amount,
+          transactionDate,
+          isConfirmed,
+        });
+
+        try {
+          const [fromRes, toRes] = await Promise.all([
+            resolveFuelStorageByLookup(supabase, fromStorageIdOrName),
+            resolveFuelStorageByLookup(supabase, toStorageIdOrName),
+          ]);
+          if (!fromRes.ok) {
+            return {
+              success: false as const,
+              status: fromRes.status,
+              error: fromRes.error,
+              candidates: fromRes.candidates,
+            };
+          }
+          if (!toRes.ok) {
+            return {
+              success: false as const,
+              status: toRes.status,
+              error: toRes.error,
+              candidates: toRes.candidates,
+            };
+          }
+
+          const from = fromRes.storage;
+          const to = toRes.storage;
+          const fromBefore = roundLiters(Number(from.current_volume) || 0);
+          const toBefore = roundLiters(Number(to.current_volume) || 0);
+          const toCapacity = Number(to.capacity) || 0;
+          const insufficient = fromBefore + 0.001 < amount;
+          const overflow = toBefore + amount > toCapacity + 0.001;
+          const confirmChoice = "Підтвердити переміщення пального";
+          const cancelChoice = "Скасувати";
+
+          if (!isConfirmed) {
+            return {
+              success: false as const,
+              status: "requires_confirmation" as const,
+              kind: "fuel_transfer" as const,
+              fromStorageId: from.id,
+              fromStorageName: from.name,
+              toStorageId: to.id,
+              toStorageName: to.name,
+              liters: amount,
+              fromVolumeBefore: fromBefore,
+              fromVolumeAfter: roundLiters(Math.max(0, fromBefore - amount)),
+              toVolumeBefore: toBefore,
+              toVolumeAfter: roundLiters(toBefore + amount),
+              canConfirm: !insufficient && !overflow && from.id !== to.id,
+              confirmChoice,
+              cancelChoice,
+              badge: "Переміщення ДП",
+              userHint: insufficient
+                ? `Недостатньо в «${from.name}» (є ${fromBefore} л).`
+                : overflow
+                  ? `Перелив у «${to.name}» (місткість ${toCapacity} л).`
+                  : `Перекачати ${amount} л з «${from.name}» → «${to.name}»?`,
+              clientEvents: ["fuel-updated"] as const,
+            };
+          }
+
+          const result = await executeFuelTransfer({
+            supabase,
+            from,
+            to,
+            liters: amount,
+            transactionDate,
+          });
+          if (!result.ok) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: result.error,
+            };
+          }
+
+          return {
+            success: true as const,
+            status: "transferred" as const,
+            kind: "fuel_transfer" as const,
+            transactionId: result.transactionId,
+            transactionType: "transfer",
+            fromStorageId: from.id,
+            fromStorageName: from.name,
+            toStorageId: to.id,
+            toStorageName: to.name,
+            liters: amount,
+            fromVolumeBefore: result.fromVolumeBefore,
+            fromVolumeAfter: result.fromVolumeAfter,
+            toVolumeBefore: result.toVolumeBefore,
+            toVolumeAfter: result.toVolumeAfter,
+            pricePerLiter: result.pricePerLiter,
+            totalCost: result.totalCost,
+            clientEvents: ["fuel-updated"] as const,
+            navigatePath: "/fuel",
+            message: `Перекачав **${amount} л** з «${from.name}» → «${to.name}».`,
+          };
+        } catch (error) {
+          console.error(
+            "[TOOL: transferFuelBetweenStorages]",
+            error instanceof Error ? error.message : error
+          );
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка переміщення",
+          };
+        }
+      },
+    }),
+
+    createFuelStorage: tool({
+      description: "Створює нову ємність пального в fuel_storages.",
+      inputSchema: z.object({
+        name: z.string().trim().min(1).describe("Назва ємності"),
+        capacity: z.number().positive().describe("Місткість, л"),
+        fuelType: z
+          .enum(["diesel", "petrol"])
+          .optional()
+          .default("diesel")
+          .describe("Тип пального"),
+        initialVolume: z
+          .number()
+          .nonnegative()
+          .optional()
+          .default(0)
+          .describe("Початковий залишок, л"),
+        storageKind: z
+          .enum(["stationary", "mobile"])
+          .optional()
+          .describe("stationary|mobile"),
+      }),
+      execute: async ({
+        name,
+        capacity,
+        fuelType,
+        initialVolume,
+        storageKind,
+      }) => {
+        console.log("[TOOL: createFuelStorage]", {
+          name,
+          capacity,
+          fuelType,
+          initialVolume,
+          storageKind,
+        });
+        try {
+          const result = await createFuelStorageRow({
+            supabase,
+            name,
+            capacity,
+            fuelType: fuelType ?? "diesel",
+            initialVolume: initialVolume ?? 0,
+            storageKind,
+          });
+          if (!result.ok) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: result.error,
+            };
+          }
+          return {
+            success: true as const,
+            status: "created" as const,
+            storageId: result.storage.id,
+            storageName: result.storage.name,
+            capacity: Number(result.storage.capacity),
+            currentVolume: Number(result.storage.current_volume),
+            storageType: result.storage.type,
+            clientEvents: ["fuel-updated"] as const,
+            navigatePath: "/fuel",
+            message: `Створив ємність «${result.storage.name}» (${result.storage.capacity} л).`,
+          };
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка створення ємності",
+          };
+        }
+      },
+    }),
+
+    updateFuelStorage: tool({
+      description:
+        "Оновлює назву, місткість або bas_ref_key ємності пального.",
+      inputSchema: z.object({
+        storageIdOrName: z
+          .string()
+          .trim()
+          .min(1)
+          .describe("Ємність ID/назва"),
+        name: z.string().trim().min(1).optional().describe("Нова назва"),
+        capacity: z.number().positive().optional().describe("Нова місткість, л"),
+        basRefKey: z
+          .string()
+          .trim()
+          .optional()
+          .describe("BAS Ref_Key (UUID) або порожньо щоб зняти"),
+      }),
+      execute: async ({ storageIdOrName, name, capacity, basRefKey }) => {
+        console.log("[TOOL: updateFuelStorage]", {
+          storageIdOrName,
+          name,
+          capacity,
+          basRefKey,
+        });
+        try {
+          const resolved = await resolveFuelStorageByLookup(
+            supabase,
+            storageIdOrName
+          );
+          if (!resolved.ok) {
+            return {
+              success: false as const,
+              status: resolved.status,
+              error: resolved.error,
+              candidates: resolved.candidates,
+            };
+          }
+          const result = await updateFuelStorageRow({
+            supabase,
+            storage: resolved.storage,
+            name,
+            capacity,
+            basRefKey:
+              basRefKey === undefined
+                ? undefined
+                : basRefKey.trim() === ""
+                  ? null
+                  : basRefKey,
+          });
+          if (!result.ok) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: result.error,
+            };
+          }
+          return {
+            success: true as const,
+            status: "updated" as const,
+            storageId: result.storage.id,
+            storageName: result.storage.name,
+            capacity: Number(result.storage.capacity),
+            currentVolume: Number(result.storage.current_volume),
+            basRefKey: result.storage.bas_ref_key ?? null,
+            clientEvents: ["fuel-updated"] as const,
+            message: `Оновив ємність «${result.storage.name}».`,
+          };
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка оновлення ємності",
+          };
+        }
+      },
+    }),
+
+    deleteFuelStorage: tool({
+      description:
+        "Видаляє порожню ємність без історії. Потрібне confirmed. Заборонено при залишку > 0.",
+      inputSchema: z.object({
+        storageIdOrName: z
+          .string()
+          .trim()
+          .min(1)
+          .describe("Ємність ID/назва"),
+        confirmed: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe("Підтвердження"),
+      }),
+      execute: async ({ storageIdOrName, confirmed }) => {
+        const isConfirmed = confirmed === true;
+        console.log("[TOOL: deleteFuelStorage]", {
+          storageIdOrName,
+          isConfirmed,
+        });
+        try {
+          const resolved = await resolveFuelStorageByLookup(
+            supabase,
+            storageIdOrName
+          );
+          if (!resolved.ok) {
+            return {
+              success: false as const,
+              status: resolved.status,
+              error: resolved.error,
+              candidates: resolved.candidates,
+            };
+          }
+          const storage = resolved.storage;
+          const volume = roundLiters(Number(storage.current_volume) || 0);
+          const confirmChoice = "Підтвердити видалення ємності";
+          const cancelChoice = "Скасувати";
+
+          if (volume > 0.001) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: `Спочатку спустіть «${storage.name}» (залишок ${volume} л).`,
+              storageId: storage.id,
+              currentVolume: volume,
+            };
+          }
+
+          if (!isConfirmed) {
+            return {
+              success: false as const,
+              status: "requires_confirmation" as const,
+              kind: "fuel_storage_delete" as const,
+              storageId: storage.id,
+              storageName: storage.name,
+              currentVolume: volume,
+              capacity: Number(storage.capacity) || 0,
+              confirmChoice,
+              cancelChoice,
+              canConfirm: true,
+              badge: "Видалення ємності",
+              userHint: `Видалити порожню ємність «${storage.name}»?`,
+              clientEvents: ["fuel-updated"] as const,
+            };
+          }
+
+          const result = await deleteFuelStorageRow({ supabase, storage });
+          if (!result.ok) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: result.error,
+            };
+          }
+          return {
+            success: true as const,
+            status: "deleted" as const,
+            kind: "fuel_storage_delete" as const,
+            storageId: storage.id,
+            storageName: storage.name,
+            clientEvents: ["fuel-updated"] as const,
+            message: `Видалив ємність «${storage.name}».`,
+          };
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка видалення ємності",
+          };
+        }
+      },
+    }),
+
+    getFuelPeriodKpis: tool({
+      description:
+        "KPI палива за період: закупівлі (inbound), роздача (outbound), залишок.",
+      inputSchema: z.object({
+        period: z
+          .enum(["today", "week", "month", "season"])
+          .optional()
+          .default("today")
+          .describe("Період зведення"),
+      }),
+      execute: async ({ period }) => {
+        const safe = period ?? "today";
+        console.log("[TOOL: getFuelPeriodKpis]", { period: safe });
+        try {
+          const kpis = await computeFuelPeriodKpis({
+            supabase,
+            period: safe,
+          });
+          return {
+            success: true as const,
+            status: "ok" as const,
+            ...kpis,
+            navigatePath: "/fuel",
+            message: `Паливо за **${safe}**: прихід **${kpis.purchasedLiters} л**, роздача **${kpis.dispensedLiters} л**, залишок **${kpis.currentTotalStock} л** (${kpis.storagesCount} ємностей).`,
+          };
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка KPI палива",
+          };
+        }
+      },
+    }),
+
+    getUnrecordedRefuelings: tool({
+      description:
+        "Радар заправок Wialon (DUT): незадокументовані сплески рівня палива за останні 48 год.",
+      inputSchema: z.object({
+        lookbackHours: z
+          .number()
+          .int()
+          .optional()
+          .default(48)
+          .describe("24 | 48 | 168"),
+      }),
+      execute: async ({ lookbackHours }) => {
+        console.log("[TOOL: getUnrecordedRefuelings]", { lookbackHours });
+        try {
+          const data = await listAgentUnrecordedRefuelings(
+            lookbackHours ?? 48
+          );
+          return {
+            success: true as const,
+            status: "ok" as const,
+            lookbackHours: data.lookbackHours,
+            count: data.events.length,
+            events: data.events,
+            navigatePath: "/fuel",
+            message:
+              data.events.length === 0
+                ? `Радар: за ${data.lookbackHours} год незаписаних заправок немає.`
+                : `Радар: **${data.events.length}** незаписаних заправок DUT. Для обліку — confirmRadarRefueling з radarEventId.`,
+          };
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка радара заправок",
+          };
+        }
+      },
+    }),
+
+    confirmRadarRefueling: tool({
+      description:
+        "Підтверджує подію радара DUT. Опційно списує з ємності (writeOffFromStorage); без складу — лише KPI.",
+      inputSchema: z.object({
+        radarEventId: z
+          .string()
+          .trim()
+          .min(1)
+          .describe("ID з getUnrecordedRefuelings"),
+        storageIdOrName: z
+          .string()
+          .trim()
+          .optional()
+          .describe("Ємність для списання (опційно)"),
+        writeOffFromStorage: z
+          .boolean()
+          .optional()
+          .default(true)
+          .describe("false = підтвердити без списання зі складу"),
+        driverIdOrName: z
+          .string()
+          .trim()
+          .optional()
+          .describe("Водій / оператор"),
+        correctedLiters: z
+          .number()
+          .positive()
+          .optional()
+          .describe("Скоригований обʼєм, л"),
+        confirmed: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe("Підтвердження"),
+      }),
+      execute: async ({
+        radarEventId,
+        storageIdOrName,
+        writeOffFromStorage,
+        driverIdOrName,
+        correctedLiters,
+        confirmed,
+      }) => {
+        const isConfirmed = confirmed === true;
+        const wantWriteOff = writeOffFromStorage !== false;
+        console.log("[TOOL: confirmRadarRefueling]", {
+          radarEventId,
+          storageIdOrName,
+          wantWriteOff,
+          isConfirmed,
+        });
+
+        try {
+          const decoded = decodeRadarEventId(radarEventId);
+          if (!decoded) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: "Некоректний radarEventId.",
+            };
+          }
+
+          let storageId: string | null = null;
+          let storageName: string | null = null;
+          if (wantWriteOff && storageIdOrName?.trim()) {
+            const resolved = await resolveFuelStorageByLookup(
+              supabase,
+              storageIdOrName.trim()
+            );
+            if (!resolved.ok) {
+              return {
+                success: false as const,
+                status: resolved.status,
+                error: resolved.error,
+                candidates: resolved.candidates,
+              };
+            }
+            storageId = resolved.storage.id;
+            storageName = resolved.storage.name;
+          } else if (wantWriteOff && !storageIdOrName?.trim()) {
+            return {
+              success: false as const,
+              status: "needs_slots" as const,
+              error:
+                "Для списання вкажи storageIdOrName або постав writeOffFromStorage=false.",
+            };
+          }
+
+          const liters = roundLiters(
+            correctedLiters != null && correctedLiters > 0
+              ? correctedLiters
+              : decoded.volumeLiters
+          );
+          const confirmChoice = "Підтвердити заправку з радара";
+          const cancelChoice = "Скасувати";
+
+          if (!isConfirmed) {
+            return {
+              success: false as const,
+              status: "requires_confirmation" as const,
+              kind: "fuel_radar_confirm" as const,
+              radarEventId,
+              storageId,
+              storageName,
+              writeOffFromStorage: wantWriteOff && Boolean(storageId),
+              liters,
+              detectedLiters: decoded.volumeLiters,
+              timeIso: decoded.timeIso,
+              unitId: decoded.unitId,
+              driverName: driverIdOrName?.trim() || null,
+              confirmChoice,
+              cancelChoice,
+              canConfirm: true,
+              badge: "Радар · підтвердити",
+              userHint: wantWriteOff && storageName
+                ? `Зафіксувати заправку з радара: ${liters} л з «${storageName}» (${decoded.timeIso})?`
+                : `Підтвердити подію радара ${liters} л без списання зі складу (${decoded.timeIso})?`,
+              clientEvents: ["fuel-updated"] as const,
+            };
+          }
+
+          const result = await confirmAgentRadarRefueling({
+            supabase,
+            radarEventId,
+            storageIdOrName: storageId,
+            writeOffFromStorage: wantWriteOff && Boolean(storageId),
+            driverIdOrName,
+            correctedLiters: liters,
+          });
+          if (!result.ok) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: result.error,
+            };
+          }
+
+          return {
+            success: true as const,
+            status: "radar_confirmed" as const,
+            kind: "fuel_radar_confirm" as const,
+            radarEventId,
+            transactionId: result.fuelTransactionId,
+            storageId: result.storageId,
+            storageName: result.storageName,
+            liters: result.liters,
+            equipmentName: result.equipmentName,
+            wroteOffStorage: result.wroteOffStorage,
+            clientEvents: ["fuel-updated"] as const,
+            navigatePath: "/fuel",
+            message: result.wroteOffStorage
+              ? `Підтвердив заправку з радара: **${result.liters} л** з «${result.storageName}»${
+                  result.equipmentName ? ` · ${result.equipmentName}` : ""
+                }.`
+              : `Підтвердив подію радара **${result.liters} л** без списання зі складу.`,
+          };
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка підтвердження радара",
+          };
+        }
+      },
+    }),
+
+    dismissRadarRefueling: tool({
+      description:
+        "Відхиляє подію радара DUT як хибне спрацювання (з причиною).",
+      inputSchema: z.object({
+        radarEventId: z
+          .string()
+          .trim()
+          .min(1)
+          .describe("ID з getUnrecordedRefuelings"),
+        reason: z
+          .string()
+          .trim()
+          .min(1)
+          .describe(
+            "Причина відхилення: хибне спрацювання, коливання поплавка на схилі тощо"
+          ),
+        confirmed: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe("Підтвердження"),
+      }),
+      execute: async ({ radarEventId, reason, confirmed }) => {
+        const isConfirmed = confirmed === true;
+        console.log("[TOOL: dismissRadarRefueling]", {
+          radarEventId,
+          reason,
+          isConfirmed,
+        });
+
+        try {
+          const decoded = decodeRadarEventId(radarEventId);
+          if (!decoded) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: "Некоректний radarEventId.",
+            };
+          }
+
+          const confirmChoice = "Підтвердити відхилення радара";
+          const cancelChoice = "Скасувати";
+
+          if (!isConfirmed) {
+            return {
+              success: false as const,
+              status: "requires_confirmation" as const,
+              kind: "fuel_radar_dismiss" as const,
+              radarEventId,
+              liters: decoded.volumeLiters,
+              timeIso: decoded.timeIso,
+              unitId: decoded.unitId,
+              reason: reason.trim(),
+              confirmChoice,
+              cancelChoice,
+              canConfirm: true,
+              badge: "Радар · відхилити",
+              userHint: `Відхилити подію радара (${decoded.volumeLiters} л, ${decoded.timeIso})? Причина: ${reason.trim()}`,
+            };
+          }
+
+          const result = await dismissAgentRadarRefueling({
+            radarEventId,
+            reason,
+          });
+          if (!result.ok) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: result.error,
+            };
+          }
+
+          return {
+            success: true as const,
+            status: "radar_dismissed" as const,
+            kind: "fuel_radar_dismiss" as const,
+            radarEventId,
+            reason: reason.trim(),
+            clientEvents: ["fuel-updated"] as const,
+            message: `Відхилив подію радара. Причина: ${reason.trim()}.`,
+          };
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка відхилення радара",
+          };
+        }
+      },
+    }),
+
+    updateFuelTransaction: tool({
+      description:
+        "Коригує операцію з пальним: літри, ціну, notes, ємність-донор/отримувач, техніку, дату.",
+      inputSchema: z.object({
+        transactionId: z.string().trim().min(1).describe("UUID fuel_transactions"),
+        newLiters: z
+          .number()
+          .positive()
+          .optional()
+          .describe("Новий обʼєм у літрах"),
+        newPricePerLiter: z
+          .number()
+          .optional()
+          .describe("Нова ціна ₴/л (особливо для закупівлі)"),
+        notes: z.string().optional().describe("Коментар / примітка"),
+        fromStorageIdOrName: z
+          .string()
+          .trim()
+          .optional()
+          .describe("Нова ємність-донор (outbound/transfer)"),
+        toStorageIdOrName: z
+          .string()
+          .trim()
+          .optional()
+          .describe("Нова ємність-отримувач (inbound/transfer)"),
+        equipmentIdOrName: z
+          .string()
+          .trim()
+          .optional()
+          .describe("Нова техніка (outbound)"),
+        transactionDate: z
+          .string()
+          .trim()
+          .optional()
+          .describe("Нова дата ISO / YYYY-MM-DD"),
+      }),
+      execute: async ({
+        transactionId,
+        newLiters,
+        newPricePerLiter,
+        notes,
+        fromStorageIdOrName,
+        toStorageIdOrName,
+        equipmentIdOrName,
+        transactionDate,
+      }) => {
+        console.log("[TOOL: updateFuelTransaction]", {
+          transactionId,
+          newLiters,
+          newPricePerLiter,
+          notes,
+          fromStorageIdOrName,
+          toStorageIdOrName,
+          equipmentIdOrName,
+          transactionDate,
+        });
+        try {
+          const result = await updateAgentFuelTransaction({
+            supabase,
+            transactionId,
+            newLiters,
+            newPricePerLiter,
+            notes,
+            fromStorageIdOrName,
+            toStorageIdOrName,
+            equipmentIdOrName,
+            transactionDate,
+          });
+          if (!result.ok) {
+            return {
+              success: false as const,
+              status: result.status,
+              error: result.error,
+            };
+          }
+          return {
+            success: true as const,
+            status: "updated" as const,
+            kind: "fuel_tx_update" as const,
+            transactionId: result.transactionId,
+            transactionType: result.transactionType,
+            oldLiters: result.oldLiters,
+            liters: result.newLiters,
+            litersDelta: result.litersDelta,
+            pricePerLiter: result.pricePerLiter,
+            totalCost: result.totalCost,
+            notes: result.notes,
+            clientEvents: ["fuel-updated"] as const,
+            message: result.message,
+          };
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка коригування палива",
+          };
+        }
+      },
+    }),
+
+    deleteFuelTransaction: tool({
+      description:
+        "Анулює операцію з пальним з відкатом залишку ємності (soft is_reverted).",
+      inputSchema: z.object({
+        transactionId: z.string().trim().min(1).describe("UUID транзакції"),
+        confirmed: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe("Підтвердження анулювання"),
+      }),
+      execute: async ({ transactionId, confirmed }) => {
+        const isConfirmed = confirmed === true;
+        console.log("[TOOL: deleteFuelTransaction]", {
+          transactionId,
+          isConfirmed,
+        });
+        try {
+          const result = await deleteAgentFuelTransaction({
+            supabase,
+            transactionId,
+            confirmed: isConfirmed,
+          });
+          if (!result.ok) {
+            return {
+              success: false as const,
+              status: result.status,
+              error: result.error,
+            };
+          }
+          if (result.status === "requires_confirmation") {
+            return {
+              success: false as const,
+              status: "requires_confirmation" as const,
+              kind: "fuel_tx_delete" as const,
+              transactionId: result.transactionId,
+              transactionType: result.transactionType,
+              typeLabel: result.typeLabel,
+              liters: result.amountLiters,
+              storageName: result.storageName,
+              equipmentName: result.equipmentName,
+              warning: result.warning,
+              confirmChoice: result.confirmChoice,
+              cancelChoice: result.cancelChoice,
+              canConfirm: true,
+              badge: "Паливо · анулювати",
+              userHint: result.message,
+            };
+          }
+          return {
+            success: true as const,
+            status: "deleted" as const,
+            kind: "fuel_tx_delete" as const,
+            transactionId: result.transactionId,
+            transactionType: result.transactionType,
+            liters: result.amountLiters,
+            softDeleted: result.softDeleted,
+            clientEvents: ["fuel-updated"] as const,
+            message: result.message,
+          };
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка анулювання палива",
+          };
+        }
+      },
+    }),
+
+    getFuelTransactionHistory: tool({
+      description:
+        "Історія руху пального по ємності та/або машині (заправки, закупівлі, переміщення).",
+      inputSchema: z.object({
+        storageIdOrName: z
+          .string()
+          .trim()
+          .optional()
+          .describe("Фільтр за ємністю/АЗС"),
+        equipmentIdOrName: z
+          .string()
+          .trim()
+          .optional()
+          .describe("Фільтр за машиною/трактором"),
+        transactionType: z
+          .enum(["all", "purchase", "dispense", "transfer"])
+          .optional()
+          .default("all")
+          .describe("Тип операції (purchase=inbound, dispense=outbound)"),
+        limit: z.number().optional().default(20).describe("Ліміт записів"),
+      }),
+      execute: async ({
+        storageIdOrName,
+        equipmentIdOrName,
+        transactionType,
+        limit,
+      }) => {
+        console.log("[TOOL: getFuelTransactionHistory]", {
+          storageIdOrName,
+          equipmentIdOrName,
+          transactionType,
+          limit,
+        });
+        try {
+          if (!storageIdOrName?.trim() && !equipmentIdOrName?.trim()) {
+            return {
+              success: false as const,
+              status: "needs_slots" as const,
+              error:
+                "Вкажи storageIdOrName (ємність) або equipmentIdOrName (машина).",
+            };
+          }
+          const result = await getFuelTransactionHistory({
+            supabase,
+            storageIdOrName,
+            equipmentIdOrName,
+            transactionType: transactionType ?? "all",
+            limit: limit ?? 20,
+          });
+          if (!result.ok) {
+            return {
+              success: false as const,
+              status: result.status,
+              error: result.error,
+            };
+          }
+          return {
+            success: true as const,
+            status: "ok" as const,
+            count: result.count,
+            transactions: result.transactions,
+            message: result.message,
+          };
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка історії палива",
+          };
+        }
+      },
+    }),
+
+    checkPredictiveRefuelNeeds: tool({
+      description:
+        "Паливний штурман: активні трактори/комбайни в роботі з ризиком закінчення ДП <1.5 год + найближчий бензовоз/ETA.",
+      inputSchema: z.object({}),
+      execute: async () => {
+        console.log("[TOOL: checkPredictiveRefuelNeeds]");
+        try {
+          const result = await checkPredictiveRefuelNeeds({ supabase });
+          return {
+            success: true as const,
+            status: "ok" as const,
+            checked: result.checked,
+            alerts: result.alerts,
+            alertCount: result.alerts.length,
+            message: result.message,
+          };
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка паливного штурмана",
+          };
+        }
+      },
+    }),
+
+    auditOperationQuality: tool({
+      description:
+        "Детектив технології: швидкість агрегата vs ліміт знаряддя та л/га vs норма. Ставить has_violations при систематичних порушеннях.",
+      inputSchema: z.object({
+        operationId: z
+          .string()
+          .trim()
+          .optional()
+          .describe("UUID / client_key наряду"),
+        fieldIdOrName: z
+          .string()
+          .trim()
+          .optional()
+          .describe("Поле — останні наряди на ньому"),
+      }),
+      execute: async ({ operationId, fieldIdOrName }) => {
+        console.log("[TOOL: auditOperationQuality]", {
+          operationId,
+          fieldIdOrName,
+        });
+        try {
+          let fieldId: string | null = null;
+          if (fieldIdOrName?.trim() && !operationId?.trim()) {
+            const resolved = await resolveAgentFieldByLookup(
+              supabase,
+              fieldIdOrName.trim()
+            );
+            if (!resolved.ok) {
+              return {
+                success: false as const,
+                status: resolved.status,
+                error: resolved.error,
+                candidates: resolved.candidates,
+              };
+            }
+            fieldId = resolved.field.id;
+          }
+          const result = await auditOperationQuality({
+            supabase,
+            operationId,
+            fieldId,
+          });
+          if (!result.ok) {
+            return {
+              success: false as const,
+              status: result.status,
+              error: result.error,
+            };
+          }
+          const primary = result.audits[0];
+          return {
+            success: true as const,
+            status: "ok" as const,
+            audits: result.audits,
+            averageSpeed: primary?.averageSpeed ?? null,
+            maxSpeed: primary?.maxSpeed ?? null,
+            speedViolationsCount: primary?.speedViolationsCount ?? 0,
+            fuelDeltaLiters: primary?.fuelDeltaLiters ?? null,
+            hasViolations: result.audits.some((a) => a.hasViolations),
+            warningSummary:
+              primary?.warningSummary ?? result.message,
+            message: result.message,
+          };
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка аудиту якості",
+          };
+        }
+      },
+    }),
+
+    checkWeatherRiskForActiveJobs: tool({
+      description:
+        "Погодний перепланувальник: активні ЗЗР/добрива/посів vs дощ>2мм або пориви>5 м/с на 2–4 год.",
+      inputSchema: z.object({}),
+      execute: async () => {
+        console.log("[TOOL: checkWeatherRiskForActiveJobs]");
+        try {
+          const result = await checkWeatherRiskForActiveJobs({ supabase });
+          return {
+            success: true as const,
+            status: "ok" as const,
+            checked: result.checked,
+            alerts: result.alerts,
+            alertCount: result.alerts.length,
+            message: result.message,
+          };
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка погодного ризику",
+          };
+        }
+      },
+    }),
+
+    parseFieldVoiceDispatch: tool({
+      description:
+        "Польова рація: розбір тексту про поломку/простій/запчастину → статус техніки, журнал, чернетка заявки.",
+      inputSchema: z.object({
+        rawVoiceTranscript: z
+          .string()
+          .trim()
+          .min(3)
+          .describe(
+            "Сирий текст або розпізнаний суржик від механізатора/агронома з поля"
+          ),
+        applyActions: z
+          .boolean()
+          .optional()
+          .default(true)
+          .describe("Записати поломку / нотатку наряду (false = лише розбір)"),
+      }),
+      execute: async ({ rawVoiceTranscript, applyActions }) => {
+        console.log("[TOOL: parseFieldVoiceDispatch]", {
+          len: rawVoiceTranscript.length,
+          applyActions,
+        });
+        try {
+          if (!googleAi) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: "LLM недоступна (GOOGLE_GENERATIVE_AI_API_KEY).",
+            };
+          }
+          const result = await parseFieldVoiceDispatch({
+            supabase,
+            rawVoiceTranscript,
+            model: googleAi(visionModelId),
+            applyActions: applyActions !== false,
+          });
+          if (!result.ok) {
+            return {
+              success: false as const,
+              status: result.status,
+              error: result.error,
+            };
+          }
+          const r = result.result;
+          return {
+            success: true as const,
+            status: r.status,
+            identifiedMachine: r.identifiedMachine,
+            identifiedField: r.identifiedField,
+            issueSummary: r.issueSummary,
+            inventoryDraft: r.inventoryDraft,
+            maintenanceStatus: r.maintenanceStatus,
+            logId: r.logId,
+            pausedNoteApplied: r.pausedNoteApplied,
+            clientEvents:
+              r.identifiedMachine && r.status === "recorded"
+                ? (["equipment-updated"] as const)
+                : [],
+            message: result.message,
+          };
+        } catch (error) {
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка рації",
           };
         }
       },
@@ -7738,10 +12752,16 @@ function createAgentTools(options?: {
 
     queueDocumentToBasSync: tool({
       description:
-        "Ставить закритий наряд / списання ТМЦ / заправку в чергу імпорту BAS (bas_sync_queue).",
+        "Ставить закритий наряд / списання ТМЦ / заправку / закупівлю / переміщення ДП в чергу імпорту BAS (bas_sync_queue).",
       inputSchema: z.object({
         documentType: z
-          .enum(["work_order", "inventory_write_off", "fuel_dispense"])
+          .enum([
+            "work_order",
+            "inventory_write_off",
+            "fuel_dispense",
+            "fuel_purchase",
+            "fuel_transfer",
+          ])
           .describe("Тип документа BAS"),
         entityId: z
           .string()
@@ -7917,21 +12937,51 @@ function createAgentTools(options?: {
                 }
               });
           } else {
-            // fuel_dispense
+            // fuel_dispense | fuel_purchase | fuel_transfer
+            const expectedDbType =
+              documentType === "fuel_purchase"
+                ? "inbound"
+                : documentType === "fuel_transfer"
+                  ? "transfer"
+                  : "outbound";
+            const pipelineId =
+              documentType === "fuel_purchase"
+                ? "fuel_inbound"
+                : documentType === "fuel_transfer"
+                  ? "fuel_transfer"
+                  : "fuel_outbound_refuel";
+            const basDocument =
+              documentType === "fuel_purchase"
+                ? "Document_ПоступлениеТоваровУслуг"
+                : documentType === "fuel_transfer"
+                  ? "Document_ИНАГРО_СливТоплива"
+                  : "Document_ИНАГРО_ПередачаТоплива";
+            const typeLabelUk =
+              documentType === "fuel_purchase"
+                ? "закупівлю"
+                : documentType === "fuel_transfer"
+                  ? "переміщення"
+                  : "заправку";
+
             if (!isUuid(id)) {
               return {
                 success: false as const,
                 status: "error" as const,
-                error: "Для заправки потрібен UUID fuel_transactions.id",
+                error: `Для ${typeLabelUk} потрібен UUID fuel_transactions.id`,
               };
             }
+
             const { data: tx, error } = await supabase
               .from("fuel_transactions")
               .select(
                 `
                 id, transaction_type, amount_liters, transaction_date,
-                from_storage_id, equipment_id, operator_name, sync_status,
-                fuel_storages!fuel_transactions_from_storage_id_fkey (
+                from_storage_id, to_storage_id, equipment_id, operator_name,
+                sync_status, price_per_liter, total_cost,
+                from_storage:fuel_storages!fuel_transactions_from_storage_id_fkey (
+                  id, name, bas_ref_key
+                ),
+                to_storage:fuel_storages!fuel_transactions_to_storage_id_fkey (
                   id, name, bas_ref_key
                 ),
                 equipment:equipment_id ( id, name, bas_ref_key )
@@ -7939,12 +12989,31 @@ function createAgentTools(options?: {
               )
               .eq("id", id)
               .maybeSingle();
-            if (error || !tx) {
-              // fallback без join імен
+
+            type FuelTxLite = {
+              id: string;
+              transaction_type: string;
+              amount_liters: number | null;
+              transaction_date: string | null;
+              from_storage_id: string | null;
+              to_storage_id?: string | null;
+              equipment_id: string | null;
+              operator_name: string | null;
+              sync_status?: string | null;
+              price_per_liter?: number | null;
+              total_cost?: number | null;
+              from_storage?: unknown;
+              to_storage?: unknown;
+              fuel_storages?: unknown;
+              equipment?: unknown;
+            };
+
+            let row: FuelTxLite | null = tx as FuelTxLite | null;
+            if (error || !row) {
               const simple = await supabase
                 .from("fuel_transactions")
                 .select(
-                  "id, transaction_type, amount_liters, transaction_date, from_storage_id, equipment_id, operator_name, sync_status"
+                  "id, transaction_type, amount_liters, transaction_date, from_storage_id, to_storage_id, equipment_id, operator_name, sync_status, price_per_liter, total_cost"
                 )
                 .eq("id", id)
                 .maybeSingle();
@@ -7952,75 +13021,125 @@ function createAgentTools(options?: {
                 return {
                   success: false as const,
                   status: "not_found" as const,
-                  error: `Заправку «${id}» не знайдено.`,
+                  error: `Операцію палива «${id}» не знайдено.`,
                 };
               }
-              const t = simple.data;
-              if (String(t.transaction_type) !== "outbound") {
-                return {
-                  success: false as const,
-                  status: "error" as const,
-                  error: `Очікується outbound (заправка), зараз: ${t.transaction_type}`,
-                };
-              }
-              sourceDbId = String(t.id);
-              payload = {
-                ...payload,
-                sourceTable: "fuel_transactions",
-                dbId: sourceDbId,
-                amountLiters: t.amount_liters,
-                transactionDate: t.transaction_date,
-                fromStorageId: t.from_storage_id,
-                equipmentId: t.equipment_id,
-                operatorName: t.operator_name,
-                pipeline: "fuel_outbound_refuel",
-                basDocument: "Document_ИНАГРО_ПередачаТоплива",
+              row = simple.data as FuelTxLite;
+            }
+
+            if (String(row.transaction_type) !== expectedDbType) {
+              return {
+                success: false as const,
+                status: "error" as const,
+                error: `Для ${documentType} очікується ${expectedDbType}, зараз: ${row.transaction_type}`,
               };
-            } else {
-              if (String(tx.transaction_type) !== "outbound") {
-                return {
-                  success: false as const,
-                  status: "error" as const,
-                  error: `Очікується outbound (заправка), зараз: ${tx.transaction_type}`,
-                };
-              }
-              sourceDbId = String(tx.id);
-              const storage = Array.isArray(tx.fuel_storages)
-                ? tx.fuel_storages[0]
-                : tx.fuel_storages;
-              const equipment = Array.isArray(tx.equipment)
-                ? tx.equipment[0]
-                : tx.equipment;
-              payload = {
-                ...payload,
-                sourceTable: "fuel_transactions",
-                dbId: sourceDbId,
-                amountLiters: tx.amount_liters,
-                transactionDate: tx.transaction_date,
-                fromStorageId: tx.from_storage_id,
-                storageName: storage
-                  ? (storage as { name?: string }).name
-                  : null,
-                storageBasRefKey: storage
-                  ? (storage as { bas_ref_key?: string }).bas_ref_key
-                  : null,
-                equipmentId: tx.equipment_id,
-                equipmentName: equipment
-                  ? (equipment as { name?: string }).name
-                  : null,
-                equipmentBasRefKey: equipment
-                  ? (equipment as { bas_ref_key?: string }).bas_ref_key
-                  : null,
-                operatorName: tx.operator_name,
-                pipeline: "fuel_outbound_refuel",
-                basDocument: "Document_ИНАГРО_ПередачаТоплива",
-              };
+            }
+
+            sourceDbId = String(row.id);
+            const fromRel = Array.isArray(row.from_storage)
+              ? row.from_storage[0]
+              : row.from_storage ??
+                (Array.isArray(row.fuel_storages)
+                  ? row.fuel_storages[0]
+                  : row.fuel_storages);
+            const toRel = Array.isArray(row.to_storage)
+              ? row.to_storage[0]
+              : row.to_storage;
+            const equipment = Array.isArray(row.equipment)
+              ? row.equipment[0]
+              : row.equipment;
+            const price =
+              row.price_per_liter != null && Number(row.price_per_liter) > 0
+                ? Number(row.price_per_liter)
+                : null;
+            const total =
+              row.total_cost != null && Number.isFinite(Number(row.total_cost))
+                ? Number(row.total_cost)
+                : null;
+
+            payload = {
+              ...payload,
+              sourceTable: "fuel_transactions",
+              dbId: sourceDbId,
+              amountLiters: row.amount_liters,
+              transactionDate: row.transaction_date,
+              fromStorageId: row.from_storage_id,
+              toStorageId: row.to_storage_id ?? null,
+              fromStorageName: fromRel
+                ? (fromRel as { name?: string }).name
+                : null,
+              fromStorageBasRefKey: fromRel
+                ? (fromRel as { bas_ref_key?: string }).bas_ref_key
+                : null,
+              toStorageName: toRel
+                ? (toRel as { name?: string }).name
+                : null,
+              toStorageBasRefKey: toRel
+                ? (toRel as { bas_ref_key?: string }).bas_ref_key
+                : null,
+              equipmentId: row.equipment_id,
+              equipmentName: equipment
+                ? (equipment as { name?: string }).name
+                : null,
+              equipmentBasRefKey: equipment
+                ? (equipment as { bas_ref_key?: string }).bas_ref_key
+                : null,
+              operatorName: row.operator_name,
+              pricePerLiter: price,
+              totalCost: total,
+              nomenclature: "diesel",
+              nomenclatureHint: "ДП / дизель",
+              pipeline: pipelineId,
+              basDocument,
+              basPayload: {
+                organizationKeyHint: "BAS_ORGANIZATION_KEY",
+                nomenclatureKeyHint: "BAS_DIESEL_NOMENCLATURE_KEY",
+                quantityLiters: row.amount_liters,
+                pricePerLiter: price,
+                totalCost: total,
+                fromWarehouseBasRef:
+                  fromRel
+                    ? (fromRel as { bas_ref_key?: string }).bas_ref_key
+                    : null,
+                toWarehouseBasRef:
+                  toRel
+                    ? (toRel as { bas_ref_key?: string }).bas_ref_key
+                    : fromRel && documentType === "fuel_purchase"
+                      ? (fromRel as { bas_ref_key?: string }).bas_ref_key
+                      : null,
+                posted: false,
+              },
+            };
+
+            // Для purchase склад-отримувач = to_storage
+            if (documentType === "fuel_purchase") {
+              payload.storageName = payload.toStorageName;
+              payload.storageBasRefKey = payload.toStorageBasRefKey;
+              (payload.basPayload as Record<string, unknown>).toWarehouseBasRef =
+                payload.toStorageBasRefKey;
+              (payload.basPayload as Record<string, unknown>).fromWarehouseBasRef =
+                null;
             }
 
             await supabase
               .from("fuel_transactions")
               .update({ sync_status: "pending_1c" })
               .eq("id", sourceDbId);
+
+            void enqueueFuelBasDraft({
+              transactionId: sourceDbId,
+              transactionType: expectedDbType as
+                | "inbound"
+                | "transfer"
+                | "outbound",
+              amountLiters: Number(row.amount_liters) || undefined,
+              pricePerLiter: price,
+              totalCost: total,
+              fromStorageId: row.from_storage_id,
+              toStorageId: row.to_storage_id ?? null,
+            }).catch((e) =>
+              console.error("[queueDocumentToBasSync] fuel draft", e)
+            );
           }
 
           if (notes?.trim()) payload.accountantNotes = notes.trim();
@@ -8286,6 +13405,214 @@ function createAgentTools(options?: {
               error instanceof Error
                 ? error.message
                 : "Невідома помилка експорту",
+          };
+        }
+      },
+    }),
+
+    exportOperationsMatrixExcel: tool({
+      description:
+        "Повний Excel/CSV експорт матриці робіт (Хронологія / станції) за сезон або період. Повертає пряме посилання на завантаження.",
+      inputSchema: z.object({
+        season: z
+          .number()
+          .int()
+          .optional()
+          .default(2026)
+          .describe("Рік сезону"),
+        fieldIdOrName: z
+          .string()
+          .trim()
+          .optional()
+          .describe("Конкретне поле або порожньо для всіх полів господарства"),
+        period: z
+          .enum(["all_season", "current_month", "last_30_days", "custom"])
+          .optional()
+          .default("all_season")
+          .describe("Вікно дат"),
+        format: z
+          .enum(["xlsx", "csv"])
+          .optional()
+          .default("xlsx")
+          .describe("Формат файлу"),
+        dateFrom: z
+          .string()
+          .trim()
+          .optional()
+          .describe("YYYY-MM-DD для period=custom"),
+        dateTo: z
+          .string()
+          .trim()
+          .optional()
+          .describe("YYYY-MM-DD для period=custom"),
+      }),
+      execute: async ({
+        season,
+        fieldIdOrName,
+        period,
+        format,
+        dateFrom,
+        dateTo,
+      }) => {
+        const seasonYear = Number(normalizeSeason(season ?? 2026)) || 2026;
+        const periodValue = period ?? "all_season";
+        const formatValue = format ?? "xlsx";
+        const lookup = fieldIdOrName?.trim() || "";
+        console.log("[TOOL: exportOperationsMatrixExcel]", {
+          seasonYear,
+          lookup: lookup || null,
+          periodValue,
+          formatValue,
+        });
+
+        try {
+          let fieldId: string | null = null;
+          let fieldName: string | null = null;
+          if (lookup) {
+            const resolved = await resolveAgentFieldByLookup(
+              supabase,
+              lookup,
+              "id, name, canonical_name, crop, area_ha"
+            );
+            if (!resolved.ok) {
+              return {
+                success: false as const,
+                status: resolved.status,
+                error: resolved.error,
+                candidates: resolved.candidates,
+              };
+            }
+            fieldId = resolved.field.id;
+            fieldName = resolved.fieldName;
+          }
+
+          const matrix = await buildOperationsMatrix(supabase, {
+            season: seasonYear,
+            fieldId,
+            period: periodValue,
+            dateFrom: dateFrom?.trim() || null,
+            dateTo: dateTo?.trim() || null,
+          });
+
+          const params = new URLSearchParams({
+            season: String(seasonYear),
+            period: periodValue,
+            format: formatValue,
+          });
+          if (fieldId) params.set("fieldId", fieldId);
+          if (periodValue === "custom") {
+            if (dateFrom?.trim()) params.set("dateFrom", dateFrom.trim());
+            if (dateTo?.trim()) params.set("dateTo", dateTo.trim());
+          }
+
+          const filename = `${matrix.filenameBase}.${formatValue === "csv" ? "csv" : "xlsx"}`;
+          const downloadUrl = `/api/export/operations-matrix?${params.toString()}`;
+
+          return {
+            success: true as const,
+            status: "ok" as const,
+            downloadUrl,
+            filename,
+            totalOperations: matrix.totalOperations,
+            totalArea: matrix.totalArea,
+            season: matrix.season,
+            period: periodValue,
+            format: formatValue,
+            fieldId,
+            fieldName,
+            message: `Матриця готова: **${matrix.totalOperations}** операцій, **${matrix.totalArea}** га. Завантаження: ${downloadUrl}`,
+          };
+        } catch (error) {
+          console.error(
+            "[TOOL: exportOperationsMatrixExcel] Unexpected error:",
+            error instanceof Error ? error.message : error
+          );
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка експорту матриці",
+          };
+        }
+      },
+    }),
+
+    getCropPhenologyStage: tool({
+      description:
+        "Фенологія культури на полі: GDD (сума ефективних температур), фаза BBCH, прогноз до наступної фази.",
+      inputSchema: z.object({
+        fieldIdOrName: z
+          .string()
+          .trim()
+          .min(1)
+          .describe("Назва або ID поля"),
+      }),
+      execute: async ({ fieldIdOrName }) => {
+        const lookup = (fieldIdOrName?.trim() || defaultFieldId || "").trim();
+        console.log("[TOOL: getCropPhenologyStage]", { lookup });
+
+        try {
+          const resolved = await resolveAgentFieldByLookup(
+            supabase,
+            lookup,
+            "id, name, canonical_name, crop, area_ha, geometry"
+          );
+          if (!resolved.ok) {
+            return {
+              success: false as const,
+              status: resolved.status,
+              error: resolved.error,
+              candidates: resolved.candidates,
+            };
+          }
+
+          const { field, fieldName } = resolved;
+          const phenology = await getCropPhenologyForField(supabase, field.id);
+          if (!phenology.ok) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              fieldId: field.id,
+              fieldName,
+              error: phenology.error,
+            };
+          }
+
+          const r = phenology.result;
+          return {
+            success: true as const,
+            status: "ok" as const,
+            fieldId: field.id,
+            fieldName,
+            crop: r.crop,
+            sowingDate: r.sowingDate,
+            accumulatedGdd: r.accumulatedGdd,
+            baseTempC: r.baseTempC,
+            bbchCode: r.bbchCode,
+            stageName: r.stageName,
+            percentProgress: r.percentProgress,
+            daysToNextStage: r.daysToNextStage,
+            nextBbchCode: r.nextBbchCode,
+            nextStageName: r.nextStageName,
+            advisory: r.advisory,
+            weatherDays: r.weatherDays,
+            openFieldPath: `/?field=${field.id}`,
+            message: `**${fieldName}** · ${r.crop}: BBCH **${r.bbchCode}** (${r.stageName}), GDD **${r.accumulatedGdd}** (база +${r.baseTempC}°C). ${r.advisory}`,
+          };
+        } catch (error) {
+          console.error(
+            "[TOOL: getCropPhenologyStage] Unexpected error:",
+            error instanceof Error ? error.message : error
+          );
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка фенології",
           };
         }
       },
@@ -8574,6 +13901,259 @@ function createAgentTools(options?: {
               error instanceof Error
                 ? error.message
                 : "Невідома помилка синхронізації геозони",
+          };
+        }
+      },
+    }),
+
+    updateFieldGeometry: tool({
+      description:
+        "Встановлює контур поля з coordinates / GeoJSON / WKT у farm_fields.geometry.",
+      inputSchema: z.object({
+        fieldIdOrName: z
+          .string()
+          .trim()
+          .min(1)
+          .describe("Назва або UUID поля"),
+        coordinates: z
+          .array(z.array(z.number()))
+          .optional()
+          .describe("Пари [[lat,lng]|[lng,lat], …] замкненого полігону"),
+        geoJson: z
+          .string()
+          .trim()
+          .optional()
+          .describe("GeoJSON string або WKT POLYGON"),
+      }),
+      execute: async ({ fieldIdOrName, coordinates, geoJson }) => {
+        const lookup = (fieldIdOrName?.trim() || defaultFieldId || "").trim();
+        console.log("[TOOL: updateFieldGeometry]", {
+          lookup,
+          points: coordinates?.length ?? 0,
+          hasGeoJson: Boolean(geoJson?.trim()),
+        });
+
+        try {
+          if (!lookup) {
+            return {
+              success: false as const,
+              status: "needs_slots" as const,
+              error: "Вкажи поле (назва або UUID).",
+            };
+          }
+
+          const parsed = parseAgentFieldGeometryInput({
+            coordinates,
+            geoJson,
+          });
+          if (!parsed.ok) {
+            return {
+              success: false as const,
+              status: "needs_slots" as const,
+              error: parsed.error,
+            };
+          }
+
+          const resolved = await resolveAgentFieldByLookup(
+            supabase,
+            lookup,
+            "id, name, canonical_name, crop, area_ha, geometry",
+            { includeNonFields: true }
+          );
+          if (!resolved.ok) {
+            return {
+              success: false as const,
+              status: resolved.status,
+              error: resolved.error,
+              candidates: resolved.candidates,
+            };
+          }
+
+          const { field, fieldName } = resolved;
+          const feature: Feature<Polygon> = {
+            type: "Feature",
+            properties: {},
+            geometry: parsed.geometry,
+          };
+          const areaHa = hectaresFromFeature(feature);
+
+          const patch: Record<string, unknown> = {
+            geometry: parsed.geometry,
+          };
+          if (areaHa > 0.01) {
+            patch.area_ha = round2(areaHa);
+          }
+
+          const { error } = await supabase
+            .from("farm_fields")
+            .update(patch)
+            .eq("id", field.id);
+
+          if (error) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: error.message,
+            };
+          }
+
+          return {
+            success: true as const,
+            status: "updated" as const,
+            fieldId: field.id,
+            fieldName,
+            pointsCount: parsed.pointsCount,
+            areaHa: areaHa > 0 ? round2(areaHa) : null,
+            openFieldPath: `/?field=${field.id}`,
+            message: "Контур поля успішно оновлено на карті",
+            clientEvents: ["field-updated", "focus-field-map"],
+            updatedField: {
+              id: field.id,
+              name: fieldName,
+              area: areaHa > 0 ? round2(areaHa) : finiteNumber(field.area_ha),
+              crop: field.crop ?? null,
+            },
+          };
+        } catch (error) {
+          console.error(
+            "[TOOL: updateFieldGeometry] Unexpected error:",
+            error instanceof Error ? error.message : error
+          );
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка оновлення контуру",
+          };
+        }
+      },
+    }),
+
+    unlinkFieldWialonGeofence: tool({
+      description:
+        "Відвʼязує геозону Wialon від поля (wialon_zone_id = null). Потрібне confirmed.",
+      inputSchema: z.object({
+        fieldIdOrName: z
+          .string()
+          .trim()
+          .min(1)
+          .describe("Назва або ID поля"),
+        confirmed: z
+          .boolean()
+          .default(false)
+          .describe("Підтвердження"),
+      }),
+      execute: async ({ fieldIdOrName, confirmed }) => {
+        const lookup = (fieldIdOrName?.trim() || defaultFieldId || "").trim();
+        const isConfirmed = confirmed === true;
+        console.log("[TOOL: unlinkFieldWialonGeofence]", {
+          lookup,
+          isConfirmed,
+        });
+
+        try {
+          if (!lookup) {
+            return {
+              success: false as const,
+              status: "needs_slots" as const,
+              error: "Вкажи поле (назва або UUID).",
+            };
+          }
+
+          const resolved = await resolveAgentFieldByLookup(
+            supabase,
+            lookup,
+            "id, name, canonical_name, wialon_zone_id",
+            { includeNonFields: true }
+          );
+          if (!resolved.ok) {
+            return {
+              success: false as const,
+              status: resolved.status,
+              error: resolved.error,
+              candidates: resolved.candidates,
+            };
+          }
+
+          const { field, fieldName } = resolved;
+          const currentZoneId =
+            typeof field.wialon_zone_id === "string"
+              ? field.wialon_zone_id.trim()
+              : "";
+
+          if (!currentZoneId) {
+            return {
+              success: true as const,
+              status: "already_unlinked" as const,
+              fieldId: field.id,
+              fieldName,
+              wialonGeofenceId: null,
+              message: `Поле «${fieldName}» уже без привʼязки до Wialon.`,
+              clientEvents: ["field-updated"],
+            };
+          }
+
+          if (!isConfirmed) {
+            return {
+              success: false as const,
+              status: "requires_confirmation" as const,
+              fieldId: field.id,
+              fieldName,
+              wialonGeofenceId: currentZoneId,
+              confirmChoice: `Відвʼязати геозону ${currentZoneId} від «${fieldName}»`,
+              cancelChoice: "Скасувати",
+              userHint: `Поле «${fieldName}» привʼязане до Wialon ${currentZoneId}. Відвʼязати?`,
+              pending: { fieldIdOrName: field.id },
+              badge: "Відвʼязка Wialon",
+            };
+          }
+
+          const { error } = await supabase
+            .from("farm_fields")
+            .update({
+              wialon_zone_id: null,
+            })
+            .eq("id", field.id);
+
+          if (error) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: error.message,
+            };
+          }
+
+          return {
+            success: true as const,
+            status: "unlinked" as const,
+            fieldId: field.id,
+            fieldName,
+            previousWialonGeofenceId: currentZoneId,
+            wialonGeofenceId: null,
+            openFieldPath: `/?field=${field.id}`,
+            message: `Розірвав звʼязок «${fieldName}» ↔ Wialon ${currentZoneId}.`,
+            clientEvents: ["field-updated"],
+            updatedField: {
+              id: field.id,
+              name: fieldName,
+              area: 0,
+              crop: null,
+            },
+          };
+        } catch (error) {
+          console.error(
+            "[TOOL: unlinkFieldWialonGeofence] Unexpected error:",
+            error instanceof Error ? error.message : error
+          );
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка відвʼязки Wialon",
           };
         }
       },
@@ -9650,6 +15230,93 @@ function createAgentTools(options?: {
       },
     }),
 
+    setMapDisplayMode: tool({
+      description:
+        "Перемикає режим підсвітки полів на карті: культури / бюджет / NDVI.",
+      inputSchema: z.object({
+        mode: z
+          .enum(["crops", "budget_burn", "ndvi", "default"])
+          .describe("crops|budget_burn|ndvi|default"),
+      }),
+      execute: async ({ mode }) => {
+        console.log("[TOOL: setMapDisplayMode]", { mode });
+        const labels: Record<typeof mode, string> = {
+          crops: "кольори культур",
+          budget_burn: "освоєння бюджету",
+          ndvi: "NDVI",
+          default: "стандартний",
+        };
+        return {
+          success: true as const,
+          status: "ok" as const,
+          activeMode: mode,
+          navigatePath: "/",
+          clientEvents: ["map-set-mode"] as const,
+          clientDirective: {
+            type: "map-set-mode" as const,
+            mode,
+          },
+          message: `Режим карти перемкнено на: ${mode} (${labels[mode]})`,
+        };
+      },
+    }),
+
+    adjustMapView: tool({
+      description:
+        "Вміщує всі поля в екран (fit_all) або скидає масштаб (reset_zoom).",
+      inputSchema: z.object({
+        action: z
+          .enum(["fit_all", "reset_zoom"])
+          .describe("fit_all|reset_zoom"),
+      }),
+      execute: async ({ action }) => {
+        console.log("[TOOL: adjustMapView]", { action });
+        return {
+          success: true as const,
+          status: "ok" as const,
+          action,
+          navigatePath: "/",
+          clientEvents: ["map-fit-bounds"] as const,
+          clientDirective: {
+            type: "map-fit-bounds" as const,
+            action,
+          },
+          message:
+            action === "fit_all"
+              ? "Центрую карту так, щоб усі поля були в кадрі."
+              : "Повертаю стандартний масштаб карти.",
+        };
+      },
+    }),
+
+    setTimelineViewMode: tool({
+      description:
+        "Перемикає Хронологію між видами «станції» та «календар».",
+      inputSchema: z.object({
+        view: z
+          .enum(["stations", "calendar"])
+          .describe("stations|calendar"),
+      }),
+      execute: async ({ view }) => {
+        console.log("[TOOL: setTimelineViewMode]", { view });
+        return {
+          success: true as const,
+          status: "ok" as const,
+          view,
+          navigatePath: "/operations",
+          clientEvents: ["timeline-set-view"] as const,
+          clientDirective: {
+            type: "timeline-set-view" as const,
+            view,
+          },
+          message:
+            view === "calendar"
+              ? "Перемикаю Хронологію на календар."
+              : "Перемикаю Хронологію на технологічні станції.",
+        };
+      },
+    }),
+
     createField: tool({
       description: "Створює нове поле / город / базу в farm_fields.",
       inputSchema: z.object({
@@ -9994,7 +15661,7 @@ function createAgentTools(options?: {
 
     updateFieldDetails: tool({
       description:
-        "Оновлює назву/площу/культуру/колір/категорію поля (confirmed для критичних змін).",
+        "Оновлює паспорт/адмін-реквізити поля (confirmed для name/area/crop/category).",
       inputSchema: z.object({
         fieldIdOrName: z
           .string()
@@ -10034,6 +15701,26 @@ function createAgentTools(options?: {
           .trim()
           .optional()
           .describe("Нотатки"),
+        previousCrop: z
+          .string()
+          .trim()
+          .optional()
+          .describe("Культура-попередник"),
+        fieldNumber: z
+          .string()
+          .trim()
+          .optional()
+          .describe("Номер поля в реєстрі"),
+        tract: z
+          .string()
+          .trim()
+          .optional()
+          .describe("Урочище / відділок"),
+        basRefKey: z
+          .string()
+          .trim()
+          .optional()
+          .describe("UUID Ref_Key поля в BAS / 1С"),
         confirmed: z
           .boolean()
           .default(false)
@@ -10047,11 +15734,19 @@ function createAgentTools(options?: {
         color,
         category,
         notes,
+        previousCrop,
+        fieldNumber,
+        tract,
+        basRefKey,
         confirmed,
       }) => {
         const lookup = (fieldIdOrName?.trim() || defaultFieldId || "").trim();
         const isConfirmed = confirmed === true;
         const nextColor = normalizeFieldColor(color);
+        const hasPreviousCrop = previousCrop !== undefined;
+        const hasFieldNumber = fieldNumber !== undefined;
+        const hasTract = tract !== undefined;
+        const hasBasRef = basRefKey !== undefined;
         console.log("[TOOL: updateFieldDetails]", {
           lookup,
           newName,
@@ -10060,6 +15755,10 @@ function createAgentTools(options?: {
           color: nextColor,
           category,
           notes: notes != null,
+          previousCrop: hasPreviousCrop,
+          fieldNumber: hasFieldNumber,
+          tract: hasTract,
+          basRefKey: hasBasRef,
           confirmed: isConfirmed,
         });
 
@@ -10070,13 +15769,17 @@ function createAgentTools(options?: {
             newArea == null &&
             !nextColor &&
             !category &&
-            (notes == null || notes === "")
+            (notes == null || notes === "") &&
+            !hasPreviousCrop &&
+            !hasFieldNumber &&
+            !hasTract &&
+            !hasBasRef
           ) {
             return {
               success: false as const,
               status: "needs_slots" as const,
               error:
-                "Вкажи що оновити: назву, культуру, площу, колір, категорію або примітки.",
+                "Вкажи що оновити: назву, культуру, площу, колір, категорію, попередник, № поля, урочище, BAS ключ або примітки.",
             };
           }
 
@@ -10091,7 +15794,7 @@ function createAgentTools(options?: {
           let resolved = await resolveAgentFieldByLookup(
             supabase,
             lookup,
-            "id, name, canonical_name, crop, area_ha, season, notes, color, is_field, plot_category",
+            "id, name, canonical_name, crop, area_ha, season, notes, color, is_field, plot_category, previous_crop, field_no, tract, bas_ref_key",
             { includeNonFields: true }
           );
           if (
@@ -10099,6 +15802,8 @@ function createAgentTools(options?: {
             resolved.status === "error" &&
             (resolved.error.includes("notes") ||
               resolved.error.includes("plot_category") ||
+              resolved.error.includes("previous_crop") ||
+              resolved.error.includes("field_no") ||
               resolved.error.includes("42703"))
           ) {
             resolved = await resolveAgentFieldByLookup(supabase, lookup, undefined, {
@@ -10204,6 +15909,10 @@ function createAgentTools(options?: {
                 color: nextColor ?? null,
                 category: nextCategory ?? null,
                 notes: notes ?? null,
+                previousCrop: hasPreviousCrop ? previousCrop ?? null : null,
+                fieldNumber: hasFieldNumber ? fieldNumber ?? null : null,
+                tract: hasTract ? tract ?? null : null,
+                basRefKey: hasBasRef ? basRefKey ?? null : null,
               },
               warning:
                 areaChanging || cultureChanging
@@ -10219,7 +15928,6 @@ function createAgentTools(options?: {
             };
           }
 
-          // notes/color-only без confirmation — ок; інакше сюди з confirmed=true
           return await applyFieldDetailsUpdate(supabase, resolved, {
             name: nextName,
             culture: nextCulture,
@@ -10227,6 +15935,10 @@ function createAgentTools(options?: {
             notes,
             color: nextColor ?? undefined,
             category: nextCategory,
+            ...(hasPreviousCrop ? { previousCrop: previousCrop ?? null } : {}),
+            ...(hasFieldNumber ? { fieldNumber: fieldNumber ?? null } : {}),
+            ...(hasTract ? { tract: tract ?? null } : {}),
+            ...(hasBasRef ? { basRefKey: basRefKey ?? null } : {}),
           });
         } catch (error) {
           console.error(

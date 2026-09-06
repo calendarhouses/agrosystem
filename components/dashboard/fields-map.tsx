@@ -32,6 +32,7 @@ import "@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css";
 import { VehicleMapPopup } from "@/components/dashboard/vehicle-map-popup";
 import {
   FIELDS_GEOJSON,
+  FIELDS_MAP_INITIAL_VIEW,
   UKRAINE_MAX_BOUNDS,
 } from "@/lib/fields-geojson";
 import { searchPlaces, type GeoSearchResult } from "@/lib/geocode";
@@ -58,7 +59,7 @@ import { cn } from "@/lib/utils";
 import { useAppBoot } from "@/lib/app-boot";
 import { useIsMobile } from "@/lib/use-mobile";
 
-export type MapViewMode = "standard" | "economics";
+export type MapViewMode = "standard" | "economics" | "ndvi";
 
 const FIELD_HIT_LAYERS = [
   "wialon-geofences-fill",
@@ -74,6 +75,15 @@ const ECONOMICS_LAYER = {
   label: "Бюджет",
   icon: Landmark,
 };
+
+/** Зовнішні режими LEVADIUS → внутрішній MapViewMode */
+export function mapDisplayModeToViewMode(
+  mode: "crops" | "budget_burn" | "ndvi" | "default"
+): MapViewMode {
+  if (mode === "budget_burn") return "economics";
+  if (mode === "ndvi") return "ndvi";
+  return "standard";
+}
 
 const FLOAT_BAR_CLASS =
   "flex items-center gap-1 rounded-2xl border border-border bg-background/70 p-1.5 shadow-lg backdrop-blur-xl";
@@ -133,7 +143,7 @@ const FIELD_LINE_LAYER_IDS = [
   "wialon-geofences-outline",
 ] as const;
 
-/** Колір burn rate — однакова логіка для fill і outline в режимі «Бюджет». */
+/** Колір burn rate — зелений ≤85%, жовтий 85–100%, червоний >100%. */
 function budgetBurnColorExpression(): mapboxgl.Expression {
   const pct = ["to-number", ["get", "budgetPct"]] as mapboxgl.Expression;
   return [
@@ -146,7 +156,7 @@ function budgetBurnColorExpression(): mapboxgl.Expression {
     BUDGET_COLOR_NEUTRAL,
     [">", pct, 100],
     BUDGET_COLOR_RED,
-    [">=", pct, 70],
+    [">=", pct, 85],
     BUDGET_COLOR_YELLOW,
     BUDGET_COLOR_GREEN,
   ] as mapboxgl.Expression;
@@ -154,6 +164,23 @@ function budgetBurnColorExpression(): mapboxgl.Expression {
 
 function passportColorExpression(): mapboxgl.Expression {
   return ["coalesce", ["get", "color"], "#276749"] as mapboxgl.Expression;
+}
+
+/** NDVI 0–1 (або 0–100): червоний→жовтий→зелений; без даних — нейтральний. */
+function ndviColorExpression(): mapboxgl.Expression {
+  const raw = ["to-number", ["get", "ndvi"]] as mapboxgl.Expression;
+  const idx = [
+    "case",
+    [">", raw, 1],
+    ["/", raw, 100],
+    raw,
+  ] as mapboxgl.Expression;
+  return [
+    "case",
+    ["any", ["!", ["has", "ndvi"]], ["==", ["get", "ndvi"], null]],
+    BUDGET_COLOR_NEUTRAL,
+    ["interpolate", ["linear"], idx, 0, "#ef4444", 0.35, "#eab308", 0.7, "#22c55e"],
+  ] as mapboxgl.Expression;
 }
 
 type DrawTool = "draw" | "edit";
@@ -542,6 +569,9 @@ function paintFillColor(mapViewMode: MapViewMode): mapboxgl.Expression {
   if (mapViewMode === "economics") {
     return budgetBurnColorExpression();
   }
+  if (mapViewMode === "ndvi") {
+    return ndviColorExpression();
+  }
   return passportColorExpression();
 }
 
@@ -549,7 +579,7 @@ function paintFillOpacityValue(
   mapViewMode: MapViewMode,
   focusId: string | null
 ): mapboxgl.Expression | number {
-  if (mapViewMode === "economics") {
+  if (mapViewMode === "economics" || mapViewMode === "ndvi") {
     if (!focusId) return 0.6;
     return [
       "case",
@@ -564,6 +594,9 @@ function paintFillOpacityValue(
 function paintLineColor(mapViewMode: MapViewMode): mapboxgl.Expression {
   if (mapViewMode === "economics") {
     return budgetBurnColorExpression();
+  }
+  if (mapViewMode === "ndvi") {
+    return ndviColorExpression();
   }
   return passportColorExpression();
 }
@@ -669,7 +702,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       onMapChromeChange?.({
         searchOpen,
         drawing: isDrawing,
-        economics: mapViewMode === "economics",
+        economics: mapViewMode === "economics" || mapViewMode === "ndvi",
       });
       return () =>
         onMapChromeChange?.({
@@ -789,7 +822,8 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
         const isDesktop =
           typeof window !== "undefined" ? window.innerWidth >= 768 : true;
         return mapCameraPadding(isDesktop, mode === "detail" ? "right" : "left", {
-          economicsLegend: mapViewMode === "economics",
+          economicsLegend:
+            mapViewMode === "economics" || mapViewMode === "ndvi",
         });
       },
       [mapViewMode]
@@ -1036,6 +1070,63 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
       },
       []
     );
+
+    const flyToRef = useRef(flyTo);
+    flyToRef.current = flyTo;
+
+    // LEVADIUS: режим кольорів + fit / reset zoom
+    useEffect(() => {
+      function onMapSetMode(event: Event) {
+        const detail = (event as CustomEvent<{ mode?: string }>).detail;
+        const mode = detail?.mode;
+        if (
+          mode !== "crops" &&
+          mode !== "budget_burn" &&
+          mode !== "ndvi" &&
+          mode !== "default"
+        ) {
+          return;
+        }
+        setMapViewMode(mapDisplayModeToViewMode(mode));
+      }
+
+      function onMapFitBounds(event: Event) {
+        const detail = (event as CustomEvent<{ action?: string }>).detail;
+        const action = detail?.action;
+        if (action === "fit_all") {
+          fitAllFieldsRef.current();
+          return;
+        }
+        if (action === "reset_zoom") {
+          userMapNavigationRef.current = false;
+          const map = mapRef.current?.getMap();
+          if (map) {
+            map.easeTo({
+              center: [
+                FIELDS_MAP_INITIAL_VIEW.longitude,
+                FIELDS_MAP_INITIAL_VIEW.latitude,
+              ],
+              zoom: FIELDS_MAP_INITIAL_VIEW.zoom,
+              duration: 900,
+              essential: true,
+            });
+            return;
+          }
+          flyToRef.current(
+            FIELDS_MAP_INITIAL_VIEW.longitude,
+            FIELDS_MAP_INITIAL_VIEW.latitude,
+            FIELDS_MAP_INITIAL_VIEW.zoom
+          );
+        }
+      }
+
+      window.addEventListener("map-set-mode", onMapSetMode);
+      window.addEventListener("map-fit-bounds", onMapFitBounds);
+      return () => {
+        window.removeEventListener("map-set-mode", onMapSetMode);
+        window.removeEventListener("map-fit-bounds", onMapFitBounds);
+      };
+    }, []);
 
     // Не скидаємо mapReady при повторному завантаженні Wialon — карта лишається інтерактивною.
     useEffect(() => {
@@ -2229,11 +2320,11 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
                   [
                     {
                       color: BUDGET_COLOR_GREEN,
-                      label: "<70% норма",
+                      label: "≤85% норма",
                     },
                     {
                       color: BUDGET_COLOR_YELLOW,
-                      label: "70–100%",
+                      label: "85–100%",
                     },
                     {
                       color: BUDGET_COLOR_RED,
@@ -2257,6 +2348,34 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
                   </li>
                 ))}
               </ul>
+            </div>
+          </div>
+        ) : null}
+
+        {mapViewMode === "ndvi" &&
+        !focusMode &&
+        !searchOpen &&
+        !overlayActive ? (
+          <div
+            className={cn(
+              "pointer-events-auto absolute z-40",
+              "top-[env(safe-area-inset-top,0px)] mt-4 left-4 right-4",
+              "md:top-auto md:right-3 md:left-auto md:max-w-sm",
+              "md:bottom-[calc(0.75rem+3.25rem+0.5rem)]",
+              chrome === "detail" &&
+                "md:right-[calc(0.75rem+min(580px,calc(100%-1.5rem))+12px)]"
+            )}
+          >
+            <div
+              className={cn(
+                "rounded-2xl border border-white/50 bg-white/80 p-3 shadow-lg backdrop-blur-md",
+                "md:border-[#E5DFD3]/90 md:bg-[#F4F1EA]/95 md:backdrop-blur-xl"
+              )}
+            >
+              <p className="text-xs font-bold text-zinc-900">NDVI полів</p>
+              <p className="mt-1 text-[10px] leading-snug text-zinc-600">
+                Червоний → жовтий → зелений за індексом вегетації (якщо є дані)
+              </p>
             </div>
           </div>
         ) : null}

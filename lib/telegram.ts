@@ -66,7 +66,11 @@ export async function resolveTelegramChatIds(): Promise<string[]> {
 export async function sendTelegramMessage(
   chatId: string,
   text: string,
-  options?: { disableNotification?: boolean }
+  options?: {
+    disableNotification?: boolean;
+    /** Inline URL-кнопки Telegram (до 3 рядків × 2 кнопки) */
+    inlineKeyboard?: Array<Array<{ text: string; url: string }>>;
+  }
 ): Promise<TelegramSendResult> {
   const token = botToken();
   if (!token) {
@@ -77,16 +81,25 @@ export async function sendTelegramMessage(
     return { ok: false, chatId, error: "Порожній текст" };
   }
 
+  const bodyPayload: Record<string, unknown> = {
+    chat_id: chatId,
+    text: trimmed.slice(0, 4000),
+    disable_notification: options?.disableNotification === true,
+    disable_web_page_preview: true,
+  };
+  if (options?.inlineKeyboard?.length) {
+    bodyPayload.reply_markup = {
+      inline_keyboard: options.inlineKeyboard.map((row) =>
+        row.map((btn) => ({ text: btn.text, url: btn.url }))
+      ),
+    };
+  }
+
   try {
     const res = await fetch(`${TELEGRAM_API}/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: trimmed.slice(0, 4000),
-        disable_notification: options?.disableNotification === true,
-        disable_web_page_preview: true,
-      }),
+      body: JSON.stringify(bodyPayload),
     });
     const body = (await res.json().catch(() => null)) as {
       ok?: boolean;
@@ -118,7 +131,10 @@ export async function sendTelegramMessage(
 /** Надіслати всім відомим чатам керівництва. */
 export async function broadcastTelegram(
   text: string,
-  options?: { disableNotification?: boolean }
+  options?: {
+    disableNotification?: boolean;
+    inlineKeyboard?: Array<Array<{ text: string; url: string }>>;
+  }
 ): Promise<{
   ok: boolean;
   sent: number;

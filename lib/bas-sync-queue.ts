@@ -8,7 +8,9 @@ import { createServiceSupabase } from "@/lib/supabase/server";
 export type BasSyncDocumentType =
   | "work_order"
   | "inventory_write_off"
-  | "fuel_dispense";
+  | "fuel_dispense"
+  | "fuel_purchase"
+  | "fuel_transfer";
 
 export type EnqueueBasSyncResult =
   | {
@@ -27,12 +29,16 @@ const PIPELINE_BY_TYPE: Record<BasSyncDocumentType, string> = {
   work_order: "field_operation_waybill",
   inventory_write_off: "inventory_outbound_lzk",
   fuel_dispense: "fuel_outbound_refuel",
+  fuel_purchase: "fuel_inbound",
+  fuel_transfer: "fuel_transfer",
 };
 
 const SOURCE_TABLE_BY_TYPE: Record<BasSyncDocumentType, string> = {
   work_order: "field_operations",
   inventory_write_off: "inventory_local_moves",
   fuel_dispense: "fuel_transactions",
+  fuel_purchase: "fuel_transactions",
+  fuel_transfer: "fuel_transactions",
 };
 
 export async function enqueueBasSyncQueue(input: {

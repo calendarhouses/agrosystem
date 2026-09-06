@@ -748,6 +748,21 @@ export function FuelView({
   const [period, setPeriod] = useState<JournalPeriod | "custom">("Сьогодні");
   const [customRange, setCustomRange] = useState<DateRange | undefined>();
   const [rangeOpen, setRangeOpen] = useState(false);
+  const [mobileTab, setMobileTab] = useState<"overview" | "journal">(
+    "overview"
+  );
+
+  useEffect(() => {
+    try {
+      const tab = new URLSearchParams(window.location.search).get("tab");
+      if (tab === "journal") setMobileTab("journal");
+      else if (tab === "storages" || tab === "radar" || tab === "overview") {
+        setMobileTab("overview");
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const [units, setUnits] = useState<FleetUnitOption[]>(FALLBACK_UNITS);
   const [unitsLoading, setUnitsLoading] = useState(false);
@@ -1185,12 +1200,24 @@ export function FuelView({
     const onFuelUpdated = () => {
       void refreshAll();
     };
+    const onOpenFuel = (event: Event) => {
+      const detail = (event as CustomEvent<{ tab?: string | null }>).detail;
+      const tab = detail?.tab;
+      if (tab === "journal") setMobileTab("journal");
+      else if (tab === "storages" || tab === "radar" || tab === "overview") {
+        setMobileTab("overview");
+      }
+      // radar: scroll/focus handled by refresh; overview shows radar strip
+      void refreshAll();
+    };
     window.addEventListener("focus", onFocus);
     window.addEventListener("fuel-updated", onFuelUpdated);
+    window.addEventListener("open-fuel-dashboard", onOpenFuel);
 
     return () => {
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("fuel-updated", onFuelUpdated);
+      window.removeEventListener("open-fuel-dashboard", onOpenFuel);
       void supabase.removeChannel(channel);
     };
   }, [refreshStorages, refreshTransactions, refreshAll]);
@@ -1450,9 +1477,6 @@ export function FuelView({
   const totalLiters = useMemo(() => totalFuelVolume(storages), [storages]);
   const totalValue = useMemo(() => totalFuelValue(storages), [storages]);
   const isMobile = useIsMobile();
-  const [mobileTab, setMobileTab] = useState<"overview" | "journal">(
-    "overview"
-  );
 
   return (
     <main
