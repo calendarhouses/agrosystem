@@ -27,6 +27,7 @@ import {
   roundPrice,
 } from "@/lib/fuel-wac";
 import { resolveFieldFuelPeriodBounds } from "@/lib/wialon-field-fuel-sync";
+import { createServiceSupabase } from "@/lib/supabase/server";
 
 export type FuelStorageRow = {
   id: string;
@@ -691,18 +692,106 @@ export async function listAgentUnrecordedRefuelings(lookbackHours = 48) {
       ? lookbackHours
       : 48;
   const events = await findUnrecordedRefuelings({ lookbackHours: hours });
-  return {
-    lookbackHours: hours,
-    defaultLookbackHint: UNRECORDED_LOOKBACK_HOURS,
-    events: events.map((e) => ({
+
+  const supabase = createServiceSupabase();
+  const { data: storages } = await supabase
+    .from("fuel_storages")
+    .select("id, name, type, current_volume, capacity")
+    .order("name")
+    .limit(40);
+
+  const storageRows = storages ?? [];
+  const tankers = storageRows.filter(
+    (s) =>
+      String(s.type) === "mobile" ||
+      /бензовоз|цистерн|mobile/i.test(String(s.name ?? ""))
+  );
+  const bases = storageRows.filter(
+    (s) =>
+      String(s.type) === "stationary" ||
+      /азс|база|нафтобаз|склад/i.test(String(s.name ?? ""))
+  );
+
+  const suggestedStorages = [
+    ...tankers.slice(0, 2).map((s) => ({
+      id: String(s.id),
+      name: String(s.name),
+      kind: "tanker" as const,
+      label: `Бензовоз · ${String(s.name)}`,
+    })),
+    ...bases.slice(0, 2).map((s) => ({
+      id: String(s.id),
+      name: String(s.name),
+      kind: "base" as const,
+      label: `АЗС / база · ${String(s.name)}`,
+    })),
+  ];
+  // Якщо немає typed matches — візьми перші дві ємності
+  if (suggestedStorages.length === 0) {
+    for (const s of storageRows.slice(0, 2)) {
+      suggestedStorages.push({
+        id: String(s.id),
+        name: String(s.name),
+        kind: String(s.type) === "mobile" ? "tanker" : "base",
+        label: String(s.name),
+      });
+    }
+  }
+
+  const formatTime = (iso: string) => {
+    try {
+      return new Intl.DateTimeFormat("uk-UA", {
+        timeZone: "Europe/Kyiv",
+        day: "numeric",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(new Date(iso));
+    } catch {
+      return iso.slice(0, 16).replace("T", " ");
+    }
+  };
+
+  const mapped = events.map((e) => {
+    const liters = roundLiters(e.volume);
+    const timeLabel = formatTime(e.timeIso);
+    const machine = e.equipmentName || "невідома техніка";
+    return {
       radarEventId: encodeRadarEventId(e.unitId, e.time, e.volume),
       unitId: e.unitId,
       equipmentId: e.equipmentId,
       equipmentName: e.equipmentName,
       timeIso: e.timeIso,
-      volumeLiters: roundLiters(e.volume),
+      timeLabel,
+      volumeLiters: liters,
       location: e.location,
-    })),
+      badge: "⛽ Підозра на заправку повз облік",
+      humanLine: `${machine} +${liters} л о ${timeLabel}`,
+      humanExplanation:
+        `Датчик у баку «${machine}» показав доливання ≈${liters} л (${timeLabel}), ` +
+        `але в системі немає чека чи запису від заправника. Або забули внести, або хибне спрацювання на схилі/ямі.`,
+      confirmChoice: "Зафіксувати як заправку",
+      dismissChoice: "Відхилити (глюк датчика / яма)",
+      dismissReasonDefault: "коливання поплавка / схил або яма",
+      suggestedStorages,
+    };
+  });
+
+  const digest =
+    mapped.length === 0
+      ? `За ${hours} год датчики не ловили доливання без запису — по радару спокійно.`
+      : mapped.length === 1
+        ? `Дивись, яка історія: ${mapped[0]!.humanLine}. ${mapped[0]!.humanExplanation} Підкажи, що робимо?`
+        : `Є нюанс по солярці: ${mapped.length} позицій, де датчик у баку показав доливання, а запису заправника немає. Найсвіжіше — ${mapped[0]!.humanLine}. Підкажи, що робимо?`;
+
+  return {
+    lookbackHours: hours,
+    defaultLookbackHint: UNRECORDED_LOOKBACK_HOURS,
+    count: mapped.length,
+    events: mapped,
+    suggestedStorages,
+    humanDigest: digest,
+    empty: mapped.length === 0,
   };
 }
 

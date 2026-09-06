@@ -218,7 +218,7 @@ async function briefFuel() {
     );
   }
   if (radarN > 0) {
-    parts.push(`Радар DUT без рішення: ${radarN}.`);
+    parts.push(`Підозри на заправку повз облік: ${radarN}.`);
   } else {
     parts.push("Непідтверджених заправок у радарі немає.");
   }

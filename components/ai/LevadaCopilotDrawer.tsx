@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   Eraser,
   FileText,
+  FileSpreadsheet,
   Fuel,
   Loader2,
   MapPin,
@@ -281,9 +282,9 @@ const TOOL_STATUS_LABELS: Record<string, string> = {
   updateFuelStorage: "Оновлюю ємність пального…",
   deleteFuelStorage: "Готую видалення ємності…",
   getFuelPeriodKpis: "Збираю KPI палива за період…",
-  getUnrecordedRefuelings: "Читаю радар заправок Wialon…",
-  confirmRadarRefueling: "Підтверджую заправку з радара…",
-  dismissRadarRefueling: "Відхиляю подію радара…",
+  getUnrecordedRefuelings: "Дивлюсь радар заправок…",
+  confirmRadarRefueling: "Фіксую заправку з радара…",
+  dismissRadarRefueling: "Скидаю хибне спрацювання…",
   updateFuelTransaction: "Коригую операцію з пальним…",
   deleteFuelTransaction: "Готую анулювання операції з пальним…",
   getFuelTransactionHistory: "Читаю історію руху пального…",
@@ -334,6 +335,9 @@ const TOOL_STATUS_LABELS: Record<string, string> = {
   listAccountantQueue: "Читаю чергу бухгалтерії…",
   markQueueDocumentsStatus: "Оновлюю статуси документів…",
   exportAccountantPackage: "Формую Excel для бухгалтера…",
+  generateCustomExcelReport: "Збираю Excel-звіт…",
+  analyzeUnknownDocument: "Розпізнаю документ…",
+  routeDraftToSection: "Маршрутизую чернетку…",
   listServiceActs: "Шукаю акти послуг…",
   getReconciliationGaps: "Перевіряю звірку з BAS…",
   saveBasMapping: "Зберігаю bas_ref_key…",
@@ -2186,9 +2190,9 @@ function extractFuelOpsConfirmPreviews(
           ? `Видалити «${raw.storageName}»`
           : "Видалення ємності";
     } else if (toolName === "confirmRadarRefueling") {
-      title = "Радар · підтвердити заправку";
+      title = "Зафіксувати заправку з радара";
     } else if (toolName === "dismissRadarRefueling") {
-      title = "Радар · відхилити";
+      title = "Скинути як глюк датчика";
     } else if (toolName === "deleteFuelTransaction") {
       const typeLabel =
         typeof raw.typeLabel === "string" ? raw.typeLabel : "операцію";
@@ -2361,6 +2365,262 @@ function FuelOpsConfirmCard({
           </button>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+type RadarSuspicionStorage = {
+  id: string;
+  name: string;
+  kind?: string;
+  label: string;
+};
+
+type RadarSuspicionPreview = {
+  radarEventId: string;
+  equipmentName: string;
+  humanLine: string;
+  timeLabel: string;
+  volumeLiters: number;
+  badge: string;
+  confirmChoice: string;
+  dismissChoice: string;
+  dismissReasonDefault: string;
+  suggestedStorages: RadarSuspicionStorage[];
+};
+
+function extractRadarSuspicionPreviews(
+  message: UIMessage
+): RadarSuspicionPreview[] {
+  const items: RadarSuspicionPreview[] = [];
+
+  for (const part of message.parts) {
+    const toolName =
+      part.type === "dynamic-tool" && "toolName" in part
+        ? String(part.toolName)
+        : part.type.startsWith("tool-")
+          ? part.type.slice("tool-".length)
+          : null;
+    if (toolName !== "getUnrecordedRefuelings") continue;
+    if (!("state" in part) || part.state !== "output-available") continue;
+    if (!("output" in part) || !part.output || typeof part.output !== "object") {
+      continue;
+    }
+    const raw = part.output as Record<string, unknown>;
+    if (!Array.isArray(raw.events)) continue;
+
+    for (const event of raw.events) {
+      if (!event || typeof event !== "object") continue;
+      const e = event as Record<string, unknown>;
+      if (typeof e.radarEventId !== "string" || !e.radarEventId.trim()) continue;
+
+      const volumeLiters =
+        typeof e.volumeLiters === "number" && Number.isFinite(e.volumeLiters)
+          ? e.volumeLiters
+          : 0;
+      const equipmentName =
+        typeof e.equipmentName === "string" && e.equipmentName.trim()
+          ? e.equipmentName.trim()
+          : "невідома техніка";
+      const timeLabel =
+        typeof e.timeLabel === "string" && e.timeLabel.trim()
+          ? e.timeLabel.trim()
+          : typeof e.timeIso === "string"
+            ? e.timeIso.slice(0, 16).replace("T", " ")
+            : "";
+      const humanLine =
+        typeof e.humanLine === "string" && e.humanLine.trim()
+          ? e.humanLine.trim()
+          : `${equipmentName} +${volumeLiters} л${timeLabel ? ` о ${timeLabel}` : ""}`;
+
+      const storagesRaw = Array.isArray(e.suggestedStorages)
+        ? e.suggestedStorages
+        : Array.isArray(raw.suggestedStorages)
+          ? raw.suggestedStorages
+          : [];
+      const suggestedStorages: RadarSuspicionStorage[] = [];
+      for (const s of storagesRaw) {
+        if (!s || typeof s !== "object") continue;
+        const row = s as Record<string, unknown>;
+        if (typeof row.id !== "string" || typeof row.name !== "string") continue;
+        suggestedStorages.push({
+          id: row.id,
+          name: row.name,
+          kind: typeof row.kind === "string" ? row.kind : undefined,
+          label:
+            typeof row.label === "string" && row.label.trim()
+              ? row.label
+              : row.name,
+        });
+      }
+
+      items.push({
+        radarEventId: e.radarEventId,
+        equipmentName,
+        humanLine,
+        timeLabel,
+        volumeLiters,
+        badge:
+          typeof e.badge === "string" && e.badge.trim()
+            ? e.badge
+            : "⛽ Підозра на заправку повз облік",
+        confirmChoice:
+          typeof e.confirmChoice === "string" && e.confirmChoice.trim()
+            ? e.confirmChoice
+            : "Зафіксувати як заправку",
+        dismissChoice:
+          typeof e.dismissChoice === "string" && e.dismissChoice.trim()
+            ? e.dismissChoice
+            : "Відхилити (глюк датчика / яма)",
+        dismissReasonDefault:
+          typeof e.dismissReasonDefault === "string" &&
+          e.dismissReasonDefault.trim()
+            ? e.dismissReasonDefault
+            : "коливання поплавка / схил або яма",
+        suggestedStorages,
+      });
+    }
+  }
+
+  return items;
+}
+
+function pickRadarStorageOptions(
+  storages: RadarSuspicionStorage[]
+): { tanker: RadarSuspicionStorage | null; base: RadarSuspicionStorage | null } {
+  const tanker =
+    storages.find((s) => s.kind === "tanker") ??
+    storages.find((s) => /бензовоз|цистерн/i.test(s.label || s.name)) ??
+    null;
+  const base =
+    storages.find((s) => s.kind === "base") ??
+    storages.find((s) => /азс|база|нафтобаз/i.test(s.label || s.name)) ??
+    storages.find((s) => s.id !== tanker?.id) ??
+    null;
+  return { tanker, base };
+}
+
+function RadarSuspicionCard({
+  item,
+  onReply,
+  disabled,
+}: {
+  item: RadarSuspicionPreview;
+  onReply?: (text: string) => void;
+  disabled?: boolean;
+}) {
+  const [resolved, setResolved] = useState<"confirm" | "dismiss" | null>(null);
+  const [pickingStorage, setPickingStorage] = useState(false);
+  const { tanker, base } = pickRadarStorageOptions(item.suggestedStorages);
+
+  function confirmWithStorage(
+    storage: RadarSuspicionStorage | null,
+    fallbackLabel: string
+  ) {
+    if (disabled || resolved) return;
+    setResolved("confirm");
+    setPickingStorage(false);
+    const storageName = storage?.name ?? fallbackLabel;
+    onReply?.(
+      `Це реальна заправка: ${item.humanLine}. Зафіксуй зі списанням з «${storageName}».`
+    );
+  }
+
+  function dismiss() {
+    if (disabled || resolved) return;
+    setResolved("dismiss");
+    setPickingStorage(false);
+    onReply?.(
+      `Хибне спрацювання / схил: ${item.humanLine}. Відхили з причиною «${item.dismissReasonDefault}».`
+    );
+  }
+
+  const done = resolved != null;
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-amber-400/35 bg-gradient-to-br from-amber-500/12 via-zinc-950/85 to-zinc-950/95 shadow-[0_0_0_1px_rgba(245,158,11,0.1)]">
+      <div className="flex items-start gap-2.5 border-b border-amber-500/15 px-3.5 py-3">
+        <div className="inline-flex size-8 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 ring-1 ring-amber-400/25">
+          <Fuel className="size-4 text-amber-300" strokeWidth={2.1} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <span className="inline-flex rounded-md border border-amber-400/35 bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-amber-100">
+            {item.badge}
+          </span>
+          <p className="mt-1.5 text-sm font-semibold tracking-tight text-white">
+            {item.humanLine}
+          </p>
+          <p className="mt-1 text-[11px] leading-relaxed text-zinc-500">
+            Датчик у баку показав доливання, але в системі немає запису від
+            заправника.
+          </p>
+        </div>
+      </div>
+
+      {!done ? (
+        <div className="space-y-2 border-t border-white/5 px-3.5 py-3">
+          {!pickingStorage ? (
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => setPickingStorage(true)}
+                className="rounded-xl bg-emerald-500/90 px-3 py-2 text-xs font-semibold text-zinc-950 transition hover:bg-emerald-400 disabled:opacity-40"
+              >
+                {item.confirmChoice}
+              </button>
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={dismiss}
+                className="rounded-xl border border-white/10 bg-zinc-800/80 px-3 py-2 text-xs font-medium text-zinc-300 transition hover:bg-zinc-700 disabled:opacity-40"
+              >
+                {item.dismissChoice}
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-[11px] text-zinc-400">
+                З якої ємності заливали?
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={disabled || !tanker}
+                  onClick={() => confirmWithStorage(tanker, "Бензовоз")}
+                  className="rounded-xl bg-emerald-500/90 px-3 py-2 text-xs font-semibold text-zinc-950 transition hover:bg-emerald-400 disabled:opacity-40"
+                >
+                  Бензовоз
+                  {tanker ? ` · ${tanker.name}` : ""}
+                </button>
+                <button
+                  type="button"
+                  disabled={disabled || !base}
+                  onClick={() => confirmWithStorage(base, "АЗС База")}
+                  className="rounded-xl bg-emerald-500/80 px-3 py-2 text-xs font-semibold text-zinc-950 transition hover:bg-emerald-400 disabled:opacity-40"
+                >
+                  АЗС База
+                  {base ? ` · ${base.name}` : ""}
+                </button>
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => setPickingStorage(false)}
+                  className="rounded-xl border border-white/10 bg-zinc-900/80 px-3 py-2 text-xs font-medium text-zinc-400 transition hover:bg-zinc-800 disabled:opacity-40"
+                >
+                  Назад
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="border-t border-white/5 px-3.5 py-3 text-xs font-medium text-zinc-400">
+          {resolved === "confirm"
+            ? "Передаю на фіксацію…"
+            : "Передаю на відхилення…"}
+        </div>
+      )}
     </div>
   );
 }
@@ -3301,6 +3561,322 @@ function extractFocusFieldPayload(message: UIMessage): {
     };
   }
   return null;
+}
+
+type DocumentRecognizedPreview = {
+  draftId: string;
+  basStandardLabel: string;
+  badge: string;
+  dryRunHint: string;
+  counterparty: string | null;
+  docDate: string | null;
+  totalAmountUah: number | null;
+  lineCount: number;
+  confirmQuestion: string;
+  summaryUk: string | null;
+};
+
+function extractDocumentRecognizedPreviews(
+  message: UIMessage
+): DocumentRecognizedPreview[] {
+  const items: DocumentRecognizedPreview[] = [];
+  for (const part of message.parts) {
+    const toolName =
+      part.type === "dynamic-tool" && "toolName" in part
+        ? String(part.toolName)
+        : part.type.startsWith("tool-")
+          ? part.type.slice("tool-".length)
+          : null;
+    if (toolName !== "analyzeUnknownDocument") continue;
+    if (!("state" in part) || part.state !== "output-available") continue;
+    if (!("output" in part) || !part.output || typeof part.output !== "object") {
+      continue;
+    }
+    const raw = part.output as Record<string, unknown>;
+    if (raw.success !== true) continue;
+    if (typeof raw.draftId !== "string" || !raw.draftId.trim()) continue;
+    items.push({
+      draftId: raw.draftId,
+      basStandardLabel:
+        typeof raw.basStandardLabel === "string"
+          ? raw.basStandardLabel
+          : "Документ BAS",
+      badge:
+        typeof raw.badge === "string" && raw.badge.trim()
+          ? raw.badge
+          : "📄 Документ розпізнано",
+      dryRunHint:
+        typeof raw.dryRunHint === "string" && raw.dryRunHint.trim()
+          ? raw.dryRunHint
+          : "Режим Dry-Run: збереження в чергу без прямого запису в 1С",
+      counterparty:
+        typeof raw.counterparty === "string" ? raw.counterparty : null,
+      docDate: typeof raw.docDate === "string" ? raw.docDate : null,
+      totalAmountUah:
+        typeof raw.totalAmountUah === "number" ? raw.totalAmountUah : null,
+      lineCount:
+        typeof raw.lineCount === "number" && Number.isFinite(raw.lineCount)
+          ? raw.lineCount
+          : 0,
+      confirmQuestion:
+        typeof raw.confirmQuestion === "string"
+          ? raw.confirmQuestion
+          : "Підтвердити збереження чернетки?",
+      summaryUk: typeof raw.summaryUk === "string" ? raw.summaryUk : null,
+    });
+  }
+  return items;
+}
+
+function DocumentRecognizedCard({
+  item,
+  onReply,
+  disabled,
+}: {
+  item: DocumentRecognizedPreview;
+  onReply?: (text: string) => void;
+  disabled?: boolean;
+}) {
+  const [resolved, setResolved] = useState<string | null>(null);
+
+  function route(section: "inventory" | "accounting" | "equipment" | "fuel", label: string) {
+    if (disabled || resolved) return;
+    setResolved(section);
+    onReply?.(
+      `Маршрутизуй чернетку ${item.draftId} у розділ ${section} (${label}), sendToBasQueue=true`
+    );
+  }
+
+  const done = resolved != null;
+
+  return (
+    <div
+      className={cn(
+        "overflow-hidden rounded-2xl border shadow-[0_0_0_1px_rgba(16,185,129,0.1)]",
+        done
+          ? "border-emerald-400/40 bg-gradient-to-br from-emerald-500/15 via-zinc-950/85 to-zinc-950/95"
+          : "border-sky-400/35 bg-gradient-to-br from-sky-500/12 via-zinc-950/85 to-zinc-950/95"
+      )}
+    >
+      <div className="flex items-start gap-3 border-b border-white/5 px-3.5 py-3">
+        <div className="inline-flex size-10 shrink-0 items-center justify-center rounded-xl bg-sky-500/15 ring-1 ring-sky-400/30">
+          <FileText className="size-5 text-sky-300" strokeWidth={2.1} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <span className="inline-flex rounded-md border border-sky-400/35 bg-sky-500/15 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-sky-100">
+            {item.badge.startsWith("📄")
+              ? item.badge
+              : `📄 ${item.badge}`}
+          </span>
+          <p className="mt-1.5 text-sm font-semibold text-white">
+            {item.basStandardLabel}
+          </p>
+          <p className="mt-1 text-[11px] leading-relaxed text-amber-200/90">
+            {item.dryRunHint}
+          </p>
+          {item.summaryUk ? (
+            <p className="mt-1 text-[11px] text-zinc-400">{item.summaryUk}</p>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 px-3.5 py-3 sm:grid-cols-4">
+        <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] px-2.5 py-2">
+          <p className="text-[10px] tracking-wide text-zinc-500 uppercase">
+            Контрагент
+          </p>
+          <p className="mt-0.5 truncate text-xs font-medium text-white">
+            {item.counterparty || "—"}
+          </p>
+        </div>
+        <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] px-2.5 py-2">
+          <p className="text-[10px] tracking-wide text-zinc-500 uppercase">
+            Дата
+          </p>
+          <p className="mt-0.5 text-xs font-medium text-white">
+            {item.docDate || "—"}
+          </p>
+        </div>
+        <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] px-2.5 py-2">
+          <p className="text-[10px] tracking-wide text-zinc-500 uppercase">
+            Сума грн
+          </p>
+          <p className="mt-0.5 text-xs font-semibold tabular-nums text-emerald-300">
+            {item.totalAmountUah != null
+              ? item.totalAmountUah.toLocaleString("uk-UA")
+              : "—"}
+          </p>
+        </div>
+        <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] px-2.5 py-2">
+          <p className="text-[10px] tracking-wide text-zinc-500 uppercase">
+            Позицій
+          </p>
+          <p className="mt-0.5 text-xs font-semibold tabular-nums text-white">
+            {item.lineCount}
+          </p>
+        </div>
+      </div>
+
+      <div className="border-t border-white/5 px-3.5 py-3">
+        {done ? (
+          <div className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-400/30 bg-emerald-500/15 px-3 py-2.5 text-xs font-semibold text-emerald-300">
+            <CheckCircle2 className="size-3.5" strokeWidth={2.2} />
+            Чернетку додано в bas_sync_queue
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-[11px] text-zinc-400">{item.confirmQuestion}</p>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => route("inventory", "На Склад")}
+                className="rounded-xl border border-white/10 bg-zinc-900/80 px-2.5 py-2 text-xs font-semibold text-zinc-100 transition hover:bg-zinc-800 disabled:opacity-40"
+              >
+                📦 На Склад
+              </button>
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => route("accounting", "У Бухгалтерію")}
+                className="rounded-xl border border-white/10 bg-zinc-900/80 px-2.5 py-2 text-xs font-semibold text-zinc-100 transition hover:bg-zinc-800 disabled:opacity-40"
+              >
+                🧾 У Бухгалтерію
+              </button>
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => route("equipment", "До Техніки")}
+                className="rounded-xl border border-white/10 bg-zinc-900/80 px-2.5 py-2 text-xs font-semibold text-zinc-100 transition hover:bg-zinc-800 disabled:opacity-40"
+              >
+                🚜 До Техніки
+              </button>
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => route("fuel", "У Паливо")}
+                className="rounded-xl border border-white/10 bg-zinc-900/80 px-2.5 py-2 text-xs font-semibold text-zinc-100 transition hover:bg-zinc-800 disabled:opacity-40"
+              >
+                ⛽ У Паливо
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+type CustomExcelReportPreview = {
+  downloadUrl: string;
+  filename: string;
+  title: string;
+  totalRows: number;
+  periodLabel: string;
+  entityLabel: string | null;
+  badge: string;
+};
+
+function extractCustomExcelReportPreviews(
+  message: UIMessage
+): CustomExcelReportPreview[] {
+  const items: CustomExcelReportPreview[] = [];
+  for (const part of message.parts) {
+    const toolName =
+      part.type === "dynamic-tool" && "toolName" in part
+        ? String(part.toolName)
+        : part.type.startsWith("tool-")
+          ? part.type.slice("tool-".length)
+          : null;
+    if (toolName !== "generateCustomExcelReport") continue;
+    if (!("state" in part) || part.state !== "output-available") continue;
+    if (!("output" in part) || !part.output || typeof part.output !== "object") {
+      continue;
+    }
+    const raw = part.output as Record<string, unknown>;
+    if (raw.success !== true) continue;
+    const downloadUrl =
+      typeof raw.downloadUrl === "string" ? raw.downloadUrl.trim() : "";
+    if (!downloadUrl.startsWith("/")) continue;
+    const filename =
+      typeof raw.filename === "string" && raw.filename.trim()
+        ? raw.filename.trim()
+        : "LEVADIUS_Zvit.xlsx";
+    const title =
+      typeof raw.title === "string" && raw.title.trim()
+        ? raw.title.trim()
+        : filename;
+    const periodLabel =
+      typeof raw.periodLabel === "string" && raw.periodLabel.trim()
+        ? raw.periodLabel.trim()
+        : typeof raw.dateFrom === "string" && typeof raw.dateTo === "string"
+          ? `${raw.dateFrom} — ${raw.dateTo}`
+          : "";
+    items.push({
+      downloadUrl,
+      filename,
+      title,
+      totalRows:
+        typeof raw.totalRows === "number" && Number.isFinite(raw.totalRows)
+          ? raw.totalRows
+          : 0,
+      periodLabel,
+      entityLabel:
+        typeof raw.entityLabel === "string" && raw.entityLabel.trim()
+          ? raw.entityLabel.trim()
+          : null,
+      badge:
+        typeof raw.badge === "string" && raw.badge.trim()
+          ? raw.badge.trim()
+          : "Excel-звіт",
+    });
+  }
+  return items;
+}
+
+function CustomExcelReportCard({ item }: { item: CustomExcelReportPreview }) {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-emerald-400/35 bg-gradient-to-br from-emerald-500/12 via-zinc-950/85 to-zinc-950/95 shadow-[0_0_0_1px_rgba(16,185,129,0.12)]">
+      <div className="flex items-start gap-3 px-3.5 py-3">
+        <div className="inline-flex size-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 ring-1 ring-emerald-400/30">
+          <FileSpreadsheet className="size-5 text-emerald-300" strokeWidth={2.1} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-md border border-emerald-400/30 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold tracking-wide text-emerald-200 uppercase">
+              .XLSX
+            </span>
+            <span className="text-[10px] font-medium text-zinc-500">
+              {item.badge}
+            </span>
+          </div>
+          <p className="mt-1 truncate text-sm font-semibold tracking-tight text-white">
+            {item.filename}
+          </p>
+          <p className="mt-0.5 line-clamp-2 text-[11px] leading-relaxed text-zinc-400">
+            {item.title}
+            {item.entityLabel ? ` · ${item.entityLabel}` : ""}
+          </p>
+          <p className="mt-1 text-[11px] text-zinc-500">
+            {item.totalRows} рядків
+            {item.periodLabel ? ` · ${item.periodLabel}` : ""}
+          </p>
+        </div>
+      </div>
+      <div className="border-t border-emerald-500/15 px-3.5 py-3">
+        <button
+          type="button"
+          onClick={() => {
+            window.open(item.downloadUrl, "_blank", "noopener,noreferrer");
+          }}
+          className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-300/35 bg-gradient-to-r from-emerald-500 to-emerald-400 px-3 py-2.5 text-xs font-semibold text-zinc-950 transition hover:from-emerald-400 hover:to-emerald-300"
+        >
+          <FileSpreadsheet className="size-3.5" strokeWidth={2.2} />
+          Завантажити таблицю
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function extractExportDownloadActions(message: UIMessage): AgentAction[] {
@@ -5344,6 +5920,18 @@ function MessageBubble({
     () => (isUser ? [] : extractFuelOpsConfirmPreviews(message)),
     [isUser, message]
   );
+  const radarSuspicionPreviews = useMemo(
+    () => (isUser ? [] : extractRadarSuspicionPreviews(message)),
+    [isUser, message]
+  );
+  const customExcelPreviews = useMemo(
+    () => (isUser ? [] : extractCustomExcelReportPreviews(message)),
+    [isUser, message]
+  );
+  const documentRecognizedPreviews = useMemo(
+    () => (isUser ? [] : extractDocumentRecognizedPreviews(message)),
+    [isUser, message]
+  );
   const mutationConfirmPreviews = useMemo(
     () => (isUser ? [] : extractMutationConfirmPreviews(message)),
     [isUser, message]
@@ -5410,6 +5998,23 @@ function MessageBubble({
       own(item.confirmChoice);
       own(item.cancelChoice);
     }
+    for (const item of radarSuspicionPreviews) {
+      own(item.confirmChoice);
+      own(item.dismissChoice);
+      own("Зафіксувати як заправку");
+      own("Відхилити (глюк датчика / яма)");
+      own("Бензовоз");
+      own("АЗС База");
+      own("Це реальна заправка");
+      own("Хибне спрацювання / Схил");
+    }
+    if (documentRecognizedPreviews.length > 0) {
+      own("На Склад");
+      own("У Бухгалтерію");
+      own("До Техніки");
+      own("У Паливо");
+      own("Підтвердити збереження чернетки");
+    }
     for (const item of mutationConfirmPreviews) {
       own(item.confirmChoice);
       own(item.cancelChoice);
@@ -5450,6 +6055,8 @@ function MessageBubble({
     writeOffPreviews,
     fuelRefuelPreviews,
     fuelOpsConfirmPreviews,
+    radarSuspicionPreviews,
+    documentRecognizedPreviews,
     mutationConfirmPreviews,
     maintenancePreviews,
     receiptRollbackConfirmations,
@@ -5490,7 +6097,10 @@ function MessageBubble({
     serviceActDeleteConfirmations.length === 0 &&
     invoicePreviews.length === 0 &&
     serviceActPreviews.length === 0 &&
-    mutationConfirmPreviews.length === 0
+    mutationConfirmPreviews.length === 0 &&
+    radarSuspicionPreviews.length === 0 &&
+    customExcelPreviews.length === 0 &&
+    documentRecognizedPreviews.length === 0
   ) {
     return null;
   }
@@ -5574,6 +6184,40 @@ function MessageBubble({
             {fuelOpsConfirmPreviews.map((item, index) => (
               <FuelOpsConfirmCard
                 key={`${message.id}-fuelops-${item.kind}-${index}`}
+                item={item}
+                onReply={onReply}
+                disabled={replyDisabled}
+              />
+            ))}
+          </div>
+        ) : null}
+        {!isUser && radarSuspicionPreviews.length > 0 ? (
+          <div className="space-y-2">
+            {radarSuspicionPreviews.map((item) => (
+              <RadarSuspicionCard
+                key={`${message.id}-radar-${item.radarEventId}`}
+                item={item}
+                onReply={onReply}
+                disabled={replyDisabled}
+              />
+            ))}
+          </div>
+        ) : null}
+        {!isUser && customExcelPreviews.length > 0 ? (
+          <div className="space-y-2">
+            {customExcelPreviews.map((item) => (
+              <CustomExcelReportCard
+                key={`${message.id}-xlsx-${item.filename}-${item.downloadUrl}`}
+                item={item}
+              />
+            ))}
+          </div>
+        ) : null}
+        {!isUser && documentRecognizedPreviews.length > 0 ? (
+          <div className="space-y-2">
+            {documentRecognizedPreviews.map((item) => (
+              <DocumentRecognizedCard
+                key={`${message.id}-doc-${item.draftId}`}
                 item={item}
                 onReply={onReply}
                 disabled={replyDisabled}
@@ -7025,7 +7669,7 @@ export function LevadaCopilotDrawer({
                     Баки &lt;15%: {briefing.stats.lowFuelCount}
                   </span>
                   <span className="rounded-md border border-white/10 px-2 py-0.5">
-                    DUT: {briefing.stats.radarUnrecordedCount}
+                    Радар: {briefing.stats.radarUnrecordedCount}
                   </span>
                   <span className="rounded-md border border-white/10 px-2 py-0.5">
                     Погода: {briefing.stats.weatherRiskCount}

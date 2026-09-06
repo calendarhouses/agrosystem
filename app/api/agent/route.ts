@@ -57,6 +57,18 @@ import {
 import { upsertFieldOperationRow } from "@/lib/field-operations-db";
 import { enqueueFieldOperationBasDraft } from "@/lib/bas-drafts/field-operation-waybill";
 import { enqueueBasSyncQueue } from "@/lib/bas-sync-queue";
+import {
+  buildChemicalsActOdataPayload,
+  buildFuelDispenseOdataPayload,
+  buildSaleOdataPayload,
+  buildWaybillOdataPayload,
+  enqueueBasDraft,
+} from "@/lib/bas/queue";
+import {
+  DOCUMENT_VISION_SCHEMA,
+  persistRecognizedDocumentDraft,
+  routeDraftToLocalSection,
+} from "@/lib/bas/document-recognition";
 import { buildFieldTechCardMatrix } from "@/lib/field-tech-card";
 import { logActivity } from "@/lib/activity-log";
 import { listAgentRecentActivity } from "@/lib/agent-recent-activity";
@@ -80,6 +92,10 @@ import {
 } from "@/lib/field-operation-norms";
 import { getCropPhenologyForField } from "@/lib/crop-phenology";
 import { buildOperationsMatrix } from "@/lib/operations-matrix-export";
+import {
+  buildCustomExcelDownloadUrl,
+  buildCustomExcelReport,
+} from "@/lib/custom-excel-export";
 import { resolveWialonTrackAreaForOperation } from "@/lib/wialon-track-area";
 import type { FieldGeometry } from "@/lib/farm-fields";
 import { enqueueFuelBasDraft } from "@/lib/fuel-bas-sync";
@@ -275,16 +291,23 @@ function humanizeAgentError(error: unknown): string {
 }
 
 const SYSTEM_PROMPT = `
-Роль: старший цифровий диспетчер агропідприємства LEVADIUS.
-Ти НЕ абстрактний AI, НЕ служба підтримки і НЕ «мовна модель». Ти штатний диспетчер машинного двору.
-Тон: діловий, чіткий, по-хорошому прискіпливий, партнерський. Лаконічно.
-Мова: українська агронома/інженера (гони, висів, перекриття, норма виливу, DUT, наряд, мотогодини, л/га).
-Стиль-якорі: «Прийнято», «Зафіксував», «Є нюанс», «Тримаю на контролі».
-ЗАБОРОНЕНО: «Як я можу вам допомогти?», «Я мовна модель», «Зверніться до адміністратора»,
-«Чудове запитання», канцелярит, фамільярність, емодзі-воду.
+Роль: уважний, тямущий колега-диспетчер з машинного двору LEVADIUS.
+Ти НЕ бот, НЕ служба підтримки і НЕ «мовна модель». Ти штатний диспетчер зміни.
+Тон: жива природна українська, партнерська розмова — не канцелярит і не сухий звіт.
+Стиль-якорі: «Дивись, яка історія…», «Є нюанс по солярці», «Підкажи, що робимо?»,
+«Прийнято», «Зафіксував», «Тримаю на контролі». Коротко, по суті, як у дворі.
+Мова поля: гони, висів, перекриття, норма виливу, наряд, мотогодини, л/га —
+але пояснюй фізичну суть людям, не сип сирими термінами в чат.
+ЗАБОРОНЕНО в відповідях людині: сирі UUID/radarEventId/unitId; жаргон на кшталт
+«лог транзакцій», «DUT сплеск», «дельта поплавка», «незаписана DUT-подія».
+Замість цього: «датчик у баку показав доливання», «витратили більше норми»,
+«забули внести запис», «хибне спрацювання на схилі/ямі».
+Також ЗАБОРОНЕНО: «Як я можу вам допомогти?», «Я мовна модель»,
+«Зверніться до адміністратора», «Чудове запитання», канцелярит, емодзі-воду.
 
 Факти ЛИШЕ з Tools. BAS — тільки читання. Бракує даних — одне уточнення.
 Не вигадуй техніку, водіїв, ТМЦ, результати дій. CHOICE лише з даних Tools.
+Технічні id лишай у tool-викликах; в чаті — назви машин, літри, час.
 
 Правило «+1 крок на випередження» (після КОЖНОЇ успішної дії — короткий супутній ризик/наступний крок):
 • Закрив наряд → auditOperationQuality (швидкість/л/га) + нагадай списати ТМЦ під наряд (якщо ЗЗР/посів/добрива).
@@ -328,7 +351,7 @@ getFieldFuelEfficiency,
 getEquipmentMaintenanceStatus, linkServiceActToEquipment, logMaintenanceCompleted,
 updateInventoryItemPrice, calculateDriverEarnings, getFieldBudgetBurnRate,
 queueDocumentToBasSync, getFieldTechCardMatrix, generateFieldExportReport,
-exportOperationsMatrixExcel, getCropPhenologyStage,
+exportOperationsMatrixExcel, generateCustomExcelReport, analyzeUnknownDocument, routeDraftToSection, getCropPhenologyStage,
 syncFieldWialonGeofence, unlinkFieldWialonGeofence, searchFieldsCatalog,
 updateFieldDetails, updateFieldGeometry, updateFieldPlannedBudget, createField, deleteField,
 analyzeAndSaveScoutingReport, updateScoutingReport, deleteScoutingReport,
@@ -373,8 +396,16 @@ wialon_field_fuel_logs, field_ndvi_alerts, equipment_maintenance_logs.
 • Закупівля ДП («прийми N тонн/л на нафтобазу») → logFuelPurchase (confirm)
 • Перекачування між ємностями → transferFuelBetweenStorages (confirm)
 • KPI палива за період («що по паливу за тиждень») → getFuelPeriodKpis
-• Радар DUT («ліві заправки», «що зловив радар») → getUnrecordedRefuelings
-  → confirmRadarRefueling / dismissRadarRefueling
+• Радар заправок / «ліві заправки» / «що зловив радар» → getUnrecordedRefuelings
+  Після подій — поясни по-людськи: техніка, орієнтовний час, літри; сенс =
+  датчик у баку показав доливання, а запису заправника немає.
+  Дві дії (не сип id у чат; бери radarEventId лише з tool-результату):
+  1) «Це реальна заправка» / «Зафіксувати як заправку» → спитай ємність
+     (за замовч. активний бензовоз або АЗС база з suggestedStorages)
+     → confirmRadarRefueling(radarEventId, storageIdOrName, confirmed)
+  2) «Хибне спрацювання / Схил» / «Відхилити (глюк датчика / яма)»
+     → dismissRadarRefueling(radarEventId, reason≈коливання поплавка / схил, confirmed)
+  UI-картка радара вже дає кнопки — НЕ дублюй їхні CHOICE.
 • Історія заправок / руху ДП («історія трактора», «хто брав із бензовоза»)
   → getFuelTransactionHistory
 • Виправити літри/ціну заправки («помилково внесли 500 замість 50»)
@@ -428,6 +459,11 @@ wialon_field_fuel_logs, field_ndvi_alerts, equipment_maintenance_logs.
 • GPS-наряд → createWorkOrderFromGpsVisit
 • Накладна (фото) → previewInvoiceReceipt → executeWarehouseReceipt / rollback
 • Акт послуг → previewServiceAct → executeServiceActSave / deleteServiceActs
+• Довільний документ / «розпізнай рахунок» / талон / чек ДП → analyzeUnknownDocument
+  → routeDraftToSection(inventory|accounting|equipment|fuel)
+  Чернетка йде в bas_sync_queue (dry_run_ready), без OData POST.
+• Після closeWorkOrder / writeOff / logFuelRefueling / createInventorySale
+  агент також ставить OData-чернетку в чергу через enqueueBasDraft (Queue-Only).
 • Наряд: слоти → getWarehouseStock/getFleetAndImplements/getDriversList → prepareWorkOrder → confirmWorkOrder
 • Старт наряду («почни роботу», «запусти наряд») → startWorkOrder
 • Редагувати наряд / дати з–по → updateWorkOrder
@@ -438,6 +474,14 @@ wialon_field_fuel_logs, field_ndvi_alerts, equipment_maintenance_logs.
 • Експорт одного поля CSV → generateFieldExportReport
 • Повний Excel/CSV матриці робіт / усіх станцій за сезон → exportOperationsMatrixExcel
   («Вивантаж повний Excel робіт», «Зроби таблицю експорту всіх станцій за сезон»)
+• Універсальний Excel на будь-який запит («скинь таблицю по магнуму за місяць»,
+  «ексель по солярці за тиждень», «історія обприскувань Василихи», «звіт по механізатору»)
+  → generateCustomExcelReport
+  reportScope: equipment_single | equipment_fleet | field_operations | fuel_movement |
+  inventory_moves | driver_work | financial_summary
+  Завжди давай зрозумілий title українською; dateFrom/dateTo YYYY-MM-DD;
+  targetEntityIdOrName — назва техніки/поля/ємності/ТМЦ/водія.
+  UI-картка завантаження вже є — не дублюй зайві CHOICE.
 • Фенологія / BBCH / GDD / «phenology bar» / «скільки градусів набрало поле»
   → getCropPhenologyStage
 • Журнал дій команди («що робила команда сьогодні», «хто видалив наряд»,
@@ -470,13 +514,13 @@ prepareWorkOrder лише коли всі слоти зібрані. Не виг
 Видалення збереженого — deleteWorkOrder з workOrderId з історії.
 
 Формат:
-• **жирні** назви полів і ключові цифри. Без емодзі.
+• **жирні** назви полів і ключові цифри. Без емодзі в тексті (бейджі UI — окремо).
 • Іконки лише [icon:wheat|fuel|warehouse|tractor|check|alert|mappin|calendar|filetext]
 • Рядки: [row:mappin|Поле 11.2|78.9 га]
 • Кнопки: [[CHOICE:…]] | [[ACTION:REPLY|Icon|…]] | [[ACTION:NAVIGATE|/path|Icon|Текст]]
 • NAVIGATE лише за темою (макс. 1): /fuel /inventory /operations /equipment /accounting /finance /journal /?field=UUID
 • Після фактів — обовʼязково +1 крок на випередження (ризик / наступна дія), 1 коротке речення.
-• UI-картки (списання, наряд, акт, накладна, updateField) — НЕ дублюй їхні CHOICE.
+• UI-картки (списання, наряд, акт, накладна, updateField, радар заправок) — НЕ дублюй їхні CHOICE.
 `.trim();
 
 const userContextSchema = z
@@ -1757,6 +1801,21 @@ const TOOL_HISTORY_PRESERVE_KEYS = [
   "fieldCount",
   "empty",
   "emptyHint",
+  "radarEventId",
+  "humanDigest",
+  "lookbackHours",
+  "downloadUrl",
+  "filename",
+  "totalRows",
+  "title",
+  "periodLabel",
+  "entityLabel",
+  "draftId",
+  "basStandardLabel",
+  "dryRunHint",
+  "totalAmountUah",
+  "lineCount",
+  "queueStatus",
 ] as const;
 
 function pickHistoryPreserveFields(
@@ -1790,12 +1849,77 @@ function pickHistoryPreserveFields(
   return out;
 }
 
+function slimRadarSuspicionEvent(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object") return null;
+  const e = value as Record<string, unknown>;
+  if (typeof e.radarEventId !== "string") return null;
+  const storagesRaw = Array.isArray(e.suggestedStorages)
+    ? e.suggestedStorages
+    : [];
+  const suggestedStorages = storagesRaw
+    .slice(0, 4)
+    .map((s) => {
+      if (!s || typeof s !== "object") return null;
+      const row = s as Record<string, unknown>;
+      if (typeof row.id !== "string" || typeof row.name !== "string") return null;
+      return {
+        id: row.id,
+        name: row.name,
+        kind: typeof row.kind === "string" ? row.kind : undefined,
+        label: typeof row.label === "string" ? row.label : row.name,
+      };
+    })
+    .filter(Boolean);
+
+  return {
+    radarEventId: e.radarEventId,
+    equipmentId: typeof e.equipmentId === "string" ? e.equipmentId : null,
+    equipmentName:
+      typeof e.equipmentName === "string" ? e.equipmentName : null,
+    timeIso: typeof e.timeIso === "string" ? e.timeIso : null,
+    timeLabel: typeof e.timeLabel === "string" ? e.timeLabel : null,
+    volumeLiters:
+      typeof e.volumeLiters === "number" ? e.volumeLiters : null,
+    badge: typeof e.badge === "string" ? e.badge : null,
+    humanLine: typeof e.humanLine === "string" ? e.humanLine : null,
+    humanExplanation:
+      typeof e.humanExplanation === "string" ? e.humanExplanation : null,
+    confirmChoice:
+      typeof e.confirmChoice === "string" ? e.confirmChoice : null,
+    dismissChoice:
+      typeof e.dismissChoice === "string" ? e.dismissChoice : null,
+    dismissReasonDefault:
+      typeof e.dismissReasonDefault === "string"
+        ? e.dismissReasonDefault
+        : null,
+    suggestedStorages,
+  };
+}
+
 function compactHeavyToolOutput(
   output: unknown,
   toolName: string
 ): unknown {
   if (!output || typeof output !== "object") return output;
   const row = output as Record<string, unknown>;
+
+  // Радар: лишаємо slim-події для UI-карток в історії
+  if (toolName === "getUnrecordedRefuelings" && Array.isArray(row.events)) {
+    const events = row.events
+      .slice(0, 8)
+      .map(slimRadarSuspicionEvent)
+      .filter(Boolean);
+    return {
+      success: row.success === true,
+      status: typeof row.status === "string" ? row.status : "ok",
+      count: typeof row.count === "number" ? row.count : events.length,
+      lookbackHours: row.lookbackHours,
+      humanDigest: row.humanDigest,
+      message: row.message,
+      events,
+      tool: toolName,
+    };
+  }
 
   // Підтвердження: зберігаємо payload майже цілком (без важких списків кандидатів)
   if (row.status === "requires_confirmation") {
@@ -1962,10 +2086,13 @@ function sanitizeUiMessagesForLlm(messages: UIMessage[]): UIMessage[] {
 
 const DOCUMENT_VISION_PROMPT = `
 ВКЛАДЕННЯ (фото/PDF):
-A) Накладна/чек ТМЦ → previewInvoiceReceipt
-B) Акт послуг → previewServiceAct
-C) Фото посіву/поля → analyzeAndSaveScoutingReport (fieldIdOrName або activeFieldId)
-Не вигадуй рядків. Не стверджуй збереження без execute*/success (скаутинг: success=вже збережено).
+A) Накладна/чек ТМЦ (відомий шаблон) → previewInvoiceReceipt
+B) Акт послуг (відомий шаблон) → previewServiceAct
+C) Фото посіву/поля → analyzeAndSaveScoutingReport
+D) Довільний/невідомий документ (рахунок, талон, чек ДП, змішаний скан)
+   → analyzeUnknownDocument → UI-картка маршрутизації → routeDraftToSection
+Не вигадуй рядків. Не стверджуй збереження без execute*/success / routeDraftToSection.
+Чернетки BAS лише через чергу (Dry-Run), без прямого POST в 1С.
 `.trim();
 
 function buildSystemPrompt(
@@ -4193,7 +4320,7 @@ function createAgentTools(options?: {
           confirmed,
         });
         try {
-          return await prepareOrCreateInventorySale({
+          const saleResult = await prepareOrCreateInventorySale({
             cropOrCommodity,
             quantityTons,
             pricePerTonUah,
@@ -4201,6 +4328,29 @@ function createAgentTools(options?: {
             storageLocation,
             confirmed,
           });
+          if (
+            saleResult &&
+            typeof saleResult === "object" &&
+            (saleResult as { success?: unknown }).success === true &&
+            typeof (saleResult as { moveId?: unknown }).moveId === "string"
+          ) {
+            const moveId = String((saleResult as { moveId: string }).moveId);
+            void enqueueBasDraft({
+              documentType: "inventory_sale",
+              entityId: moveId,
+              payload: buildSaleOdataPayload({
+                moveId,
+                itemName: cropOrCommodity,
+                qtyTons: quantityTons,
+                pricePerTonUah,
+                buyer,
+              }),
+              summary: `Реалізація · ${cropOrCommodity} · ${quantityTons} т · ${buyer}`,
+              actorId: actorUserId,
+              actorName,
+            }).catch((e) => console.error("[BAS_QUEUE] sale", e));
+          }
+          return saleResult;
         } catch (error) {
           return {
             success: false as const,
@@ -5289,6 +5439,24 @@ function createAgentTools(options?: {
           );
           const newStockBalance =
             after?.quantity ?? round2(item.quantity - qty);
+
+          void enqueueBasDraft({
+            documentType: "inventory_write_off",
+            entityId: result.id,
+            payload: buildChemicalsActOdataPayload({
+              moveId: result.id,
+              itemName: item.name,
+              itemBasRefKey: item.ref,
+              qty,
+              unit: item.unit,
+              fieldName: fieldName ?? null,
+              crop: null,
+              date: moveDate,
+            }),
+            summary: `Акт ЗЗР/добрив · ${item.name} · ${qty} ${item.unit}`,
+            actorId: actorUserId,
+            actorName,
+          }).catch((e) => console.error("[BAS_QUEUE] writeOff", e));
 
           return {
             success: true as const,
@@ -6726,6 +6894,31 @@ function createAgentTools(options?: {
           const operationId = String(op.id);
           void enqueueFieldOperationBasDraft(operationId).catch((e) =>
             console.error("[bas-drafts] waybill (agent close)", e)
+          );
+          void enqueueBasDraft({
+            documentType: "work_order",
+            entityId: operationId,
+            payload: buildWaybillOdataPayload({
+              operationId,
+              workType,
+              fieldName,
+              crop,
+              mechanicName:
+                op.mechanic_name != null ? String(op.mechanic_name) : null,
+              machinery: op.machinery != null ? String(op.machinery) : null,
+              areaFact: resolvedFactArea,
+              fuelFact: fuelUsed ?? null,
+              wageFact: finiteNumber(op.wage_fact) || null,
+              occurredAt: op.occurred_at
+                ? String(op.occurred_at).slice(0, 10)
+                : todayKyivYmd(),
+              fieldBasRefKey: null,
+            }),
+            summary: `Обліковий лист · ${workType} · ${fieldName} · ${resolvedFactArea} га`,
+            actorId: actorUserId,
+            actorName,
+          }).catch((e) =>
+            console.error("[BAS_QUEUE] waybill", e)
           );
           void logActivity({
             actor,
@@ -9762,6 +9955,23 @@ function createAgentTools(options?: {
           }).catch((e) =>
             console.error("[bas-drafts] agent fuel outbound", e)
           );
+          void enqueueBasDraft({
+            documentType: "fuel_dispense",
+            entityId: txId,
+            payload: buildFuelDispenseOdataPayload({
+              transactionId: txId,
+              liters: amount,
+              storageName: storage.name,
+              storageBasRefKey: null,
+              equipmentName: equipment.name,
+              equipmentBasRefKey: null,
+              operatorName: driverName || actorName || null,
+              date: txDateIso.slice(0, 10),
+            }),
+            summary: `Роздача ДП · ${equipment.name} · ${amount} л`,
+            actorId: actorUserId,
+            actorName,
+          }).catch((e) => console.error("[BAS_QUEUE] fuel dispense", e));
 
           void logActivity({
             actor,
@@ -10448,7 +10658,7 @@ function createAgentTools(options?: {
 
     getUnrecordedRefuelings: tool({
       description:
-        "Радар заправок Wialon (DUT): незадокументовані сплески рівня палива за останні 48 год.",
+        "Радар заправок: доливання в бак за датчиком рівня без запису заправника (останні 24/48/168 год). Повертає humanDigest + події з кнопками дій.",
       inputSchema: z.object({
         lookbackHours: z
           .number()
@@ -10467,13 +10677,13 @@ function createAgentTools(options?: {
             success: true as const,
             status: "ok" as const,
             lookbackHours: data.lookbackHours,
-            count: data.events.length,
+            count: data.count,
             events: data.events,
+            suggestedStorages: data.suggestedStorages,
+            humanDigest: data.humanDigest,
+            empty: data.empty,
             navigatePath: "/fuel",
-            message:
-              data.events.length === 0
-                ? `Радар: за ${data.lookbackHours} год незаписаних заправок немає.`
-                : `Радар: **${data.events.length}** незаписаних заправок DUT. Для обліку — confirmRadarRefueling з radarEventId.`,
+            message: data.humanDigest,
           };
         } catch (error) {
           return {
@@ -10482,7 +10692,7 @@ function createAgentTools(options?: {
             error:
               error instanceof Error
                 ? error.message
-                : "Невідома помилка радара заправок",
+                : "Не вдалося прочитати радар заправок",
           };
         }
       },
@@ -10490,23 +10700,23 @@ function createAgentTools(options?: {
 
     confirmRadarRefueling: tool({
       description:
-        "Підтверджує подію радара DUT. Опційно списує з ємності (writeOffFromStorage); без складу — лише KPI.",
+        "Зафіксувати підозру радара як реальну заправку. Зазвичай списує з ємності (бензовоз/АЗС). storageIdOrName з suggestedStorages.",
       inputSchema: z.object({
         radarEventId: z
           .string()
           .trim()
           .min(1)
-          .describe("ID з getUnrecordedRefuelings"),
+          .describe("radarEventId з getUnrecordedRefuelings (не показуй людині)"),
         storageIdOrName: z
           .string()
           .trim()
           .optional()
-          .describe("Ємність для списання (опційно)"),
+          .describe("Ємність: бензовоз або АЗС база"),
         writeOffFromStorage: z
           .boolean()
           .optional()
           .default(true)
-          .describe("false = підтвердити без списання зі складу"),
+          .describe("false = лише відмітити без списання зі складу"),
         driverIdOrName: z
           .string()
           .trim()
@@ -10546,7 +10756,7 @@ function createAgentTools(options?: {
             return {
               success: false as const,
               status: "error" as const,
-              error: "Некоректний radarEventId.",
+              error: "Некоректна подія радара. Спочатку перечитай радар.",
             };
           }
 
@@ -10572,7 +10782,7 @@ function createAgentTools(options?: {
               success: false as const,
               status: "needs_slots" as const,
               error:
-                "Для списання вкажи storageIdOrName або постав writeOffFromStorage=false.",
+                "З якої ємності заливали — бензовоз чи АЗС база? Або скажи записати без списання зі складу.",
             };
           }
 
@@ -10583,6 +10793,19 @@ function createAgentTools(options?: {
           );
           const confirmChoice = "Підтвердити заправку з радара";
           const cancelChoice = "Скасувати";
+          const timeLabel = (() => {
+            try {
+              return new Intl.DateTimeFormat("uk-UA", {
+                timeZone: "Europe/Kyiv",
+                day: "numeric",
+                month: "short",
+                hour: "2-digit",
+                minute: "2-digit",
+              }).format(new Date(decoded.timeIso));
+            } catch {
+              return decoded.timeIso.slice(0, 16).replace("T", " ");
+            }
+          })();
 
           if (!isConfirmed) {
             return {
@@ -10601,10 +10824,10 @@ function createAgentTools(options?: {
               confirmChoice,
               cancelChoice,
               canConfirm: true,
-              badge: "Радар · підтвердити",
+              badge: "Заправка з радара",
               userHint: wantWriteOff && storageName
-                ? `Зафіксувати заправку з радара: ${liters} л з «${storageName}» (${decoded.timeIso})?`
-                : `Підтвердити подію радара ${liters} л без списання зі складу (${decoded.timeIso})?`,
+                ? `Зафіксувати доливання ${liters} л о ${timeLabel} зі списанням з «${storageName}»?`
+                : `Зафіксувати доливання ${liters} л о ${timeLabel} без списання зі складу?`,
               clientEvents: ["fuel-updated"] as const,
             };
           }
@@ -10639,10 +10862,10 @@ function createAgentTools(options?: {
             clientEvents: ["fuel-updated"] as const,
             navigatePath: "/fuel",
             message: result.wroteOffStorage
-              ? `Підтвердив заправку з радара: **${result.liters} л** з «${result.storageName}»${
-                  result.equipmentName ? ` · ${result.equipmentName}` : ""
-                }.`
-              : `Підтвердив подію радара **${result.liters} л** без списання зі складу.`,
+              ? `Зафіксував: **${result.liters} л**${
+                  result.equipmentName ? ` на «${result.equipmentName}»` : ""
+                } з «${result.storageName}».`
+              : `Зафіксував доливання **${result.liters} л** без списання зі складу.`,
           };
         } catch (error) {
           return {
@@ -10651,7 +10874,7 @@ function createAgentTools(options?: {
             error:
               error instanceof Error
                 ? error.message
-                : "Невідома помилка підтвердження радара",
+                : "Не вдалося зафіксувати заправку з радара",
           };
         }
       },
@@ -10659,19 +10882,19 @@ function createAgentTools(options?: {
 
     dismissRadarRefueling: tool({
       description:
-        "Відхиляє подію радара DUT як хибне спрацювання (з причиною).",
+        "Відхилити підозру радара як хибне спрацювання (схил/яма/коливання поплавка).",
       inputSchema: z.object({
         radarEventId: z
           .string()
           .trim()
           .min(1)
-          .describe("ID з getUnrecordedRefuelings"),
+          .describe("radarEventId з getUnrecordedRefuelings (не показуй людині)"),
         reason: z
           .string()
           .trim()
           .min(1)
           .describe(
-            "Причина відхилення: хибне спрацювання, коливання поплавка на схилі тощо"
+            "Причина: за замовч. «коливання поплавка / схил або яма»"
           ),
         confirmed: z
           .boolean()
@@ -10693,12 +10916,27 @@ function createAgentTools(options?: {
             return {
               success: false as const,
               status: "error" as const,
-              error: "Некоректний radarEventId.",
+              error: "Некоректна подія радара.",
             };
           }
 
+          const dismissReason =
+            reason.trim() || "коливання поплавка / схил або яма";
           const confirmChoice = "Підтвердити відхилення радара";
           const cancelChoice = "Скасувати";
+          const timeLabel = (() => {
+            try {
+              return new Intl.DateTimeFormat("uk-UA", {
+                timeZone: "Europe/Kyiv",
+                day: "numeric",
+                month: "short",
+                hour: "2-digit",
+                minute: "2-digit",
+              }).format(new Date(decoded.timeIso));
+            } catch {
+              return decoded.timeIso.slice(0, 16).replace("T", " ");
+            }
+          })();
 
           if (!isConfirmed) {
             return {
@@ -10709,18 +10947,18 @@ function createAgentTools(options?: {
               liters: decoded.volumeLiters,
               timeIso: decoded.timeIso,
               unitId: decoded.unitId,
-              reason: reason.trim(),
+              reason: dismissReason,
               confirmChoice,
               cancelChoice,
               canConfirm: true,
-              badge: "Радар · відхилити",
-              userHint: `Відхилити подію радара (${decoded.volumeLiters} л, ${decoded.timeIso})? Причина: ${reason.trim()}`,
+              badge: "Відхилення радара",
+              userHint: `Скинути як глюк датчика: +${decoded.volumeLiters} л о ${timeLabel}? Причина: ${dismissReason}`,
             };
           }
 
           const result = await dismissAgentRadarRefueling({
             radarEventId,
-            reason,
+            reason: dismissReason,
           });
           if (!result.ok) {
             return {
@@ -10735,9 +10973,9 @@ function createAgentTools(options?: {
             status: "radar_dismissed" as const,
             kind: "fuel_radar_dismiss" as const,
             radarEventId,
-            reason: reason.trim(),
+            reason: dismissReason,
             clientEvents: ["fuel-updated"] as const,
-            message: `Відхилив подію радара. Причина: ${reason.trim()}.`,
+            message: `Ок, скинув як хибне спрацювання (${dismissReason}).`,
           };
         } catch (error) {
           return {
@@ -10746,7 +10984,7 @@ function createAgentTools(options?: {
             error:
               error instanceof Error
                 ? error.message
-                : "Невідома помилка відхилення радара",
+                : "Не вдалося відхилити подію радара",
           };
         }
       },
@@ -13653,6 +13891,130 @@ function createAgentTools(options?: {
               error instanceof Error
                 ? error.message
                 : "Невідома помилка експорту матриці",
+          };
+        }
+      },
+    }),
+
+    generateCustomExcelReport: tool({
+      description:
+        "Універсальний Excel-звіт на запит користувача: техніка, флот, поле, паливо, ТМЦ, механізатор, фінанси. Повертає downloadUrl.",
+      inputSchema: z.object({
+        reportScope: z
+          .enum([
+            "equipment_single",
+            "equipment_fleet",
+            "field_operations",
+            "fuel_movement",
+            "inventory_moves",
+            "driver_work",
+            "financial_summary",
+          ])
+          .describe("Тематика звіту"),
+        title: z
+          .string()
+          .trim()
+          .min(3)
+          .describe(
+            "Зрозуміла назва звіту українською, наприклад: Звіт роботи трактора Magnum 380 за серпень 2026"
+          ),
+        dateFrom: z
+          .string()
+          .trim()
+          .optional()
+          .describe("Початок періоду YYYY-MM-DD"),
+        dateTo: z
+          .string()
+          .trim()
+          .optional()
+          .describe("Кінець періоду YYYY-MM-DD"),
+        targetEntityIdOrName: z
+          .string()
+          .trim()
+          .optional()
+          .describe(
+            "Конкретна назва: техніка (Magnum 380), поле (Василиха), препарат (Раундап) або водій"
+          ),
+        includeMetrics: z
+          .array(z.string())
+          .optional()
+          .describe("Додаткові колонки: fuel, motohours, speed, area, cost"),
+      }),
+      execute: async ({
+        reportScope,
+        title,
+        dateFrom,
+        dateTo,
+        targetEntityIdOrName,
+        includeMetrics,
+      }) => {
+        console.log("[TOOL: generateCustomExcelReport]", {
+          reportScope,
+          title,
+          dateFrom,
+          dateTo,
+          targetEntityIdOrName,
+          includeMetrics,
+        });
+        try {
+          const report = await buildCustomExcelReport(supabase, {
+            reportScope,
+            title,
+            dateFrom: dateFrom?.trim() || null,
+            dateTo: dateTo?.trim() || null,
+            targetEntityIdOrName: targetEntityIdOrName?.trim() || null,
+            includeMetrics: includeMetrics ?? null,
+          });
+
+          const downloadUrl = buildCustomExcelDownloadUrl({
+            reportScope,
+            title: report.title,
+            dateFrom: report.dateFrom,
+            dateTo: report.dateTo,
+            targetEntityIdOrName: targetEntityIdOrName?.trim() || null,
+            includeMetrics: includeMetrics ?? null,
+            resolvedTitle: report.title,
+          });
+
+          const summaryBits = Object.entries(report.totalSummary)
+            .slice(0, 4)
+            .map(([k, v]) => `${k}: ${v}`)
+            .join(", ");
+
+          return {
+            success: true as const,
+            status: "ok" as const,
+            kind: "custom_excel_report" as const,
+            downloadUrl,
+            filename: report.filename,
+            totalRows: report.totalRows,
+            totalSummary: report.totalSummary,
+            reportScope: report.reportScope,
+            title: report.title,
+            dateFrom: report.dateFrom,
+            dateTo: report.dateTo,
+            entityLabel: report.entityLabel,
+            badge: "Excel-звіт",
+            periodLabel: `${report.dateFrom} — ${report.dateTo}`,
+            message:
+              report.totalRows === 0
+                ? `Звіт «${report.title}» порожній за ${report.dateFrom}–${report.dateTo}. Можу змінити період або обʼєкт.`
+                : `Готово: **${report.filename}** · ${report.totalRows} рядків (${report.dateFrom}–${report.dateTo})${
+                    summaryBits ? `. Разом: ${summaryBits}` : ""
+                  }.`,
+          };
+        } catch (error) {
+          console.error(
+            "[TOOL: generateCustomExcelReport]",
+            error instanceof Error ? error.message : error
+          );
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Не вдалося зібрати Excel-звіт",
           };
         }
       },

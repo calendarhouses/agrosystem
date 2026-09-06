@@ -152,7 +152,7 @@ function buildActions(input: {
     actions.push({
       id: "radar",
       label: "Перевірити радар палива",
-      prompt: "Покажи невраховані заправки в радарі DUT",
+      prompt: "Покажи підозри на заправку повз облік",
     });
   }
   if (input.lowFuelCount > 0) {
@@ -182,7 +182,7 @@ function buildActions(input: {
     {
       id: "radar-default",
       label: "Перевірити радар палива",
-      prompt: "Покажи невраховані заправки в радарі DUT",
+      prompt: "Покажи підозри на заправку повз облік",
     },
     {
       id: "fleet-default",
@@ -275,7 +275,7 @@ export async function getProactiveBriefing(): Promise<ProactiveBriefing> {
     priorities.push({
       id: "radar",
       severity: radarEvents.length >= 3 ? "critical" : "warning",
-      title: `Радар DUT: ${radarEvents.length} неврахованих заправок`,
+      title: `Підозри на заправку повз облік: ${radarEvents.length}`,
       detail: top || "Потрібне рішення оператора",
     });
   }
@@ -322,7 +322,7 @@ export async function getProactiveBriefing(): Promise<ProactiveBriefing> {
           id: "all-clear",
           severity: "info",
           title: "Контроль у нормі",
-          detail: "Критичних баків, DUT-радар і штормових ризиків немає.",
+          detail: "Критичних баків, підозр повз облік і штормових ризиків немає.",
         },
       ],
       actions,
@@ -345,7 +345,7 @@ export async function getProactiveBriefing(): Promise<ProactiveBriefing> {
     parts.push(`Критичний бак (<${LOW_FUEL_PCT}%): ${lowFuelCount}.`);
   }
   if (radarUnrecordedCount > 0) {
-    parts.push(`Радар DUT без рішення: ${radarUnrecordedCount}.`);
+    parts.push(`Підозри на заправку повз облік: ${radarUnrecordedCount}.`);
   }
   if (weatherRiskCount > 0) {
     parts.push(`Погодний ризик на відкритих нарядах: ${weatherRiskCount}.`);
