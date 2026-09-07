@@ -13,27 +13,36 @@ if (!fs.existsSync(sourceJpg)) {
 }
 
 const py = `
-from PIL import Image
+from io import BytesIO
 from pathlib import Path
+import struct
+
+from PIL import Image
 
 root = Path(${JSON.stringify(root)})
-src = Image.open(root / "public/icons/levadius-avatar.source.jpg").convert("RGB")
+src_rgb = Image.open(root / "public/icons/levadius-avatar.source.jpg").convert("RGB")
+src_rgba = src_rgb.convert("RGBA")
 bg = (9, 9, 11)
 
-w, h = src.size
+w, h = src_rgb.size
 bottom = int(h * 0.92)
 side = bottom
 left = (w - side) // 2
-avatar = src.crop((left, 0, left + side, bottom)).resize((1024, 1024), Image.Resampling.LANCZOS)
+avatar = src_rgb.crop((left, 0, left + side, bottom)).resize(
+    (1024, 1024), Image.Resampling.LANCZOS
+)
 avatar.save(root / "public/icons/levadius-avatar.jpg", "JPEG", quality=92, optimize=True)
 
-def cover(size):
-    return src.resize((size, size), Image.Resampling.LANCZOS)
+def cover_rgb(size):
+    return src_rgb.resize((size, size), Image.Resampling.LANCZOS)
+
+def cover_rgba(size):
+    return src_rgba.resize((size, size), Image.Resampling.LANCZOS)
 
 def maskable(size, scale=0.78):
     canvas = Image.new("RGB", (size, size), bg)
     inner = int(size * scale)
-    face = src.resize((inner, inner), Image.Resampling.LANCZOS)
+    face = src_rgb.resize((inner, inner), Image.Resampling.LANCZOS)
     off = (size - inner) // 2
     canvas.paste(face, (off, off))
     return canvas
@@ -51,19 +60,42 @@ outputs = [
 ]
 
 for size, rel, is_maskable in outputs:
-    out = maskable(size) if is_maskable else cover(size)
+    out = maskable(size) if is_maskable else cover_rgb(size)
     path = root / rel
     out.save(path, "PNG", optimize=True)
     print("wrote", path)
 
-ico = [cover(s) for s in (16, 32, 48)]
-ico[0].save(
-    root / "app/favicon.ico",
-    format="ICO",
-    sizes=[(16, 16), (32, 32), (48, 48)],
-    append_images=ico[1:],
-)
-print("wrote", root / "app/favicon.ico")
+# Next.js / Turbopack: app/icon.png + favicon.ico with RGBA PNG frames
+icon32 = cover_rgba(32)
+icon32.save(root / "app/icon.png", "PNG", optimize=True)
+print("wrote", root / "app/icon.png")
+
+def png_rgba_bytes(im: Image.Image) -> bytes:
+    buf = BytesIO()
+    im.convert("RGBA").save(buf, format="PNG")
+    data = buf.getvalue()
+    # IHDR color type must be 6 (RGBA) for Next image pipeline
+    if data[25] != 6:
+        raise SystemExit(f"expected RGBA PNG, got color_type={data[25]}")
+    return data
+
+sizes = [16, 32, 48]
+pngs = [(s, png_rgba_bytes(cover_rgba(s))) for s in sizes]
+count = len(pngs)
+header = struct.pack("<HHH", 0, 1, count)
+entries = []
+offset = 6 + 16 * count
+blobs = b""
+for s, data in pngs:
+    w = 0 if s >= 256 else s
+    h = 0 if s >= 256 else s
+    entries.append(struct.pack("<BBBBHHII", w, h, 0, 0, 1, 32, len(data), offset))
+    offset += len(data)
+    blobs += data
+
+ico_path = root / "app/favicon.ico"
+ico_path.write_bytes(header + b"".join(entries) + blobs)
+print("wrote", ico_path)
 `;
 
 const result = spawnSync("python3", ["-c", py], { encoding: "utf8" });
