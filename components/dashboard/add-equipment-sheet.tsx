@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useTransition, type FormEvent } from "react";
-import { AlertCircle, Loader2, MapPinned, Plus, Tractor, Warehouse } from "lucide-react";
+import { useEffect, useState, useTransition, type FormEvent } from "react";
+import { AlertCircle, Loader2, MapPinned, Pencil, Plus, Tractor, Warehouse } from "lucide-react";
 import { toast } from "sonner";
 
 import {
   createLocalEquipment,
+  updateLocalEquipment,
 } from "@/app/admin/equipment/actions";
 import {
   EQUIPMENT_WORK_SCOPE_OPTIONS,
@@ -33,13 +34,39 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
+export type LocalEquipmentEditValues = {
+  id: string;
+  name: string;
+  type: string;
+  workScope: EquipmentWorkScope | null;
+  code: string | null;
+  fuelTankVolume: number | null;
+};
+
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated?: (payload: { id: string; name: string }) => void;
+  /** Якщо задано — режим редагування */
+  editItem?: LocalEquipmentEditValues | null;
+  onUpdated?: (payload: { id: string; name: string }) => void;
 };
 
-export function AddEquipmentSheet({ open, onOpenChange, onCreated }: Props) {
+function asLocalType(value: string | null | undefined): LocalEquipmentType {
+  const raw = String(value ?? "other").toLowerCase();
+  return LOCAL_EQUIPMENT_TYPE_OPTIONS.some((o) => o.id === raw)
+    ? (raw as LocalEquipmentType)
+    : "other";
+}
+
+export function AddEquipmentSheet({
+  open,
+  onOpenChange,
+  onCreated,
+  editItem = null,
+  onUpdated,
+}: Props) {
+  const isEdit = Boolean(editItem?.id);
   const [pending, startTransition] = useTransition();
   const [name, setName] = useState("");
   const [type, setType] = useState<LocalEquipmentType>("tractor");
@@ -56,6 +83,28 @@ export function AddEquipmentSheet({ open, onOpenChange, onCreated }: Props) {
     setTankLiters("");
     setFormError(null);
   }
+
+  useEffect(() => {
+    if (!open) return;
+    if (editItem?.id) {
+      setName(editItem.name ?? "");
+      setType(asLocalType(editItem.type));
+      setWorkScope(
+        editItem.workScope === "field" || editItem.workScope === "base"
+          ? editItem.workScope
+          : null
+      );
+      setCode(editItem.code ?? "");
+      setTankLiters(
+        editItem.fuelTankVolume != null && editItem.fuelTankVolume > 0
+          ? String(editItem.fuelTankVolume)
+          : ""
+      );
+      setFormError(null);
+      return;
+    }
+    reset();
+  }, [open, editItem]);
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -78,6 +127,25 @@ export function AddEquipmentSheet({ open, onOpenChange, onCreated }: Props) {
     }
 
     startTransition(async () => {
+      if (isEdit && editItem?.id) {
+        const res = await updateLocalEquipment({
+          equipmentId: editItem.id,
+          name: trimmed,
+          type,
+          workScope,
+          code: code.trim() || null,
+          fuelTankVolume: tankNum,
+        });
+        if (!res.ok) {
+          setFormError(res.error);
+          return;
+        }
+        toast.success(`Оновлено: ${res.name}`);
+        onUpdated?.({ id: res.id, name: res.name });
+        onOpenChange(false);
+        return;
+      }
+
       const res = await createLocalEquipment({
         name: trimmed,
         type,
@@ -107,12 +175,16 @@ export function AddEquipmentSheet({ open, onOpenChange, onCreated }: Props) {
         if (!next) reset();
         onOpenChange(next);
       }}
-      title="Нова техніка"
+      title={isEdit ? "Редагувати техніку" : "Нова техніка"}
     >
       <FuelSheetHeader
-        icon={Plus}
-        title="Додати техніку"
-        description="Обовʼязково оберіть Поля або База — для бухгалтерії / BAS. Техніка зʼявиться в Паливі для ручного списання"
+        icon={isEdit ? Pencil : Plus}
+        title={isEdit ? "Редагувати техніку" : "Додати техніку"}
+        description={
+          isEdit
+            ? "Зміни назву, тип або категорію. Техніка з BAS / Wialon тут не редагується"
+            : "Обовʼязково оберіть Поля або База — для бухгалтерії / BAS. Техніка зʼявиться в Паливі для ручного списання"
+        }
         accent="emerald"
       />
 
@@ -254,6 +326,11 @@ export function AddEquipmentSheet({ open, onOpenChange, onCreated }: Props) {
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Збереження…
+              </>
+            ) : isEdit ? (
+              <>
+                <Pencil className="h-4 w-4" />
+                Зберегти зміни
               </>
             ) : (
               <>

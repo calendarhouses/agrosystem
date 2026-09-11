@@ -36,7 +36,22 @@ export type FleetEquipmentRow = {
   fuel_tank_volume: number | null;
   /** field | base | null */
   work_scope?: string | null;
+  /** bas | local | wialon */
+  source?: string | null;
+  bas_ref_key?: string | null;
 };
+
+/** Створена в AgroSystem (не BAS / не Wialon). */
+export function isLocalFleetEquipment(row: {
+  source?: string | null;
+  bas_ref_key?: string | null;
+  wialon_id?: number | null;
+}): boolean {
+  const source = String(row.source ?? "").toLowerCase();
+  if (source === "local") return true;
+  if (source === "bas" || source === "wialon") return false;
+  return row.bas_ref_key == null && row.wialon_id == null;
+}
 
 /** Активна техніка з GPS (або з wialon_id, але без відповіді Wialon) */
 export type FleetTrackedUnit = WialonUnit & {
@@ -58,6 +73,8 @@ export type FleetNonTrackedItem = {
   workScope?: "field" | "base" | null;
   /** equipment без GPS або запис з довідника implements */
   source?: "equipment" | "implement";
+  /** Локальна техніка AgroSystem — можна редагувати / видаляти */
+  isLocal?: boolean;
   activeOp?: FleetActiveOperation | null;
 };
 
@@ -223,6 +240,7 @@ export function wialonFirstFleet(
           ? row.work_scope
           : null,
       source: "equipment",
+      isLocal: isLocalFleetEquipment(row),
       activeOp: null,
     };
 
@@ -280,6 +298,7 @@ export function mergeEquipmentFleet(
             ? row.work_scope
             : null,
         source: "equipment",
+        isLocal: isLocalFleetEquipment(row),
       };
       if (
         isSelfPropelledEquipmentType(row.type) &&

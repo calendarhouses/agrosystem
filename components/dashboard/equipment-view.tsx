@@ -43,6 +43,7 @@ import {
 } from "@/components/dashboard/equipment-command-map";
 import { EquipmentFleetGlassPanel } from "@/components/dashboard/equipment-fleet-glass-panel";
 import { AddEquipmentSheet } from "@/components/dashboard/add-equipment-sheet";
+import { deleteLocalEquipment } from "@/app/admin/equipment/actions";
 import { EquipmentTrackPlaybackPanel } from "@/components/dashboard/equipment-track-playback-panel";
 import {
   FuelSparkline,
@@ -1334,6 +1335,8 @@ export function EquipmentView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [addEquipmentOpen, setAddEquipmentOpen] = useState(false);
+  const [editingLocalEquipment, setEditingLocalEquipment] =
+    useState<FleetNonTrackedItem | null>(null);
   const [fleetRefreshToken, setFleetRefreshToken] = useState(0);
   const [selectedUnit, setSelectedUnit] = useState<FleetTrackedUnit | null>(
     null
@@ -2463,7 +2466,35 @@ export function EquipmentView() {
           fleetSummaryForceRefreshRef.current = true;
           setFleetSummaryRefreshToken((n) => n + 1);
         }}
-        onAddEquipment={() => setAddEquipmentOpen(true)}
+        onAddEquipment={() => {
+          setEditingLocalEquipment(null);
+          setAddEquipmentOpen(true);
+        }}
+        onEditLocalEquipment={(item) => {
+          setEditingLocalEquipment(item);
+          setAddEquipmentOpen(true);
+        }}
+        onDeleteLocalEquipment={(item) => {
+          if (
+            !window.confirm(
+              `Видалити техніку «${item.name}» з довідника AgroSystem?`
+            )
+          ) {
+            return;
+          }
+          void (async () => {
+            const res = await deleteLocalEquipment({
+              equipmentId: item.equipmentId,
+            });
+            if (!res.ok) {
+              toast.error(res.error);
+              return;
+            }
+            toast.success(`Видалено: ${item.name}`);
+            invalidateAppCache("api:equipment:fleet");
+            setFleetRefreshToken((n) => n + 1);
+          })();
+        }}
         detailContent={
           liveSelectedUnit && selectedTelemetry ? (
             <div className="flex flex-col gap-2.5 pb-4 md:gap-3">
@@ -2756,8 +2787,31 @@ export function EquipmentView() {
 
       <AddEquipmentSheet
         open={addEquipmentOpen}
-        onOpenChange={setAddEquipmentOpen}
+        onOpenChange={(open) => {
+          setAddEquipmentOpen(open);
+          if (!open) setEditingLocalEquipment(null);
+        }}
+        editItem={
+          editingLocalEquipment
+            ? {
+                id: editingLocalEquipment.equipmentId,
+                name: editingLocalEquipment.name,
+                type: editingLocalEquipment.type,
+                workScope:
+                  editingLocalEquipment.workScope === "field" ||
+                  editingLocalEquipment.workScope === "base"
+                    ? editingLocalEquipment.workScope
+                    : null,
+                code: editingLocalEquipment.code,
+                fuelTankVolume: editingLocalEquipment.fuelTankVolume,
+              }
+            : null
+        }
         onCreated={() => {
+          invalidateAppCache("api:equipment:fleet");
+          setFleetRefreshToken((n) => n + 1);
+        }}
+        onUpdated={() => {
           invalidateAppCache("api:equipment:fleet");
           setFleetRefreshToken((n) => n + 1);
         }}

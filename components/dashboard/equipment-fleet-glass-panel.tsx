@@ -4,7 +4,7 @@ import type { ReactNode, TouchEvent as ReactTouchEvent } from "react";
 import { useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, Plus, Radar, Route, Tractor, Warehouse, X } from "lucide-react";
+import { ArrowLeft, Pencil, Plus, Radar, Route, Tractor, Trash2, Warehouse, X } from "lucide-react";
 
 import {
   FleetDaySummaryBar,
@@ -238,9 +238,13 @@ const slideVariants = {
 function NonTrackedCard({
   item,
   variant,
+  onEdit,
+  onDelete,
 }: {
   item: FleetNonTrackedItem;
   variant: "base" | "field";
+  onEdit?: (item: FleetNonTrackedItem) => void;
+  onDelete?: (item: FleetNonTrackedItem) => void;
 }) {
   const Icon = variant === "base" ? Warehouse : Tractor;
   const subtitleParts = [
@@ -248,6 +252,7 @@ function NonTrackedCard({
     item.code,
     "Без GPS",
   ].filter(Boolean);
+  const canManage = Boolean(item.isLocal);
 
   return (
     <div
@@ -270,6 +275,34 @@ function NonTrackedCard({
             {subtitleParts.join(" · ")}
           </p>
         </div>
+        {canManage ? (
+          <div className="flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit?.(item);
+              }}
+              className="inline-flex size-8 items-center justify-center rounded-lg border border-white/50 bg-white/80 text-zinc-600 transition hover:border-[#276749]/35 hover:text-[#276749]"
+              title="Редагувати"
+              aria-label={`Редагувати ${item.name}`}
+            >
+              <Pencil className="size-3.5" strokeWidth={1.8} />
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete?.(item);
+              }}
+              className="inline-flex size-8 items-center justify-center rounded-lg border border-white/50 bg-white/80 text-zinc-500 transition hover:border-rose-300 hover:text-rose-600"
+              title="Видалити"
+              aria-label={`Видалити ${item.name}`}
+            >
+              <Trash2 className="size-3.5" strokeWidth={1.8} />
+            </button>
+          </div>
+        ) : null}
       </div>
       {item.activeOp ? (
         <p className="mt-2 text-[11px] font-medium text-green-700">
@@ -312,6 +345,10 @@ type Props = {
   onSummaryRefresh?: () => void;
   /** Відкрити форму додавання локальної техніки */
   onAddEquipment?: () => void;
+  /** Редагувати локальну техніку */
+  onEditLocalEquipment?: (item: FleetNonTrackedItem) => void;
+  /** Видалити локальну техніку */
+  onDeleteLocalEquipment?: (item: FleetNonTrackedItem) => void;
   /** Вміст Vehicle 360 для Master-Detail */
   detailContent: ReactNode;
 };
@@ -346,6 +383,8 @@ export function EquipmentFleetGlassPanel({
   onSummaryMetricSelect,
   onSummaryRefresh,
   onAddEquipment,
+  onEditLocalEquipment,
+  onDeleteLocalEquipment,
   detailContent,
 }: Props) {
   const isMobile = useIsMobile();
@@ -538,7 +577,13 @@ export function EquipmentFleetGlassPanel({
             </div>
             <div className="space-y-2">
               {baseNonTracked.map((item) => (
-                <NonTrackedCard key={`base:${item.equipmentId}`} item={item} variant="base" />
+                <NonTrackedCard
+                  key={`base:${item.equipmentId}`}
+                  item={item}
+                  variant="base"
+                  onEdit={onEditLocalEquipment}
+                  onDelete={onDeleteLocalEquipment}
+                />
               ))}
             </div>
           </div>
@@ -589,6 +634,8 @@ export function EquipmentFleetGlassPanel({
                     key={`field:${item.source ?? "equipment"}:${item.equipmentId}`}
                     item={item}
                     variant="field"
+                    onEdit={onEditLocalEquipment}
+                    onDelete={onDeleteLocalEquipment}
                   />
                 ))}
               </div>

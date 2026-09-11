@@ -840,3 +840,195 @@ export async function createLocalEquipment(input: {
     };
   }
 }
+
+async function assertLocalEquipment(
+  supabase: ReturnType<typeof createServiceSupabase>,
+  equipmentId: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const id = equipmentId?.trim();
+  if (!id) return { ok: false, error: "Немає id техніки" };
+
+  let { data, error } = await supabase
+    .from("equipment")
+    .select("id, source, bas_ref_key, wialon_id")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error && error.message?.includes("source")) {
+    const legacy = await supabase
+      .from("equipment")
+      .select("id, bas_ref_key, wialon_id")
+      .eq("id", id)
+      .maybeSingle();
+    data = legacy.data
+      ? { ...legacy.data, source: null }
+      : null;
+    error = legacy.error;
+  }
+
+  if (error) return { ok: false, error: error.message };
+  if (!data) return { ok: false, error: "Техніку не знайдено" };
+
+  const source = String((data as { source?: string | null }).source ?? "");
+  const basRef =
+    (data as { bas_ref_key?: string | null }).bas_ref_key != null
+      ? String((data as { bas_ref_key?: string | null }).bas_ref_key)
+      : null;
+  const wialonId = (data as { wialon_id?: number | null }).wialon_id;
+
+  const isLocal =
+    source === "local" ||
+    (source !== "bas" && basRef == null && wialonId == null);
+
+  if (!isLocal) {
+    return {
+      ok: false,
+      error: "Редагувати / видаляти можна лише техніку, створену в AgroSystem",
+    };
+  }
+  return { ok: true };
+}
+
+/**
+ * Оновити локальну техніку (лише source=local / без BAS і Wialon).
+ */
+export async function updateLocalEquipment(input: {
+  equipmentId: string;
+  name: string;
+  type: string;
+  workScope: string;
+  code?: string | null;
+  fuelTankVolume?: number | null;
+}): Promise<
+  | { ok: true; id: string; name: string; workScope: EquipmentWorkScope }
+  | { ok: false; error: string }
+> {
+  const name = input.name?.trim() ?? "";
+  if (name.length < 2) {
+    return { ok: false, error: "Вкажіть назву техніки (мін. 2 символи)" };
+  }
+  if (name.length > 120) {
+    return { ok: false, error: "Назва занадто довга" };
+  }
+
+  const typeRaw = String(input.type ?? "other").trim().toLowerCase();
+  const allowed = new Set(
+    LOCAL_EQUIPMENT_TYPE_OPTIONS.map((option) => option.id)
+  );
+  const type = allowed.has(typeRaw as LocalEquipmentType) ? typeRaw : "other";
+
+  const scopeRaw = String(input.workScope ?? "").trim().toLowerCase();
+  if (scopeRaw !== "field" && scopeRaw !== "base") {
+    return { ok: false, error: "Оберіть категорію: Поля або База" };
+  }
+  const workScope: EquipmentWorkScope = scopeRaw;
+
+  const code = input.code?.trim() || null;
+  let fuelTankVolume: number | null = null;
+  if (input.fuelTankVolume != null && String(input.fuelTankVolume) !== "") {
+    const n = Number(input.fuelTankVolume);
+    if (!Number.isFinite(n) || n <= 0) {
+      return { ok: false, error: "Обʼєм бака має бути > 0 л" };
+    }
+    if (n > 50_000) {
+      return { ok: false, error: "Обʼєм бака занадто великий" };
+    }
+    fuelTankVolume = Math.round(n * 100) / 100;
+  }
+
+  try {
+    const supabase = createServiceSupabase();
+    const gate = await assertLocalEquipment(supabase, input.equipmentId);
+    if (!gate.ok) return gate;
+
+    const payload: Record<string, unknown> = {
+      name,
+      full_name: name,
+      code,
+      type,
+      work_scope: workScope,
+      fuel_tank_volume: fuelTankVolume,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase
+      .from("equipment")
+      .update(payload)
+      .eq("id", input.equipmentId)
+      .select("id, name, work_scope")
+      .single();
+
+    if (error) {
+      if (error.message?.includes("fuel_tank_volume")) {
+        const { fuel_tank_volume: _f, ...withoutTank } = payload;
+        const retry = await supabase
+          .from("equipment")
+          .update(withoutTank)
+          .eq("id", input.equipmentId)
+          .select("id, name, work_scope")
+          .single();
+        if (retry.error) return { ok: false, error: retry.error.message };
+        revalidatePath("/equipment");
+        revalidatePath("/fuel");
+        revalidatePath("/admin/equipment");
+        return {
+          ok: true,
+          id: String(retry.data.id),
+          name: String(retry.data.name),
+          workScope: retry.data.work_scope === "base" ? "base" : "field",
+        };
+      }
+      return { ok: false, error: error.message };
+    }
+
+    revalidatePath("/equipment");
+    revalidatePath("/fuel");
+    revalidatePath("/admin/equipment");
+    return {
+      ok: true,
+      id: String(data.id),
+      name: String(data.name),
+      workScope: data.work_scope === "base" ? "base" : "field",
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        error instanceof Error ? error.message : "Не вдалося оновити техніку",
+    };
+  }
+}
+
+/**
+ * Soft-delete локальної техніки (is_active=false). BAS / Wialon — заборонено.
+ */
+export async function deleteLocalEquipment(input: {
+  equipmentId: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const supabase = createServiceSupabase();
+    const gate = await assertLocalEquipment(supabase, input.equipmentId);
+    if (!gate.ok) return gate;
+
+    const { error } = await supabase
+      .from("equipment")
+      .update({
+        is_active: false,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", input.equipmentId);
+
+    if (error) return { ok: false, error: error.message };
+
+    revalidatePath("/equipment");
+    revalidatePath("/fuel");
+    revalidatePath("/admin/equipment");
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        error instanceof Error ? error.message : "Не вдалося видалити техніку",
+    };
+  }
+}

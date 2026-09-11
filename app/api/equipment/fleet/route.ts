@@ -29,6 +29,8 @@ type EquipmentDbRow = {
   wialon_id: number | null;
   fuel_tank_volume?: number | string | null;
   work_scope?: string | null;
+  source?: string | null;
+  bas_ref_key?: string | null;
 };
 
 /**
@@ -43,19 +45,56 @@ export async function GET() {
     let equipment: FleetEquipmentRow[] = [];
     let { data: rows, error } = await supabase
       .from("equipment")
-      .select("id, name, type, code, wialon_id, fuel_tank_volume, work_scope")
+      .select(
+        "id, name, type, code, wialon_id, fuel_tank_volume, work_scope, source, bas_ref_key"
+      )
       .eq("is_active", true)
       .order("name");
+
+    if (error && error.message?.includes("source")) {
+      const withoutSource = await supabase
+        .from("equipment")
+        .select(
+          "id, name, type, code, wialon_id, fuel_tank_volume, work_scope, bas_ref_key"
+        )
+        .eq("is_active", true)
+        .order("name");
+      rows = (withoutSource.data ?? []).map((row) => ({
+        ...row,
+        source: null,
+      }));
+      error = withoutSource.error;
+    }
+
+    if (error && error.message?.includes("bas_ref_key")) {
+      const withoutBas = await supabase
+        .from("equipment")
+        .select(
+          "id, name, type, code, wialon_id, fuel_tank_volume, work_scope, source"
+        )
+        .eq("is_active", true)
+        .order("name");
+      rows = (withoutBas.data ?? []).map((row) => ({
+        ...row,
+        bas_ref_key: null,
+        source: (row as { source?: string | null }).source ?? null,
+      }));
+      error = withoutBas.error;
+    }
 
     if (error && error.message?.includes("work_scope")) {
       const withoutScope = await supabase
         .from("equipment")
-        .select("id, name, type, code, wialon_id, fuel_tank_volume")
+        .select(
+          "id, name, type, code, wialon_id, fuel_tank_volume, source, bas_ref_key"
+        )
         .eq("is_active", true)
         .order("name");
       rows = (withoutScope.data ?? []).map((row) => ({
         ...row,
         work_scope: null,
+        source: (row as { source?: string | null }).source ?? null,
+        bas_ref_key: (row as { bas_ref_key?: string | null }).bas_ref_key ?? null,
       }));
       error = withoutScope.error;
     }
@@ -63,13 +102,15 @@ export async function GET() {
     if (error && error.message?.includes("fuel_tank_volume")) {
       const legacy = await supabase
         .from("equipment")
-        .select("id, name, type, code, wialon_id")
+        .select("id, name, type, code, wialon_id, source, bas_ref_key, work_scope")
         .eq("is_active", true)
         .order("name");
       rows = (legacy.data ?? []).map((row) => ({
         ...row,
         fuel_tank_volume: null,
-        work_scope: null,
+        work_scope: (row as { work_scope?: string | null }).work_scope ?? null,
+        source: (row as { source?: string | null }).source ?? null,
+        bas_ref_key: (row as { bas_ref_key?: string | null }).bas_ref_key ?? null,
       }));
       error = legacy.error;
     }
@@ -93,6 +134,8 @@ export async function GET() {
           row.work_scope === "field" || row.work_scope === "base"
             ? row.work_scope
             : null,
+        source: row.source != null ? String(row.source) : null,
+        bas_ref_key: row.bas_ref_key != null ? String(row.bas_ref_key) : null,
       }));
     }
 
