@@ -6456,6 +6456,9 @@ export function LevadaCopilotDrawer({
   const [lastInvoiceFiles, setLastInvoiceFiles] = useState<File[]>([]);
   const lastInvoiceFilesRef = useRef<File[]>([]);
   const listRef = useRef<HTMLDivElement>(null);
+  /** Якір читання: верх останнього user-повідомлення, без стрибка вниз на кінець звіту */
+  const anchoredUserMsgIdRef = useRef<string | null>(null);
+  const prevDrawerOpenRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dragDepthRef = useRef(0);
@@ -7500,11 +7503,49 @@ export function LevadaCopilotDrawer({
     !lastAssistantText;
 
   useEffect(() => {
+    if (effectiveOpen && !prevDrawerOpenRef.current) {
+      anchoredUserMsgIdRef.current = null;
+    }
+    prevDrawerOpenRef.current = effectiveOpen;
+  }, [effectiveOpen]);
+
+  useEffect(() => {
     if (!effectiveOpen) return;
     const node = listRef.current;
     if (!node) return;
-    node.scrollTop = node.scrollHeight;
-  }, [messages, status, effectiveOpen]);
+
+    const lastUser = [...messages]
+      .reverse()
+      .find((message) => message.role === "user");
+    if (!lastUser) return;
+    if (anchoredUserMsgIdRef.current === lastUser.id) return;
+    anchoredUserMsgIdRef.current = lastUser.id;
+
+    const scrollTurnToTop = () => {
+      const el = node.querySelector(
+        `[data-chat-message-id="${CSS.escape(lastUser.id)}"]`
+      );
+      if (!(el instanceof HTMLElement)) return;
+      const listRect = node.getBoundingClientRect();
+      const elRect = el.getBoundingClientRect();
+      const nextTop = elRect.top - listRect.top + node.scrollTop - 8;
+      node.scrollTo({ top: Math.max(0, nextTop), behavior: "smooth" });
+    };
+
+    // DOM може ще не встигнути намалювати новий bubble
+    requestAnimationFrame(() => {
+      requestAnimationFrame(scrollTurnToTop);
+    });
+  }, [messages, effectiveOpen]);
+
+  function clearDialog() {
+    setMessages([]);
+    anchoredUserMsgIdRef.current = null;
+    briefingFetchedRef.current = false;
+    setBriefing(null);
+    setBriefingError(null);
+    writeLastChatAt(0);
+  }
 
   function handleNavigate(path: string) {
     const normalized = normalizeAgentPath(path);
@@ -7613,11 +7654,7 @@ export function LevadaCopilotDrawer({
           <button
             type="button"
             onClick={() => {
-              setMessages([]);
-              briefingFetchedRef.current = false;
-              setBriefing(null);
-              setBriefingError(null);
-              writeLastChatAt(0);
+              clearDialog();
             }}
             disabled={messages.length === 0 && !briefing}
             className="inline-flex size-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-zinc-300 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
@@ -7746,16 +7783,17 @@ export function LevadaCopilotDrawer({
         ) : null}
 
         {messages.map((message) => (
-          <MessageBubble
-            key={message.id}
-            message={message}
-            onNavigate={handleNavigate}
-            onReply={(text) => void submitText(text)}
-            onAttachInvoice={openFilePicker}
-            invoiceFiles={lastInvoiceFiles}
-            replyDisabled={busy}
-            hideDrafts={hideDraftCards}
-          />
+          <div key={message.id} data-chat-message-id={message.id}>
+            <MessageBubble
+              message={message}
+              onNavigate={handleNavigate}
+              onReply={(text) => void submitText(text)}
+              onAttachInvoice={openFilePicker}
+              invoiceFiles={lastInvoiceFiles}
+              replyDisabled={busy}
+              hideDrafts={hideDraftCards}
+            />
+          </div>
         ))}
 
         {showThinking ? (
@@ -7982,7 +8020,10 @@ export function LevadaCopilotDrawer({
         {fullscreen ? null : messages.length > 0 ? (
           <button
             type="button"
-            onClick={() => setMessages([])}
+            onClick={() => {
+              setMessages([]);
+              anchoredUserMsgIdRef.current = null;
+            }}
             className="mt-2 w-full text-center text-[11px] text-zinc-500 transition hover:text-zinc-300"
           >
             Очистити діалог
