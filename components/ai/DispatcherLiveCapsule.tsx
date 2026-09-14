@@ -14,6 +14,7 @@ import {
   pathnameToSection,
   type SectionId,
 } from "@/lib/agent-section-briefing-shared";
+import { setLevadiusSectionBrief } from "@/lib/levadius-live-cache";
 import { cn } from "@/lib/utils";
 
 const MUTE_KEY = "levadius_dispatcher_capsule_muted";
@@ -28,6 +29,7 @@ type SectionBriefPayload = {
   text: string;
   followUpPrompt: string;
   cached?: boolean;
+  facts?: { radarN?: number };
 };
 
 function readFlag(key: string, fallback = false): boolean {
@@ -152,6 +154,11 @@ export function DispatcherLiveCapsule(): ReactNode {
           return;
         }
         setBrief(data);
+        setLevadiusSectionBrief({
+          text: data.text,
+          followUpPrompt: data.followUpPrompt,
+          radarN: Number(data.facts?.radarN) || undefined,
+        });
         setHidden(false);
         requestAnimationFrame(() => setFadeIn(true));
         scheduleDismiss();
@@ -184,9 +191,13 @@ export function DispatcherLiveCapsule(): ReactNode {
   return (
     <div
       className={cn(
-        "pointer-events-none fixed top-4 left-1/2 z-50 -translate-x-1/2",
-        "pt-[env(safe-area-inset-top,0px)]",
-        "w-[min(26rem,calc(100vw-5.5rem))]"
+        "pointer-events-none fixed left-1/2 z-50 -translate-x-1/2",
+        /* Під мобільним LEVADIUS-баром / safe-area, не поверх нього */
+        "top-[max(0.75rem,calc(var(--safe-top)+0.5rem))] md:top-4",
+        "md:pt-0",
+        "w-[min(26rem,calc(100vw-1.5rem))] md:w-[min(26rem,calc(100vw-2rem))]",
+        /* На мобілці бар уже в потоці — капсулу ховаємо, підказка в барі */
+        "hidden md:block"
       )}
     >
       <div

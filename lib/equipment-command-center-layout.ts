@@ -26,9 +26,9 @@ export const COMMAND_CENTER_DETAIL_FLOAT_INSET_CLASS =
 export const COMMAND_CENTER_GLASS_PANEL_CLASS =
   "pointer-events-auto absolute top-3 bottom-3 z-20 hidden flex-col overflow-hidden rounded-2xl border border-white/30 bg-background/80 shadow-2xl backdrop-blur-2xl md:flex";
 
-/** Відступи камери Mapbox: видима зона мінус нижнє меню та шторка полів. */
+/** Відступи камери Mapbox: видима зона мінус нижнє меню, шторка полів, LEVADIUS-бар. */
 export const MAP_MOBILE_CAMERA_PADDING = {
-  top: 100,
+  top: 132,
   bottom: 250,
   left: 20,
   right: 20,

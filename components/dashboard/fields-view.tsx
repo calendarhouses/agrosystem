@@ -1274,7 +1274,7 @@ export function FieldsView() {
       <div
         className={cn(
           "pointer-events-none absolute z-30 inset-x-0 px-3 pb-3",
-          "top-[calc(var(--safe-top)+0.4rem)]",
+          "top-[calc(var(--app-top-inset)+0.4rem)]",
           sheetOpen
             ? COMMAND_CENTER_MAP_AREA_RIGHT_CLASS
             : "md:left-[calc(0.75rem+min(400px,calc(100%-1.5rem)))] md:right-0"

@@ -59,6 +59,7 @@ function AppShellChrome({
           collapsed ? "md:pl-16" : "md:pl-[250px]"
         )}
       >
+        <MobileDispatcherTrigger />
         <TopBar />
         <div
           className={cn(
@@ -71,7 +72,6 @@ function AppShellChrome({
       </div>
 
       <BottomNav />
-      <MobileDispatcherTrigger />
       <DispatcherLiveCapsule />
       <LevadaCopilotHost />
       <AppDataWarmer />

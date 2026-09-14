@@ -539,7 +539,7 @@ export function OperationsMatrixView() {
 
   return (
     <section className="flex h-full min-h-0 flex-1 flex-col bg-zinc-950 text-zinc-50">
-      <header className="shrink-0 border-b border-white/5 px-4 pt-[max(0.75rem,var(--safe-top))] pb-2">
+      <header className="shrink-0 border-b border-white/5 px-4 pt-[max(0.75rem,var(--app-top-inset))] pb-2">
         <div className="relative mb-3 flex h-10 items-center justify-center">
           <button
             type="button"

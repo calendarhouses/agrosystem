@@ -81,7 +81,9 @@ body {
   --app-vv-offset-top: 0px;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+  /* Chrome під status bar; на мобілці з LEVADIUS-баром стає 0 (бар уже з’їв safe-area) */
   --app-top-inset: var(--safe-top);
+  --levadius-mobile-bar: 0px;
   --app-bottom-inset: 0px;
   --app-sheet-max: min(88dvh, calc(100dvh - var(--app-bottom-inset) - 0.5rem));
 
@@ -222,9 +224,18 @@ html[data-app-nav="1"] {
   --app-bottom-inset: var(--bottom-nav-content);
 }
 
+/* Мобільний LEVADIUS-бар у потоці: контент уже під ним — без подвійного safe-top */
+html[data-levadius-bar="1"] {
+  --app-top-inset: 0px;
+}
+
 @media (min-width: 768px) {
   html[data-app-nav="1"] {
     --app-bottom-inset: 0px;
+  }
+
+  html[data-levadius-bar="1"] {
+    --app-top-inset: var(--safe-top);
   }
 }
 
@@ -643,6 +654,27 @@ html[data-app-nav="1"] {
   to {
     opacity: 1;
     transform: translateY(-50%) translateX(0) scale(1);
+  }
+}
+
+@keyframes levadius-orbit-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes levadius-orbit-pulse {
+  0% {
+    transform: scale(0.92);
+    opacity: 0.55;
+  }
+  55% {
+    transform: scale(1.08);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.08);
+    opacity: 0;
   }
 }
 

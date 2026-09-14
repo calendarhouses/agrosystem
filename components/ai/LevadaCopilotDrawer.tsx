@@ -58,6 +58,14 @@ import {
 import { useIsMobile } from "@/lib/use-mobile";
 import { canAccessLevadius } from "@/lib/levadius-access";
 import {
+  buildQuickBriefingFromCache,
+  getLevadiusLiveCache,
+  hasFreshProactive,
+  markLevadiusBooted,
+  setLevadiusProactive,
+  type LevadiusProactiveCache,
+} from "@/lib/levadius-live-cache";
+import {
   compressAgentFiles,
   formatFileKib,
 } from "@/lib/compress-image-file";
@@ -115,32 +123,7 @@ const QUICK_CHIPS = [
 const BRIEFING_STALE_MS = 2 * 60 * 60 * 1000;
 const BRIEFING_LAST_CHAT_KEY = "levadius-last-chat-at";
 
-type ProactiveBriefPriority = {
-  id: string;
-  severity: "critical" | "warning" | "info";
-  title: string;
-  detail: string;
-};
-
-type ProactiveBriefAction = {
-  id: string;
-  label: string;
-  prompt: string;
-};
-
-type ProactiveBriefingUi = {
-  tone: "alert" | "calm";
-  headline: string;
-  summary: string;
-  priorities: ProactiveBriefPriority[];
-  actions: ProactiveBriefAction[];
-  stats: {
-    machinesInField: number;
-    lowFuelCount: number;
-    radarUnrecordedCount: number;
-    weatherRiskCount: number;
-  };
-};
+type ProactiveBriefingUi = LevadiusProactiveCache;
 
 function readLastChatAt(): number | null {
   try {
@@ -6446,10 +6429,12 @@ export function LevadaCopilotDrawer({
   const [me, setMe] = useState<AppActor | null>(null);
   const [bootReady, setBootReady] = useState(false);
   const [input, setInput] = useState("");
-  const [briefing, setBriefing] = useState<ProactiveBriefingUi | null>(null);
+  const [briefing, setBriefing] = useState<ProactiveBriefingUi | null>(() =>
+    buildQuickBriefingFromCache()
+  );
   const [briefingLoading, setBriefingLoading] = useState(false);
   const [briefingError, setBriefingError] = useState<string | null>(null);
-  const briefingFetchedRef = useRef(false);
+  const briefingFetchedRef = useRef(hasFreshProactive());
   const [welcome, setWelcome] = useState<{ hi: string; tip: string } | null>(
     null
   );
@@ -6678,6 +6663,19 @@ export function LevadaCopilotDrawer({
   useEffect(() => {
     let cancelled = false;
 
+    const alreadyBooted = getLevadiusLiveCache().bootedOnce;
+    if (alreadyBooted) {
+      void getMyProfileAction()
+        .then((actor) => {
+          if (!cancelled) setMe(actor);
+        })
+        .catch(() => {});
+      setBootReady(true);
+      return () => {
+        cancelled = true;
+      };
+    }
+
     const profilePromise = getMyProfileAction()
       .then((actor) => {
         if (!cancelled) setMe(actor);
@@ -6692,7 +6690,9 @@ export function LevadaCopilotDrawer({
     });
 
     void Promise.all([profilePromise, minBootPromise]).then(() => {
-      if (!cancelled) setBootReady(true);
+      if (cancelled) return;
+      markLevadiusBooted();
+      setBootReady(true);
     });
 
     return () => {
@@ -6702,15 +6702,7 @@ export function LevadaCopilotDrawer({
 
   // Вітання-фолбек (якщо бриф ще вантажиться / впав)
   useLayoutEffect(() => {
-    if (!effectiveOpen) {
-      frozenWelcomeRef.current = null;
-      setWelcome(null);
-      briefingFetchedRef.current = false;
-      setBriefing(null);
-      setBriefingError(null);
-      setBriefingLoading(false);
-      return;
-    }
+    if (!effectiveOpen) return;
     if (!bootReady) return;
     if (frozenWelcomeRef.current) {
       setWelcome((prev) => prev ?? frozenWelcomeRef.current);
@@ -6735,7 +6727,9 @@ export function LevadaCopilotDrawer({
     };
   }, [pathname, activeFieldId, me]);
 
-  const showBoot = !bootReady || (effectiveOpen && !welcome);
+  const showBoot =
+    !getLevadiusLiveCache().bootedOnce &&
+    (!bootReady || (effectiveOpen && !welcome));
 
   // HTML #levadius-boot-splash: тримаємо до кінця React-boot, потім знімаємо.
   useLayoutEffect(() => {
@@ -6781,10 +6775,9 @@ export function LevadaCopilotDrawer({
 
   const busy = status === "submitted" || status === "streaming";
 
-  /** Проактивний бриф: порожній чат або пауза >2 год */
+  /** Проактивний бриф: з кешу миттєво; API лише якщо кеш протух */
   useEffect(() => {
     if (!effectiveOpen || !bootReady) return;
-    if (briefingFetchedRef.current) return;
 
     const stalePause =
       messages.length > 0 && shouldFetchProactiveBriefing(messages.length);
@@ -6793,11 +6786,29 @@ export function LevadaCopilotDrawer({
 
     if (stalePause) {
       setMessages([]);
+      briefingFetchedRef.current = false;
     }
+
+    const quick = buildQuickBriefingFromCache();
+    if (quick) {
+      setBriefing((prev) => prev ?? quick);
+      setBriefingLoading(false);
+    }
+
+    if (briefingFetchedRef.current && hasFreshProactive()) {
+      const cached = getLevadiusLiveCache().proactive;
+      if (cached) setBriefing(cached);
+      setBriefingLoading(false);
+      return;
+    }
+
+    if (briefingFetchedRef.current) return;
 
     briefingFetchedRef.current = true;
     let cancelled = false;
-    setBriefingLoading(true);
+    if (!quick && !getLevadiusLiveCache().proactive) {
+      setBriefingLoading(true);
+    }
     setBriefingError(null);
 
     void fetch("/api/agent/proactive-briefing", { credentials: "include" })
@@ -6808,14 +6819,16 @@ export function LevadaCopilotDrawer({
         };
         if (cancelled) return;
         if (!res.ok || data.ok === false) {
-          setBriefingError(
-            typeof data.error === "string"
-              ? data.error
-              : "Не вдалося зібрати зведення"
-          );
+          if (!quick && !getLevadiusLiveCache().proactive) {
+            setBriefingError(
+              typeof data.error === "string"
+                ? data.error
+                : "Не вдалося зібрати зведення"
+            );
+          }
           return;
         }
-        setBriefing({
+        const next: ProactiveBriefingUi = {
           tone: data.tone === "alert" ? "alert" : "calm",
           headline: data.headline || "Оперативне зведення зміни",
           summary: data.summary || "",
@@ -6827,13 +6840,17 @@ export function LevadaCopilotDrawer({
             radarUnrecordedCount: 0,
             weatherRiskCount: 0,
           },
-        });
+        };
+        setLevadiusProactive(next);
+        setBriefing(next);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        setBriefingError(
-          err instanceof Error ? err.message : "Помилка зведення зміни"
-        );
+        if (!quick && !getLevadiusLiveCache().proactive) {
+          setBriefingError(
+            err instanceof Error ? err.message : "Помилка зведення зміни"
+          );
+        }
       })
       .finally(() => {
         if (!cancelled) setBriefingLoading(false);
@@ -7765,7 +7782,9 @@ export function LevadaCopilotDrawer({
           "shrink-0 border-t border-white/10 px-3 pt-3",
           fullscreen
             ? "pb-[max(0.75rem,env(safe-area-inset-bottom))]"
-            : "pb-[max(0.75rem,env(safe-area-inset-bottom))]",
+            : isMobile
+              ? "pb-3"
+              : "pb-[max(0.75rem,env(safe-area-inset-bottom))]",
           dragOverComposer && "bg-emerald-500/[0.04]"
         )}
         onDragEnter={onComposerDragEnter}
@@ -7967,7 +7986,10 @@ export function LevadaCopilotDrawer({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[240] bg-black/55 supports-backdrop-filter:backdrop-blur-[2px]"
+            className={cn(
+              "fixed inset-x-0 top-0 z-[240] bg-black/55 supports-backdrop-filter:backdrop-blur-[2px]",
+              isMobile ? "bottom-[var(--app-bottom-inset)]" : "bottom-0"
+            )}
             onClick={() => onOpenChange(false)}
           />
           <motion.div
@@ -7987,9 +8009,10 @@ export function LevadaCopilotDrawer({
               "fixed z-[250] flex flex-col overflow-hidden",
               isMobile
                 ? [
-                    "inset-x-0 bottom-0",
-                    "h-[85dvh] max-h-[85dvh]",
-                    "pb-[env(safe-area-inset-bottom,0px)]",
+                    "inset-x-0",
+                    "bottom-[var(--app-bottom-inset)]",
+                    "h-[min(85dvh,calc(100dvh-var(--app-bottom-inset)-0.5rem))]",
+                    "max-h-[min(85dvh,calc(100dvh-var(--app-bottom-inset)-0.5rem))]",
                   ].join(" ")
                 : [
                     "top-[max(0.5rem,env(safe-area-inset-top,0px))]",
@@ -8023,6 +8046,7 @@ export function LevadaCopilotFullscreen(): ReactNode {
 }
 
 export function LevadaCopilotHost(): ReactNode {
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [allowed, setAllowed] = useState(false);
   const [seedPrompt, setSeedPrompt] = useState<string | null>(null);
@@ -8049,6 +8073,12 @@ export function LevadaCopilotHost(): ReactNode {
     window.addEventListener("levadius:open", onOpen);
     return () => window.removeEventListener("levadius:open", onOpen);
   }, []);
+
+  // Швидкий перехід з bottom-nav — згорнути шторку
+  useEffect(() => {
+    setOpen(false);
+    setSeedPrompt(null);
+  }, [pathname]);
 
   if (!allowed) return null;
 

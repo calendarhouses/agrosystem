@@ -2406,7 +2406,7 @@ export function EquipmentView() {
           "pointer-events-none absolute z-30",
           // Не тягнути COMMAND_CENTER_MAP_AREA_CLASS (inset-y-0) — він збиває top і
           // кладе дзвіночок під Dynamic Island / зарядку.
-          "top-[max(0.75rem,calc(var(--safe-top)+0.55rem))]",
+          "top-[max(0.75rem,calc(var(--app-top-inset)+0.55rem))]",
           "right-[max(0.75rem,env(safe-area-inset-right,0px))]",
           "md:top-3 md:right-3"
         )}

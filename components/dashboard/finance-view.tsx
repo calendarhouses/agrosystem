@@ -726,7 +726,7 @@ export function FinanceView({
       />
 
       {isMobile ? (
-        <div className="sticky top-0 z-40 border-b border-[#E5DFD3]/80 bg-[#F4F1EA]/92 px-4 pt-[max(0.75rem,var(--safe-top))] pb-2.5 backdrop-blur-xl">
+        <div className="sticky top-0 z-40 border-b border-[#E5DFD3]/80 bg-[#F4F1EA]/92 px-4 pt-[max(0.75rem,var(--app-top-inset))] pb-2.5 backdrop-blur-xl">
           <div
             className="inline-flex w-full rounded-2xl border border-[#E5DFD3]/90 bg-white/85 p-1 shadow-sm"
             role="tablist"

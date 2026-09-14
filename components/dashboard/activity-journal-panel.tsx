@@ -462,7 +462,7 @@ export function ActivityJournalPanel({
         className
       )}
     >
-      <div className="shrink-0 border-b border-[#E5DFD3]/80 bg-[#F4F1EA]/90 px-4 pt-[max(0.75rem,var(--safe-top))] pb-3 backdrop-blur-xl sm:px-6">
+      <div className="shrink-0 border-b border-[#E5DFD3]/80 bg-[#F4F1EA]/90 px-4 pt-[max(0.75rem,var(--app-top-inset))] pb-3 backdrop-blur-xl sm:px-6">
         <div className="mx-auto flex w-full max-w-3xl items-center gap-3">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-zinc-900 text-white shadow-[0_8px_24px_-12px_rgba(24,24,27,0.55)]">
             <History className="h-5 w-5" strokeWidth={1.9} />

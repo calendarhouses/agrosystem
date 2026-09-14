@@ -783,7 +783,7 @@ export function InventoryView({
         className={cn(
           "relative mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8",
           isMobile
-            ? "pt-[max(0.75rem,var(--safe-top))] pb-2"
+            ? "pt-[max(0.75rem,var(--app-top-inset))] pb-2"
             : "py-5 sm:py-6"
         )}
       >

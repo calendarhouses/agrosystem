@@ -2018,7 +2018,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
           ? createPortal(
               <div
                 className="pointer-events-auto fixed inset-x-3 z-[220] md:left-auto md:right-3 md:w-[min(calc(100vw-2rem),340px)]"
-                style={{ top: "calc(var(--safe-top) + 0.5rem)" }}
+                style={{ top: "calc(var(--app-top-inset) + 0.5rem)" }}
                 data-vaul-no-drag=""
                 role="search"
               >
@@ -2267,7 +2267,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
           <div
             className={cn(
               "pointer-events-none absolute z-50 flex justify-center px-4",
-              "top-[calc(var(--safe-top)+0.75rem)]",
+              "top-[calc(var(--app-top-inset)+0.75rem)]",
               chrome === "detail"
                 ? "inset-x-0 md:right-[calc(0.75rem+min(580px,calc(100%-1.5rem)))]"
                 : "inset-x-0 md:left-[calc(0.75rem+min(400px,calc(100%-1.5rem)))]"
@@ -2295,7 +2295,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
           <div
             className={cn(
               "pointer-events-auto absolute z-40",
-              "top-[env(safe-area-inset-top,0px)] mt-4 left-4 right-4",
+              "top-[var(--app-top-inset)] mt-4 left-4 right-4",
               "md:top-auto md:right-3 md:left-auto md:max-w-sm",
               "md:bottom-[calc(0.75rem+3.25rem+0.5rem)]",
               chrome === "detail" && "md:right-[calc(0.75rem+min(580px,calc(100%-1.5rem))+12px)]"
@@ -2359,7 +2359,7 @@ export const FieldsMap = forwardRef<FieldsMapHandle, FieldsMapProps>(
           <div
             className={cn(
               "pointer-events-auto absolute z-40",
-              "top-[env(safe-area-inset-top,0px)] mt-4 left-4 right-4",
+              "top-[var(--app-top-inset)] mt-4 left-4 right-4",
               "md:top-auto md:right-3 md:left-auto md:max-w-sm",
               "md:bottom-[calc(0.75rem+3.25rem+0.5rem)]",
               chrome === "detail" &&
