@@ -229,6 +229,19 @@ html[data-levadius-bar="1"] {
   --app-top-inset: 0px;
 }
 
+/*
+ * Status bar (година / Dynamic Island / зарядка) = фон блоку LEVADIUS (#09090b).
+ * Специфічність вища за html[data-app-ready] (#18181b), інакше зверху лишається «чужий» чорний.
+ */
+html[data-app-nav="1"][data-levadius-bar="1"],
+html[data-app-nav="1"][data-levadius-bar="1"] body,
+html[data-app-nav="1"][data-levadius-bar="1"] #app-root,
+html[data-app-nav="1"][data-app-ready="1"][data-levadius-bar="1"],
+html[data-app-nav="1"][data-app-ready="1"][data-levadius-bar="1"] body,
+html[data-app-nav="1"][data-app-ready="1"][data-levadius-bar="1"] #app-root {
+  background-color: #09090b !important;
+}
+
 @media (min-width: 768px) {
   html[data-app-nav="1"] {
     --app-bottom-inset: 0px;

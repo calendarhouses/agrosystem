@@ -7,28 +7,21 @@ import { LevadiusAvatar } from "@/components/ai/LevadiusAvatar";
 import { SidebarNavTooltip } from "@/components/layout/sidebar-nav-tooltip";
 import { canAccessLevadius } from "@/lib/levadius-access";
 import {
+  ensureLevadiusRadarFetched,
   getLevadiusLiveCache,
-  setLevadiusRadarN,
+  levadiusRadarStatusLabel,
   subscribeLevadiusLiveCache,
 } from "@/lib/levadius-live-cache";
-import { ukPlural } from "@/lib/uk-plural";
 import { cn } from "@/lib/utils";
 
 type LevadiusSidebarWidgetProps = {
   collapsed: boolean;
 };
 
-function openLevadius(prompt = "") {
+function openLevadius() {
   window.dispatchEvent(
-    new CustomEvent("levadius:open", { detail: { prompt } })
+    new CustomEvent("levadius:open", { detail: { prompt: "" } })
   );
-}
-
-function radarTeaser(count: number): string {
-  if (count <= 0) return "Диспетчер онлайн";
-  const noun = ukPlural(count, "аномалія", "аномалії", "аномалій");
-  if (count === 1) return "1 аномалія на радарі — глянь";
-  return `${count} ${noun} на радарі — глянь`;
 }
 
 /** Інтерактивний віджет LEVADIUS у лівому сайдбарі (над профілем). */
@@ -59,46 +52,19 @@ export function LevadiusSidebarWidget({
 
   useEffect(() => {
     if (!allowed) return;
-    let cancelled = false;
-    const ac = new AbortController();
-
-    void (async () => {
-      try {
-        const res = await fetch(
-          "/api/agent/section-briefing?section=fuel",
-          { signal: ac.signal, cache: "no-store" }
-        );
-        if (!res.ok) return;
-        const data = (await res.json()) as {
-          ok?: boolean;
-          facts?: { radarN?: number };
-          text?: string;
-          followUpPrompt?: string;
-        };
-        if (cancelled || !data?.ok) return;
-        const n = Number(data.facts?.radarN);
-        if (Number.isFinite(n) && n > 0) setLevadiusRadarN(n);
-      } catch {
-        /* ignore */
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      ac.abort();
-    };
+    void ensureLevadiusRadarFetched();
   }, [allowed]);
 
   if (!allowed) return null;
 
-  const statusLabel = radarTeaser(radarCount);
+  const statusLabel = levadiusRadarStatusLabel(radarCount);
 
   if (collapsed) {
     return (
       <SidebarNavTooltip title="LEVADIUS" hint={statusLabel}>
         <button
           type="button"
-          onClick={() => openLevadius()}
+          onClick={openLevadius}
           aria-label="Відкрити LEVADIUS"
           className={cn(
             "mb-2 flex w-full items-center justify-center rounded-2xl border border-zinc-800",
@@ -114,7 +80,7 @@ export function LevadiusSidebarWidget({
   return (
     <button
       type="button"
-      onClick={() => openLevadius()}
+      onClick={openLevadius}
       aria-label="Відкрити LEVADIUS"
       className={cn(
         "mb-2 flex w-full cursor-pointer items-center gap-2 rounded-2xl border border-zinc-800",

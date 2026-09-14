@@ -14,7 +14,7 @@ import {
   pathnameToSection,
   type SectionId,
 } from "@/lib/agent-section-briefing-shared";
-import { setLevadiusSectionBrief } from "@/lib/levadius-live-cache";
+import { setLevadiusRadarN, setLevadiusSectionBrief } from "@/lib/levadius-live-cache";
 import { cn } from "@/lib/utils";
 
 const MUTE_KEY = "levadius_dispatcher_capsule_muted";
@@ -157,8 +157,12 @@ export function DispatcherLiveCapsule(): ReactNode {
         setLevadiusSectionBrief({
           text: data.text,
           followUpPrompt: data.followUpPrompt,
-          radarN: Number(data.facts?.radarN) || undefined,
         });
+        // Лічильник радара — лише з fuel-фактів; pin не дає стрибати вниз
+        const radarN = Number(data.facts?.radarN);
+        if (data.section === "fuel" && Number.isFinite(radarN)) {
+          setLevadiusRadarN(radarN);
+        }
         setHidden(false);
         requestAnimationFrame(() => setFadeIn(true));
         scheduleDismiss();

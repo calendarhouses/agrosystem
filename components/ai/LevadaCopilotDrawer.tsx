@@ -46,6 +46,7 @@ import {
   executeServiceActSaveAction,
 } from "@/app/accounting/actions";
 import { getMyProfileAction } from "@/app/team/actions";
+import { VoiceInputButton } from "@/components/ai/VoiceInputButton";
 import {
   ROLE_LABEL_UK,
   type AppActor,
@@ -7934,6 +7935,17 @@ export function LevadaCopilotDrawer({
             rows={1}
             placeholder={dragOverComposer ? "Кидай файли…" : "Питай LEVADIUS…"}
             className="max-h-[min(40dvh,15rem)] min-h-11 min-w-0 flex-1 resize-none overflow-hidden rounded-2xl border border-white/10 bg-white/[0.05] px-3.5 py-2.5 text-sm leading-6 text-zinc-50 outline-none placeholder:truncate placeholder:text-zinc-500 focus:border-emerald-500/40 focus:ring-2 focus:ring-emerald-500/15"
+          />
+          <VoiceInputButton
+            disabled={busy || compressingAttach}
+            value={input}
+            onTranscript={(text) => {
+              setInput(text);
+              requestAnimationFrame(resizeComposerTextarea);
+            }}
+            onAutoSend={(text) => {
+              void submitText(text);
+            }}
           />
           {busy ? (
             <button

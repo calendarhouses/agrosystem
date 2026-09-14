@@ -171,14 +171,32 @@ async function briefEquipment(): Promise<BuiltBrief> {
     return quiet(facts);
   }
 
-  const bits: string[] = [];
-  if (machines > 0) bits.push(`${machines} у полі`);
-  if (dueSoon > 0) bits.push(`ТО близько в ${dueSoon}`);
-  if (idleAnomalies > 0) bits.push(`дивні простої: ${idleAnomalies}`);
+  const parts: string[] = [];
+  if (dueSoon > 0) {
+    parts.push(
+      dueSoon === 1
+        ? "В однієї машини скоро техобслуговування — лишилось до 20 мотогодин"
+        : `${dueSoon} ${ukPlural(dueSoon, "машина", "машини", "машин")} скоро на техобслуговування (лишилось ≤20 мотогодин)`
+    );
+  }
+  if (idleAnomalies > 0) {
+    parts.push(
+      idleAnomalies === 1
+        ? "ще 1 машина сьогодні довго простоює без роботи"
+        : `ще ${idleAnomalies} ${ukPlural(idleAnomalies, "машина", "машини", "машин")} сьогодні довго простоюють без роботи`
+    );
+  }
+  if (machines > 0) {
+    parts.push(
+      `зараз у полі ${machines} ${ukPlural(machines, "одиниця", "одиниці", "одиниць")}`
+    );
+  }
+
   return {
     skip: false,
-    text: `По парку: ${bits.join(", ")}. Давай розберемо?`,
-    followUpPrompt: "Хто в полі, простої та наближення ТО",
+    text: `${parts.join(". ")}. Розберемо по пріоритету?`,
+    followUpPrompt:
+      "Покажи техніку з наближенням ТО (≤20 мотогодин) і дивні простої за сьогодні",
     facts,
   };
 }

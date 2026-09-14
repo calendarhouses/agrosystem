@@ -1,7 +1,6 @@
 "use client";
 
 import { ChevronRight } from "lucide-react";
-import { usePathname } from "next/navigation";
 import {
   useEffect,
   useLayoutEffect,
@@ -11,37 +10,25 @@ import {
 
 import { getMyProfileAction } from "@/app/team/actions";
 import { LevadiusAvatar } from "@/components/ai/LevadiusAvatar";
-import { pathnameToSection } from "@/lib/agent-section-briefing-shared";
 import { canAccessLevadius } from "@/lib/levadius-access";
 import {
+  ensureLevadiusRadarFetched,
   getLevadiusLiveCache,
-  setLevadiusRadarN,
-  setLevadiusSectionBrief,
+  levadiusRadarStatusLabel,
   subscribeLevadiusLiveCache,
 } from "@/lib/levadius-live-cache";
-import { ukPlural } from "@/lib/uk-plural";
 import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
 
-function radarTeaser(count: number): string {
-  if (count <= 0) return "Диспетчер онлайн";
-  const noun = ukPlural(count, "аномалія", "аномалії", "аномалій");
-  return `${count} ${noun} на радарі — глянь`;
-}
-
 /**
  * Повноекранний верхній бар LEVADIUS на мобілці (у потоці верстки).
- * Посуває кнопки хронології / сповіщень / табів під себе через --app-top-inset.
+ * Статус стабільний по radarN — без підміни на наратив «про один трактор».
  */
 export function MobileDispatcherTrigger(): ReactNode {
   const isMobile = useIsMobile();
-  const pathname = usePathname();
   const [allowed, setAllowed] = useState(false);
   const [radarCount, setRadarCount] = useState(
     () => getLevadiusLiveCache().radarN
-  );
-  const [sectionText, setSectionText] = useState(
-    () => getLevadiusLiveCache().sectionText
   );
 
   useEffect(() => {
@@ -57,77 +44,53 @@ export function MobileDispatcherTrigger(): ReactNode {
 
   useEffect(() => {
     return subscribeLevadiusLiveCache(() => {
-      const snap = getLevadiusLiveCache();
-      setRadarCount(snap.radarN);
-      setSectionText(snap.sectionText);
+      setRadarCount(getLevadiusLiveCache().radarN);
     });
   }, []);
 
   useEffect(() => {
     if (!allowed || !isMobile) return;
-    const section = pathnameToSection(pathname || "/");
-    if (!section) return;
-
-    let cancelled = false;
-    const ac = new AbortController();
-
-    void (async () => {
-      try {
-        const res = await fetch(
-          `/api/agent/section-briefing?section=${encodeURIComponent(section)}`,
-          { signal: ac.signal, cache: "no-store" }
-        );
-        if (!res.ok) return;
-        const data = (await res.json()) as {
-          ok?: boolean;
-          skip?: boolean;
-          text?: string;
-          followUpPrompt?: string;
-          facts?: { radarN?: number };
-        };
-        if (cancelled || !data?.ok) return;
-        const n = Number(data.facts?.radarN);
-        if (Number.isFinite(n) && n > 0) setLevadiusRadarN(n);
-        if (!data.skip && data.text?.trim()) {
-          setLevadiusSectionBrief({
-            text: data.text,
-            followUpPrompt: data.followUpPrompt,
-            radarN: Number.isFinite(n) ? n : undefined,
-          });
-        }
-      } catch {
-        /* ignore */
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      ac.abort();
-    };
-  }, [allowed, isMobile, pathname]);
+    void ensureLevadiusRadarFetched();
+  }, [allowed, isMobile]);
 
   const showBar = allowed && isMobile;
 
   useLayoutEffect(() => {
+    const metas = Array.from(
+      document.querySelectorAll('meta[name="theme-color"]')
+    );
+    const prev = metas.map((el) => el.getAttribute("content"));
+
     if (!showBar) {
       delete document.documentElement.dataset.levadiusBar;
       return;
     }
+
     document.documentElement.dataset.levadiusBar = "1";
+    // iOS status bar підтягує theme-color — має збігатися з баром (#09090b = zinc-950)
+    for (const el of metas) {
+      el.setAttribute("content", "#09090b");
+    }
+
     return () => {
       delete document.documentElement.dataset.levadiusBar;
+      metas.forEach((el, i) => {
+        if (prev[i] != null) el.setAttribute("content", prev[i]!);
+      });
     };
   }, [showBar]);
 
   if (!showBar) return null;
 
-  const statusLabel = sectionText.trim() || radarTeaser(radarCount);
+  const statusLabel = levadiusRadarStatusLabel(radarCount);
 
   return (
     <div
       data-levadius-mobile-bar
       className={cn(
-        "relative z-40 shrink-0 border-b border-zinc-800/80 bg-zinc-950 md:hidden",
+        "relative z-40 shrink-0 border-b border-zinc-800/80 md:hidden",
+        /* Той самий #09090b, що theme-color / html під Dynamic Island */
+        "bg-[#09090b]",
         "pt-[env(safe-area-inset-top,0px)]"
       )}
     >
@@ -162,9 +125,7 @@ export function MobileDispatcherTrigger(): ReactNode {
           <span
             className={cn(
               "mt-0.5 block truncate text-[11px] leading-snug",
-              radarCount > 0 || sectionText
-                ? "font-medium text-amber-200"
-                : "text-zinc-400"
+              radarCount > 0 ? "font-medium text-amber-200" : "text-zinc-400"
             )}
           >
             {statusLabel}
