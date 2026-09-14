@@ -185,7 +185,7 @@ const RETIRED_FLASH_MODELS = new Set([
 ]);
 
 /** Жорсткий ліміт історії для LLM: лише останні 6 повідомлень (system окремо). */
-const MAX_LLM_HISTORY_MESSAGES = 6;
+const MAX_LLM_HISTORY_MESSAGES = 12;
 
 /** Вимкнення reasoning/thinking (дорогі output-токени). AI SDK: thinkingBudget ≡ budgetTokens з ТЗ. */
 const GOOGLE_NO_THINKING = {
@@ -309,6 +309,9 @@ const SYSTEM_PROMPT = `
 Факти ЛИШЕ з Tools. BAS — тільки читання. Бракує даних — одне уточнення.
 Не вигадуй техніку, водіїв, ТМЦ, результати дій. CHOICE лише з даних Tools.
 Технічні id лишай у tool-викликах; в чаті — назви машин, літри, час.
+Історія діалогу — персональна для цього акаунта. Якщо в messages є попередні
+домовленості / наряди / питання цієї людини — згадуй їх і пропонуй конкретику,
+а не починай «з нуля», ніби перший раз бачиш.
 
 Правило «+1 крок на випередження» (після КОЖНОЇ успішної дії — короткий супутній ризик/наступний крок):
 • Закрив наряд → auditOperationQuality (швидкість/л/га) + нагадай списати ТМЦ під наряд (якщо ЗЗР/посів/добрива).
@@ -2132,14 +2135,14 @@ function slimHistoricToolPart(part: Record<string, unknown>): Record<string, unk
 }
 
 /**
- * Перед LLM: slice(-6) + без старих PDF/фото + компактні tool-result.
- * Останнє повідомлення лишається з вкладеннями (Vision).
+ * Перед LLM: slice + без старих PDF/фото + компактні tool-result
+ * + ремонт історії під Gemini (functionCall лише після user / functionResponse).
  */
 function sanitizeUiMessagesForLlm(messages: UIMessage[]): UIMessage[] {
   const trimmedMessages = messages.slice(-MAX_LLM_HISTORY_MESSAGES);
   const lastIndex = trimmedMessages.length - 1;
 
-  return trimmedMessages.map((message, index) => {
+  const slimmed = trimmedMessages.map((message, index) => {
     if (index === lastIndex) return message;
 
     const parts = Array.isArray(message.parts) ? message.parts : [];
@@ -2179,6 +2182,114 @@ function sanitizeUiMessagesForLlm(messages: UIMessage[]): UIMessage[] {
     }
     return cleaned;
   });
+
+  return repairUiMessagesForGemini(slimmed);
+}
+
+function isUiToolPart(part: unknown): part is Record<string, unknown> {
+  if (!part || typeof part !== "object") return false;
+  const type = (part as { type?: unknown }).type;
+  return (
+    typeof type === "string" &&
+    (type === "dynamic-tool" || type.startsWith("tool-"))
+  );
+}
+
+function isCompleteUiToolPart(part: Record<string, unknown>): boolean {
+  const state = part.state;
+  if (state === "output-available" || state === "output-error") return true;
+  if (state === "result") return true;
+  // Завершені частини інколи без state, але з output
+  if (
+    "output" in part &&
+    part.output != null &&
+    state !== "input-streaming" &&
+    state !== "input-available" &&
+    state !== "partial-call"
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Gemini 400: functionCall має йти одразу після user або functionResponse.
+ * Обрізка історії / «німі» tool-only ходи / незавершені tools ламають порядок —
+ * для минулих ходів лишаємо текст, tools прибираємо.
+ */
+function repairUiMessagesForGemini(messages: UIMessage[]): UIMessage[] {
+  let start = 0;
+  while (start < messages.length && messages[start]?.role !== "user") {
+    start += 1;
+  }
+  let next = messages.slice(start);
+  if (next.length === 0) return messages.slice(-1);
+
+  const lastUserIdx = (() => {
+    for (let i = next.length - 1; i >= 0; i -= 1) {
+      if (next[i]?.role === "user") return i;
+    }
+    return -1;
+  })();
+
+  next = next.map((message, index) => {
+    if (message.role !== "assistant") return message;
+    const parts = Array.isArray(message.parts) ? [...message.parts] : [];
+
+    // Незавершені tool-виклики (стрим обірвався / stopWhen) — викидаємо завжди
+    const withoutIncomplete = parts.filter((part) => {
+      if (!isUiToolPart(part)) return true;
+      return isCompleteUiToolPart(part);
+    });
+
+    // Усі ходи до поточного user: без tool-parts — лише текст
+    // (повний tool-transcript у multi-turn ламає Gemini)
+    if (lastUserIdx >= 0 && index < lastUserIdx) {
+      const textParts = withoutIncomplete.filter(
+        (part) =>
+          part &&
+          typeof part === "object" &&
+          (part as { type?: string }).type === "text" &&
+          typeof (part as { text?: unknown }).text === "string" &&
+          String((part as { text: string }).text).trim().length > 0
+      );
+      const toolCount = withoutIncomplete.filter(isUiToolPart).length;
+      if (textParts.length > 0) {
+        return { ...message, parts: textParts as UIMessage["parts"] };
+      }
+      if (toolCount > 0) {
+        return {
+          ...message,
+          parts: [
+            {
+              type: "text",
+              text: `[Раніше виконано дій: ${toolCount}. Деталі скорочено.]`,
+            },
+          ] as UIMessage["parts"],
+        };
+      }
+      return {
+        ...message,
+        parts: [
+          { type: "text", text: "[Попередня відповідь.]" },
+        ] as UIMessage["parts"],
+      };
+    }
+
+    return { ...message, parts: withoutIncomplete as UIMessage["parts"] };
+  });
+
+  // Порожні assistant після чистки
+  next = next.filter((message) => {
+    if (message.role !== "assistant") return true;
+    return Array.isArray(message.parts) && message.parts.length > 0;
+  });
+
+  start = 0;
+  while (start < next.length && next[start]?.role !== "user") {
+    start += 1;
+  }
+  return next.slice(start);
 }
 
 const DOCUMENT_VISION_PROMPT = `

@@ -467,6 +467,13 @@ function formatChatError(error: Error | undefined): string {
     return "Сесія закінчилась або cookies не дійшли до сервера. Онови сторінку; якщо не допоможе — вийди і зайди знову.";
   }
   if (
+    lower.includes("function call turn") ||
+    lower.includes("function response turn") ||
+    lower.includes("function call parts")
+  ) {
+    return "Збій історії діалогу з інструментами (Gemini). Натисни «Очистити діалог» і повтори запит.";
+  }
+  if (
     lower.includes("high demand") ||
     lower.includes("resource exhausted") ||
     lower.includes("overloaded") ||
@@ -6793,6 +6800,59 @@ export function LevadaCopilotDrawer({
     });
 
   const busy = status === "submitted" || status === "streaming";
+  const chatHydratedForUserRef = useRef<string | null>(null);
+  const prevChatStatusRef = useRef(status);
+
+  /** Персональна історія з БД — окремо на кожен акаунт */
+  useEffect(() => {
+    if (!bootReady || !me?.id) return;
+    if (chatHydratedForUserRef.current === me.id) return;
+    chatHydratedForUserRef.current = me.id;
+
+    let cancelled = false;
+    void fetch("/api/agent/chat", { credentials: "include" })
+      .then(async (res) => {
+        const data = (await res.json()) as {
+          ok?: boolean;
+          messages?: unknown[];
+        };
+        if (cancelled || !res.ok || data.ok === false) return;
+        const loaded = Array.isArray(data.messages) ? data.messages : [];
+        if (loaded.length === 0) return;
+        setMessages((prev) =>
+          prev.length > 0 ? prev : (loaded as typeof prev)
+        );
+      })
+      .catch(() => {
+        /* історія опційна — чат працює і без неї */
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [bootReady, me?.id, setMessages]);
+
+  /** Після відповіді агента — зберегти історію цього user */
+  useEffect(() => {
+    const prev = prevChatStatusRef.current;
+    prevChatStatusRef.current = status;
+    if (!bootReady || !me?.id) return;
+    if (chatHydratedForUserRef.current !== me.id) return;
+    if (status !== "ready") return;
+    if (prev !== "submitted" && prev !== "streaming") return;
+
+    const snapshot = messages;
+    const timer = window.setTimeout(() => {
+      void fetch("/api/agent/chat", {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: snapshot }),
+      }).catch(() => {});
+    }, 450);
+
+    return () => window.clearTimeout(timer);
+  }, [status, messages, bootReady, me?.id]);
 
   /** Проактивний бриф: з кешу миттєво; API лише якщо кеш протух */
   useEffect(() => {
@@ -6804,7 +6864,7 @@ export function LevadaCopilotDrawer({
     if (!emptyChat && !stalePause) return;
 
     if (stalePause) {
-      setMessages([]);
+      // Історію НЕ чистимо після паузи — вона в БД по акаунту
       briefingFetchedRef.current = false;
     }
 
@@ -7552,6 +7612,10 @@ export function LevadaCopilotDrawer({
     setBriefing(null);
     setBriefingError(null);
     writeLastChatAt(0);
+    void fetch("/api/agent/chat", {
+      method: "DELETE",
+      credentials: "include",
+    }).catch(() => {});
   }
 
   function handleNavigate(path: string) {
@@ -8027,10 +8091,7 @@ export function LevadaCopilotDrawer({
         {fullscreen ? null : messages.length > 0 ? (
           <button
             type="button"
-            onClick={() => {
-              setMessages([]);
-              anchoredUserMsgIdRef.current = null;
-            }}
+            onClick={() => clearDialog()}
             className="mt-2 w-full text-center text-[11px] text-zinc-500 transition hover:text-zinc-300"
           >
             Очистити діалог
