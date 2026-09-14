@@ -58,7 +58,7 @@ export async function POST(request: Request) {
     const actor = await getCurrentActor();
     if (!canAccessLevadius(actor)) {
       return NextResponse.json(
-        { ok: false, error: "LEVADIUS поки доступний лише адміністратору" },
+        { ok: false, error: "Немає доступу до LEVADIUS" },
         { status: 403 }
       );
     }

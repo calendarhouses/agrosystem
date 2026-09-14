@@ -532,7 +532,10 @@ prepareWorkOrder лише коли всі слоти зібрані. Не виг
 фото посіву → analyzeAndSaveScoutingReport. Не стверджуй збереження без execute*/success.
 
 Скасування чернетки наряду в чаті: [[ACTION:DISMISS_DRAFT]] (без deleteWorkOrder).
-Видалення збереженого — deleteWorkOrder з workOrderId з історії.
+Видалення збереженого — deleteWorkOrder з workOrderId з історії
+(або fieldName — резолв сам підхопить «Василих 1» → «Василиха 1»).
+НЕ пиши свої CHOICE/REPLY «Так видалити / Ні» поверх — UI-картка deleteWorkOrder
+вже має нормальні кнопки підтвердження.
 
 Схвалення короткою реплікою (КРИТИЧНО — працюй, не перепитуй):
 Людина часто пише лише: «ок», «давай», «да», «так», «го», «погнали»,
@@ -550,6 +553,13 @@ prepareWorkOrder лише коли всі слоти зібрані. Не виг
 • Ліміт кроків тісний: завжди лишай крок на текстову відповідь — інакше людина бачить тишу.
 • НЕ схвалення: «ні», «не треба», «скасуй», «стоп», «інше», нове питання / нова тема.
 
+Назви полів / техніки / людей — людські опечатки й скорочення (КРИТИЧНО):
+«Василих 1», «Веселих 1», «василиха1» = очевидно «Василиха 1», якщо в базі одне
+ясне збігання. Tools резолвлять fuzzy самі.
+• ЗАБОРОНЕНО лекція: «такого поля немає, але є Василиха 1» — це і так зрозуміло.
+• Одразу бери очевидний збіг і пропонуй дію (видалити наряд / відкрити / тощо).
+• Питай уточнення ЛИШЕ якщо реально кілька рівноцінних кандидатів.
+
 Формат відповіді людині:
 • Коротко, гарно, по-людськи: 2–6 речень або звичайний список. Як у дворі, не як у логах.
 • ЗАБОРОНЕНО показувати сирі коди/теги в чаті: [row:…], [icon:…], [[ACTION:…]] як «текст»,
@@ -558,10 +568,14 @@ prepareWorkOrder лише коли всі слоти зібрані. Не виг
   «Case Magnum 340 — +278 л · 14 вересня, 08:16»
   а НЕ «1. [row:fuel|Case Magnum 340|…]».
 • Ключові назви й цифри можна **жирним**. Без емодзі-води.
-• Службові кнопки (UI їх ховає з тексту): [[CHOICE:…]] | [[ACTION:REPLY|Icon|…]] | [[ACTION:NAVIGATE|/path|Icon|Текст]]
+• Службові кнопки (UI їх ховає з тексту) — КОРОТКИЙ підпис БЕЗ пайпів у видимому тексті:
+  [[CHOICE:Так, видалити]] або [[ACTION:REPLY|Trash2|Так, видалити]]
+  [[ACTION:REPLY|X|Ні, не чіпати]] [[ACTION:NAVIGATE|/path|Icon|Текст]]
+  ЗАБОРОНЕНО сипати «Так|Trash2|Довгий текст» у одне поле — іконка лише в ACTION,
+  підпис кнопки = 2–5 слів.
 • NAVIGATE лише за темою (макс. 1): /fuel /inventory /operations /equipment /accounting /finance /journal /?field=UUID
 • Після фактів — обовʼязково +1 крок на випередження (ризик / наступна дія), 1 коротке речення.
-• UI-картки (списання, наряд, акт, накладна, заправка, updateField, радар) —
+• UI-картки (списання, наряд, акт, накладна, заправка, updateField, радар, deleteWorkOrder) —
   НЕ дублюй їхні CHOICE / ACTION:REPLY. Картка вже має «Підтвердити» / «Скасувати».
   Якщо tool повернув requires_confirmation — у тексті НЕ пиши
   [[CHOICE:Підтвердити…]] і НЕ [[ACTION:REPLY|…]].
@@ -1025,6 +1039,120 @@ function agentFieldDisplayName(field: AgentFieldRow): string {
   );
 }
 
+function normalizeFieldLookupText(value: string): string {
+  return value
+    .toLocaleLowerCase("uk-UA")
+    .replace(/ё/g, "е")
+    .replace(/[''`ʼ]/g, "")
+    .replace(/[^a-zа-яіїєґ0-9]+/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Василих / Веселих / Василиха — близькі збіги для людських опечаток. */
+function scoreFieldNameMatch(lookup: string, name: string): number {
+  const a = normalizeFieldLookupText(lookup);
+  const b = normalizeFieldLookupText(name);
+  if (!a || !b) return 0;
+  if (a === b) return 100;
+  if (b.includes(a) || a.includes(b)) return 92;
+
+  const aTok = a.split(" ").filter(Boolean);
+  const bTok = b.split(" ").filter(Boolean);
+  const aNums = aTok.filter((t) => /^\d+$/.test(t));
+  const bNums = bTok.filter((t) => /^\d+$/.test(t));
+  if (
+    aNums.length > 0 &&
+    bNums.length > 0 &&
+    !aNums.some((n) => bNums.includes(n))
+  ) {
+    return 0;
+  }
+
+  let score = 0;
+  for (const t of aTok) {
+    if (/^\d+$/.test(t)) {
+      if (bNums.includes(t)) score += 40;
+      continue;
+    }
+    const hit = bTok.find((bt) => {
+      if (/^\d+$/.test(bt)) return false;
+      if (bt === t) return true;
+      if (bt.startsWith(t) || t.startsWith(bt)) return true;
+      const stem = Math.min(5, Math.min(t.length, bt.length));
+      if (
+        stem >= 4 &&
+        (bt.startsWith(t.slice(0, stem)) || t.startsWith(bt.slice(0, stem)))
+      ) {
+        return true;
+      }
+      if (t.length >= 5 && bt.length >= 5) {
+        const tCore = t.slice(0, Math.min(6, t.length));
+        const bCore = bt.slice(0, Math.min(6, bt.length));
+        let same = 0;
+        for (let i = 0; i < Math.min(tCore.length, bCore.length); i += 1) {
+          if (tCore[i] === bCore[i]) same += 1;
+        }
+        if (same >= 4) return true;
+      }
+      return false;
+    });
+    if (hit) score += 35;
+  }
+  return score;
+}
+
+function pickBestFieldByFuzzyScore(
+  lookup: string,
+  rows: AgentFieldRow[]
+): {
+  best: AgentFieldRow | null;
+  ambiguous: AgentFieldRow[];
+  bestScore: number;
+} {
+  if (rows.length === 0) {
+    return { best: null, ambiguous: [], bestScore: 0 };
+  }
+  const scored = rows
+    .map((row) => {
+      const names = [row.name, row.canonical_name].filter(
+        (v): v is string => typeof v === "string" && v.trim().length > 0
+      );
+      const score = Math.max(
+        0,
+        ...names.map((n) => scoreFieldNameMatch(lookup, n))
+      );
+      return { row, score };
+    })
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score);
+
+  if (scored.length === 0) {
+    return { best: null, ambiguous: [], bestScore: 0 };
+  }
+
+  const top = scored[0]!;
+  const close = scored.filter((x) => x.score >= top.score - 12);
+  // Явний переможець: високий бал і відрив від наступного
+  if (
+    top.score >= 70 &&
+    (scored.length === 1 || top.score - (scored[1]?.score ?? 0) >= 15)
+  ) {
+    return { best: top.row, ambiguous: [], bestScore: top.score };
+  }
+  if (close.length > 1 && top.score >= 55) {
+    return {
+      best: null,
+      ambiguous: close.map((x) => x.row),
+      bestScore: top.score,
+    };
+  }
+  if (top.score >= 70) {
+    return { best: top.row, ambiguous: [], bestScore: top.score };
+  }
+  return { best: null, ambiguous: [], bestScore: top.score };
+}
+
 async function resolveAgentFieldByLookup(
   supabase: SupabaseClient,
   lookupRaw: string,
@@ -1091,7 +1219,7 @@ async function resolveAgentFieldByLookup(
       .select(selectCols)
       .or(`name.ilike.%${safe}%,canonical_name.ilike.%${safe}%`)
       .order("name")
-      .limit(5);
+      .limit(8);
     if (onlyFields) q = q.eq("is_field", true);
     if (onlyActive) q = q.neq("is_active", false);
     let { data: matches, error } = await q;
@@ -1104,7 +1232,7 @@ async function resolveAgentFieldByLookup(
         .select(selectCols)
         .or(`name.ilike.%${safe}%,canonical_name.ilike.%${safe}%`)
         .order("name")
-        .limit(5);
+        .limit(8);
       if (onlyFields) q2 = q2.eq("is_field", true);
       const retry = await q2;
       matches = retry.data;
@@ -1117,33 +1245,91 @@ async function resolveAgentFieldByLookup(
         error: `Не вдалося шукати поле: ${error.message}`,
       };
     }
-    const rows = (matches ?? []) as unknown as AgentFieldRow[];
+    let rows = (matches ?? []) as unknown as AgentFieldRow[];
+
+    // ilike часто не ловить «Василих»↔«Василиха» / «Веселих» — fuzzy по каталогу
     if (rows.length === 0) {
-      return {
-        ok: false,
-        status: "field_not_found",
-        error: `Поле «${lookup}» не знайдено.`,
-      };
+      let allQ = supabase.from("farm_fields").select(selectCols).limit(400);
+      if (onlyFields) allQ = allQ.eq("is_field", true);
+      if (onlyActive) allQ = allQ.neq("is_active", false);
+      let allRes = await allQ;
+      if (
+        allRes.error &&
+        (allRes.error.message?.includes("is_active") ||
+          allRes.error.code === "42703")
+      ) {
+        let allQ2 = supabase.from("farm_fields").select(selectCols).limit(400);
+        if (onlyFields) allQ2 = allQ2.eq("is_field", true);
+        allRes = await allQ2;
+      }
+      if (allRes.error) {
+        return {
+          ok: false,
+          status: "error",
+          error: `Не вдалося шукати поле: ${allRes.error.message}`,
+        };
+      }
+      rows = (allRes.data ?? []) as unknown as AgentFieldRow[];
+      const picked = pickBestFieldByFuzzyScore(lookup, rows);
+      if (picked.best) {
+        field = picked.best;
+      } else if (picked.ambiguous.length > 0) {
+        return {
+          ok: false,
+          status: "ambiguous_field",
+          error: `Знайдено кілька схожих полів для «${lookup}». Уточни.`,
+          candidates: picked.ambiguous.slice(0, 6).map((row) => ({
+            id: row.id,
+            name: agentFieldDisplayName(row),
+            areaHa: finiteNumber(row.area_ha),
+          })),
+        };
+      } else {
+        return {
+          ok: false,
+          status: "field_not_found",
+          error: `Поле «${lookup}» не знайдено.`,
+        };
+      }
+    } else {
+      const needle = normalizeFieldLookupText(lookup);
+      const exact = rows.find(
+        (row) =>
+          normalizeFieldLookupText(String(row.name ?? "")) === needle ||
+          normalizeFieldLookupText(String(row.canonical_name ?? "")) === needle
+      );
+      if (exact) {
+        field = exact;
+      } else {
+        const picked = pickBestFieldByFuzzyScore(lookup, rows);
+        if (picked.best) {
+          field = picked.best;
+        } else if (picked.ambiguous.length > 1 || rows.length > 1) {
+          const candidates =
+            picked.ambiguous.length > 0 ? picked.ambiguous : rows;
+          return {
+            ok: false,
+            status: "ambiguous_field",
+            error: `Знайдено кілька полів для «${lookup}». Уточни.`,
+            candidates: candidates.slice(0, 6).map((row) => ({
+              id: row.id,
+              name: agentFieldDisplayName(row),
+              areaHa: finiteNumber(row.area_ha),
+            })),
+          };
+        } else {
+          field = rows[0]!;
+        }
+      }
     }
-    const needle = lookup.toLocaleLowerCase("uk-UA");
-    const exact = rows.find(
-      (row) =>
-        String(row.name ?? "").toLocaleLowerCase("uk-UA") === needle ||
-        String(row.canonical_name ?? "").toLocaleLowerCase("uk-UA") === needle
-    );
-    if (rows.length > 1 && !exact) {
-      return {
-        ok: false,
-        status: "ambiguous_field",
-        error: `Знайдено кілька полів для «${lookup}». Уточни.`,
-        candidates: rows.map((row) => ({
-          id: row.id,
-          name: agentFieldDisplayName(row),
-          areaHa: finiteNumber(row.area_ha),
-        })),
-      };
-    }
-    field = exact ?? rows[0]!;
+  }
+
+  if (!field) {
+    return {
+      ok: false,
+      status: "field_not_found",
+      error: `Поле «${lookup}» не знайдено.`,
+    };
   }
 
   return {
@@ -6989,46 +7175,20 @@ function createAgentTools(options?: {
             if (lookup) {
               if (isUuid(lookup)) fieldId = lookup;
               else {
-                const safe = lookup.replaceAll(",", " ");
-                const { data: fields } = await supabase
-                  .from("farm_fields")
-                  .select("id, name, canonical_name")
-                  .eq("is_field", true)
-                  .or(
-                    `name.ilike.%${safe}%,canonical_name.ilike.%${safe}%`
-                  )
-                  .limit(5);
-                const rows = fields ?? [];
-                if (rows.length === 0) {
-                  return {
-                    success: false as const,
-                    status: "field_not_found" as const,
-                    error: `Поле «${lookup}» не знайдено.`,
-                  };
-                }
-                const exact = rows.find(
-                  (row) =>
-                    String(row.name ?? "").toLocaleLowerCase("uk-UA") ===
-                      lookup.toLocaleLowerCase("uk-UA") ||
-                    String(row.canonical_name ?? "")
-                      .toLocaleLowerCase("uk-UA") ===
-                      lookup.toLocaleLowerCase("uk-UA")
+                const resolved = await resolveAgentFieldByLookup(
+                  supabase,
+                  lookup,
+                  "id, name, canonical_name, crop, area_ha, season"
                 );
-                if (rows.length > 1 && !exact) {
+                if (!resolved.ok) {
                   return {
                     success: false as const,
-                    status: "ambiguous_field" as const,
-                    error: `Знайдено кілька полів для «${lookup}». Уточни.`,
-                    candidates: rows.map((row) => ({
-                      id: row.id,
-                      name:
-                        (row.canonical_name &&
-                          String(row.canonical_name).trim()) ||
-                        String(row.name ?? "Поле"),
-                    })),
+                    status: resolved.status,
+                    error: resolved.error,
+                    candidates: resolved.candidates,
                   };
                 }
-                fieldId = String((exact ?? rows[0]!).id);
+                fieldId = resolved.field.id;
               }
             }
             if (!fieldId) {
@@ -18284,7 +18444,7 @@ export async function POST(request: Request) {
     const actor = await getCurrentActor();
     if (!canAccessLevadius(actor)) {
       return NextResponse.json(
-        { ok: false, error: "LEVADIUS поки доступний лише адміністратору" },
+        { ok: false, error: "Немає доступу до LEVADIUS" },
         { status: 403 }
       );
     }

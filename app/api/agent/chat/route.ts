@@ -48,7 +48,7 @@ async function requireLevadiusUser(): Promise<
     return {
       ok: false,
       response: NextResponse.json(
-        { ok: false, error: "LEVADIUS поки доступний лише адміністратору" },
+        { ok: false, error: "Немає доступу до LEVADIUS" },
         { status: 403, headers: JSON_UTF8 }
       ),
     };

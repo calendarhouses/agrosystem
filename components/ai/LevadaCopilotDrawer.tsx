@@ -19,6 +19,7 @@ import {
   Paperclip,
   Sparkles,
   Tractor,
+  Trash2,
   Warehouse,
   Wheat,
   X,
@@ -376,6 +377,8 @@ const IconMap = {
   ArrowUpRight,
   FileText,
   Sparkles,
+  Trash2,
+  X,
 } as const satisfies Record<string, LucideIcon>;
 
 type IconName = keyof typeof IconMap;
@@ -399,6 +402,12 @@ const ICON_ALIASES: Record<string, IconName> = {
   filetext: "FileText",
   file: "FileText",
   sparkles: "Sparkles",
+  trash2: "Trash2",
+  trash: "Trash2",
+  delete: "Trash2",
+  x: "X",
+  close: "X",
+  cancel: "X",
 };
 
 function resolveIconName(raw: string | undefined | null): IconName | null {
@@ -555,8 +564,8 @@ type AgentAction =
 const NAVIGATE_TAG_RE =
   /\[\[\s*ACTION:NAVIGATE\s*\|\s*([^|\]]+?)\s*\|\s*([^|\]]+?)\s*(?:\|\s*([^\]]+?)\s*)?\]\]/gi;
 
-const REPLY_TAG_RE =
-  /\[\[\s*ACTION:REPLY\s*\|\s*([^|\]]+?)\s*\|\s*([^|\]]+?)\s*(?:\|\s*([^\]]+?)\s*)?\]\]/gi;
+/** Будь-який ACTION:REPLY|…|] — парсимо частини самі (модель плутає порядок). */
+const REPLY_TAG_RE = /\[\[\s*ACTION:REPLY\s*\|\s*([^\]]+?)\s*\]\]/gi;
 
 const CHOICE_TAG_RE = /\[\[\s*CHOICE\s*:\s*([^\]]+?)\s*\]\]/gi;
 
@@ -564,6 +573,47 @@ const DISMISS_DRAFT_TAG_RE = /\[\[\s*ACTION:DISMISS_DRAFT\s*\]\]/gi;
 
 const ROW_TAG_RE =
   /^\[row:([a-zA-Z0-9_-]+)\|([^|\]]+)\|([^\]]+)\]\s*$/i;
+
+/** Розбір «Так|Trash2|Видалити…» → чистий label + іконка + текст для агента. */
+function parsePipeActionParts(raw: string): {
+  label: string;
+  text: string;
+  icon: IconName | null;
+} {
+  const parts = raw
+    .split("|")
+    .map((p) => p.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  if (parts.length === 0) {
+    return { label: "OK", text: "OK", icon: null };
+  }
+  if (parts.length === 1) {
+    return { label: parts[0]!, text: parts[0]!, icon: null };
+  }
+
+  let icon: IconName | null = null;
+  let iconIdx = -1;
+  for (let i = 0; i < parts.length; i += 1) {
+    const resolved = resolveIconName(parts[i]);
+    if (resolved) {
+      icon = resolved;
+      iconIdx = i;
+      break;
+    }
+  }
+
+  const textParts =
+    iconIdx >= 0 ? parts.filter((_, i) => i !== iconIdx) : [...parts];
+  if (textParts.length === 0) {
+    return { label: parts[0]!, text: parts[0]!, icon };
+  }
+
+  // Короткий людський підпис + найповніший текст для агента
+  const byLen = [...textParts].sort((a, b) => a.length - b.length);
+  const label = byLen[0]!;
+  const text = byLen[byLen.length - 1]!;
+  return { label, text, icon };
+}
 
 const NUMBER_CHUNK_RE =
   /(\d{1,3}(?:[ \u00a0]\d{3})*(?:[.,]\d+)?|\d+(?:[.,]\d+)?)(\s?(?:га|л|кг|т|шт|грн|%))?/gi;
@@ -651,48 +701,75 @@ function extractAgentActions(text: string): {
   );
 
   body = body
-    .replace(
-      REPLY_TAG_RE,
-      (_match, second: string, third: string, fourth?: string) => {
-        // Формати: Icon|Label  АБО  Label|Icon|Label (модель плутає порядок)
-        const a = second.trim();
-        const b = third.trim();
-        const c = typeof fourth === "string" ? fourth.trim() : "";
-        let label = b;
-        let iconRaw = a;
-        if (c) {
-          // Label|Icon|Label → беремо людський label
-          label = c || a;
-          iconRaw = b;
-        } else if (!resolveIconName(a) && resolveIconName(b)) {
-          label = a;
-          iconRaw = b;
-        } else if (!resolveIconName(a)) {
-          label = a || b;
-          iconRaw = b;
-        }
-        if (label) {
-          actions.push({
-            kind: "reply",
-            text: label,
-            label,
-            icon: resolveIconName(iconRaw),
-          });
-        }
-        return "";
+    .replace(REPLY_TAG_RE, (_match, inner: string) => {
+      const parsed = parsePipeActionParts(inner);
+      if (parsed.label) {
+        actions.push({
+          kind: "reply",
+          text: parsed.text,
+          label: parsed.label,
+          icon: parsed.icon,
+        });
       }
-    )
+      return "";
+    })
     .replace(DISMISS_DRAFT_TAG_RE, () => {
       dismissDraft = true;
       return "";
     })
     .replace(CHOICE_TAG_RE, (_match, choiceRaw: string) => {
-      const choice = choiceRaw.trim();
-      if (choice) choices.push(choice);
+      const raw = choiceRaw.trim();
+      if (!raw) return "";
+      // Модель часто пише CHOICE у форматі Label|Icon|Label — робимо нормальну кнопку
+      if (raw.includes("|")) {
+        const parsed = parsePipeActionParts(raw);
+        actions.push({
+          kind: "reply",
+          text: parsed.text,
+          label: parsed.label,
+          icon: parsed.icon,
+        });
+        return "";
+      }
+      choices.push(raw);
       return "";
     })
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+
+  // Модель інколи сипле «Так|Trash2|…» рядками без [[ACTION:…]] — піднімаємо в кнопки
+  const barePipeLines: string[] = [];
+  body = body
+    .split("\n")
+    .filter((line) => {
+      const trimmed = line.trim();
+      if (!trimmed.includes("|")) return true;
+      const parts = trimmed
+        .split("|")
+        .map((p) => p.trim())
+        .filter(Boolean);
+      if (parts.length < 2 || parts.length > 4) return true;
+      const hasIcon = parts.some((p) => resolveIconName(p));
+      const looksLikeAction =
+        hasIcon ||
+        /^(так|ні|підтверд|скасу|видал|не чіпа)/i.test(parts[0] ?? "");
+      if (!looksLikeAction) return true;
+      barePipeLines.push(trimmed);
+      return false;
+    })
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  for (const raw of barePipeLines) {
+    const parsed = parsePipeActionParts(raw);
+    actions.push({
+      kind: "reply",
+      text: parsed.text,
+      label: parsed.label,
+      icon: parsed.icon,
+    });
+  }
 
   return { body, actions, choices, dismissDraft };
 }
@@ -5644,17 +5721,19 @@ function DeleteWorkOrderCard({
           type="button"
           disabled={disabled || Boolean(resolved)}
           onClick={() => choose("confirm")}
-          className="rounded-xl border border-red-400/40 bg-red-500/90 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-red-500 active:scale-95 disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 rounded-xl border border-red-400/40 bg-red-500/90 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-red-500 active:scale-95 disabled:opacity-50"
         >
-          {resolved === "confirm" ? "Видаляю…" : item.confirmChoice}
+          <Trash2 className="size-3.5 shrink-0" strokeWidth={2.2} />
+          {resolved === "confirm" ? "Видаляю…" : "Так, видалити"}
         </button>
         <button
           type="button"
           disabled={disabled || Boolean(resolved)}
           onClick={() => choose("cancel")}
-          className="rounded-xl border border-white/10 bg-zinc-800/80 px-3 py-2 text-xs font-medium text-zinc-300 transition hover:bg-zinc-700/80 active:scale-95 disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-zinc-800/80 px-3 py-2 text-xs font-medium text-zinc-300 transition hover:bg-zinc-700/80 active:scale-95 disabled:opacity-50"
         >
-          {item.cancelChoice}
+          <X className="size-3.5 shrink-0" strokeWidth={2.2} />
+          {resolved === "cancel" ? "Ок" : "Ні, не чіпати"}
         </button>
       </div>
     </div>
@@ -6649,7 +6728,17 @@ function MessageBubble({
         ) : null}
         {!isUser && visibleChoices.length > 0 ? (
           <div className="mt-3 flex flex-wrap gap-2">
-            {visibleChoices.map((choice, index) => (
+            {visibleChoices.map((choice, index) => {
+              const choiceLabel = isAttachInvoiceChoice(choice)
+                ? null
+                : parsePipeActionParts(choice).label;
+              const isNegative =
+                choiceLabel != null &&
+                /видал|скасу|ні[, ]|не чіпа/i.test(choiceLabel);
+              const isPositive =
+                choiceLabel != null &&
+                /так|підтверд|зроби/i.test(choiceLabel);
+              return (
               <button
                 key={`${message.id}-choice-${index}-${choice}`}
                 type="button"
@@ -6659,9 +6748,20 @@ function MessageBubble({
                     onAttachInvoice?.();
                     return;
                   }
-                  onReply?.(choice);
+                  onReply?.(
+                    choice.includes("|")
+                      ? parsePipeActionParts(choice).text
+                      : choice
+                  );
                 }}
-                className="rounded-xl border border-white/10 bg-zinc-800/80 px-3 py-1.5 text-xs font-medium text-zinc-200 shadow-sm transition-all hover:border-emerald-500/30 hover:bg-emerald-500/20 hover:text-emerald-300 active:scale-95 disabled:pointer-events-none disabled:opacity-50"
+                className={cn(
+                  "rounded-xl border px-3 py-1.5 text-xs font-medium shadow-sm transition-all active:scale-95 disabled:pointer-events-none disabled:opacity-50",
+                  isNegative
+                    ? "border-rose-400/30 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20"
+                    : isPositive
+                      ? "border-emerald-400/35 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25"
+                      : "border-white/10 bg-zinc-800/80 text-zinc-200 hover:border-emerald-500/30 hover:bg-emerald-500/20 hover:text-emerald-300"
+                )}
               >
                 {isAttachInvoiceChoice(choice) ? (
                   <span className="inline-flex items-center gap-1.5">
@@ -6669,14 +6769,15 @@ function MessageBubble({
                     Прикріпити накладну
                   </span>
                 ) : (
-                  choice
+                  choiceLabel
                 )}
               </button>
-            ))}
+              );
+            })}
           </div>
         ) : null}
         {!isUser && visibleActions.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
+          <div className="mt-3 flex flex-wrap gap-2">
             {visibleActions.map((action, index) => {
               const ActionIcon = action.icon
                 ? IconMap[action.icon]
@@ -6700,7 +6801,16 @@ function MessageBubble({
                       window.open(action.url, "_blank", "noopener,noreferrer");
                     } else onReply?.(action.text);
                   }}
-                  className="inline-flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400 transition-all hover:bg-emerald-500/20 active:scale-95 disabled:pointer-events-none disabled:opacity-50"
+                  className={cn(
+                    "inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-medium transition-all active:scale-95 disabled:pointer-events-none disabled:opacity-50",
+                    action.kind === "reply" &&
+                      /видал|скасу|ні[, ]|не чіпа/i.test(action.label)
+                      ? "border-rose-400/30 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20"
+                      : action.kind === "reply" &&
+                          /так|підтверд|зроби/i.test(action.label)
+                        ? "border-emerald-400/35 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25"
+                        : "border-emerald-500/20 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
+                  )}
                 >
                   <ActionIcon className="size-3.5 shrink-0" strokeWidth={2.2} />
                   {action.label}
