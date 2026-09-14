@@ -561,7 +561,10 @@ prepareWorkOrder лише коли всі слоти зібрані. Не виг
 • Службові кнопки (UI їх ховає з тексту): [[CHOICE:…]] | [[ACTION:REPLY|Icon|…]] | [[ACTION:NAVIGATE|/path|Icon|Текст]]
 • NAVIGATE лише за темою (макс. 1): /fuel /inventory /operations /equipment /accounting /finance /journal /?field=UUID
 • Після фактів — обовʼязково +1 крок на випередження (ризик / наступна дія), 1 коротке речення.
-• UI-картки (списання, наряд, акт, накладна, updateField, радар заправок) — НЕ дублюй їхні CHOICE.
+• UI-картки (списання, наряд, акт, накладна, заправка, updateField, радар) —
+  НЕ дублюй їхні CHOICE / ACTION:REPLY. Картка вже має «Підтвердити» / «Скасувати».
+  Якщо tool повернув requires_confirmation — у тексті НЕ пиши
+  [[CHOICE:Підтвердити…]] і НЕ [[ACTION:REPLY|…]].
 `.trim();
 
 const userContextSchema = z

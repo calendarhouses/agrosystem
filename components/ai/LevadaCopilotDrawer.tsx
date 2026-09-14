@@ -115,6 +115,22 @@ function normalizeChoiceKey(text: string | null | undefined): string {
     .replace(/\s+/g, " ");
 }
 
+/** Чи збігається CHOICE/REPLY з кнопкою картки (і з сміттям «Текст|Icon|Текст»). */
+function choiceOwnedByCard(
+  choice: string | null | undefined,
+  owned: ReadonlySet<string>
+): boolean {
+  const raw = (choice ?? "").trim();
+  if (!raw) return false;
+  const key = normalizeChoiceKey(raw);
+  if (key && owned.has(key)) return true;
+  const parts = raw
+    .split("|")
+    .map((p) => normalizeChoiceKey(p))
+    .filter(Boolean);
+  return parts.some((p) => owned.has(p));
+}
+
 const QUICK_CHIPS = [
   "Скільки палива на складі?",
   "Які площі під кукурудзою?",
@@ -540,7 +556,7 @@ const NAVIGATE_TAG_RE =
   /\[\[\s*ACTION:NAVIGATE\s*\|\s*([^|\]]+?)\s*\|\s*([^|\]]+?)\s*(?:\|\s*([^\]]+?)\s*)?\]\]/gi;
 
 const REPLY_TAG_RE =
-  /\[\[\s*ACTION:REPLY\s*\|\s*([^|\]]+?)\s*\|\s*([^\]]+?)\s*\]\]/gi;
+  /\[\[\s*ACTION:REPLY\s*\|\s*([^|\]]+?)\s*\|\s*([^|\]]+?)\s*(?:\|\s*([^\]]+?)\s*)?\]\]/gi;
 
 const CHOICE_TAG_RE = /\[\[\s*CHOICE\s*:\s*([^\]]+?)\s*\]\]/gi;
 
@@ -635,18 +651,37 @@ function extractAgentActions(text: string): {
   );
 
   body = body
-    .replace(REPLY_TAG_RE, (_match, iconRaw: string, labelRaw: string) => {
-      const label = labelRaw.trim();
-      if (label) {
-        actions.push({
-          kind: "reply",
-          text: label,
-          label,
-          icon: resolveIconName(iconRaw),
-        });
+    .replace(
+      REPLY_TAG_RE,
+      (_match, second: string, third: string, fourth?: string) => {
+        // Формати: Icon|Label  АБО  Label|Icon|Label (модель плутає порядок)
+        const a = second.trim();
+        const b = third.trim();
+        const c = typeof fourth === "string" ? fourth.trim() : "";
+        let label = b;
+        let iconRaw = a;
+        if (c) {
+          // Label|Icon|Label → беремо людський label
+          label = c || a;
+          iconRaw = b;
+        } else if (!resolveIconName(a) && resolveIconName(b)) {
+          label = a;
+          iconRaw = b;
+        } else if (!resolveIconName(a)) {
+          label = a || b;
+          iconRaw = b;
+        }
+        if (label) {
+          actions.push({
+            kind: "reply",
+            text: label,
+            label,
+            icon: resolveIconName(iconRaw),
+          });
+        }
+        return "";
       }
-      return "";
-    })
+    )
     .replace(DISMISS_DRAFT_TAG_RE, () => {
       dismissDraft = true;
       return "";
@@ -6285,24 +6320,45 @@ function MessageBubble({
     serviceActPreviews,
   ]);
 
+  /** Є UI-картка з власними кнопками — CHOICE/REPLY знизу дублювати НЕ треба. */
+  const hasCardOwnedActions =
+    drafts.length > 0 ||
+    deleteConfirmations.length > 0 ||
+    fieldUpdateConfirmations.length > 0 ||
+    receiptRollbackConfirmations.length > 0 ||
+    serviceActDeleteConfirmations.length > 0 ||
+    deleteFieldConfirmations.length > 0 ||
+    writeOffPreviews.length > 0 ||
+    fuelRefuelPreviews.length > 0 ||
+    fuelOpsConfirmPreviews.length > 0 ||
+    radarSuspicionPreviews.length > 0 ||
+    documentRecognizedPreviews.length > 0 ||
+    mutationConfirmPreviews.length > 0 ||
+    maintenancePreviews.length > 0 ||
+    invoicePreviews.length > 0 ||
+    serviceActPreviews.length > 0;
+
   const visibleChoices = useMemo(
     () =>
       choices.filter((choice) => {
         if (isAttachInvoiceChoice(choice)) return true;
-        const key = normalizeChoiceKey(choice);
-        return !key || !cardOwnedChoiceKeys.has(key);
+        if (hasCardOwnedActions) return false;
+        return !choiceOwnedByCard(choice, cardOwnedChoiceKeys);
       }),
-    [choices, cardOwnedChoiceKeys]
+    [choices, cardOwnedChoiceKeys, hasCardOwnedActions]
   );
 
   const visibleActions = useMemo(
     () =>
       actions.filter((action) => {
         if (action.kind !== "reply") return true;
-        const key = normalizeChoiceKey(action.text || action.label);
-        return !key || !cardOwnedChoiceKeys.has(key);
+        if (hasCardOwnedActions) return false;
+        return !choiceOwnedByCard(
+          action.text || action.label,
+          cardOwnedChoiceKeys
+        );
       }),
-    [actions, cardOwnedChoiceKeys]
+    [actions, cardOwnedChoiceKeys, hasCardOwnedActions]
   );
 
   if (
