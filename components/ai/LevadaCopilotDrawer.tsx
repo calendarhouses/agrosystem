@@ -460,6 +460,13 @@ function formatChatError(error: Error | undefined): string {
 
   const lower = raw.toLowerCase();
   if (
+    lower.includes("потрібна авторизація") ||
+    lower.includes("unauthorized") ||
+    lower.includes("401")
+  ) {
+    return "Сесія закінчилась або cookies не дійшли до сервера. Онови сторінку; якщо не допоможе — вийди і зайди знову.";
+  }
+  if (
     lower.includes("high demand") ||
     lower.includes("resource exhausted") ||
     lower.includes("overloaded") ||
