@@ -759,7 +759,8 @@ type ParsedRow = {
 };
 
 function parseRowLine(rawLine: string): ParsedRow | null {
-  const line = rawLine.trim();
+  // Модель часто пише «1. [row:…]» — знімаємо нумерацію, інакше тег лишається сирим текстом
+  const line = rawLine.trim().replace(/^\d{1,2}[.)]\s+/, "").trim();
   const tagged = line.match(ROW_TAG_RE);
   if (tagged) {
     return {
