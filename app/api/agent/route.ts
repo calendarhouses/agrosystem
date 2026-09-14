@@ -327,6 +327,7 @@ syncEquipmentFromBas, autoMapEquipmentWialon,
 unlinkEquipmentWialonUnit, rollbackWarehouseReceipt,
 updateFieldDetails (name/area/crop/category), updateFieldPlannedBudget,
 logMaintenanceCompleted. Не стверджуй успіх без success:true.
+Коротке «ок/давай/+/го/погнали» після draft = confirmed=true на ту саму дію.
 
 Tools:
 getFieldsStatus, getWarehouseStock, getFleetAndImplements, getDriversList,
@@ -422,8 +423,8 @@ wialon_field_fuel_logs, field_ndvi_alerts, equipment_maintenance_logs.
 • Ємності CRUD → createFuelStorage / updateFuelStorage / deleteFuelStorage (confirm)
 • Парк за день / зливи / простої → getFleetDaySummary
 • Підсвітка метрики флоту на карті → highlightFleetMetricOnMap
-• Playback треку → setEquipmentTrackPlayback
-• Трек машини за день («де їздив», мотогодини) → getEquipmentDayTrack
+• Playback треку / відкрити машину на карті з треком → setEquipmentTrackPlayback
+• Трек машини за день («де їздив», мотогодини) → getEquipmentDayTrack (лише цифри; UI не чіпає)
 • Журнал флоту Excel/CSV за день → exportEquipmentDayJournal
 • Журнал однієї машини Excel/CSV → exportEquipmentUnitJournal
 • Локальна техніка без GPS → createLocalEquipment
@@ -512,6 +513,22 @@ prepareWorkOrder лише коли всі слоти зібрані. Не виг
 
 Скасування чернетки наряду в чаті: [[ACTION:DISMISS_DRAFT]] (без deleteWorkOrder).
 Видалення збереженого — deleteWorkOrder з workOrderId з історії.
+
+Схвалення короткою реплікою (КРИТИЧНО — працюй, не перепитуй):
+Людина часто пише лише: «ок», «давай», «да», «так», «го», «погнали»,
+«+», «зроби», «зробимо», «давай так», «добре», «норм», «ага», «угу», «є»,
+«давай перевіримо», «давай глянь», «давай далі», «зроби це», «підтверджую»,
+«так, зроби», «go», «ok», «yes», «yep», «sure», «👍».
+Це ЗАВЖДИ = схвалення ТВОЄЇ останньої пропозиції / +1 кроку / чернетки з confirmed=false.
+• НЕ відповідай «що саме?», «уточни», «який варіант?» — бери останню свою пропозицію з історії.
+• Одразу виконай дію (1–2 tools), потім короткий звіт текстом. Без стіни tool-карток.
+• Якщо чекав confirmed=true на мутацію — повтори той самий tool з confirmed=true.
+• Якщо пропонував аналіз/трек/карту — зроби саме це (точна назва техніки з історії).
+• НЕ перезапускай getFleetDaySummary / getFleetAndImplements / highlightFleetMetricOnMap «для контексту».
+• Трек однієї машини: getEquipmentDayTrack ОДИН раз (модель з цифрою: Magnum 340 ≠ 380)
+  + за потреби setEquipmentTrackPlayback / focusEquipmentOnMap.
+• Ліміт кроків тісний: завжди лишай крок на текстову відповідь — інакше людина бачить тишу.
+• НЕ схвалення: «ні», «не треба», «скасуй», «стоп», «інше», нове питання / нова тема.
 
 Формат:
 • **жирні** назви полів і ключові цифри. Без емодзі в тексті (бейджі UI — окремо).
@@ -635,10 +652,177 @@ type ResolveAgentEquipmentResult =
       candidates?: { id: string; name: string }[];
     };
 
+function normalizeEquipmentLookupText(value: string): string {
+  return value
+    .toLocaleLowerCase("uk-UA")
+    .replace(/ё/g, "е")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Модельні 3-значні номери (340/380) і держномери — щоб не плутати Magnum. */
+function extractEquipmentLookupTokens(text: string): {
+  models: string[];
+  plates: string[];
+} {
+  const n = normalizeEquipmentLookupText(text);
+  const models = [...n.matchAll(/\b(\d{3})\b/g)].map((m) => m[1]!);
+  const plates = [
+    ...n.matchAll(/\b(\d{4,6})\s*([a-zа-яіїєґ]{1,3})\b/gi),
+  ].map(
+    (m) => `${m[1]}${m[2]!.toLocaleLowerCase("uk-UA")}`
+  );
+  return { models, plates };
+}
+
+function scoreEquipmentNameMatch(
+  lookup: string,
+  name: string,
+  code: string | null,
+  fullName: string | null
+): number {
+  const needle = normalizeEquipmentLookupText(lookup);
+  const nameN = normalizeEquipmentLookupText(name);
+  const codeN = code ? normalizeEquipmentLookupText(code) : "";
+  const fullN = fullName ? normalizeEquipmentLookupText(fullName) : "";
+  const hay = `${nameN} ${fullN} ${codeN}`.trim();
+
+  if (nameN === needle || codeN === needle) return 100;
+  if (fullN === needle) return 98;
+
+  const lookupTok = extractEquipmentLookupTokens(lookup);
+  const nameTok = extractEquipmentLookupTokens(
+    `${name} ${fullName ?? ""} ${code ?? ""}`
+  );
+
+  if (lookupTok.models.length > 0 && nameTok.models.length > 0) {
+    const overlap = lookupTok.models.filter((m) =>
+      nameTok.models.includes(m)
+    );
+    // Magnum 340 vs Magnum 380 — жорстка відмова
+    if (overlap.length === 0) return -100;
+  }
+
+  let score = 0;
+  if (nameN.includes(needle) || needle.includes(nameN)) score += 55;
+  else if (fullN.includes(needle) || (fullN && needle.includes(fullN)))
+    score += 45;
+  else {
+    const needleWords = needle.split(" ").filter((w) => w.length > 1);
+    const hits = needleWords.filter((w) => hay.includes(w)).length;
+    if (hits === 0) return 0;
+    score += Math.min(40, hits * 12);
+  }
+
+  if (
+    codeN &&
+    (codeN === needle || needle.includes(codeN) || codeN.includes(needle))
+  ) {
+    score += 25;
+  }
+
+  for (const m of lookupTok.models) {
+    if (nameTok.models.includes(m)) score += 40;
+  }
+  const hayCompact = hay.replace(/\s+/g, "");
+  for (const p of lookupTok.plates) {
+    if (nameTok.plates.includes(p) || hayCompact.includes(p)) score += 50;
+  }
+
+  return score;
+}
+
+function agentEquipmentFromRow(
+  chosen: Record<string, unknown>
+): AgentEquipmentRow {
+  return {
+    id: String(chosen.id),
+    name: String(chosen.name ?? "Техніка"),
+    type: chosen.type != null ? String(chosen.type) : null,
+    code: chosen.code != null ? String(chosen.code) : null,
+    wialon_id:
+      chosen.wialon_id != null && Number.isFinite(Number(chosen.wialon_id))
+        ? Number(chosen.wialon_id)
+        : null,
+    current_motohours:
+      chosen.current_motohours != null
+        ? finiteNumber(chosen.current_motohours)
+        : null,
+    next_service_motohours:
+      chosen.next_service_motohours != null
+        ? finiteNumber(chosen.next_service_motohours)
+        : null,
+    maintenance_status:
+      chosen.maintenance_status != null
+        ? String(chosen.maintenance_status)
+        : "ok",
+    is_active: chosen.is_active == null ? true : Boolean(chosen.is_active),
+  };
+}
+
+function pickResolvedEquipment(
+  lookup: string,
+  list: Record<string, unknown>[]
+): ResolveAgentEquipmentResult {
+  if (list.length === 0) {
+    return {
+      ok: false,
+      status: "not_found",
+      error: `Техніку «${lookup}» не знайдено.`,
+    };
+  }
+
+  const scored = list
+    .map((r) => ({
+      row: r,
+      score: scoreEquipmentNameMatch(
+        lookup,
+        String(r.name ?? ""),
+        r.code != null ? String(r.code) : null,
+        r.full_name != null ? String(r.full_name) : null
+      ),
+    }))
+    .sort((a, b) => b.score - a.score);
+
+  const best = scored[0];
+  const second = scored[1];
+  const exact = scored.find((s) => s.score >= 95);
+
+  let chosen: Record<string, unknown> | null = null;
+  if (exact) {
+    chosen = exact.row;
+  } else if (
+    best &&
+    best.score >= 80 &&
+    (!second || second.score < 0 || best.score - second.score >= 25)
+  ) {
+    chosen = best.row;
+  } else if (list.length === 1 && best && best.score > 0) {
+    chosen = best.row;
+  }
+
+  if (!chosen) {
+    const viable = scored.filter((s) => s.score > 0).slice(0, 6);
+    return {
+      ok: false,
+      status: "ambiguous",
+      error: `Кілька одиниць техніки для «${lookup}». Уточни модель (напр. Magnum 340, не просто Magnum).`,
+      candidates: (viable.length > 0 ? viable : scored.slice(0, 6)).map(
+        (s) => ({
+          id: String(s.row.id),
+          name: String(s.row.name ?? ""),
+        })
+      ),
+    };
+  }
+
+  return { ok: true, equipment: agentEquipmentFromRow(chosen) };
+}
+
 async function resolveAgentEquipmentByLookup(
   supabase: SupabaseClient,
   lookupRaw: string,
-  selectCols = "id, name, type, code, wialon_id, current_motohours, next_service_motohours, maintenance_status, is_active"
+  selectCols = "id, name, full_name, type, code, wialon_id, current_motohours, next_service_motohours, maintenance_status, is_active"
 ): Promise<ResolveAgentEquipmentResult> {
   const lookup = lookupRaw.trim();
   if (!lookup) {
@@ -752,110 +936,18 @@ async function resolveAgentEquipmentByLookup(
           )
           .order("name")
           .limit(10);
-        const list = fallback.data ?? [];
-        if (list.length === 0) {
-          return {
-            ok: false,
-            status: "not_found",
-            error: `Техніку «${lookup}» не знайдено.`,
-          };
-        }
-        const exact = list.find(
-          (r) =>
-            String(r.name ?? "").toLocaleLowerCase("uk-UA") ===
-              lookup.toLocaleLowerCase("uk-UA") ||
-            String(r.code ?? "").toLocaleLowerCase("uk-UA") ===
-              lookup.toLocaleLowerCase("uk-UA")
+        return pickResolvedEquipment(
+          lookup,
+          (fallback.data ?? []) as unknown as Record<string, unknown>[]
         );
-        const chosen = exact ?? (list.length === 1 ? list[0] : null);
-        if (!chosen) {
-          return {
-            ok: false,
-            status: "ambiguous",
-            error: `Кілька одиниць техніки для «${lookup}». Уточни назву.`,
-            candidates: list.map((r) => ({
-              id: String(r.id),
-              name: String(r.name ?? ""),
-            })),
-          };
-        }
-        return {
-          ok: true,
-          equipment: {
-            id: String(chosen.id),
-            name: String(chosen.name ?? "Техніка"),
-            type: chosen.type ? String(chosen.type) : null,
-            code: chosen.code ? String(chosen.code) : null,
-            wialon_id:
-              chosen.wialon_id != null &&
-              Number.isFinite(Number(chosen.wialon_id))
-                ? Number(chosen.wialon_id)
-                : null,
-            current_motohours: null,
-            next_service_motohours: null,
-            maintenance_status: "ok",
-            is_active:
-              chosen.is_active == null ? true : Boolean(chosen.is_active),
-          },
-        };
       }
       return { ok: false, status: "error", error: error.message };
     }
 
-    const list = (rows ?? []) as unknown as Record<string, unknown>[];
-    if (list.length === 0) {
-      return {
-        ok: false,
-        status: "not_found",
-        error: `Техніку «${lookup}» не знайдено.`,
-      };
-    }
-    const exact = list.find((r) => {
-      const name = String(r.name ?? "").toLocaleLowerCase("uk-UA");
-      const code = String(r.code ?? "").toLocaleLowerCase("uk-UA");
-      const needle = lookup.toLocaleLowerCase("uk-UA");
-      return name === needle || code === needle;
-    });
-    const chosen = exact ?? (list.length === 1 ? list[0] : null);
-    if (!chosen) {
-      return {
-        ok: false,
-        status: "ambiguous",
-        error: `Кілька одиниць техніки для «${lookup}». Уточни назву.`,
-        candidates: list.map((r) => ({
-          id: String(r.id),
-          name: String(r.name ?? ""),
-        })),
-      };
-    }
-    return {
-      ok: true,
-      equipment: {
-        id: String(chosen.id),
-        name: String(chosen.name ?? "Техніка"),
-        type: chosen.type != null ? String(chosen.type) : null,
-        code: chosen.code != null ? String(chosen.code) : null,
-        wialon_id:
-          chosen.wialon_id != null &&
-          Number.isFinite(Number(chosen.wialon_id))
-            ? Number(chosen.wialon_id)
-            : null,
-        current_motohours:
-          chosen.current_motohours != null
-            ? finiteNumber(chosen.current_motohours)
-            : null,
-        next_service_motohours:
-          chosen.next_service_motohours != null
-            ? finiteNumber(chosen.next_service_motohours)
-            : null,
-        maintenance_status:
-          chosen.maintenance_status != null
-            ? String(chosen.maintenance_status)
-            : "ok",
-        is_active:
-          chosen.is_active == null ? true : Boolean(chosen.is_active),
-      },
-    };
+    return pickResolvedEquipment(
+      lookup,
+      (rows ?? []) as unknown as Record<string, unknown>[]
+    );
   } catch (error) {
     return {
       ok: false,
@@ -2333,6 +2425,100 @@ async function resolveAgentImageBytes(input: {
   };
 }
 
+/** Зображення або PDF для analyzeUnknownDocument (fileUrl або вкладення чату). */
+async function resolveAgentDocumentBytes(input: {
+  fileUrl?: string | null;
+  attachments: Array<{ fileName: string; mimeType: string; base64: string }>;
+}): Promise<
+  | { ok: true; bytes: Buffer; mimeType: string; fileName: string }
+  | { ok: false; error: string }
+> {
+  const fromUrl = input.fileUrl?.trim() || "";
+  if (fromUrl) {
+    if (fromUrl.startsWith("data:")) {
+      const match = /^data:([^;]+);base64,([\s\S]+)$/.exec(fromUrl);
+      if (!match) {
+        return { ok: false, error: "Некоректний data-URL документа." };
+      }
+      const mimeType = match[1] || "image/jpeg";
+      const bytes = Buffer.from(match[2]!.replace(/\s+/g, ""), "base64");
+      if (bytes.byteLength < 32) {
+        return { ok: false, error: "Порожній файл документа." };
+      }
+      const isPdf = mimeType.includes("pdf");
+      return {
+        ok: true,
+        bytes,
+        mimeType,
+        fileName: isPdf ? "document.pdf" : "document.jpg",
+      };
+    }
+    if (/^https?:\/\//i.test(fromUrl)) {
+      try {
+        const res = await fetch(fromUrl);
+        if (!res.ok) {
+          return {
+            ok: false,
+            error: `Не вдалося завантажити документ (${res.status}).`,
+          };
+        }
+        const mimeType =
+          res.headers.get("content-type")?.split(";")[0]?.trim() ||
+          "application/octet-stream";
+        const bytes = Buffer.from(await res.arrayBuffer());
+        const lower = fromUrl.toLowerCase();
+        const fileName = lower.includes(".pdf")
+          ? "document.pdf"
+          : mimeType.includes("pdf")
+            ? "document.pdf"
+            : "document.jpg";
+        return { ok: true, bytes, mimeType, fileName };
+      } catch (error) {
+        return {
+          ok: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Помилка завантаження документа за URL",
+        };
+      }
+    }
+    if (fromUrl.length > 80 && !fromUrl.includes(" ")) {
+      const bytes = Buffer.from(fromUrl.replace(/\s+/g, ""), "base64");
+      if (bytes.byteLength > 32) {
+        return {
+          ok: true,
+          bytes,
+          mimeType: "image/jpeg",
+          fileName: "document.jpg",
+        };
+      }
+    }
+  }
+
+  const preferred =
+    input.attachments.find((a) => (a.mimeType || "").startsWith("image/")) ||
+    input.attachments.find((a) =>
+      (a.mimeType || "").toLowerCase().includes("pdf")
+    ) ||
+    input.attachments[0];
+
+  if (preferred?.base64) {
+    return {
+      ok: true,
+      bytes: Buffer.from(preferred.base64.replace(/\s+/g, ""), "base64"),
+      mimeType: preferred.mimeType || "image/jpeg",
+      fileName: preferred.fileName || "document.jpg",
+    };
+  }
+
+  return {
+    ok: false,
+    error:
+      "Немає документа для аналізу. Додай фото або PDF до повідомлення (або fileUrl).",
+  };
+}
+
 async function uploadAgentScoutingPhoto(
   supabase: SupabaseClient,
   fieldId: string,
@@ -2880,13 +3066,15 @@ function createAgentTools(options?: {
 
     getEquipmentDayTrack: tool({
       description:
-        "Денний трек/зміна техніки: км, idle, DUT паливо, відвідані зони/поля.",
+        "Денний трек/зміна техніки: км, idle, DUT паливо, відвідані зони/поля. Лише дані — UI не відкриває. Щоб показати машину: focusEquipmentOnMap або setEquipmentTrackPlayback.",
       inputSchema: z.object({
         equipmentIdOrName: z
           .string()
           .trim()
           .min(1)
-          .describe("Назва або держномер машини"),
+          .describe(
+            "Точна назва з моделлю (Case Magnum 340) або держномер — не «Magnum» без цифри"
+          ),
         date: z
           .string()
           .trim()
@@ -2928,21 +3116,12 @@ function createAgentTools(options?: {
               equipmentName: eq.name,
             };
           }
-          const openPath =
-            track.wialonUnitId > 0
-              ? `/equipment?id=${track.wialonUnitId}`
-              : "/equipment";
           return {
             success: true as const,
             status: "ok" as const,
             ...track,
-            navigatePath: openPath,
-            clientEvents: ["focus-equipment-map"] as const,
-            clientDirective: {
-              type: "focus-equipment-map" as const,
-              equipmentId: eq.id,
-              wialonUnitId: track.wialonUnitId,
-            },
+            equipmentId: eq.id,
+            // Навмисно без navigatePath / focus — інакше «прочитав трек» стрибає на чужу машину
             message: `**${track.equipmentName}** · ${track.date}: **${track.distanceKm} км**, робота **${track.workHours} год**, idle **${track.idleHours} год**, ДП **${track.fuelBurnedLiters ?? "—"} л**.`,
           };
         } catch (error) {
@@ -5205,6 +5384,241 @@ function createAgentTools(options?: {
               error instanceof Error
                 ? error.message
                 : "Помилка видалення актів",
+          };
+        }
+      },
+    }),
+
+    analyzeUnknownDocument: tool({
+      description:
+        "Vision: розпізнає довільний документ (рахунок, талон, чек ДП, змішаний скан), класифікує під стандарт BAS і кладе чернетку в bas_sync_queue (Dry-Run). Далі — routeDraftToSection.",
+      inputSchema: z.object({
+        fileUrl: z
+          .string()
+          .trim()
+          .min(1)
+          .optional()
+          .describe("URL / data-URL / base64 документа (якщо немає вкладення в чаті)"),
+        docHint: z
+          .string()
+          .trim()
+          .min(1)
+          .optional()
+          .describe("Підказка користувача: «чек ДП», «акт СТО», «зерно» тощо"),
+      }),
+      execute: async ({ fileUrl, docHint }) => {
+        console.log("[TOOL: analyzeUnknownDocument]", {
+          hasFileUrl: Boolean(fileUrl?.trim()),
+          hasHint: Boolean(docHint?.trim()),
+          attachmentCount: documentAttachments.length,
+        });
+
+        try {
+          const doc = await resolveAgentDocumentBytes({
+            fileUrl,
+            attachments: documentAttachments,
+          });
+          if (!doc.ok) {
+            return {
+              success: false as const,
+              status: "needs_document" as const,
+              error: doc.error,
+            };
+          }
+
+          if (!googleAi) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: "Vision-модель недоступна (GOOGLE_GENERATIVE_AI_API_KEY).",
+            };
+          }
+
+          const hint = docHint?.trim() || "";
+          const isPdf =
+            doc.mimeType.toLowerCase().includes("pdf") ||
+            doc.fileName.toLowerCase().endsWith(".pdf");
+
+          const vision = await generateObject({
+            model: googleAi(visionModelId),
+            schema: DOCUMENT_VISION_SCHEMA,
+            providerOptions: {
+              google: GOOGLE_NO_THINKING,
+            },
+            messages: [
+              {
+                role: "user",
+                content: [
+                  {
+                    type: "text",
+                    text: [
+                      "Ти диспетчер-бухгалтер LEVADIUS. Розпізнай документ і класифікуй під стандарт BAS.",
+                      "Класи: goods_receipt (товарна накладна), service_act (акт послуг/СТО),",
+                      "grain_receipt (оприбуткування сільгосппродукції), fuel_receipt (чек/аванс ДП),",
+                      "uncertain (неясно — потрібне уточнення).",
+                      "basDocument — точна назва Document_* (напр. Document_ПоступлениеТоваровУслуг,",
+                      "Document_ОприходованиеСельхозпродукции, Document_АвансовыйОтчет).",
+                      "Витягни: контрагент, номер, дата (YYYY-MM-DD), сума, рядки таблиці.",
+                      "Не вигадуй рядків і сум, яких не видно.",
+                      "summaryUk — 1–2 речення українською для диспетчера.",
+                      hint ? `Підказка користувача: ${hint}` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" "),
+                  },
+                  isPdf
+                    ? {
+                        type: "file" as const,
+                        data: doc.bytes,
+                        mediaType: "application/pdf" as const,
+                      }
+                    : {
+                        type: "image" as const,
+                        image: doc.bytes,
+                        mediaType: (doc.mimeType.startsWith("image/")
+                          ? doc.mimeType
+                          : "image/jpeg") as `${string}/${string}`,
+                      },
+                ],
+              },
+            ],
+          });
+
+          const persisted = await persistRecognizedDocumentDraft({
+            vision: vision.object,
+            docHint: hint || null,
+            actorId: actorUserId,
+            actorName: actorName,
+          });
+
+          if (!persisted.ok) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: persisted.error,
+            };
+          }
+
+          const classification = vision.object.classification;
+          const badge =
+            classification === "goods_receipt"
+              ? "📄 Товарна накладна"
+              : classification === "service_act"
+                ? "📄 Акт послуг"
+                : classification === "grain_receipt"
+                  ? "📄 Зерно / с.-г. продукція"
+                  : classification === "fuel_receipt"
+                    ? "📄 Чек / аванс ДП"
+                    : "📄 Документ (уточнити тип)";
+
+          return {
+            success: true as const,
+            status: "draft_ready" as const,
+            draftId: persisted.draftId,
+            classification,
+            basDocument: vision.object.basDocument,
+            basSection: vision.object.basSection,
+            basStandardLabel: persisted.basStandardLabel,
+            badge,
+            dryRun: persisted.dryRun,
+            dryRunHint: persisted.dryRun
+              ? "Режим Dry-Run: збереження в чергу без прямого запису в 1С"
+              : "Чернетка в bas_sync_queue (live-черга за BAS_DRAFT_POST_ENABLED).",
+            queueStatus: persisted.status,
+            queueType: persisted.queueType,
+            counterparty: persisted.counterparty,
+            docNumber: vision.object.docNumber,
+            docDate: persisted.docDate,
+            totalAmountUah: persisted.totalAmountUah,
+            currency: vision.object.currency ?? "UAH",
+            lineCount: persisted.lineCount,
+            lines: vision.object.lines,
+            alternatives: persisted.alternatives,
+            confidence: vision.object.confidence ?? null,
+            summaryUk: persisted.summaryUk,
+            confirmQuestion:
+              "Куди зберегти чернетку? Оберіть розділ — Склад / Бухгалтерія / Техніка / Паливо.",
+            message: persisted.message,
+            nextStep:
+              "Виклич routeDraftToSection(draftId, targetSection) після вибору розділу користувачем.",
+          };
+        } catch (error) {
+          console.error(
+            "[TOOL: analyzeUnknownDocument] Unexpected error:",
+            error
+          );
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка розпізнавання документа",
+          };
+        }
+      },
+    }),
+
+    routeDraftToSection: tool({
+      description:
+        "Маршрутизує чернетку analyzeUnknownDocument у локальний розділ (склад / бухгалтерія / техніка / паливо) і ставить запис у bas_sync_queue (Dry-Run за замовчуванням).",
+      inputSchema: z.object({
+        draftId: z
+          .string()
+          .trim()
+          .min(1)
+          .describe("ID чернетки з analyzeUnknownDocument"),
+        targetSection: z
+          .enum(["inventory", "accounting", "equipment", "fuel"])
+          .describe("Цільовий розділ системи"),
+        sendToBasQueue: z
+          .boolean()
+          .optional()
+          .default(true)
+          .describe("Писати ще один запис у bas_sync_queue (Dry-Run)"),
+      }),
+      execute: async ({ draftId, targetSection, sendToBasQueue }) => {
+        console.log("[TOOL: routeDraftToSection]", {
+          draftId,
+          targetSection,
+          sendToBasQueue: sendToBasQueue !== false,
+        });
+        try {
+          const routed = await routeDraftToLocalSection({
+            draftId: draftId.trim(),
+            targetSection,
+            sendToBasQueue: sendToBasQueue !== false,
+            actorId: actorUserId,
+            actorName: actorName,
+          });
+          if (!routed.ok) {
+            return {
+              success: false as const,
+              status: "error" as const,
+              error: routed.error,
+            };
+          }
+          return {
+            success: true as const,
+            status: "routed" as const,
+            draftId: routed.draftId,
+            targetSection: routed.targetSection,
+            localEntityId: routed.localEntityId,
+            basQueued: routed.basQueued,
+            dryRunHint:
+              "Локальний рух/чернетка створені; BAS лише через чергу (без OData POST).",
+            clientEvents: routed.clientEvents,
+            message: routed.message,
+          };
+        } catch (error) {
+          console.error("[TOOL: routeDraftToSection] Unexpected error:", error);
+          return {
+            success: false as const,
+            status: "error" as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Невідома помилка маршрутизації чернетки",
           };
         }
       },
@@ -17752,7 +18166,7 @@ export async function POST(request: Request) {
       providerOptions: {
         google: GOOGLE_NO_THINKING,
       },
-      stopWhen: stepCountIs(8),
+      stopWhen: stepCountIs(10),
       maxRetries: 1,
       streamRetries: Math.max(modelCandidates.length - 1, 0),
       prepareStep: () => ({

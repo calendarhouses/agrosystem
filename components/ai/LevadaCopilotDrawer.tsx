@@ -1852,6 +1852,13 @@ function extractEquipmentFocusPayload(message: UIMessage): {
   wialonUnitId: number | null;
   navigatePath: string;
 } | null {
+  // Лише навмисний фокус/playback. getEquipmentDayTrack більше не відкриває UI —
+  // інакше перший/будь-який трек міг стрибнути на чужу машину (340→380).
+  let last: {
+    equipmentId: string;
+    wialonUnitId: number | null;
+    navigatePath: string;
+  } | null = null;
   for (const part of message.parts) {
     const toolName =
       part.type === "dynamic-tool" && "toolName" in part
@@ -1861,7 +1868,7 @@ function extractEquipmentFocusPayload(message: UIMessage): {
           : null;
     if (
       toolName !== "focusEquipmentOnMap" &&
-      toolName !== "getEquipmentDayTrack"
+      toolName !== "setEquipmentTrackPlayback"
     ) {
       continue;
     }
@@ -1883,13 +1890,13 @@ function extractEquipmentFocusPayload(message: UIMessage): {
         : wialonUnitId != null && wialonUnitId > 0
           ? `/equipment?id=${wialonUnitId}`
           : "/equipment";
-    return {
+    last = {
       equipmentId: raw.equipmentId,
       wialonUnitId,
       navigatePath,
     };
   }
-  return null;
+  return last;
 }
 
 const EQUIPMENT_MUTATION_TOOLS = new Set([
