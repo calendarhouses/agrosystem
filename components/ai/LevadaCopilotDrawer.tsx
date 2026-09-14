@@ -1081,6 +1081,104 @@ type WorkOrderDraft = {
   source?: string | null;
 };
 
+const CONFIRMED_DRAFT_IDS_KEY = "levadius-confirmed-draft-ids";
+
+function readConfirmedDraftIds(): Set<string> {
+  try {
+    const raw = sessionStorage.getItem(CONFIRMED_DRAFT_IDS_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(parsed.filter((id): id is string => typeof id === "string"));
+  } catch {
+    return new Set();
+  }
+}
+
+function writeConfirmedDraftIds(ids: Set<string>) {
+  try {
+    sessionStorage.setItem(
+      CONFIRMED_DRAFT_IDS_KEY,
+      JSON.stringify([...ids].slice(-80))
+    );
+  } catch {
+    /* ignore */
+  }
+}
+
+function workOrderConfirmedNote(draft: WorkOrderDraft): string {
+  return `Підтвердив наряд: ${draft.operationType} · ${draft.fieldName} · ${draft.date} · ${draft.driverName} · ${draft.equipmentName}. Вже в хронології.`;
+}
+
+/** Текст підтвердження з картки — агент бачить «вже зроблено» в історії. */
+function formatDoneConfirm(summary: string, confirmChoice: string): string {
+  const clean = summary.replace(/\s+/g, " ").trim();
+  return `Підтвердив: ${clean}. Вже записано. ${confirmChoice}`;
+}
+
+function formatDoneAction(summary: string, choice: string): string {
+  const clean = summary.replace(/\s+/g, " ").trim();
+  return `Зробив: ${clean}. Вже зроблено. ${choice}`;
+}
+
+/** Витягуємо draftId з історії (картка/tool + нотатки підтвердження). */
+function collectConfirmedDraftIdsFromMessages(
+  messages: UIMessage[]
+): Set<string> {
+  const ids = new Set<string>();
+
+  // Пари: assistant draft → наступний user «Підтвердив наряд» з тими ж ключовими полями
+  for (let i = 0; i < messages.length; i += 1) {
+    const msg = messages[i]!;
+    if (msg.role !== "assistant") continue;
+    const drafts = extractWorkOrderDrafts(msg);
+    if (drafts.length === 0) continue;
+    const following = messages.slice(i + 1, i + 8);
+    for (const draft of drafts) {
+      const confirmedLater = following.some((m) => {
+        if (m.role !== "user") return false;
+        const t = messageText(m);
+        if (!/підтвердив наряд/i.test(t) || !/вже в хронологі/i.test(t)) {
+          return false;
+        }
+        return (
+          t.includes(draft.fieldName) &&
+          t.includes(draft.operationType) &&
+          t.includes(draft.date)
+        );
+      });
+      if (confirmedLater) ids.add(draft.draftId);
+    }
+  }
+
+  // success confirmWorkOrder у tool output
+  for (const message of messages) {
+    if (message.role !== "assistant") continue;
+    for (const part of message.parts ?? []) {
+      const toolName =
+        part.type === "dynamic-tool" && "toolName" in part
+          ? String(part.toolName)
+          : part.type.startsWith("tool-")
+            ? part.type.slice("tool-".length)
+            : null;
+      if (toolName !== "confirmWorkOrder") continue;
+      if (!("state" in part) || part.state !== "output-available") continue;
+      if (!("output" in part) || !part.output || typeof part.output !== "object") {
+        continue;
+      }
+      const raw = part.output as Record<string, unknown>;
+      if (raw.success !== true) continue;
+      const id =
+        (typeof raw.workOrderId === "string" && raw.workOrderId) ||
+        (typeof raw.draftId === "string" && raw.draftId) ||
+        null;
+      if (id) ids.add(id);
+    }
+  }
+
+  return ids;
+}
+
 function normalizeWorkOrderOutput(value: unknown): WorkOrderDraft | null {
   if (!value || typeof value !== "object") return null;
   const raw = value as Record<string, unknown>;
@@ -2310,7 +2408,14 @@ function FuelOpsConfirmCard({
     if (disabled || resolved) return;
     if (kind === "confirm" && !item.canConfirm) return;
     setResolved(kind);
-    onReply?.(kind === "confirm" ? item.confirmChoice : item.cancelChoice);
+    if (kind === "confirm") {
+      const bits = [item.title];
+      if (item.subtitle) bits.push(item.subtitle);
+      if (item.liters != null) bits.push(`${item.liters} л`);
+      onReply?.(formatDoneConfirm(bits.join(" · "), item.confirmChoice));
+    } else {
+      onReply?.(item.cancelChoice);
+    }
   }
 
   const done = alreadyDone || resolved === "confirm";
@@ -2527,7 +2632,10 @@ function RadarSuspicionCard({
     setPickingStorage(false);
     const storageName = storage?.name ?? fallbackLabel;
     onReply?.(
-      `Це реальна заправка: ${item.humanLine}. Зафіксуй зі списанням з «${storageName}».`
+      `${formatDoneConfirm(
+        `радар ${item.humanLine} · ємність «${storageName}»`,
+        item.confirmChoice
+      )} Зафіксуй зі списанням з «${storageName}».`
     );
   }
 
@@ -2536,7 +2644,10 @@ function RadarSuspicionCard({
     setResolved("dismiss");
     setPickingStorage(false);
     onReply?.(
-      `Хибне спрацювання / схил: ${item.humanLine}. Відхили з причиною «${item.dismissReasonDefault}».`
+      `${formatDoneAction(
+        `відхилив радар ${item.humanLine}`,
+        item.dismissChoice
+      )} Причина: «${item.dismissReasonDefault}».`
     );
   }
 
@@ -2813,7 +2924,13 @@ function MutationConfirmCard({
     if (disabled || resolved) return;
     if (kind === "confirm" && !item.canConfirm) return;
     setResolved(kind);
-    onReply?.(kind === "confirm" ? item.confirmChoice : item.cancelChoice);
+    if (kind === "confirm") {
+      const bits = [item.title];
+      if (item.subtitle) bits.push(item.subtitle);
+      onReply?.(formatDoneConfirm(bits.join(" · "), item.confirmChoice));
+    } else {
+      onReply?.(item.cancelChoice);
+    }
   }
 
   const rose = item.tone === "rose";
@@ -3009,7 +3126,16 @@ function FuelRefuelCard({
     if (disabled || resolved) return;
     if (kind === "confirm" && !item.canConfirm) return;
     setResolved(kind);
-    onReply?.(kind === "confirm" ? item.confirmChoice : item.cancelChoice);
+    if (kind === "confirm") {
+      onReply?.(
+        formatDoneConfirm(
+          `${item.liters} л · ${item.equipmentName} з «${item.storageName}»`,
+          item.confirmChoice
+        )
+      );
+    } else {
+      onReply?.(item.cancelChoice);
+    }
   }
 
   const done = alreadyRefueled || resolved === "confirm";
@@ -3252,7 +3378,16 @@ function MaintenanceCompletedCard({
     if (disabled || resolved) return;
     if (kind === "confirm" && !item.canConfirm) return;
     setResolved(kind);
-    onReply?.(kind === "confirm" ? item.confirmChoice : item.cancelChoice);
+    if (kind === "confirm") {
+      onReply?.(
+        formatDoneConfirm(
+          `ТО «${item.serviceType}» · ${item.equipmentName}`,
+          item.confirmChoice
+        )
+      );
+    } else {
+      onReply?.(item.cancelChoice);
+    }
   }
 
   const done = alreadyDone || resolved === "confirm";
@@ -3431,7 +3566,16 @@ function InventoryWriteOffCard({
     if (disabled || resolved) return;
     if (kind === "confirm" && !item.canConfirm) return;
     setResolved(kind);
-    onReply?.(kind === "confirm" ? item.confirmChoice : item.cancelChoice);
+    if (kind === "confirm") {
+      onReply?.(
+        formatDoneConfirm(
+          `списання ${item.quantity} ${item.unit} «${item.itemName}» → ${item.fieldName}`,
+          item.confirmChoice
+        )
+      );
+    } else {
+      onReply?.(item.cancelChoice);
+    }
   }
 
   const done = alreadyWrittenOff || resolved === "confirm";
@@ -3648,7 +3792,10 @@ function DocumentRecognizedCard({
     if (disabled || resolved) return;
     setResolved(section);
     onReply?.(
-      `Маршрутизуй чернетку ${item.draftId} у розділ ${section} (${label}), sendToBasQueue=true`
+      `${formatDoneConfirm(
+        `маршрутизація документа «${item.basStandardLabel}» → ${label}`,
+        label
+      )} Маршрутизуй чернетку ${item.draftId} у розділ ${section}, sendToBasQueue=true`
     );
   }
 
@@ -4326,7 +4473,16 @@ function DeleteFieldConfirmCard({
   function choose(kind: "confirm" | "cancel") {
     if (disabled || resolved) return;
     setResolved(kind);
-    onReply?.(kind === "confirm" ? item.confirmChoice : item.cancelChoice);
+    if (kind === "confirm") {
+      onReply?.(
+        formatDoneConfirm(
+          `${item.mode === "archive" ? "архівація" : "видалення"} поля «${item.fieldName}»`,
+          item.confirmChoice
+        )
+      );
+    } else {
+      onReply?.(item.cancelChoice);
+    }
   }
 
   return (
@@ -4627,9 +4783,11 @@ async function fileToBase64Payload(file: File): Promise<{
 function InvoicePreviewCard({
   invoice,
   invoiceFiles,
+  onActionDone,
 }: {
   invoice: InvoicePreview;
   invoiceFiles?: File[] | null;
+  onActionDone?: (summary: string) => void;
 }) {
   const [posting, setPosting] = useState(false);
   const [posted, setPosted] = useState(false);
@@ -4675,6 +4833,9 @@ function InvoicePreviewCard({
         return;
       }
       setPosted(true);
+      onActionDone?.(
+        `оприбуткування накладної «${invoice.supplierName}»${invoice.invoiceNumber ? ` №${invoice.invoiceNumber}` : ""}`
+      );
       window.dispatchEvent(
         new CustomEvent("warehouse-updated", {
           detail: {
@@ -4915,9 +5076,11 @@ function extractServiceActPreviews(message: UIMessage): ServiceActPreview[] {
 function ServiceActPreviewCard({
   act,
   actFiles,
+  onActionDone,
 }: {
   act: ServiceActPreview;
   actFiles?: File[] | null;
+  onActionDone?: (summary: string) => void;
 }) {
   const [posting, setPosting] = useState(false);
   const [posted, setPosted] = useState(false);
@@ -4963,6 +5126,9 @@ function ServiceActPreviewCard({
         return;
       }
       setPosted(true);
+      onActionDone?.(
+        `акт послуг «${act.contractorName}»${act.actNumber ? ` №${act.actNumber}` : ""}`
+      );
       window.dispatchEvent(
         new CustomEvent("accounting-updated", {
           detail: {
@@ -5109,8 +5275,17 @@ function FieldUpdateConfirmCard({
   function choose(kind: "confirm" | "cancel") {
     if (disabled || resolved) return;
     setResolved(kind);
-    // У чат лише людський текст кнопки — fieldId/confirmed агент бере з попереднього tool-результату
-    onReply?.(kind === "confirm" ? item.confirmChoice : item.cancelChoice);
+    // fieldId/confirmed агент бере з попереднього tool-результату
+    if (kind === "confirm") {
+      onReply?.(
+        formatDoneConfirm(
+          `оновлення поля «${item.fieldName}»`,
+          item.confirmChoice
+        )
+      );
+    } else {
+      onReply?.(item.cancelChoice);
+    }
   }
 
   return (
@@ -5206,8 +5381,17 @@ function ReceiptRollbackConfirmCard({
   function choose(kind: "confirm" | "cancel") {
     if (disabled || resolved) return;
     setResolved(kind);
-    // Лише людський текст кнопки — receiptId агент бере з попереднього tool-результату
-    onReply?.(kind === "confirm" ? item.confirmChoice : item.cancelChoice);
+    // receiptId агент бере з попереднього tool-результату
+    if (kind === "confirm") {
+      onReply?.(
+        formatDoneConfirm(
+          `відкат оприбуткування «${item.supplier || item.invoiceNumber || item.receiptId}»`,
+          item.confirmChoice
+        )
+      );
+    } else {
+      onReply?.(item.cancelChoice);
+    }
   }
 
   return (
@@ -5294,7 +5478,16 @@ function ServiceActDeleteConfirmCard({
   function choose(kind: "confirm" | "cancel") {
     if (disabled || resolved) return;
     setResolved(kind);
-    onReply?.(kind === "confirm" ? item.confirmChoice : item.cancelChoice);
+    if (kind === "confirm") {
+      onReply?.(
+        formatDoneConfirm(
+          `видалення актів (${item.acts.length})`,
+          item.confirmChoice
+        )
+      );
+    } else {
+      onReply?.(item.cancelChoice);
+    }
   }
 
   return (
@@ -5375,7 +5568,10 @@ function DeleteWorkOrderCard({
     setResolved(kind);
     if (kind === "confirm") {
       onReply?.(
-        `${item.confirmChoice} (workOrderId: ${item.workOrderId})`
+        `${formatDoneConfirm(
+          `видалення наряду ${item.operationType || ""}`.trim(),
+          item.confirmChoice
+        )} (workOrderId: ${item.workOrderId})`
       );
     } else {
       onReply?.(item.cancelChoice);
@@ -5437,11 +5633,23 @@ function operationIconName(operationType: string): IconName {
   return "Tractor";
 }
 
-function WorkOrderDraftCard({ draft }: { draft: WorkOrderDraft }) {
+function WorkOrderDraftCard({
+  draft,
+  alreadyConfirmed = false,
+  onConfirmed,
+}: {
+  draft: WorkOrderDraft;
+  alreadyConfirmed?: boolean;
+  onConfirmed?: (draft: WorkOrderDraft) => void;
+}) {
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [saved, setSaved] = useState(alreadyConfirmed);
   const [error, setError] = useState<string | null>(null);
   const Icon = IconMap[operationIconName(draft.operationType)];
+
+  useEffect(() => {
+    if (alreadyConfirmed) setSaved(true);
+  }, [alreadyConfirmed]);
 
   async function confirmDraft() {
     if (saving || saved) return;
@@ -5505,6 +5713,7 @@ function WorkOrderDraftCard({ draft }: { draft: WorkOrderDraft }) {
       };
       await upsertFieldOperation(payload);
       setSaved(true);
+      onConfirmed?.(draft);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Не вдалося зберегти наряд"
@@ -5857,6 +6066,9 @@ function MessageBubble({
   invoiceFiles,
   replyDisabled = false,
   hideDrafts = false,
+  confirmedDraftIds,
+  onWorkOrderConfirmed,
+  onActionDone,
 }: {
   message: UIMessage;
   onNavigate?: (path: string) => void;
@@ -5865,6 +6077,9 @@ function MessageBubble({
   invoiceFiles?: File[] | null;
   replyDisabled?: boolean;
   hideDrafts?: boolean;
+  confirmedDraftIds?: ReadonlySet<string>;
+  onWorkOrderConfirmed?: (draft: WorkOrderDraft) => void;
+  onActionDone?: (summary: string) => void;
 }) {
   const text = messageText(message);
   const tools = toolStatusLines(message);
@@ -6295,7 +6510,12 @@ function MessageBubble({
         {!isUser && drafts.length > 0 ? (
           <div className="space-y-2">
             {drafts.map((draft) => (
-              <WorkOrderDraftCard key={draft.draftId} draft={draft} />
+              <WorkOrderDraftCard
+                key={draft.draftId}
+                draft={draft}
+                alreadyConfirmed={confirmedDraftIds?.has(draft.draftId) === true}
+                onConfirmed={onWorkOrderConfirmed}
+              />
             ))}
           </div>
         ) : null}
@@ -6354,6 +6574,7 @@ function MessageBubble({
                 key={`${message.id}-inv-${invoice.receiptId}`}
                 invoice={invoice}
                 invoiceFiles={invoiceFiles}
+                onActionDone={onActionDone}
               />
             ))}
           </div>
@@ -6365,6 +6586,7 @@ function MessageBubble({
                 key={`${message.id}-act-${act.previewId}`}
                 act={act}
                 actFiles={invoiceFiles}
+                onActionDone={onActionDone}
               />
             ))}
           </div>
@@ -6802,6 +7024,81 @@ export function LevadaCopilotDrawer({
   const busy = status === "submitted" || status === "streaming";
   const chatHydratedForUserRef = useRef<string | null>(null);
   const prevChatStatusRef = useRef(status);
+  const [confirmedDraftIds, setConfirmedDraftIds] = useState<Set<string>>(
+    () => readConfirmedDraftIds()
+  );
+
+  useEffect(() => {
+    const fromHistory = collectConfirmedDraftIdsFromMessages(messages);
+    if (fromHistory.size === 0) return;
+    setConfirmedDraftIds((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const id of fromHistory) {
+        if (!next.has(id)) {
+          next.add(id);
+          changed = true;
+        }
+      }
+      if (!changed) return prev;
+      writeConfirmedDraftIds(next);
+      return next;
+    });
+  }, [messages]);
+
+  function rememberActionDone(summary: string, ack?: string) {
+    const note = /вже записано|вже в хронологі|вже зроблено/i.test(summary)
+      ? summary
+      : `Підтвердив: ${summary}. Вже записано.`;
+    const alreadyNoted = messages.some(
+      (m) => m.role === "user" && messageText(m).includes(note.slice(0, 36))
+    );
+    if (alreadyNoted) return;
+
+    const userMsg = {
+      id: crypto.randomUUID(),
+      role: "user" as const,
+      parts: [{ type: "text" as const, text: note }],
+    };
+    const assistantMsg = {
+      id: crypto.randomUUID(),
+      role: "assistant" as const,
+      parts: [
+        {
+          type: "text" as const,
+          text:
+            ack ??
+            "Прийнято — уже зафіксовано. Що далі по зміні?",
+        },
+      ],
+    };
+
+    setMessages((prev) => {
+      const next = [...prev, userMsg, assistantMsg] as typeof prev;
+      window.setTimeout(() => {
+        void fetch("/api/agent/chat", {
+          method: "PUT",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages: next }),
+        }).catch(() => {});
+      }, 300);
+      return next;
+    });
+  }
+
+  function rememberWorkOrderConfirmed(draft: WorkOrderDraft) {
+    setConfirmedDraftIds((prev) => {
+      const next = new Set(prev);
+      next.add(draft.draftId);
+      writeConfirmedDraftIds(next);
+      return next;
+    });
+    rememberActionDone(
+      workOrderConfirmedNote(draft),
+      `Прийнято — **${draft.operationType}** на **${draft.fieldName}** уже в хронології. Далі по зміні?`
+    );
+  }
 
   /** Персональна історія з БД — окремо на кожен акаунт */
   useEffect(() => {
@@ -7863,6 +8160,9 @@ export function LevadaCopilotDrawer({
               invoiceFiles={lastInvoiceFiles}
               replyDisabled={busy}
               hideDrafts={hideDraftCards}
+              confirmedDraftIds={confirmedDraftIds}
+              onWorkOrderConfirmed={rememberWorkOrderConfirmed}
+              onActionDone={rememberActionDone}
             />
           </div>
         ))}
@@ -8059,9 +8359,6 @@ export function LevadaCopilotDrawer({
             onTranscript={(text) => {
               setInput(text);
               requestAnimationFrame(resizeComposerTextarea);
-            }}
-            onAutoSend={(text) => {
-              void submitText(text);
             }}
           />
           {busy ? (

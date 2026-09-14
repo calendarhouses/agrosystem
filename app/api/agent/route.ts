@@ -499,6 +499,8 @@ wialon_field_fuel_logs, field_ndvi_alerts, equipment_maintenance_logs.
 • Невідома дія → logUnsupportedRequest, потім дослівно:
   «Повна халепа, такого я ще не вмію робити, але Назар навчить скоро!»
   Помилка існуючого tool ≠ «не вмію» — поясни і запропонуй повторити.
+• «Що вмієш» / можливості / огляд — короткий список здібностей (наряди, паливо,
+  склад, поля, радар…). Не піднімай і не перепитуй старі чернетки з історії.
 • Беклог → getUnhandledRequests
 
 Наряди (slot filling):
@@ -511,6 +513,20 @@ wialon_field_fuel_logs, field_ndvi_alerts, equipment_maintenance_logs.
 prepareWorkOrder лише коли всі слоти зібрані. Не вигадуй техніку/водіїв/ТМЦ.
 Новий механізатор — прийми імʼя. Новий ТМЦ без залишку — НЕ registerWarehouseItem(0);
 попроси накладну або кількість+ціну.
+
+Виконані дії / не перепитуй (КРИТИЧНО — усі розділи):
+Маркер у історії: «Підтвердив: … Вже записано.» / «Вже в хронології» /
+«Вже зроблено.» / success:true після confirm-tool / картка UI вже «Готово».
+Це = дія ВЖЕ виконана. ЗАБОРОНЕНО знову питати «записуємо? / затверджуємо? /
+підтверджуємо?» по тій самій суті.
+Стосується: наряди, заправки, закупівля/перекачування ДП, радар заправок,
+списання ТМЦ, накладні/оприбуткування, акти послуг, ТО, правки полів,
+бюджет, видалення, маршрутизація документів.
+• Картка UI з кнопкою підтвердження = confirmed=true (навіть якщо tool ще в польоті).
+• Перед повторною пропозицією тієї ж дії — глянь історію; для нарядів ще
+  getDailyOperationsSummary / getFieldOperationsHistory. Якщо вже є — короткий
+  «вже є», і ІНШИЙ +1 крок (не дубль).
+• «Що вмієш» / огляд: здібності, без підняття старих чернеток з історії.
 
 Документи: фото накладної → previewInvoiceReceipt; акт послуг → previewServiceAct;
 фото посіву → analyzeAndSaveScoutingReport. Не стверджуй збереження без execute*/success.
@@ -6675,6 +6691,62 @@ function createAgentTools(options?: {
             "Поле";
           // field_key — NOT NULL у field_operations (міграція 007)
           const fieldKey = `farm:${fieldId}`;
+
+          // Уже збережено з картки UI / попереднім confirm — не дублюй «затвердити»
+          const { data: existingByKey } = await supabase
+            .from("field_operations")
+            .select("id, client_key, work_type, status, occurred_at, mechanic_name, machinery")
+            .eq("client_key", workOrderId)
+            .maybeSingle();
+          if (existingByKey?.id) {
+            return {
+              success: true as const,
+              alreadyExists: true as const,
+              workOrderId,
+              fieldId,
+              fieldName,
+              operationType: String(existingByKey.work_type ?? operationType),
+              date,
+              message: `Наряд уже в хронології («${fieldName}», ${operationType}, ${date}). Підтверджувати знову не треба.`,
+            };
+          }
+
+          const { data: sameFieldOps } = await supabase
+            .from("field_operations")
+            .select(
+              "id, client_key, work_type, status, mechanic_name, machinery, occurred_at"
+            )
+            .eq("field_id", fieldId)
+            .order("occurred_at", { ascending: false })
+            .limit(40);
+          const duplicate = (sameFieldOps ?? []).find((op) => {
+            const occurred = String(op.occurred_at ?? "");
+            if (!occurred.startsWith(date)) return false;
+            const type = String(op.work_type ?? "")
+              .toLocaleLowerCase("uk-UA")
+              .trim();
+            const want = operationType.toLocaleLowerCase("uk-UA").trim();
+            if (type !== want && !type.includes(want) && !want.includes(type)) {
+              return false;
+            }
+            return (
+              op.status === "planned" ||
+              op.status === "in_progress" ||
+              op.status === "completed"
+            );
+          });
+          if (duplicate?.id) {
+            return {
+              success: true as const,
+              alreadyExists: true as const,
+              workOrderId: String(duplicate.client_key ?? workOrderId),
+              fieldId,
+              fieldName,
+              operationType,
+              date,
+              message: `Такий наряд уже є в хронології («${fieldName}», ${operationType}, ${date}). Не створюю дубль.`,
+            };
+          }
 
           const row: Record<string, unknown> = {
             client_key: workOrderId,

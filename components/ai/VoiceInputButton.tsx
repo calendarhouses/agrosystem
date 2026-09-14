@@ -7,8 +7,10 @@ import { ensureLevadiusMicPermission } from "@/lib/levadius-mic-permission";
 import { cn } from "@/lib/utils";
 
 const LANG = "uk-UA";
-const SILENCE_MS = 1500;
-const MAX_FALLBACK_MS = 45_000;
+/** Пауза між словами — не обриваємо запис (чекаємо далі) */
+const SILENCE_MS = 30_000;
+/** Жорсткий ліміт одного сеансу запису */
+const MAX_FALLBACK_MS = 180_000;
 const SILENCE_RMS = 0.018;
 
 type SpeechRecognitionLike = {
@@ -56,11 +58,10 @@ function pickRecorderMime(): string | undefined {
 
 export type VoiceInputButtonProps = {
   disabled?: boolean;
-  /** Поточний текст інпута — щоб дописувати після вже набраного */
+  /** Поточний текст інпута — щоб дописувати після вже набраного / попереднього запису */
   value?: string;
+  /** Оновлює поле вводу (live + фінал). НІКОЛИ не шле агенту саме по собі. */
   onTranscript: (text: string) => void;
-  /** Hands-free: після тиші 1.5с або Стоп — відправити */
-  onAutoSend: (text: string) => void;
   className?: string;
 };
 
@@ -70,7 +71,6 @@ export function VoiceInputButton({
   disabled = false,
   value = "",
   onTranscript,
-  onAutoSend,
   className,
 }: VoiceInputButtonProps) {
   const [mode, setMode] = useState<Mode>("idle");
@@ -90,14 +90,14 @@ export function VoiceInputButton({
   const rafRef = useRef<number | null>(null);
   const silenceSinceRef = useRef<number | null>(null);
   const finishingRef = useRef(false);
-  const sentRef = useRef(false);
+  const finishedRef = useRef(false);
   const heardSpeechRef = useRef(false);
   const modeRef = useRef<Mode>("idle");
+  const valueRef = useRef(value);
 
   const onTranscriptRef = useRef(onTranscript);
-  const onAutoSendRef = useRef(onAutoSend);
   onTranscriptRef.current = onTranscript;
-  onAutoSendRef.current = onAutoSend;
+  valueRef.current = value;
 
   useEffect(() => {
     modeRef.current = mode;
@@ -182,17 +182,18 @@ export function VoiceInputButton({
     stopMediaTracks();
     audioChunksRef.current = [];
     finishingRef.current = false;
-    sentRef.current = false;
+    finishedRef.current = false;
     heardSpeechRef.current = false;
   }, [clearMaxTimer, clearSilenceTimer, stopAudioGraph, stopMediaTracks]);
 
   useEffect(() => () => cleanupAll(), [cleanupAll]);
 
-  const finishWithText = useCallback(
+  /** Закінчити сеанс: лише вписати в поле. Відправку робить кнопка Send. */
+  const finishIntoInput = useCallback(
     (text: string) => {
-      if (sentRef.current || finishingRef.current) return;
+      if (finishedRef.current || finishingRef.current) return;
       finishingRef.current = true;
-      sentRef.current = true;
+      finishedRef.current = true;
       clearSilenceTimer();
       clearMaxTimer();
       try {
@@ -206,14 +207,13 @@ export function VoiceInputButton({
       modeRef.current = "idle";
       if (trimmed) {
         onTranscriptRef.current(trimmed);
-        onAutoSendRef.current(trimmed);
       }
       finishingRef.current = false;
     },
     [clearMaxTimer, clearSilenceTimer]
   );
 
-  const scheduleSilenceSend = useCallback(
+  const scheduleSilenceStop = useCallback(
     (getText: () => string) => {
       clearSilenceTimer();
       silenceTimerRef.current = setTimeout(() => {
@@ -224,12 +224,12 @@ export function VoiceInputButton({
           } catch {
             /* ignore */
           }
-          return; // onstop → transcribe → auto-send
+          return; // onstop → transcribe → finishIntoInput
         }
-        finishWithText(text);
+        finishIntoInput(text);
       }, SILENCE_MS);
     },
-    [clearSilenceTimer, finishWithText]
+    [clearSilenceTimer, finishIntoInput]
   );
 
   const transcribeBlob = useCallback(
@@ -244,6 +244,7 @@ export function VoiceInputButton({
         const res = await fetch("/api/agent/transcribe", {
           method: "POST",
           body: form,
+          credentials: "include",
         });
         const body = (await res.json().catch(() => null)) as {
           ok?: boolean;
@@ -255,7 +256,7 @@ export function VoiceInputButton({
         }
         const spoken = (body.text || "").trim();
         const full = composeText(spoken);
-        finishWithText(full);
+        finishIntoInput(full);
       } catch (err) {
         setError(
           err instanceof Error ? err.message : "Не вдалося розпізнати голос"
@@ -267,7 +268,7 @@ export function VoiceInputButton({
         stopAudioGraph();
       }
     },
-    [composeText, finishWithText, stopAudioGraph, stopMediaTracks]
+    [composeText, finishIntoInput, stopAudioGraph, stopMediaTracks]
   );
 
   const startFallbackRecording = useCallback(async () => {
@@ -276,12 +277,13 @@ export function VoiceInputButton({
       return;
     }
     setError(null);
-    baselineRef.current = value;
+    // Дописуємо до того, що вже в полі (попередній запис / набір)
+    baselineRef.current = valueRef.current;
     finalChunkRef.current = "";
     interimRef.current = "";
     audioChunksRef.current = [];
     finishingRef.current = false;
-    sentRef.current = false;
+    finishedRef.current = false;
     heardSpeechRef.current = false;
 
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -320,7 +322,6 @@ export function VoiceInputButton({
       void transcribeBlob(blob);
     };
 
-    // Тиша через AnalyserNode → авто-стоп через 1.5с
     try {
       const ctx = new AudioContext();
       audioCtxRef.current = ctx;
@@ -373,18 +374,18 @@ export function VoiceInputButton({
         /* ignore */
       }
     }, MAX_FALLBACK_MS);
-  }, [clearMaxTimer, stopAudioGraph, stopMediaTracks, transcribeBlob, value]);
+  }, [clearMaxTimer, stopAudioGraph, stopMediaTracks, transcribeBlob]);
 
   const startSpeechRecognition = useCallback(() => {
     const Ctor = getSpeechRecognitionCtor();
     if (!Ctor) return false;
 
     setError(null);
-    baselineRef.current = value;
+    baselineRef.current = valueRef.current;
     finalChunkRef.current = "";
     interimRef.current = "";
     finishingRef.current = false;
-    sentRef.current = false;
+    finishedRef.current = false;
     heardSpeechRef.current = false;
 
     const recognition = new Ctor();
@@ -411,14 +412,13 @@ export function VoiceInputButton({
       }
       pushTranscript(finalPart, interim);
       if (heardSpeechRef.current) {
-        scheduleSilenceSend(() => composeText(finalChunkRef.current));
+        scheduleSilenceStop(() => composeText(finalChunkRef.current));
       }
     };
 
     recognition.onerror = (event) => {
       const code = event.error || "";
       if (code === "aborted" || code === "no-speech") return;
-      // Немає дозволу / не підтримується в PWA → fallback
       if (
         code === "not-allowed" ||
         code === "service-not-allowed" ||
@@ -439,9 +439,9 @@ export function VoiceInputButton({
     };
 
     recognition.onend = () => {
-      if (modeRef.current !== "speech" || sentRef.current) return;
-      // Chrome часто рве сесію між фразами — перезапускаємо, поки ще слухаємо
-      if (silenceTimerRef.current) {
+      if (modeRef.current !== "speech" || finishedRef.current) return;
+      // Chrome рве сесію між фразами — тримаємо слухання, поки не вийшов ліміт тиші
+      if (silenceTimerRef.current || !heardSpeechRef.current) {
         try {
           recognition.start();
           return;
@@ -449,7 +449,7 @@ export function VoiceInputButton({
           /* fall through */
         }
       }
-      finishWithText(composeText(finalChunkRef.current));
+      finishIntoInput(composeText(finalChunkRef.current));
     };
 
     try {
@@ -463,24 +463,23 @@ export function VoiceInputButton({
   }, [
     cleanupAll,
     composeText,
-    finishWithText,
+    finishIntoInput,
     pushTranscript,
-    scheduleSilenceSend,
+    scheduleSilenceStop,
     startFallbackRecording,
-    value,
   ]);
 
   const stopListening = useCallback(() => {
     clearSilenceTimer();
     clearMaxTimer();
     if (modeRef.current === "speech") {
-      const text = composeText(finalChunkRef.current);
+      const text = composeText(finalChunkRef.current, interimRef.current);
       try {
         recognitionRef.current?.stop();
       } catch {
         /* ignore */
       }
-      finishWithText(text);
+      finishIntoInput(text);
       return;
     }
     if (modeRef.current === "fallback") {
@@ -497,7 +496,7 @@ export function VoiceInputButton({
     clearMaxTimer,
     clearSilenceTimer,
     composeText,
-    finishWithText,
+    finishIntoInput,
     stopAudioGraph,
     stopMediaTracks,
   ]);
@@ -554,15 +553,15 @@ export function VoiceInputButton({
           busy
             ? "Транскрибую…"
             : listening
-              ? "Стоп і надіслати"
+              ? "Стоп запису"
               : "Голосовий ввід"
         }
         title={
           busy
             ? "Транскрибую голос…"
             : listening
-              ? "Стоп · hands-free відправка"
-              : "Диктуй українською (hands-free)"
+              ? "Стоп · текст лишається в полі (пауза до 30 с)"
+              : "Диктуй · можна дописувати повторним записом, відправка — стрілкою"
         }
         className={cn(
           "relative inline-flex size-11 items-center justify-center rounded-2xl border transition-colors disabled:pointer-events-none disabled:opacity-40",
