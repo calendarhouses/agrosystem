@@ -1,5 +1,5 @@
 /**
- * Хто бачить LEVADIUS (FAB, /copilot, /api/agent).
+ * Хто бачить LEVADIUS (сайдбар / мобільний тригер, /copilot, /api/agent).
  * За замовчуванням — лише admin (Назар).
  * Розширити: LEVADIUS_ALLOWED_EMAILS=admin@agrosystem.local,other@…
  * (на клієнті — NEXT_PUBLIC_LEVADIUS_ALLOWED_EMAILS з тим самим списком).

@@ -11,6 +11,7 @@ import {
 
 import { getMyProfileAction } from "@/app/team/actions";
 import { logoutAction } from "@/app/login/actions";
+import { LevadiusSidebarWidget } from "@/components/ai/LevadiusSidebarWidget";
 import { ProfilePopover } from "@/components/layout/mobile-profile-panel";
 import { SidebarNavTooltip } from "@/components/layout/sidebar-nav-tooltip";
 import { APP_NAV_ITEMS, isNavItemActive, type AppNavItem } from "@/lib/navigation";
@@ -184,6 +185,7 @@ export function Sidebar({ collapsed, onToggleCollapsed }: SidebarProps) {
       </nav>
 
       <div className="shrink-0 border-t border-zinc-700 p-2">
+        <LevadiusSidebarWidget collapsed={collapsed} />
         {me ? (
           collapsed ? (
             <SidebarNavTooltip

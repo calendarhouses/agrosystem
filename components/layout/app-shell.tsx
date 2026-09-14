@@ -11,6 +11,7 @@ import {
 
 import { LevadaCopilotHost } from "@/components/ai/LevadaCopilotDrawer";
 import { DispatcherLiveCapsule } from "@/components/ai/DispatcherLiveCapsule";
+import { MobileDispatcherTrigger } from "@/components/ai/MobileDispatcherTrigger";
 import { BottomNav } from "@/components/layout/bottom-nav";
 import { AppDataWarmer } from "@/components/layout/app-data-warmer";
 import { PreventEdgeSwipeBack } from "@/components/layout/prevent-edge-swipe-back";
@@ -70,6 +71,7 @@ function AppShellChrome({
       </div>
 
       <BottomNav />
+      <MobileDispatcherTrigger />
       <DispatcherLiveCapsule />
       <LevadaCopilotHost />
       <AppDataWarmer />

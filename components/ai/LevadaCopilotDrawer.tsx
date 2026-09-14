@@ -7565,8 +7565,10 @@ export function LevadaCopilotDrawer({
 
       <header
         className={cn(
-          "flex shrink-0 items-center gap-3 border-b border-white/10 px-4",
-          "pt-[max(0.75rem,env(safe-area-inset-top,0px))] pb-3",
+          "flex shrink-0 items-center gap-3 border-b border-white/10 px-4 pb-3",
+          fullscreen || !isMobile
+            ? "pt-[max(0.75rem,env(safe-area-inset-top,0px))]"
+            : "pt-3",
           showBoot && "invisible"
         )}
       >
@@ -7986,8 +7988,7 @@ export function LevadaCopilotDrawer({
               isMobile
                 ? [
                     "inset-x-0 bottom-0",
-                    "max-h-[min(92dvh,calc(100dvh-env(safe-area-inset-top,0px)-0.5rem))]",
-                    "h-[min(88dvh,calc(100dvh-env(safe-area-inset-top,0px)-0.75rem))]",
+                    "h-[85dvh] max-h-[85dvh]",
                     "pb-[env(safe-area-inset-bottom,0px)]",
                   ].join(" ")
                 : [

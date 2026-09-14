@@ -26,7 +26,7 @@ export const COMMAND_CENTER_DETAIL_FLOAT_INSET_CLASS =
 export const COMMAND_CENTER_GLASS_PANEL_CLASS =
   "pointer-events-auto absolute top-3 bottom-3 z-20 hidden flex-col overflow-hidden rounded-2xl border border-white/30 bg-background/80 shadow-2xl backdrop-blur-2xl md:flex";
 
-/** Відступи камери Mapbox: видима зона мінус нижнє меню, шторка полів, FAB. */
+/** Відступи камери Mapbox: видима зона мінус нижнє меню та шторка полів. */
 export const MAP_MOBILE_CAMERA_PADDING = {
   top: 100,
   bottom: 250,
@@ -41,7 +41,7 @@ export type MapCameraPadding = {
   right: number;
 };
 
-/** Додатковий bottom/right padding на ПК, коли легенда бюджету над FAB карти */
+/** Додатковий bottom/right padding на ПК, коли легенда бюджету над контролами карти */
 const MAP_DESKTOP_ECONOMICS_LEGEND_EXTRA_BOTTOM = 96;
 const MAP_DESKTOP_ECONOMICS_LEGEND_EXTRA_RIGHT = 280;
 
