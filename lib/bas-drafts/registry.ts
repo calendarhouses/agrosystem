@@ -45,12 +45,13 @@ export const BAS_DRAFT_PIPELINES: BasDraftPipeline[] = [
   {
     id: "inventory_inbound_receipt",
     section: "Склад / прихід ТМЦ",
-    trigger: "createLocalInboundMove → enqueueInventoryInboundBasDraft",
+    trigger:
+      "executeWarehouseReceipt → enqueueWarehouseReceiptBasDraft (1 накл. = 1 doc); ручний прихід → enqueueInventoryInboundBasDraft",
     basDocument: "Document_ПоступлениеТоваровУслуг",
-    readiness: "partial",
+    readiness: "ready",
     module: "lib/bas-drafts/inventory-inbound.ts",
     notes:
-      "Спрощений payload. Повний документ у BAS часто вимагає контрагента, договору, рахунків — узгодити з бухгалтером.",
+      "Multi-line Товары[] по receipt_id. Потрібні: BAS_ORGANIZATION_KEY, BAS_DEFAULT_WAREHOUSE_KEY, bas_counterparties / BAS_COUNTERPARTY_MAP, bas_ref_key номенклатури (не is_local). Go-live: BAS_DRAFT_POST_ENABLED + BAS_DRAFT_PIPELINES_ENABLED=inventory_inbound_receipt.",
   },
   {
     id: "inventory_sale",

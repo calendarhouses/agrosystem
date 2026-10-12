@@ -41,8 +41,15 @@ import {
 } from "@/app/export/actions";
 import {
   deleteLocalMove,
+  listWarehouseReceiptsBasHandoff,
+  retryWarehouseReceiptBasDraftAction,
   type LocalMoveRow,
+  type WarehouseReceiptBasRow,
 } from "@/app/admin/inventory/actions";
+import {
+  basHandoffLabel,
+  type BasHandoffStatus,
+} from "@/lib/bas-drafts/statuses";
 import { AttachmentDropzone } from "@/components/dashboard/attachment-dropzone";
 import { AttachmentViewerButton } from "@/components/dashboard/attachment-viewer";
 import { FinancePeriodToolbar } from "@/components/dashboard/finance-period-toolbar";
@@ -575,6 +582,17 @@ export function AccountantHubView({
     null
   );
   const [invoiceOpenId, setInvoiceOpenId] = useState<string | null>(null);
+  const [basReceipts, setBasReceipts] = useState<WarehouseReceiptBasRow[]>([]);
+  const [basReceiptsLoading, setBasReceiptsLoading] = useState(false);
+  const [basRetryId, setBasRetryId] = useState<string | null>(null);
+
+  const loadBasReceipts = useCallback(async () => {
+    setBasReceiptsLoading(true);
+    const res = await listWarehouseReceiptsBasHandoff(30);
+    setBasReceiptsLoading(false);
+    if (res.ok) setBasReceipts(res.rows);
+    else setBasReceipts([]);
+  }, []);
 
   const load = useCallback(
     async (opts?: { force?: boolean }) => {
@@ -669,17 +687,22 @@ export function AccountantHubView({
   }, [archiveOpen, loadArchive]);
 
   useEffect(() => {
+    void loadBasReceipts();
+  }, [loadBasReceipts]);
+
+  useEffect(() => {
     const onAccountingUpdated = () => {
       invalidateAppCache("api:inventory");
       invalidateAppCache("api:fuel");
       invalidateAppCache("api:accounting");
       invalidateAppCache("api:finance");
       void load({ force: true });
+      void loadBasReceipts();
     };
     window.addEventListener("accounting-updated", onAccountingUpdated);
     return () =>
       window.removeEventListener("accounting-updated", onAccountingUpdated);
-  }, [load]);
+  }, [load, loadBasReceipts]);
 
   const visible = useMemo(() => {
     return items.filter((i) => {
@@ -1100,6 +1123,142 @@ export function AccountantHubView({
             {error}
           </div>
         ) : null}
+
+        <section
+          className={cn(
+            glassCard,
+            "border-[#E5DFD3]/90 bg-white/75 px-4 py-4 sm:px-5"
+          )}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-sm font-semibold text-zinc-900">
+                Чернетки BAS · надходження
+              </p>
+              <p className="mt-0.5 text-[11px] text-zinc-500">
+                Статус накладних LEVADIUS → непроведена Поступление. Excel
+                «Позначено для 1С» — окремий контур.
+              </p>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 rounded-full text-xs"
+              disabled={basReceiptsLoading}
+              onClick={() => void loadBasReceipts()}
+            >
+              {basReceiptsLoading ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="h-3.5 w-3.5" />
+              )}
+              Оновити
+            </Button>
+          </div>
+          {basReceiptsLoading && basReceipts.length === 0 ? (
+            <p className="mt-3 text-sm text-zinc-500">Завантаження…</p>
+          ) : basReceipts.length === 0 ? (
+            <p className="mt-3 text-sm text-zinc-500">
+              Поки немає накладних (або міграція 079 ще не застосована).
+            </p>
+          ) : (
+            <ul className="mt-3 max-h-72 space-y-2 overflow-y-auto">
+              {basReceipts.map((row) => {
+                const canRetry =
+                  row.basHandoffStatus === "awaiting_bas_mapping" ||
+                  row.basHandoffStatus === "bas_draft_failed" ||
+                  row.basHandoffStatus === "bas_draft_dry_run" ||
+                  row.basHandoffStatus === "local_saved";
+                const statusTone =
+                  row.basHandoffStatus === "bas_draft_posted"
+                    ? "bg-emerald-100 text-emerald-800"
+                    : row.basHandoffStatus === "bas_draft_failed"
+                      ? "bg-red-100 text-red-800"
+                      : row.basHandoffStatus === "awaiting_bas_mapping"
+                        ? "bg-amber-100 text-amber-900"
+                        : "bg-zinc-100 text-zinc-700";
+                return (
+                  <li
+                    key={row.id}
+                    className="flex flex-wrap items-start justify-between gap-2 rounded-xl border border-[#E5DFD3]/80 bg-white/70 px-3 py-2.5"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={cn(
+                            "rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase",
+                            statusTone
+                          )}
+                        >
+                          {basHandoffLabel(
+                            row.basHandoffStatus as BasHandoffStatus
+                          )}
+                        </span>
+                        {row.invoiceNumber ? (
+                          <span className="text-[11px] text-zinc-500">
+                            № {row.invoiceNumber}
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="mt-1 truncate text-sm font-semibold text-zinc-900">
+                        {row.supplierName || "Постачальник"}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-zinc-500">
+                        {[
+                          row.invoiceDate,
+                          row.totalAmount != null
+                            ? `${row.totalAmount.toLocaleString("uk-UA")} ₴`
+                            : null,
+                          row.basDraftRefKey
+                            ? `BAS ${row.basDraftRefKey.slice(0, 8)}…`
+                            : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </p>
+                      {row.basDraftError ? (
+                        <p className="mt-1 text-[11px] text-amber-800">
+                          {row.basDraftError}
+                        </p>
+                      ) : null}
+                    </div>
+                    {canRetry ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-8 shrink-0 rounded-full text-xs"
+                        disabled={basRetryId === row.id}
+                        onClick={() => {
+                          setBasRetryId(row.id);
+                          void retryWarehouseReceiptBasDraftAction(row.id).then(
+                            (res) => {
+                              setBasRetryId(null);
+                              if (!res.ok) {
+                                toast.error(res.error);
+                                return;
+                              }
+                              toast.success(res.message);
+                              void loadBasReceipts();
+                            }
+                          );
+                        }}
+                      >
+                        {basRetryId === row.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-3.5 w-3.5" />
+                        )}
+                        Повторити BAS
+                      </Button>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
 
         <section className="grid grid-cols-3 gap-2 md:gap-4">
           <button
@@ -1928,7 +2087,7 @@ export function AccountantHubView({
                                   : "bg-emerald-100 text-emerald-800"
                               )}
                             >
-                              {deleted ? "Видалено" : "Передано"}
+                              {deleted ? "Видалено" : "Позначено для 1С"}
                             </span>
                           </div>
                           <p className="mt-1 truncate text-sm font-semibold text-zinc-900">

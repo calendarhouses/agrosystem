@@ -11,6 +11,7 @@
 import {
   basDieselNomenclatureKey,
   basOrganizationKey,
+  isBasDraftPipelineEnabled,
   isBasDraftPostEnabled,
 } from "@/lib/bas-drafts/config";
 import { postBasDocumentDraft, toIsoDateTime } from "@/lib/bas-drafts/post";
@@ -284,11 +285,18 @@ export async function enqueueFuelBasDraft(input: {
   const txId = input.draft?.sourceTransactionId || input.transactionId;
   if (!txId) return "pending_1c";
 
-  if (!isBasDraftPostEnabled()) {
+  const kind = input.transactionType ?? input.draft?.operationKind;
+  const pipelineId =
+    kind === "transfer"
+      ? "fuel_transfer"
+      : kind === "outbound"
+        ? "fuel_outbound_refuel"
+        : "fuel_inbound";
+  if (!isBasDraftPipelineEnabled(pipelineId)) {
     console.log(
-      "[bas-drafts] fuel skip auto-post (BAS_DRAFT_POST_ENABLED=false)",
+      "[bas-drafts] fuel skip auto-post (pipeline off)",
       txId,
-      input.transactionType ?? input.draft?.operationKind
+      kind
     );
     return "pending_1c";
   }
@@ -339,6 +347,22 @@ export async function requestFuelBasDraftSync(
   }
 
   const draft = buildFuelBasDraftDocument(tx, options);
+  const fuelPipeline =
+    draft.operationKind === "transfer"
+      ? "fuel_transfer"
+      : draft.operationKind === "outbound"
+        ? "fuel_outbound_refuel"
+        : "fuel_inbound";
+  if (!isBasDraftPipelineEnabled(fuelPipeline)) {
+    return {
+      ok: true,
+      status: "pending_1c" as FuelSyncStatus,
+      draft,
+      sentToBas: false,
+      dryRun: true,
+      message: `Pipeline ${fuelPipeline} вимкнено (BAS_DRAFT_PIPELINES_ENABLED)`,
+    };
+  }
   const keys = await resolveFuelBasKeys(tx);
   const built = buildODataBody(draft, keys);
   const live = isBasDraftPostEnabled();

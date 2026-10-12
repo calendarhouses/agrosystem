@@ -4784,6 +4784,12 @@ type InvoicePreviewLine = {
   pricePerUnit: number;
   totalAmount: number;
   matchStatus: "existing" | "new" | "skipped_fuel";
+  article: string | null;
+  unitRaw: string;
+  matchConfidence: number;
+  unitConflict: boolean;
+  needsReview: boolean;
+  reviewReasons: string[];
 };
 
 type InvoicePreview = {
@@ -4795,6 +4801,9 @@ type InvoicePreview = {
   invoiceDate: string | null;
   items: InvoicePreviewLine[];
   totalAmount: number;
+  linesSum: number;
+  totalMismatch: boolean;
+  needsReviewCount: number;
   newItemsCount: number;
   existingItemsCount: number;
 };
@@ -4819,6 +4828,9 @@ function normalizeInvoicePreview(value: unknown): InvoicePreview | null {
       line.matchStatus === "skipped_fuel"
         ? line.matchStatus
         : "new";
+    const reviewReasons = Array.isArray(line.reviewReasons)
+      ? line.reviewReasons.filter((r): r is string => typeof r === "string")
+      : [];
     items.push({
       lineId:
         typeof line.lineId === "string" ? line.lineId : `line-${items.length + 1}`,
@@ -4829,9 +4841,30 @@ function normalizeInvoicePreview(value: unknown): InvoicePreview | null {
       pricePerUnit: Number(line.pricePerUnit) || 0,
       totalAmount: Number(line.totalAmount) || 0,
       matchStatus,
+      article: typeof line.article === "string" ? line.article : null,
+      unitRaw:
+        typeof line.unitRaw === "string"
+          ? line.unitRaw
+          : typeof line.unit === "string"
+            ? line.unit
+            : "шт",
+      matchConfidence: Number(line.matchConfidence) || 0,
+      unitConflict: line.unitConflict === true,
+      needsReview: line.needsReview === true || reviewReasons.length > 0,
+      reviewReasons,
     });
   }
   if (items.length === 0) return null;
+
+  const linesSum =
+    Number(raw.linesSum) ||
+    items
+      .filter((i) => i.matchStatus !== "skipped_fuel")
+      .reduce((s, i) => s + i.totalAmount, 0);
+  const totalAmount = Number(raw.totalAmount) || linesSum;
+  const needsReviewCount =
+    Number(raw.needsReviewCount) ||
+    items.filter((i) => i.needsReview).length;
 
   return {
     status: "invoice_preview_ready",
@@ -4843,7 +4876,11 @@ function normalizeInvoicePreview(value: unknown): InvoicePreview | null {
       typeof raw.invoiceNumber === "string" ? raw.invoiceNumber : null,
     invoiceDate: typeof raw.invoiceDate === "string" ? raw.invoiceDate : null,
     items,
-    totalAmount: Number(raw.totalAmount) || 0,
+    totalAmount,
+    linesSum,
+    totalMismatch:
+      raw.totalMismatch === true || Math.abs(totalAmount - linesSum) > 0.05,
+    needsReviewCount,
     newItemsCount: Number(raw.newItemsCount) || 0,
     existingItemsCount: Number(raw.existingItemsCount) || 0,
   };
@@ -4904,10 +4941,39 @@ function InvoicePreviewCard({
   const [posting, setPosting] = useState(false);
   const [posted, setPosted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [acceptRisks, setAcceptRisks] = useState(false);
+  const [lines, setLines] = useState(invoice.items);
   const files = invoiceFiles?.length ? invoiceFiles : [];
+  const needsReviewLeft = lines.filter(
+    (l) => l.needsReview && l.matchStatus !== "skipped_fuel"
+  ).length;
+  const linesSum = lines
+    .filter((l) => l.matchStatus !== "skipped_fuel")
+    .reduce((s, l) => s + l.totalAmount, 0);
+  const canPost =
+    needsReviewLeft === 0 || acceptRisks;
+
+  function patchLine(
+    lineId: string,
+    patch: Partial<Pick<InvoicePreviewLine, "name" | "unit" | "article" | "quantity" | "pricePerUnit">>
+  ) {
+    setLines((prev) =>
+      prev.map((line) => {
+        if (line.lineId !== lineId) return line;
+        const next = { ...line, ...patch };
+        next.totalAmount =
+          Math.round(next.quantity * next.pricePerUnit * 100) / 100;
+        // Після ручної правки знімаємо needsReview
+        next.needsReview = false;
+        next.reviewReasons = [];
+        next.unitConflict = false;
+        return next;
+      })
+    );
+  }
 
   async function postReceipt() {
-    if (posting || posted) return;
+    if (posting || posted || !canPost) return;
     setPosting(true);
     setError(null);
     try {
@@ -4922,7 +4988,7 @@ function InvoicePreviewCard({
         invoiceNumber: invoice.invoiceNumber,
         invoiceDate: invoice.invoiceDate,
         totalAmount: invoice.totalAmount,
-        items: invoice.items
+        items: lines
           .filter((line) => line.matchStatus !== "skipped_fuel")
           .map((line) => ({
             name: line.name,
@@ -4936,6 +5002,7 @@ function InvoicePreviewCard({
             unit: line.unit,
             pricePerUnit: line.pricePerUnit,
             totalAmount: line.totalAmount,
+            article: line.article,
           })),
         attachment: attachments[0] ?? null,
         attachments,
@@ -4953,6 +5020,10 @@ function InvoicePreviewCard({
           detail: {
             receiptId: result.receiptId,
             postedLines: result.postedLines,
+            basHandoffStatus:
+              "basHandoffStatus" in result
+                ? result.basHandoffStatus
+                : undefined,
           },
         })
       );
@@ -4986,12 +5057,21 @@ function InvoicePreviewCard({
             {invoice.newItemsCount > 0
               ? `${invoice.existingItemsCount > 0 ? " · " : ""}${invoice.newItemsCount} нових`
               : null}
+            {needsReviewLeft > 0
+              ? ` · ${needsReviewLeft} потребують перевірки`
+              : null}
           </p>
         )}
+        {invoice.totalMismatch ? (
+          <p className="mt-1 text-[11px] text-amber-300">
+            Сума рядків {formatMoneyUa(linesSum)} ₴ ≠ підсумок накладної{" "}
+            {formatMoneyUa(invoice.totalAmount)} ₴ — перевір перед оприбуткуванням.
+          </p>
+        ) : null}
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[280px] text-left text-xs">
+        <table className="w-full min-w-[320px] text-left text-xs">
           <thead>
             <tr className="border-b border-white/10 text-[10px] tracking-wide text-zinc-500 uppercase">
               <th className="px-3.5 py-2 font-medium">Товар</th>
@@ -5001,21 +5081,85 @@ function InvoicePreviewCard({
             </tr>
           </thead>
           <tbody>
-            {invoice.items.map((line) => (
+            {lines.map((line) => (
               <tr
                 key={line.lineId}
-                className="border-b border-white/[0.06] text-zinc-200"
+                className={cn(
+                  "border-b border-white/[0.06] text-zinc-200",
+                  line.needsReview && "bg-amber-500/10"
+                )}
               >
                 <td className="px-3.5 py-2">
-                  <p className="font-medium text-white">{line.name}</p>
-                  <span className="mt-0.5 inline-flex rounded-md bg-white/5 px-1.5 py-0.5 text-[10px] text-zinc-400">
-                    {line.category}
-                    {line.matchStatus === "new" ? " · нова" : ""}
-                    {line.matchStatus === "skipped_fuel" ? " · паливо" : ""}
-                  </span>
+                  {line.needsReview && !posted ? (
+                    <input
+                      value={line.name}
+                      onChange={(e) =>
+                        patchLine(line.lineId, { name: e.target.value })
+                      }
+                      className="mb-1 w-full rounded-lg border border-amber-400/30 bg-zinc-900/80 px-2 py-1 text-xs text-white"
+                    />
+                  ) : (
+                    <p className="font-medium text-white">{line.name}</p>
+                  )}
+                  <div className="mt-0.5 flex flex-wrap gap-1">
+                    <span className="inline-flex rounded-md bg-white/5 px-1.5 py-0.5 text-[10px] text-zinc-400">
+                      {line.category}
+                      {line.matchStatus === "new" ? " · нова" : ""}
+                      {line.matchStatus === "skipped_fuel" ? " · паливо" : ""}
+                      {line.unitConflict ? " · од.вим.?" : ""}
+                    </span>
+                    {line.needsReview ? (
+                      <span className="inline-flex rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-200">
+                        перевірити
+                      </span>
+                    ) : null}
+                  </div>
+                  {line.needsReview && !posted ? (
+                    <div className="mt-1 flex gap-1">
+                      <input
+                        value={line.unit}
+                        onChange={(e) =>
+                          patchLine(line.lineId, { unit: e.target.value })
+                        }
+                        placeholder="од."
+                        className="w-16 rounded-lg border border-white/10 bg-zinc-900/80 px-1.5 py-0.5 text-[10px] text-zinc-200"
+                      />
+                      <input
+                        value={line.article ?? ""}
+                        onChange={(e) =>
+                          patchLine(line.lineId, {
+                            article: e.target.value || null,
+                          })
+                        }
+                        placeholder="артикул"
+                        className="min-w-0 flex-1 rounded-lg border border-white/10 bg-zinc-900/80 px-1.5 py-0.5 text-[10px] text-zinc-200"
+                      />
+                    </div>
+                  ) : null}
+                  {line.reviewReasons.length > 0 ? (
+                    <p className="mt-1 text-[10px] leading-snug text-amber-200/80">
+                      {line.reviewReasons.join("; ")}
+                    </p>
+                  ) : null}
                 </td>
                 <td className="px-2 py-2 whitespace-nowrap tabular-nums">
-                  {line.quantity} {line.unit}
+                  {line.needsReview && !posted ? (
+                    <input
+                      type="number"
+                      step="any"
+                      value={line.quantity}
+                      onChange={(e) =>
+                        patchLine(line.lineId, {
+                          quantity: Number(e.target.value) || 0,
+                        })
+                      }
+                      className="w-16 rounded-lg border border-white/10 bg-zinc-900/80 px-1.5 py-0.5 text-xs"
+                    />
+                  ) : (
+                    <>
+                      {line.quantity} {line.unit}
+                    </>
+                  )}
                 </td>
                 <td className="px-2 py-2 whitespace-nowrap tabular-nums">
                   {formatMoneyUa(line.pricePerUnit)}
@@ -5037,26 +5181,44 @@ function InvoicePreviewCard({
           <p className="text-sm font-semibold tabular-nums text-white">
             {formatMoneyUa(invoice.totalAmount)} ₴
           </p>
+          {Math.abs(linesSum - invoice.totalAmount) > 0.05 ? (
+            <p className="text-[10px] text-amber-300">
+              рядки: {formatMoneyUa(linesSum)} ₴
+            </p>
+          ) : null}
         </div>
         {posted ? (
           <span className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-400/30 bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-300">
             <CheckCircle2 className="size-3.5" />
-            Оприбутковано на баланс
+            На складі LEVADA
           </span>
         ) : (
-          <button
-            type="button"
-            disabled={posting}
-            onClick={() => void postReceipt()}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-zinc-950 transition hover:bg-emerald-400 disabled:opacity-50"
-          >
-            {posting ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <CheckCircle2 className="size-3.5" />
-            )}
-            Оприбуткувати на склад
-          </button>
+          <div className="flex flex-col items-end gap-1.5">
+            {needsReviewLeft > 0 ? (
+              <label className="flex max-w-[220px] items-start gap-1.5 text-[10px] leading-snug text-amber-200/90">
+                <input
+                  type="checkbox"
+                  checked={acceptRisks}
+                  onChange={(e) => setAcceptRisks(e.target.checked)}
+                  className="mt-0.5"
+                />
+                Підтверджую ризики по {needsReviewLeft} сумнівних рядках
+              </label>
+            ) : null}
+            <button
+              type="button"
+              disabled={posting || !canPost}
+              onClick={() => void postReceipt()}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-zinc-950 transition hover:bg-emerald-400 disabled:opacity-50"
+            >
+              {posting ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <CheckCircle2 className="size-3.5" />
+              )}
+              Оприбуткувати на склад
+            </button>
+          </div>
         )}
       </div>
       {error ? (
@@ -5066,9 +5228,8 @@ function InvoicePreviewCard({
       ) : null}
       {!posted ? (
         <p className="border-t border-white/5 px-3.5 py-2 text-[10px] text-zinc-500">
-          {files.length > 0
-            ? `${files.length} скан(и) буде прикріплено до кожної позиції на складі.`
-            : "Можна написати в чат: «Зміни кількість другого товару на …»"}
+          Після оприбуткування: склад LEVADA + чернетка BAS (якщо увімкнено й є
+          мапінг). «Позначено для 1С» ≠ документ у BAS.
         </p>
       ) : null}
     </div>

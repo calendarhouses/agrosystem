@@ -1,40 +1,360 @@
 /**
  * Прихід ТМЦ → чернетка Document_ПоступлениеТоваровУслуг (Posted: false).
- * Partial: без контрагента/рахунків BAS може відхилити — узгодити перед go-live.
+ *
+ * Основний шлях: enqueueWarehouseReceiptBasDraft(receiptId) —
+ * 1 накладна = 1 документ з Товары[].
+ * Per-move enqueueInventoryInboundBasDraft — лише для ручних приходів без receipt.
  */
 
 import {
   basDefaultWarehouseKey,
   basOrganizationKey,
+  isBasDraftPipelineEnabled,
   isBasDraftPostEnabled,
 } from "@/lib/bas-drafts/config";
 import { postBasDocumentDraft, toIsoDateTime } from "@/lib/bas-drafts/post";
+import type { BasHandoffStatus } from "@/lib/bas-drafts/statuses";
 import {
   markBasDraftFailure,
   markBasDraftSuccess,
+  markWarehouseHandoffStatus,
 } from "@/lib/bas-drafts/track";
 import { createServiceSupabase } from "@/lib/supabase/server";
 
 const ENTITY = "Document_ПоступлениеТоваровУслуг";
+const PIPELINE_ID = "inventory_inbound_receipt";
 
+export type WarehouseReceiptBasDraftResult = {
+  ok: boolean;
+  dryRun: boolean;
+  handoffStatus: BasHandoffStatus;
+  refKey?: string;
+  linesInDraft?: number;
+  linesSkippedLocal?: number;
+  error?: string;
+};
+
+function normalizeEdrpou(raw: string | null | undefined): string {
+  return (raw ?? "").replace(/\D/g, "");
+}
+
+async function resolveCounterpartyKey(input: {
+  edrpou: string | null;
+  name: string | null;
+}): Promise<{ key: string | null; reason?: string }> {
+  const supabase = createServiceSupabase();
+  const edrpou = normalizeEdrpou(input.edrpou);
+  if (edrpou) {
+    const { data } = await supabase
+      .from("bas_counterparties")
+      .select("bas_ref_key")
+      .eq("is_active", true)
+      .eq("edrpou", edrpou)
+      .maybeSingle();
+    if (data?.bas_ref_key) {
+      return { key: String(data.bas_ref_key).toLowerCase() };
+    }
+  }
+
+  const name = (input.name ?? "").trim();
+  if (name.length >= 3) {
+    const { data } = await supabase
+      .from("bas_counterparties")
+      .select("bas_ref_key, name")
+      .eq("is_active", true)
+      .ilike("name", `%${name.replaceAll(",", " ")}%`)
+      .limit(5);
+    const rows = data ?? [];
+    if (rows.length === 1 && rows[0]?.bas_ref_key) {
+      return { key: String(rows[0].bas_ref_key).toLowerCase() };
+    }
+    if (rows.length > 1) {
+      return { key: null, reason: "кілька контрагентів за назвою" };
+    }
+  }
+
+  // Env fallback: BAS_COUNTERPARTY_MAP=edrpou:uuid,edrpou:uuid
+  const mapRaw = process.env.BAS_COUNTERPARTY_MAP?.trim() ?? "";
+  if (edrpou && mapRaw) {
+    for (const part of mapRaw.split(",")) {
+      const [code, key] = part.split(":").map((s) => s.trim());
+      if (code && key && normalizeEdrpou(code) === edrpou) {
+        return { key: key.toLowerCase() };
+      }
+    }
+  }
+
+  return { key: null, reason: "немає мапінгу контрагента" };
+}
+
+/**
+ * 1 накладна → 1 непроведена Поступление з усіма змапленими рядками.
+ */
+export async function enqueueWarehouseReceiptBasDraft(
+  receiptId: string
+): Promise<WarehouseReceiptBasDraftResult> {
+  const supabase = createServiceSupabase();
+
+  const { data: receipt, error: receiptError } = await supabase
+    .from("warehouse_receipts")
+    .select(
+      "id, supplier_name, supplier_edrpou, invoice_number, invoice_date, total_amount, bas_draft_ref_key, status"
+    )
+    .eq("id", receiptId)
+    .maybeSingle();
+
+  if (receiptError || !receipt) {
+    return {
+      ok: false,
+      dryRun: !isBasDraftPostEnabled(),
+      handoffStatus: "bas_draft_failed",
+      error: "накладну не знайдено",
+    };
+  }
+
+  if (receipt.bas_draft_ref_key) {
+    return {
+      ok: true,
+      dryRun: false,
+      handoffStatus: "bas_draft_posted",
+      refKey: String(receipt.bas_draft_ref_key),
+    };
+  }
+
+  const { data: moves, error: movesError } = await supabase
+    .from("inventory_local_moves")
+    .select(
+      `
+      id, qty, date, note, buyer_name, unit_price_uah, bas_draft_ref_key, item_ref_key,
+      inventory_items_cache ( bas_ref_key, name, unit, is_local, code )
+    `
+    )
+    .eq("receipt_id", receiptId)
+    .eq("type", "inbound")
+    .neq("status", "cancelled");
+
+  if (movesError) {
+    await markWarehouseHandoffStatus({
+      receiptId,
+      status: "bas_draft_failed",
+      error: movesError.message,
+    });
+    return {
+      ok: false,
+      dryRun: !isBasDraftPostEnabled(),
+      handoffStatus: "bas_draft_failed",
+      error: movesError.message,
+    };
+  }
+
+  const rows = moves ?? [];
+  type Line = {
+    moveId: string;
+    itemKey: string;
+    name: string;
+    qty: number;
+    price: number;
+  };
+  const mapped: Line[] = [];
+  let linesSkippedLocal = 0;
+
+  for (const row of rows) {
+    const cache = Array.isArray(row.inventory_items_cache)
+      ? row.inventory_items_cache[0]
+      : row.inventory_items_cache;
+    const isLocal = cache?.is_local === true;
+    const itemKey = cache?.bas_ref_key
+      ? String(cache.bas_ref_key).toLowerCase()
+      : row.item_ref_key
+        ? String(row.item_ref_key).toLowerCase()
+        : null;
+    if (!itemKey || isLocal) {
+      linesSkippedLocal += 1;
+      continue;
+    }
+    mapped.push({
+      moveId: String(row.id),
+      itemKey,
+      name: cache?.name ? String(cache.name) : "ТМЦ",
+      qty: Number(row.qty) || 0,
+      price: Number(row.unit_price_uah) || 0,
+    });
+  }
+
+  if (mapped.length === 0) {
+    await markWarehouseHandoffStatus({
+      receiptId,
+      status: "awaiting_bas_mapping",
+      error:
+        linesSkippedLocal > 0
+          ? "немає рядків із bas_ref_key BAS (лише локальна номенклатура)"
+          : "немає рядків для чернетки",
+    });
+    return {
+      ok: true,
+      dryRun: !isBasDraftPostEnabled(),
+      handoffStatus: "awaiting_bas_mapping",
+      linesInDraft: 0,
+      linesSkippedLocal,
+      error: "очікує мапінгу номенклатури",
+    };
+  }
+
+  const counterparty = await resolveCounterpartyKey({
+    edrpou: receipt.supplier_edrpou,
+    name: receipt.supplier_name,
+  });
+
+  // Без мапінгу контрагента — НЕ постимо в BAS (план go-live).
+  if (!counterparty.key) {
+    await markWarehouseHandoffStatus({
+      receiptId,
+      status: "awaiting_bas_mapping",
+      error:
+        counterparty.reason ||
+        "немає мапінгу контрагента (bas_counterparties / BAS_COUNTERPARTY_MAP)",
+    });
+    return {
+      ok: true,
+      dryRun: !isBasDraftPostEnabled(),
+      handoffStatus: "awaiting_bas_mapping",
+      linesInDraft: mapped.length,
+      linesSkippedLocal,
+      error: "очікує мапінгу контрагента",
+    };
+  }
+
+  const live = isBasDraftPipelineEnabled(PIPELINE_ID);
+  if (!live) {
+    console.log(
+      "[bas-drafts] receipt skip auto-post (pipeline off)",
+      receiptId,
+      { mapped: mapped.length, skippedLocal: linesSkippedLocal }
+    );
+    await markWarehouseHandoffStatus({
+      receiptId,
+      status: "bas_draft_dry_run",
+    });
+    return {
+      ok: true,
+      dryRun: true,
+      handoffStatus: "bas_draft_dry_run",
+      linesInDraft: mapped.length,
+      linesSkippedLocal,
+    };
+  }
+
+  const org = basOrganizationKey();
+  const warehouse = basDefaultWarehouseKey();
+  const dateRaw =
+    String(receipt.invoice_date ?? "").slice(0, 10) ||
+    String(rows[0]?.date ?? "").slice(0, 10) ||
+    new Date().toISOString().slice(0, 10);
+
+  const body: Record<string, unknown> = {
+    Date: toIsoDateTime(dateRaw),
+    Posted: false,
+    DeletionMark: false,
+    Комментарий: [
+      "AgroSystem · прихід ТМЦ (чернетка)",
+      receipt.supplier_name ? String(receipt.supplier_name) : null,
+      receipt.invoice_number ? `№${receipt.invoice_number}` : null,
+      receipt.invoice_date ? `від ${receipt.invoice_date}` : null,
+      linesSkippedLocal > 0
+        ? `(локальних без BAS: ${linesSkippedLocal})`
+        : null,
+    ]
+      .filter(Boolean)
+      .join(" · "),
+    Товары: mapped.map((line, index) => ({
+      LineNumber: index + 1,
+      Номенклатура_Key: line.itemKey,
+      Количество: line.qty,
+      Цена: line.price,
+      Сумма: Math.round(line.qty * line.price * 100) / 100,
+    })),
+    Контрагент_Key: counterparty.key,
+    _meta: { receiptId, pipeline: PIPELINE_ID },
+  };
+  if (org) body.Организация_Key = org;
+  if (warehouse) body.Склад_Key = warehouse;
+
+  const result = await postBasDocumentDraft(ENTITY, body);
+  const moveIds = mapped.map((m) => m.moveId);
+
+  if (!result.ok) {
+    await markBasDraftFailure({
+      table: "warehouse_receipts",
+      ids: [receiptId],
+      error: result.error,
+      handoffStatus: "bas_draft_failed",
+    });
+    await markBasDraftFailure({
+      table: "inventory_local_moves",
+      ids: moveIds,
+      error: result.error,
+    });
+    return {
+      ok: false,
+      dryRun: result.dryRun,
+      handoffStatus: "bas_draft_failed",
+      linesInDraft: mapped.length,
+      linesSkippedLocal,
+      error: result.error,
+    };
+  }
+
+  if (!result.dryRun) {
+    await markBasDraftSuccess({
+      table: "warehouse_receipts",
+      ids: [receiptId],
+      refKey: result.refKey,
+      entitySet: ENTITY,
+      handoffStatus: "bas_draft_posted",
+    });
+    await markBasDraftSuccess({
+      table: "inventory_local_moves",
+      ids: moveIds,
+      refKey: result.refKey,
+      entitySet: ENTITY,
+    });
+    return {
+      ok: true,
+      dryRun: false,
+      handoffStatus: "bas_draft_posted",
+      refKey: result.refKey,
+      linesInDraft: mapped.length,
+      linesSkippedLocal,
+    };
+  }
+
+  await markWarehouseHandoffStatus({
+    receiptId,
+    status: "bas_draft_dry_run",
+  });
+  return {
+    ok: true,
+    dryRun: true,
+    handoffStatus: "bas_draft_dry_run",
+    linesInDraft: mapped.length,
+    linesSkippedLocal,
+  };
+}
+
+/**
+ * Ручний одиночний прихід без receipt_id → однорядкова чернетка.
+ * Якщо у move вже є receipt_id — делегуємо multi-line шляху.
+ */
 export async function enqueueInventoryInboundBasDraft(
   moveId: string
 ): Promise<{ ok: boolean; dryRun: boolean; error?: string }> {
-  if (!isBasDraftPostEnabled()) {
-    console.log(
-      "[bas-drafts] inbound skip auto-post (BAS_DRAFT_POST_ENABLED=false)",
-      moveId
-    );
-    return { ok: true, dryRun: true };
-  }
-
   const supabase = createServiceSupabase();
   const { data, error } = await supabase
     .from("inventory_local_moves")
     .select(
       `
-      id, qty, date, note, buyer_name, unit_price_uah, bas_draft_ref_key,
-      inventory_items_cache ( bas_ref_key, name, unit )
+      id, qty, date, note, buyer_name, unit_price_uah, bas_draft_ref_key, receipt_id,
+      inventory_items_cache ( bas_ref_key, name, unit, is_local )
     `
     )
     .eq("id", moveId)
@@ -48,9 +368,43 @@ export async function enqueueInventoryInboundBasDraft(
     return { ok: true, dryRun: false };
   }
 
+  const receiptId =
+    typeof data.receipt_id === "string" && data.receipt_id.trim()
+      ? data.receipt_id.trim()
+      : null;
+  if (receiptId) {
+    // Multi-line: не плодимо однорядкові документи
+    const aggregated = await enqueueWarehouseReceiptBasDraft(receiptId);
+    return {
+      ok: aggregated.ok,
+      dryRun: aggregated.dryRun,
+      error: aggregated.error,
+    };
+  }
+
+  if (!isBasDraftPipelineEnabled(PIPELINE_ID)) {
+    console.log(
+      "[bas-drafts] inbound skip auto-post (pipeline off)",
+      moveId
+    );
+    return { ok: true, dryRun: true };
+  }
+
   const cache = Array.isArray(data.inventory_items_cache)
     ? data.inventory_items_cache[0]
     : data.inventory_items_cache;
+  if (cache?.is_local === true) {
+    await markBasDraftFailure({
+      table: "inventory_local_moves",
+      ids: [moveId],
+      error: "локальна номенклатура без BAS bas_ref_key",
+    });
+    return {
+      ok: false,
+      dryRun: false,
+      error: "локальна номенклатура — очікує мапінгу",
+    };
+  }
   const itemKey = cache?.bas_ref_key
     ? String(cache.bas_ref_key).toLowerCase()
     : null;
@@ -77,7 +431,7 @@ export async function enqueueInventoryInboundBasDraft(
     Posted: false,
     DeletionMark: false,
     Комментарий: [
-      "AgroSystem · прихід ТМЦ (чернетка)",
+      "AgroSystem · прихід ТМЦ (чернетка, 1 рядок)",
       cache?.name ? String(cache.name) : null,
       data.buyer_name ? `постачальник: ${data.buyer_name}` : null,
       data.note ? String(data.note) : null,
@@ -93,7 +447,7 @@ export async function enqueueInventoryInboundBasDraft(
         Сумма: Math.round(qty * price * 100) / 100,
       },
     ],
-    _meta: { moveId, pipeline: "inventory_inbound_receipt" },
+    _meta: { moveId, pipeline: PIPELINE_ID },
   };
   if (org) body.Организация_Key = org;
   if (warehouse) body.Склад_Key = warehouse;
@@ -108,7 +462,6 @@ export async function enqueueInventoryInboundBasDraft(
     return { ok: false, dryRun: result.dryRun, error: result.error };
   }
 
-  // Dry-run не пишемо ref — інакше «фейковий» UUID заблокує повтор при go-live
   if (!result.dryRun) {
     await markBasDraftSuccess({
       table: "inventory_local_moves",

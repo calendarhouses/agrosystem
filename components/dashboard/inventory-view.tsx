@@ -18,7 +18,9 @@ import {
   ExternalLink,
   FlaskConical,
   History,
+  LayoutGrid,
   Leaf,
+  List,
   Loader2,
   MoreHorizontal,
   PackageMinus,
@@ -220,6 +222,15 @@ export function InventoryView({
   const [flowFilter, setFlowFilter] = useState<FlowFilter | null>(null);
   const [query, setQuery] = useState("");
   const [onlyActive, setOnlyActive] = useState(true);
+  const [viewMode, setViewMode] = useState<"cards" | "table">(() => {
+    if (typeof window === "undefined") return "cards";
+    try {
+      const raw = localStorage.getItem("levada-inventory-view-mode");
+      return raw === "table" ? "table" : "cards";
+    } catch {
+      return "cards";
+    }
+  });
   const [openItemId, setOpenItemId] = useState<string | null>(null);
   const [quickIssueOpen, setQuickIssueOpen] = useState(false);
   const [inboundOpen, setInboundOpen] = useState(false);
@@ -249,6 +260,14 @@ export function InventoryView({
   const [seasonOpen, setSeasonOpen] = useState(false);
   const [rangeOpen, setRangeOpen] = useState(false);
   const [customRange, setCustomRange] = useState<DateRange | undefined>();
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("levada-inventory-view-mode", viewMode);
+    } catch {
+      /* ignore */
+    }
+  }, [viewMode]);
 
   const rangeDraft = useRangePopoverDraft({
     period,
@@ -1403,6 +1422,36 @@ export function InventoryView({
                     )}
                     Приховані
                   </button>
+                  <div className="inline-flex h-9 shrink-0 overflow-hidden rounded-full border border-zinc-200 bg-white shadow-sm">
+                    <button
+                      type="button"
+                      title="Картки"
+                      onClick={() => setViewMode("cards")}
+                      className={cn(
+                        "inline-flex items-center gap-1 px-2.5 text-xs font-semibold transition",
+                        viewMode === "cards"
+                          ? "bg-[#276749] text-white"
+                          : "text-zinc-500 hover:bg-zinc-50"
+                      )}
+                    >
+                      <LayoutGrid className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">Картки</span>
+                    </button>
+                    <button
+                      type="button"
+                      title="Список"
+                      onClick={() => setViewMode("table")}
+                      className={cn(
+                        "inline-flex items-center gap-1 px-2.5 text-xs font-semibold transition",
+                        viewMode === "table"
+                          ? "bg-[#276749] text-white"
+                          : "text-zinc-500 hover:bg-zinc-50"
+                      )}
+                    >
+                      <List className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">Список</span>
+                    </button>
+                  </div>
                 </div>
 
                 {operationalLoading ? (
@@ -1413,6 +1462,7 @@ export function InventoryView({
                   </div>
                 ) : (
                   <NomenclatureGrid
+                    viewMode={viewMode}
                     items={items}
                     periodItemById={periodItemById}
                     periodMoves={view.moves}
@@ -1500,6 +1550,7 @@ function InventoryBootSkeleton() {
 }
 
 function NomenclatureGrid({
+  viewMode = "cards",
   items,
   periodItemById,
   periodMoves,
@@ -1521,6 +1572,7 @@ function NomenclatureGrid({
   onToggleHidden,
   onLocalMovesChanged,
 }: {
+  viewMode?: "cards" | "table";
   items: InventoryItem[];
   periodItemById: Map<string, InventoryItem>;
   periodMoves: ItemMove[];
@@ -1596,6 +1648,89 @@ function NomenclatureGrid({
   return (
     <>
       <TooltipProvider delay={120}>
+      {viewMode === "table" ? (
+        <div className="overflow-hidden rounded-2xl border border-[#E5DFD3]/90 bg-white/80 shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-[#E5DFD3] bg-[#F7F4EE] text-[10px] font-semibold tracking-wide text-zinc-500 uppercase">
+                  <th className="px-3 py-2.5">Код</th>
+                  <th className="px-3 py-2.5">Назва</th>
+                  <th className="px-3 py-2.5">Кат.</th>
+                  <th className="px-3 py-2.5">Од.</th>
+                  <th className="px-3 py-2.5 text-right">Залишок</th>
+                  <th className="px-3 py-2.5 text-right">Ціна</th>
+                  <th className="px-3 py-2.5" />
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item) => {
+                  const id = item.id.toLowerCase();
+                  const meta = cacheMetaByRef[id] ?? cacheMetaByRef[item.id];
+                  const displayName =
+                    meta?.customName?.trim() || item.name;
+                  const lifetimeIn = lifetimeQtyInByRef[id] ?? 0;
+                  const lifetimeOut = lifetimeQtyOutByRef[id] ?? 0;
+                  const qtyInLocal = localInboundByRef[id] ?? 0;
+                  const qtyOutLocal = localOutboundByRef[id] ?? 0;
+                  const balance =
+                    Math.round(
+                      (lifetimeIn + qtyInLocal - lifetimeOut - qtyOutLocal) *
+                        100
+                    ) / 100;
+                  const price = resolveDisplayUnitPriceUah(meta, item);
+                  return (
+                    <tr
+                      key={item.id}
+                      className={cn(
+                        "border-b border-[#E5DFD3]/70 transition hover:bg-[#276749]/[0.04]",
+                        openItemId === item.id && "bg-[#276749]/[0.07]"
+                      )}
+                    >
+                      <td className="px-3 py-2 font-mono text-[11px] text-zinc-500">
+                        {meta?.code?.trim() || "—"}
+                      </td>
+                      <td className="px-3 py-2">
+                        <button
+                          type="button"
+                          onClick={() => onOpenItem(item.id)}
+                          className="text-left font-semibold text-zinc-900 hover:text-[#276749]"
+                        >
+                          {displayName}
+                        </button>
+                      </td>
+                      <td className="px-3 py-2 text-xs text-zinc-500">
+                        {INVENTORY_CATEGORY_META[item.category]?.label ??
+                          item.category}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-zinc-500">
+                        {item.unit || "—"}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums font-semibold text-zinc-900">
+                        {balance}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums text-zinc-600">
+                        {price > 0 ? formatInventoryMoney(price) : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 rounded-full px-2.5 text-[11px]"
+                          onClick={() => onIssueToField(item)}
+                        >
+                          {item.category === "harvest" ? "Продаж" : "Списати"}
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
       <section className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3 xl:grid-cols-3">
         {items.map((item) => {
           const id = item.id.toLowerCase();
@@ -1621,6 +1756,7 @@ function NomenclatureGrid({
           );
         })}
       </section>
+      )}
       </TooltipProvider>
 
       <ItemDocumentsSheet

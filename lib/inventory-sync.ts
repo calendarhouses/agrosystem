@@ -26,6 +26,7 @@ export type InventoryCacheRow = {
   name: string;
   category: CacheCategory;
   unit: string;
+  code: string | null;
   updated_at: string;
 };
 
@@ -79,6 +80,7 @@ function pushRows(
       unit:
         unitMap.get((row.БазоваяЕдиницаИзмерения_Key ?? "").toLowerCase()) ||
         "",
+      code: row.Code?.trim() || null,
       updated_at: now,
     });
     byCategory[category] += 1;
@@ -139,10 +141,20 @@ export async function syncNomenclatureToSupabase(): Promise<SyncNomenclatureResu
 
   for (let i = 0; i < rows.length; i += chunkSize) {
     const chunk = rows.slice(i, i + chunkSize);
-    const { error, data } = await supabase
+    let { error, data } = await supabase
       .from("inventory_items_cache")
       .upsert(chunk, { onConflict: "bas_ref_key" })
       .select("bas_ref_key");
+
+    if (error?.message?.includes("code")) {
+      const withoutCode = chunk.map(({ code: _c, ...rest }) => rest);
+      const retry = await supabase
+        .from("inventory_items_cache")
+        .upsert(withoutCode, { onConflict: "bas_ref_key" })
+        .select("bas_ref_key");
+      error = retry.error;
+      data = retry.data;
+    }
 
     if (error) {
       throw new Error(`inventory_items_cache upsert: ${error.message}`);

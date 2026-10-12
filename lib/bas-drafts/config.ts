@@ -1,8 +1,10 @@
 /**
- * Єдиний перемикач живих POST чернеток у BAS AGRO (Posted: false).
+ * Живі POST чернеток у BAS AGRO (Posted: false).
  *
- * За замовчуванням ВИМКНЕНО. Коли бухгалтер підтвердить — увімкни
- * `BAS_DRAFT_POST_ENABLED=true` у env (або зміни DEFAULT нижче лише за задачею).
+ * Потрібні ОБИДВА прапорці:
+ *   BAS_DRAFT_POST_ENABLED=true
+ *   BAS_DRAFT_PIPELINES_ENABLED=inventory_inbound_receipt
+ *     (або comma-list / `*` / `all`)
  *
  * Див. .cursor/rules/bas-readonly.mdc і lib/bas-drafts/registry.ts.
  */
@@ -11,14 +13,31 @@
 const DEFAULT_ENABLED = false;
 
 /**
- * Чи дозволений реальний OData POST непроведеної чернетки.
- * Усі шляхи (ТМЦ, ДП, наряди) читають лише цю функцію.
+ * Глобальний kill-switch реального OData POST.
  */
 export function isBasDraftPostEnabled(): boolean {
   const raw = process.env.BAS_DRAFT_POST_ENABLED?.trim().toLowerCase();
   if (raw === "1" || raw === "true" || raw === "yes") return true;
   if (raw === "0" || raw === "false" || raw === "no") return false;
   return DEFAULT_ENABLED;
+}
+
+/**
+ * Чи дозволений живий POST саме для цього pipeline id з registry.
+ * Без BAS_DRAFT_POST_ENABLED — завжди false.
+ * Без BAS_DRAFT_PIPELINES_ENABLED (порожньо) — жоден pipeline не поститься (безпечно).
+ */
+export function isBasDraftPipelineEnabled(pipelineId: string): boolean {
+  if (!isBasDraftPostEnabled()) return false;
+  const raw = process.env.BAS_DRAFT_PIPELINES_ENABLED?.trim().toLowerCase();
+  if (!raw) return false;
+  if (raw === "*" || raw === "all") return true;
+  const id = pipelineId.trim().toLowerCase();
+  return raw
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean)
+    .includes(id);
 }
 
 export function basOrganizationKey(): string | null {

@@ -3,7 +3,11 @@
  * Partial: лише шапка; табличні частини (ПутевыеЛисты, Начисления) — з бухгалтером.
  */
 
-import { basOrganizationKey, isBasDraftPostEnabled } from "@/lib/bas-drafts/config";
+import {
+  basOrganizationKey,
+  isBasDraftPipelineEnabled,
+  isBasDraftPostEnabled,
+} from "@/lib/bas-drafts/config";
 import { postBasDocumentDraft, toIsoDateTime } from "@/lib/bas-drafts/post";
 import {
   markBasDraftFailure,
@@ -12,13 +16,14 @@ import {
 import { createServiceSupabase } from "@/lib/supabase/server";
 
 const ENTITY = "Document_ИНАГРО_ПутевойЛистТрактористаМашиниста";
+const PIPELINE_ID = "field_operation_waybill";
 
 export async function enqueueFieldOperationBasDraft(
   operationId: string
 ): Promise<{ ok: boolean; dryRun: boolean; error?: string }> {
-  if (!isBasDraftPostEnabled()) {
+  if (!isBasDraftPipelineEnabled(PIPELINE_ID)) {
     console.log(
-      "[bas-drafts] waybill skip auto-post (BAS_DRAFT_POST_ENABLED=false)",
+      "[bas-drafts] waybill skip auto-post (pipeline off)",
       operationId
     );
     return { ok: true, dryRun: true };

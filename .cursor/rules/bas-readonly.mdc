@@ -25,11 +25,14 @@ alwaysApply: true
 Єдиний майбутній виняток: непроведені **чернетки** документів (`Posted: false`) на узгодження
 бухгалтеру. Реалізація зібрана в `lib/bas-drafts/` + доменні sync.
 
-**Єдиний перемикач живої відправки:** `BAS_DRAFT_POST_ENABLED=true` у env
-(див. `lib/bas-drafts/config.ts`). Поки `false` — лише dry-run / черга в нашій БД.
+**Перемикачі живої відправки** (обидва потрібні; див. `lib/bas-drafts/config.ts`):
+- `BAS_DRAFT_POST_ENABLED=true`
+- `BAS_DRAFT_PIPELINES_ENABLED=inventory_inbound_receipt` (або comma-list / `*`)
 
-Список контурів: `lib/bas-drafts/registry.ts`. Увімкнення — лише за явним
-підтвердженням у задачі, не «за замовчуванням».
+Поки глобальний прапорець `false` або pipeline не в списку — лише dry-run / черга в нашій БД.
+
+Список контурів: `lib/bas-drafts/registry.ts`. Go-live чеклист: `docs/bas-drafts-golive.md`.
+Увімкнення — лише за явним підтвердженням у задачі, не «за замовчуванням».
 
 Приклад документів: `Document_ИНАГРО_ЛимитноЗаборнаяКарта`,
 `Document_ИНАГРО_ПутевойЛистТрактористаМашиниста`, `Document_ИНАГРО_СливТоплива`.

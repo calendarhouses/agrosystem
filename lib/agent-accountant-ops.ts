@@ -584,7 +584,7 @@ export async function markAgentQueueDocumentsStatus(params: {
       appliedStatus: "sent_to_1c" as const,
       breakdown: res.data,
       totalSumUah,
-      message: `Позначив **${updatedCount}** документів як sent_to_1c.`,
+      message: `Позначив **${updatedCount}** документів як sent_to_1c (Excel-черга бухгалтера, не чернетка в BAS).`,
       clientEvents: ["accounting-updated"],
     };
   }

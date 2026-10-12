@@ -486,6 +486,10 @@ export async function createLocalInboundMove(input: {
   season?: string;
   /** YYYY-MM-DD або ISO; за замовчуванням — зараз */
   date?: string | null;
+  /** Звʼязок з накладною (multi-line BAS draft) */
+  receiptId?: string | null;
+  /** Не ставити в чергу BAS одразу — викличе enqueueWarehouseReceiptBasDraft після всіх рядків */
+  skipBasDraft?: boolean;
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   const itemRefKey = input.itemRefKey?.trim().toLowerCase();
   const fieldId = input.fieldId?.trim().toLowerCase() || null;
@@ -494,6 +498,8 @@ export async function createLocalInboundMove(input: {
   const season = String(input.season ?? "2026").trim() || "2026";
   const note = input.note?.trim() || null;
   const buyerName = input.buyerName?.trim() || null;
+  const receiptId = input.receiptId?.trim() || null;
+  const skipBasDraft = input.skipBasDraft === true;
   const moveDate = (() => {
     const raw = input.date?.trim();
     if (!raw) return new Date().toISOString();
@@ -535,8 +541,17 @@ export async function createLocalInboundMove(input: {
       note,
       unit_price_uah: unitPriceUah,
       buyer_name: buyerName,
+      ...(receiptId ? { receipt_id: receiptId } : {}),
       ...actorCreateColumns(actor),
     };
+
+    const scheduleBas = (id: string) => {
+      if (skipBasDraft) return;
+      void enqueueInventoryInboundBasDraft(id).catch((e) =>
+        console.error("[bas-drafts] inbound", e)
+      );
+    };
+
     const { data, error } = await supabase
       .from("inventory_local_moves")
       .insert(payload)
@@ -554,6 +569,21 @@ export async function createLocalInboundMove(input: {
             "Не вдалося зберегти прихід. Перевірте дані і спробуйте ще раз.",
         };
       }
+      if (error.message?.includes("receipt_id")) {
+        const { receipt_id: _r, ...withoutReceipt } = payload;
+        const retryReceipt = await supabase
+          .from("inventory_local_moves")
+          .insert(withoutReceipt)
+          .select("id")
+          .single();
+        if (retryReceipt.error) {
+          return { ok: false, error: retryReceipt.error.message };
+        }
+        const retryReceiptId = String(retryReceipt.data.id);
+        scheduleBas(retryReceiptId);
+        revalidatePath("/inventory");
+        return { ok: true, id: retryReceiptId };
+      }
       if (error.message?.includes("unit_price")) {
         const { unit_price_uah: _p, ...withoutPrice } = payload;
         const retry = await supabase
@@ -562,13 +592,14 @@ export async function createLocalInboundMove(input: {
           .select("id")
           .single();
         if (retry.error) return { ok: false, error: retry.error.message };
-        // Міграція 039 потрібна для ціни — але planned_price все одно оновимо
         await supabase
           .from("inventory_items_cache")
           .update({ planned_price_uah: unitPriceUah })
           .eq("bas_ref_key", itemRefKey);
+        const retryId = String(retry.data.id);
+        scheduleBas(retryId);
         revalidatePath("/inventory");
-        return { ok: true, id: String(retry.data.id) };
+        return { ok: true, id: retryId };
       }
       if (error.message?.includes("season") || error.message?.includes("note")) {
         const { season: _s, note: _n, unit_price_uah: _p, ...withoutExtra } =
@@ -586,9 +617,7 @@ export async function createLocalInboundMove(input: {
             .single();
           if (bare.error) return { ok: false, error: bare.error.message };
           const bareId = String(bare.data.id);
-          void enqueueInventoryInboundBasDraft(bareId).catch((e) =>
-            console.error("[bas-drafts] inbound", e)
-          );
+          scheduleBas(bareId);
           revalidatePath("/inventory");
           return { ok: true, id: bareId };
         }
@@ -597,32 +626,27 @@ export async function createLocalInboundMove(input: {
           .update({ planned_price_uah: unitPriceUah })
           .eq("bas_ref_key", itemRefKey);
         const retryId = String(retry.data.id);
-        void enqueueInventoryInboundBasDraft(retryId).catch((e) =>
-          console.error("[bas-drafts] inbound", e)
-        );
+        scheduleBas(retryId);
         revalidatePath("/inventory");
         return { ok: true, id: retryId };
       }
       return { ok: false, error: error.message };
     }
 
-    // Оновлюємо планову ціну в кеші — фінанси поля беруть її при списанні
     await supabase
       .from("inventory_items_cache")
       .update({ planned_price_uah: unitPriceUah })
       .eq("bas_ref_key", itemRefKey);
 
     const id = String(data.id);
-    void enqueueInventoryInboundBasDraft(id).catch((e) =>
-      console.error("[bas-drafts] inbound", e)
-    );
+    scheduleBas(id);
     await logActivity({
       actor,
       action: "create",
       entityType: "inventory_move",
       entityId: id,
       summary: `${actor.label} оформив прихід ТМЦ`,
-      meta: { type: "inbound", qty, itemRefKey },
+      meta: { type: "inbound", qty, itemRefKey, receiptId },
     });
     revalidatePath("/inventory");
     return { ok: true, id };
@@ -630,6 +654,115 @@ export async function createLocalInboundMove(input: {
     return {
       ok: false,
       error: err instanceof Error ? err.message : "Не вдалося зберегти прихід",
+    };
+  }
+}
+
+export type WarehouseReceiptBasRow = {
+  id: string;
+  supplierName: string;
+  supplierEdrpou: string | null;
+  invoiceNumber: string | null;
+  invoiceDate: string | null;
+  totalAmount: number | null;
+  status: string;
+  basHandoffStatus: string;
+  basDraftRefKey: string | null;
+  basDraftError: string | null;
+  basDraftSentAt: string | null;
+  createdAt: string | null;
+};
+
+/** Останні накладні з статусом передачі в BAS (для хабу бухгалтера). */
+export async function listWarehouseReceiptsBasHandoff(limit = 40): Promise<
+  | { ok: true; rows: WarehouseReceiptBasRow[] }
+  | { ok: false; error: string }
+> {
+  try {
+    const supabase = createServiceSupabase();
+    const { data, error } = await supabase
+      .from("warehouse_receipts")
+      .select(
+        "id, supplier_name, supplier_edrpou, invoice_number, invoice_date, total_amount, status, bas_handoff_status, bas_draft_ref_key, bas_draft_error, bas_draft_sent_at, created_at"
+      )
+      .order("created_at", { ascending: false })
+      .limit(Math.min(100, Math.max(1, limit)));
+
+    if (error) {
+      if (
+        error.code === "PGRST205" ||
+        error.code === "42P01" ||
+        error.message?.includes("warehouse_receipts") ||
+        error.message?.includes("bas_handoff_status")
+      ) {
+        return { ok: true, rows: [] };
+      }
+      return { ok: false, error: error.message };
+    }
+
+    const rows: WarehouseReceiptBasRow[] = (data ?? []).map((row) => ({
+      id: String(row.id),
+      supplierName: String(row.supplier_name ?? ""),
+      supplierEdrpou:
+        typeof row.supplier_edrpou === "string" ? row.supplier_edrpou : null,
+      invoiceNumber:
+        typeof row.invoice_number === "string" ? row.invoice_number : null,
+      invoiceDate:
+        typeof row.invoice_date === "string"
+          ? String(row.invoice_date).slice(0, 10)
+          : null,
+      totalAmount:
+        row.total_amount != null && Number.isFinite(Number(row.total_amount))
+          ? Number(row.total_amount)
+          : null,
+      status: String(row.status ?? "posted"),
+      basHandoffStatus: String(row.bas_handoff_status ?? "local_saved"),
+      basDraftRefKey:
+        row.bas_draft_ref_key != null ? String(row.bas_draft_ref_key) : null,
+      basDraftError:
+        typeof row.bas_draft_error === "string" ? row.bas_draft_error : null,
+      basDraftSentAt:
+        typeof row.bas_draft_sent_at === "string" ? row.bas_draft_sent_at : null,
+      createdAt:
+        typeof row.created_at === "string" ? row.created_at : null,
+    }));
+
+    return { ok: true, rows };
+  } catch (err) {
+    return {
+      ok: false,
+      error:
+        err instanceof Error ? err.message : "Не вдалося завантажити накладні",
+    };
+  }
+}
+
+/** Повторна відправка multi-line чернетки BAS по накладній. */
+export async function retryWarehouseReceiptBasDraftAction(
+  receiptId: string
+): Promise<
+  | { ok: true; handoffStatus: string; dryRun: boolean; message: string }
+  | { ok: false; error: string }
+> {
+  try {
+    const { enqueueWarehouseReceiptBasDraft } = await import(
+      "@/lib/bas-drafts/inventory-inbound"
+    );
+    const { describeBasHandoff } = await import("@/lib/bas-drafts/statuses");
+    const result = await enqueueWarehouseReceiptBasDraft(receiptId.trim());
+    if (!result.ok && result.handoffStatus === "bas_draft_failed") {
+      return { ok: false, error: result.error || "Помилка відправки чернетки" };
+    }
+    return {
+      ok: true,
+      handoffStatus: result.handoffStatus,
+      dryRun: result.dryRun,
+      message: describeBasHandoff(result.handoffStatus),
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Не вдалося повторити відправку",
     };
   }
 }
@@ -1484,6 +1617,8 @@ export type InventoryCacheMeta = {
   basRefKey: string;
   basName: string;
   customName: string | null;
+  /** Артикул / Code з BAS */
+  code: string | null;
   isHidden: boolean;
   plannedPriceUah: number;
   /** Ціна з BAS AGRO (unit_cost), якщо є в кеші */
@@ -1505,6 +1640,7 @@ export async function getInventoryCacheMetaMap(): Promise<
         bas_ref_key: unknown;
         name: unknown;
         custom_name?: unknown;
+        code?: unknown;
         is_hidden?: unknown;
         planned_price_uah?: unknown;
         unit_cost?: unknown;
@@ -1522,6 +1658,10 @@ export async function getInventoryCacheMetaMap(): Promise<
           basRefKey: key,
           basName: String(row.name),
           customName: row.custom_name ? String(row.custom_name) : null,
+          code:
+            typeof row.code === "string" && row.code.trim()
+              ? row.code.trim()
+              : null,
           isHidden: Boolean(row.is_hidden),
           plannedPriceUah: Number(row.planned_price_uah) || 0,
           unitCostUah:
@@ -1537,11 +1677,27 @@ export async function getInventoryCacheMetaMap(): Promise<
       return byRef;
     }
 
-    const { data, error } = await supabase
-      .from("inventory_items_cache")
-      .select(
-        "bas_ref_key, name, custom_name, is_hidden, planned_price_uah, unit_cost, category, unit, is_local"
-      );
+    let data: Parameters<typeof mapRows>[0] | null = null;
+    let error: { message?: string; code?: string } | null = null;
+    {
+      const primary = await supabase
+        .from("inventory_items_cache")
+        .select(
+          "bas_ref_key, name, custom_name, code, is_hidden, planned_price_uah, unit_cost, category, unit, is_local"
+        );
+      if (primary.error?.message?.includes("code")) {
+        const retry = await supabase
+          .from("inventory_items_cache")
+          .select(
+            "bas_ref_key, name, custom_name, is_hidden, planned_price_uah, unit_cost, category, unit, is_local"
+          );
+        data = (retry.data ?? null) as Parameters<typeof mapRows>[0] | null;
+        error = retry.error;
+      } else {
+        data = (primary.data ?? null) as Parameters<typeof mapRows>[0] | null;
+        error = primary.error;
+      }
+    }
 
     if (!error) {
       return { ok: true, byRef: mapRows(data ?? []) };
@@ -1590,7 +1746,10 @@ export async function getInventoryCacheMetaMap(): Promise<
       return { ok: true, byRef: mapRows(legacy.data ?? [], false) };
     }
 
-    return { ok: false, error: error.message };
+    return {
+      ok: false,
+      error: error?.message || "Не вдалося завантажити кеш ТМЦ",
+    };
   } catch (err) {
     return {
       ok: false,
@@ -2173,6 +2332,7 @@ export async function executeWarehouseReceiptAction(input: {
     unit: string;
     pricePerUnit: number;
     totalAmount?: number | null;
+    article?: string | null;
   }[];
   /** Скан/фото накладної (base64 без data: префікса) — прикріплюється до кожного приходу */
   attachment?: {

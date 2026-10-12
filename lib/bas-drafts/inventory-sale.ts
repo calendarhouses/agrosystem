@@ -5,6 +5,7 @@
 import {
   basDefaultWarehouseKey,
   basOrganizationKey,
+  isBasDraftPipelineEnabled,
   isBasDraftPostEnabled,
 } from "@/lib/bas-drafts/config";
 import { postBasDocumentDraft, toIsoDateTime } from "@/lib/bas-drafts/post";
@@ -15,13 +16,14 @@ import {
 import { createServiceSupabase } from "@/lib/supabase/server";
 
 const ENTITY = "Document_РеализацияТоваровУслуг";
+const PIPELINE_ID = "inventory_sale";
 
 export async function enqueueInventorySaleBasDraft(
   moveId: string
 ): Promise<{ ok: boolean; dryRun: boolean; error?: string }> {
-  if (!isBasDraftPostEnabled()) {
+  if (!isBasDraftPipelineEnabled(PIPELINE_ID)) {
     console.log(
-      "[bas-drafts] sale skip auto-post (BAS_DRAFT_POST_ENABLED=false)",
+      "[bas-drafts] sale skip auto-post (pipeline off)",
       moveId
     );
     return { ok: true, dryRun: true };

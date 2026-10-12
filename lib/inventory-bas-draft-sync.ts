@@ -8,6 +8,7 @@
 import {
   basDefaultWarehouseKey,
   basOrganizationKey,
+  isBasDraftPipelineEnabled,
   isBasDraftPostEnabled,
 } from "@/lib/bas-drafts/config";
 import { postBasDocumentDraft, toIsoDateTime } from "@/lib/bas-drafts/post";
@@ -257,12 +258,23 @@ export async function syncLocalMovesToBas(): Promise<SyncLocalMovesToBasResult> 
     ),
   }));
 
-  const dryRun = !isBasDraftPostEnabled();
+  const pipelineOn = isBasDraftPipelineEnabled("inventory_outbound_lzk");
+  const dryRun = !pipelineOn;
   if (rows.length === 0) {
     return {
       dryRun,
       draftCount: 0,
       moveCount: 0,
+      payloads: [],
+      errors: [],
+    };
+  }
+
+  if (!pipelineOn) {
+    return {
+      dryRun: true,
+      draftCount: 0,
+      moveCount: rows.length,
       payloads: [],
       errors: [],
     };
@@ -311,10 +323,9 @@ export async function syncLocalMovesToBas(): Promise<SyncLocalMovesToBasResult> 
 export async function enqueueInventoryOutboundBasDraft(
   moveId: string
 ): Promise<{ ok: boolean; dryRun: boolean; error?: string }> {
-  if (!isBasDraftPostEnabled()) {
-    // Не спамимо dry-run на кожне збереження — batch через syncLocalMovesToBasAction.
+  if (!isBasDraftPipelineEnabled("inventory_outbound_lzk")) {
     console.log(
-      "[bas-drafts] outbound skip auto-post (BAS_DRAFT_POST_ENABLED=false)",
+      "[bas-drafts] outbound skip auto-post (pipeline off)",
       moveId
     );
     return { ok: true, dryRun: true };

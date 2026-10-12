@@ -9,6 +9,11 @@ import {
   deleteLocalMove,
 } from "@/app/admin/inventory/actions";
 import { loadAgentInventoryStock } from "@/lib/agent-warehouse-stock";
+import {
+  describeBasHandoff,
+  type BasHandoffStatus,
+} from "@/lib/bas-drafts/statuses";
+import { enqueueWarehouseReceiptBasDraft } from "@/lib/bas-drafts/inventory-inbound";
 import { createServiceSupabase } from "@/lib/supabase/server";
 import { DEFAULT_SEASON } from "@/lib/season";
 import { todayKyivYmd } from "@/lib/kyiv-date";
@@ -30,6 +35,8 @@ export type InvoiceLineInput = {
   unit: string;
   pricePerUnit: number;
   totalAmount?: number | null;
+  /** Артикул / код постачальника або BAS */
+  article?: string | null;
 };
 
 export type InvoiceReceiptInput = {
@@ -47,6 +54,12 @@ export type InvoicePreviewLine = InvoiceLineInput & {
   matchStatus: "existing" | "new" | "skipped_fuel";
   existingItemId: string | null;
   existingItemName: string | null;
+  article: string | null;
+  unitRaw: string;
+  matchConfidence: number;
+  unitConflict: boolean;
+  needsReview: boolean;
+  reviewReasons: string[];
 };
 
 export type InvoicePreviewResult = {
@@ -58,6 +71,9 @@ export type InvoicePreviewResult = {
   invoiceDate: string | null;
   items: InvoicePreviewLine[];
   totalAmount: number;
+  linesSum: number;
+  totalMismatch: boolean;
+  needsReviewCount: number;
   newItemsCount: number;
   existingItemsCount: number;
   skippedFuelCount: number;
@@ -82,10 +98,92 @@ function normalizeName(value: string): string {
   return value.trim().toLocaleLowerCase("uk-UA").replace(/\s+/g, " ");
 }
 
+function normalizeArticle(value: string): string {
+  return value.trim().toLocaleLowerCase("uk-UA").replace(/[\s\-_/]/g, "");
+}
+
+/** Нормалізація од. вим. для порівняння (кг ≠ шт тощо). */
+export function normalizeUnitKey(raw: string): string {
+  const u = raw.trim().toLocaleLowerCase("uk-UA").replace(/\./g, "");
+  if (!u) return "шт";
+  if (/^(шт|штук|штука|pcs|pc)$/.test(u)) return "шт";
+  if (/^(кг|kg|килограм|кілограм)/.test(u)) return "кг";
+  if (/^(л|l|літр|литр)/.test(u)) return "л";
+  if (/^(пар|пари|пара|pair)/.test(u)) return "пари";
+  if (/^(м|m|метр)/.test(u) && !/^мл/.test(u)) return "м";
+  if (/^(уп|упак|упаковка)/.test(u)) return "уп";
+  if (/^(т|тонн)/.test(u)) return "т";
+  if (/^(г|гр|грам)/.test(u)) return "г";
+  return u;
+}
+
 export function mapInvoiceCategoryToDb(
   category: InvoiceCategoryUk
 ): "zzr" | "fertilizer" | "seed" | "parts" | null {
   return CATEGORY_TO_KEY[category] ?? null;
+}
+
+type CatalogRow = {
+  bas_ref_key: string;
+  name: string | null;
+  custom_name: string | null;
+  category: string | null;
+  unit: string | null;
+  is_hidden?: boolean | null;
+  code?: string | null;
+  is_local?: boolean | null;
+};
+
+function displayCatalogName(row: CatalogRow): string {
+  return (
+    (typeof row.custom_name === "string" && row.custom_name.trim()) ||
+    String(row.name ?? "").trim() ||
+    "ТМЦ"
+  );
+}
+
+function matchCatalogItem(
+  rows: CatalogRow[],
+  name: string,
+  article: string | null
+): { row: CatalogRow; confidence: number; weakFuzzy: boolean } | null {
+  if (article) {
+    const art = normalizeArticle(article);
+    const byCode = rows.find(
+      (row) =>
+        typeof row.code === "string" &&
+        row.code.trim() &&
+        normalizeArticle(row.code) === art
+    );
+    if (byCode) return { row: byCode, confidence: 98, weakFuzzy: false };
+  }
+
+  const needle = normalizeName(name);
+  const exact = rows.find((row) => {
+    const display = displayCatalogName(row);
+    return normalizeName(display) === needle;
+  });
+  if (exact) return { row: exact, confidence: 95, weakFuzzy: false };
+
+  // Сильний fuzzy: один рядок містить інший і довжина ≥ 4
+  const strong = rows.filter((row) => {
+    const n = normalizeName(displayCatalogName(row));
+    if (n.length < 4 || needle.length < 4) return false;
+    return n.includes(needle) || needle.includes(n);
+  });
+  if (strong.length === 1) {
+    return { row: strong[0]!, confidence: 72, weakFuzzy: true };
+  }
+  if (strong.length > 1) {
+    // найкоротша різниця довжин
+    const ranked = [...strong].sort(
+      (a, b) =>
+        Math.abs(normalizeName(displayCatalogName(a)).length - needle.length) -
+        Math.abs(normalizeName(displayCatalogName(b)).length - needle.length)
+    );
+    return { row: ranked[0]!, confidence: 55, weakFuzzy: true };
+  }
+  return null;
 }
 
 export async function buildInvoicePreview(
@@ -98,20 +196,49 @@ export async function buildInvoicePreview(
   }
 
   const supabase = createServiceSupabase();
-  const { data: catalog, error } = await supabase
-    .from("inventory_items_cache")
-    .select("bas_ref_key, name, custom_name, category, unit, is_hidden")
-    .limit(5_000);
-
-  if (error && error.code !== "PGRST205" && error.code !== "42P01") {
-    return { status: "error", error: error.message };
+  let catalogRows: CatalogRow[] = [];
+  {
+    const primary = await supabase
+      .from("inventory_items_cache")
+      .select(
+        "bas_ref_key, name, custom_name, category, unit, is_hidden, code, is_local"
+      )
+      .limit(5_000);
+    if (
+      primary.error &&
+      (primary.error.message?.includes("code") ||
+        primary.error.message?.includes("is_local"))
+    ) {
+      const legacy = await supabase
+        .from("inventory_items_cache")
+        .select("bas_ref_key, name, custom_name, category, unit, is_hidden")
+        .limit(5_000);
+      if (
+        legacy.error &&
+        legacy.error.code !== "PGRST205" &&
+        legacy.error.code !== "42P01"
+      ) {
+        return { status: "error", error: legacy.error.message };
+      }
+      catalogRows = (legacy.data ?? []) as CatalogRow[];
+    } else if (
+      primary.error &&
+      primary.error.code !== "PGRST205" &&
+      primary.error.code !== "42P01"
+    ) {
+      return { status: "error", error: primary.error.message };
+    } else {
+      catalogRows = (primary.data ?? []) as CatalogRow[];
+    }
   }
 
-  const rows = (catalog ?? []).filter((row) => row.is_hidden !== true);
+  const rows = catalogRows.filter((row) => row.is_hidden !== true);
 
   const previewItems: InvoicePreviewLine[] = items.map((raw, index) => {
     const name = String(raw.name ?? "").trim() || `Позиція ${index + 1}`;
-    const category = (INVOICE_CATEGORIES.includes(raw.category as InvoiceCategoryUk)
+    const category = (INVOICE_CATEGORIES.includes(
+      raw.category as InvoiceCategoryUk
+    )
       ? raw.category
       : "Запчастини") as InvoiceCategoryUk;
     const quantity = Number(raw.quantity);
@@ -123,7 +250,12 @@ export async function buildInvoicePreview(
       raw.totalAmount != null && Number.isFinite(Number(raw.totalAmount))
         ? round2(Number(raw.totalAmount))
         : round2(qty * price);
-    const unit = String(raw.unit ?? "шт").trim() || "шт";
+    const unitRaw = String(raw.unit ?? "шт").trim() || "шт";
+    const article =
+      typeof raw.article === "string" && raw.article.trim()
+        ? raw.article.trim()
+        : null;
+    const reviewReasons: string[] = [];
 
     if (category === "Паливо" || mapInvoiceCategoryToDb(category) == null) {
       return {
@@ -131,47 +263,54 @@ export async function buildInvoicePreview(
         name,
         category,
         quantity: qty,
-        unit,
+        unit: unitRaw,
+        unitRaw,
+        article,
         pricePerUnit: price,
         totalAmount: total,
         matchStatus: "skipped_fuel" as const,
         existingItemId: null,
         existingItemName: null,
+        matchConfidence: 0,
+        unitConflict: false,
+        needsReview: false,
+        reviewReasons: [],
       };
     }
 
-    const needle = normalizeName(name);
-    const exact = rows.find((row) => {
-      const display =
-        (typeof row.custom_name === "string" && row.custom_name.trim()) ||
-        String(row.name ?? "");
-      return normalizeName(display) === needle;
-    });
-    const fuzzy =
-      exact ??
-      rows.find((row) => {
-        const display =
-          (typeof row.custom_name === "string" && row.custom_name.trim()) ||
-          String(row.name ?? "");
-        const n = normalizeName(display);
-        return n.includes(needle) || needle.includes(n);
-      });
-
-    if (fuzzy) {
-      const display =
-        (typeof fuzzy.custom_name === "string" && fuzzy.custom_name.trim()) ||
-        String(fuzzy.name ?? name);
+    const matched = matchCatalogItem(rows, name, article);
+    if (matched) {
+      const display = displayCatalogName(matched.row);
+      const cacheUnit = String(matched.row.unit ?? "").trim() || unitRaw;
+      const unitConflict =
+        normalizeUnitKey(unitRaw) !== normalizeUnitKey(cacheUnit);
+      if (unitConflict) {
+        reviewReasons.push(
+          `од. вим.: у накладній «${unitRaw}», у довіднику «${cacheUnit}»`
+        );
+      }
+      if (matched.weakFuzzy || matched.confidence < 80) {
+        reviewReasons.push(`слабкий збіг назви → «${display}»`);
+      }
+      const needsReview = reviewReasons.length > 0;
       return {
         lineId: `line-${index + 1}`,
         name,
         category,
         quantity: qty,
-        unit: String(fuzzy.unit ?? unit).trim() || unit,
+        // Не підміняємо од. вим. мовчки при конфлікті
+        unit: unitConflict ? unitRaw : cacheUnit,
+        unitRaw,
+        article,
         pricePerUnit: price,
         totalAmount: total,
         matchStatus: "existing" as const,
-        existingItemId: String(fuzzy.bas_ref_key),
+        existingItemId: String(matched.row.bas_ref_key),
         existingItemName: display,
+        matchConfidence: matched.confidence,
+        unitConflict,
+        needsReview,
+        reviewReasons,
       };
     }
 
@@ -180,22 +319,46 @@ export async function buildInvoicePreview(
       name,
       category,
       quantity: qty,
-      unit,
+      unit: unitRaw,
+      unitRaw,
+      article,
       pricePerUnit: price,
       totalAmount: total,
       matchStatus: "new" as const,
       existingItemId: null,
       existingItemName: null,
+      matchConfidence: 0,
+      unitConflict: false,
+      needsReview: true,
+      reviewReasons: ["нова номенклатура — перевірити назву й од. вим."],
     };
   });
 
-  const computedTotal = round2(
-    previewItems.reduce((sum, line) => sum + line.totalAmount, 0)
+  const linesSum = round2(
+    previewItems
+      .filter((i) => i.matchStatus !== "skipped_fuel")
+      .reduce((sum, line) => sum + line.totalAmount, 0)
   );
-  const totalAmount =
-    input.totalAmount != null && Number.isFinite(Number(input.totalAmount))
-      ? round2(Number(input.totalAmount))
-      : computedTotal;
+  const hasExplicitTotal =
+    input.totalAmount != null && Number.isFinite(Number(input.totalAmount));
+  const totalAmount = hasExplicitTotal
+    ? round2(Number(input.totalAmount))
+    : linesSum;
+  const totalMismatch =
+    hasExplicitTotal && Math.abs(totalAmount - linesSum) > 0.05;
+
+  if (totalMismatch) {
+    for (const line of previewItems) {
+      if (line.matchStatus === "skipped_fuel") continue;
+      if (!line.needsReview) {
+        line.needsReview = true;
+        line.reviewReasons = [
+          ...line.reviewReasons,
+          `сума рядків ${linesSum} ₴ ≠ підсумок накладної ${totalAmount} ₴`,
+        ];
+      }
+    }
+  }
 
   return {
     status: "invoice_preview_ready",
@@ -206,11 +369,15 @@ export async function buildInvoicePreview(
     invoiceDate: (input.invoiceDate?.trim() || todayKyivYmd()).slice(0, 10),
     items: previewItems,
     totalAmount,
+    linesSum,
+    totalMismatch,
+    needsReviewCount: previewItems.filter((i) => i.needsReview).length,
     newItemsCount: previewItems.filter((i) => i.matchStatus === "new").length,
     existingItemsCount: previewItems.filter((i) => i.matchStatus === "existing")
       .length,
-    skippedFuelCount: previewItems.filter((i) => i.matchStatus === "skipped_fuel")
-      .length,
+    skippedFuelCount: previewItems.filter(
+      (i) => i.matchStatus === "skipped_fuel"
+    ).length,
   };
 }
 
@@ -230,6 +397,10 @@ export async function executeWarehouseReceipt(
       postedLines: number;
       skippedFuelLines: number;
       totalAmount: number;
+      basHandoffStatus: BasHandoffStatus;
+      basDraftRefKey: string | null;
+      basLinesInDraft: number;
+      basLinesSkippedLocal: number;
       message: string;
     }
   | { success: false; status: "error"; error: string }
@@ -242,7 +413,6 @@ export async function executeWarehouseReceipt(
   const receiptId = input.receiptId?.trim() || preview.receiptId;
   const supabase = createServiceSupabase();
 
-  // Журнал накладних (якщо є міграція 062)
   const { error: receiptInsertError } = await supabase
     .from("warehouse_receipts")
     .insert({
@@ -254,6 +424,7 @@ export async function executeWarehouseReceipt(
       total_amount: preview.totalAmount,
       status: "posted",
       source: "levadius",
+      bas_handoff_status: "local_saved",
     });
 
   const receiptTableMissing =
@@ -263,11 +434,32 @@ export async function executeWarehouseReceipt(
       receiptInsertError!.message?.includes("warehouse_receipts"));
 
   if (receiptInsertError && !receiptTableMissing) {
-    return {
-      success: false,
-      status: "error",
-      error: `Не вдалося зберегти накладну: ${receiptInsertError.message}`,
-    };
+    // bas_handoff_status може ще не існувати
+    if (receiptInsertError.message?.includes("bas_handoff_status")) {
+      const retry = await supabase.from("warehouse_receipts").insert({
+        id: receiptId,
+        supplier_name: preview.supplierName,
+        supplier_edrpou: preview.supplierEdrpou,
+        invoice_number: preview.invoiceNumber,
+        invoice_date: preview.invoiceDate,
+        total_amount: preview.totalAmount,
+        status: "posted",
+        source: "levadius",
+      });
+      if (retry.error) {
+        return {
+          success: false,
+          status: "error",
+          error: `Не вдалося зберегти накладну: ${retry.error.message}`,
+        };
+      }
+    } else {
+      return {
+        success: false,
+        status: "error",
+        error: `Не вдалося зберегти накладну: ${receiptInsertError.message}`,
+      };
+    }
   }
 
   const moveIds: string[] = [];
@@ -324,6 +516,8 @@ export async function executeWarehouseReceipt(
       note: noteBase,
       season: DEFAULT_SEASON,
       date: preview.invoiceDate,
+      receiptId: receiptTableMissing ? null : receiptId,
+      skipBasDraft: !receiptTableMissing,
     });
 
     if (!inbound.ok) {
@@ -336,13 +530,6 @@ export async function executeWarehouseReceipt(
 
     moveIds.push(inbound.id);
     postedLines += 1;
-
-    if (!receiptTableMissing) {
-      await supabase
-        .from("inventory_local_moves")
-        .update({ receipt_id: receiptId })
-        .eq("id", inbound.id);
-    }
   }
 
   if (postedLines === 0) {
@@ -354,6 +541,19 @@ export async function executeWarehouseReceipt(
           ? "Усі рядки — паливо/непідтримувані. Паливо оприбутковується через /fuel."
           : "Немає валідних рядків для оприбуткування.",
     };
+  }
+
+  let basHandoffStatus: BasHandoffStatus = "local_saved";
+  let basDraftRefKey: string | null = null;
+  let basLinesInDraft = 0;
+  let basLinesSkippedLocal = 0;
+
+  if (!receiptTableMissing) {
+    const bas = await enqueueWarehouseReceiptBasDraft(receiptId);
+    basHandoffStatus = bas.handoffStatus;
+    basDraftRefKey = bas.refKey ?? null;
+    basLinesInDraft = bas.linesInDraft ?? 0;
+    basLinesSkippedLocal = bas.linesSkippedLocal ?? 0;
   }
 
   return {
@@ -369,9 +569,25 @@ export async function executeWarehouseReceipt(
     postedLines,
     skippedFuelLines,
     totalAmount: preview.totalAmount,
-    message: `Оприбутковано ${postedLines} позицій${
-      preview.invoiceNumber ? ` (накл. №${preview.invoiceNumber})` : ""
-    } на склад.`,
+    basHandoffStatus,
+    basDraftRefKey,
+    basLinesInDraft,
+    basLinesSkippedLocal,
+    message: [
+      `Оприбутковано ${postedLines} позицій${
+        preview.invoiceNumber ? ` (накл. №${preview.invoiceNumber})` : ""
+      } на склад LEVADA.`,
+      describeBasHandoff(basHandoffStatus),
+      basLinesInDraft > 0
+        ? `У чернетку BAS потрапить ${basLinesInDraft} змаплених рядків.`
+        : null,
+      basLinesSkippedLocal > 0
+        ? `${basLinesSkippedLocal} локальних (без BAS-ключа) лишаються лише в LEVADA.`
+        : null,
+      "Excel-статус sent_to_1c ≠ чернетка в BAS.",
+    ]
+      .filter(Boolean)
+      .join(" "),
   };
 }
 

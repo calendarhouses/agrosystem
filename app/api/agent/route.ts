@@ -447,7 +447,9 @@ wialon_field_fuel_logs, field_ndvi_alerts, equipment_maintenance_logs.
 • Коригування списання → updateInventoryWriteOff | скасувати outbound → deleteInventoryWriteOff (confirm)
 • Правка/скасування приходу чи продажу → listInventoryMoves → updateInventoryMove / deleteInventoryMove (confirm)
 • Черга бухгалтерії («що висить на вивантаження») → listAccountantQueue
-• Статус черги prepared / sent_to_1c / new → markQueueDocumentsStatus (confirm)
+• Статус черги prepared / sent_to_1c / new → markQueueDocumentsStatus (confirm).
+  sent_to_1c = Excel/черга бухгалтера, НЕ документ у BAS. Чернетка BAS = bas_draft_ref_key /
+  basHandoffStatus=bas_draft_posted.
 • Excel-пакет для бухгалтера / 1С → exportAccountantPackage
 • Акти послуг / СТО / ремонт → listServiceActs
 • Звірка BAS («що не привʼязано до 1С») → getReconciliationGaps
@@ -462,7 +464,13 @@ wialon_field_fuel_logs, field_ndvi_alerts, equipment_maintenance_logs.
 • Wialon зона → syncFieldWialonGeofence | відвʼязати → unlinkFieldWialonGeofence (confirm)
 • Скаутинг фото → analyzeAndSaveScoutingReport | правка → updateScoutingReport | видалити → deleteScoutingReport (confirm)
 • GPS-наряд → createWorkOrderFromGpsVisit
-• Накладна (фото) → previewInvoiceReceipt → executeWarehouseReceipt / rollback
+• Накладна (фото) → previewInvoiceReceipt → людина перевіряє картку →
+  executeWarehouseReceipt / rollback. 1 накладна = 1 документ BAS (Товары[]).
+  Великі (25+ рядків): збери всі сторінки в items або itemChunks, expectedMinLines.
+  Після execute: складай статуси чесно — local_saved / awaiting_bas_mapping /
+  bas_draft_posted / bas_draft_dry_run. НЕ кажи «передано в BAS», якщо немає
+  bas_draft_posted. Excel sent_to_1c ≠ чернетка в BAS.
+  needsReview у превʼю — коротко перелічи сумнівні й чекай правки/підтвердження.
 • Акт послуг → previewServiceAct → executeServiceActSave / deleteServiceActs
 • Довільний документ / «розпізнай рахунок» / талон / чек ДП → analyzeUnknownDocument
   → routeDraftToSection(inventory|accounting|equipment|fuel)
@@ -5384,7 +5392,8 @@ function createAgentTools(options?: {
     }),
 
     previewInvoiceReceipt: tool({
-      description: "Готує превʼю прибуткової накладної ТМЦ.",
+      description:
+        "Готує превʼю прибуткової накладної ТМЦ. Великі накладні (25+ рядків): передай УСІ рядки одним викликом (збери з усіх сторінок/чанків). Укажи артикул, якщо є.",
       inputSchema: z.object({
         supplierName: z.string().trim().min(1).describe("Постачальник"),
         supplierEdrpou: z
@@ -5404,6 +5413,28 @@ function createAgentTools(options?: {
           .nonnegative()
           .optional()
           .describe("Сума ₴"),
+        expectedMinLines: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Скільки рядків очікувалось (для валідації OCR)"),
+        itemChunks: z
+          .array(
+            z.array(
+              z.object({
+                name: z.string().trim().min(1),
+                category: z.enum(INVOICE_CATEGORIES),
+                quantity: z.number().positive(),
+                unit: z.string().trim().min(1),
+                pricePerUnit: z.number().finite().nonnegative(),
+                totalAmount: z.number().finite().nonnegative().optional(),
+                article: z.string().trim().optional(),
+              })
+            )
+          )
+          .optional()
+          .describe("Чанки по ~25 рядків зі сторінок; зливаються з items"),
         items: z
           .array(
             z.object({
@@ -5413,18 +5444,45 @@ function createAgentTools(options?: {
               unit: z.string().trim().min(1),
               pricePerUnit: z.number().finite().nonnegative(),
               totalAmount: z.number().finite().nonnegative().optional(),
+              article: z.string().trim().optional(),
             })
           )
-          .min(1)
-          .describe("Рядки накладної"),
+          .default([])
+          .describe("Рядки накладної (усі разом або плюс itemChunks)"),
       }),
       execute: async (input) => {
+        const { mergeInvoiceLineChunks, validateInvoiceLineCoverage } =
+          await import("@/lib/invoice-ocr-chunks");
+        const merged = mergeInvoiceLineChunks([
+          ...(input.itemChunks ?? []),
+          input.items ?? [],
+        ]);
         console.log("[TOOL: previewInvoiceReceipt]", {
           supplier: input.supplierName,
-          lines: input.items.length,
+          lines: merged.length,
+          chunks: input.itemChunks?.length ?? 0,
         });
         try {
-          return await buildInvoicePreview(input);
+          if (merged.length === 0) {
+            return {
+              status: "error" as const,
+              error: "У накладній немає позицій.",
+            };
+          }
+          const preview = await buildInvoicePreview({
+            ...input,
+            items: merged,
+          });
+          if (preview.status === "error") return preview;
+          const coverage = validateInvoiceLineCoverage({
+            items: merged,
+            expectedMinLines: input.expectedMinLines,
+            totalAmount: input.totalAmount,
+          });
+          return {
+            ...preview,
+            ocrWarnings: coverage.warnings,
+          };
         } catch (error) {
           return {
             status: "error" as const,
@@ -5438,7 +5496,8 @@ function createAgentTools(options?: {
     }),
 
     executeWarehouseReceipt: tool({
-      description: "Оприбутковує накладну на склад після підтвердження.",
+      description:
+        "Оприбутковує накладну на склад LEVADA після підтвердження. Потім ставить 1 multi-line чернетку BAS (якщо pipeline увімкнено). Не кажи «вже в BAS», поки basHandoffStatus !== bas_draft_posted.",
       inputSchema: z.object({
         receiptId: z.string().trim().uuid().optional(),
         supplierName: z.string().trim().min(1),
@@ -5455,6 +5514,7 @@ function createAgentTools(options?: {
               unit: z.string().trim().min(1),
               pricePerUnit: z.number().finite().nonnegative(),
               totalAmount: z.number().finite().nonnegative().optional(),
+              article: z.string().trim().optional(),
             })
           )
           .min(1),
