@@ -205,24 +205,8 @@ export async function enqueueWarehouseReceiptBasDraft(
     name: receipt.supplier_name,
   });
 
-  // Без мапінгу контрагента — НЕ постимо в BAS (план go-live).
-  if (!counterparty.key) {
-    await markWarehouseHandoffStatus({
-      receiptId,
-      status: "awaiting_bas_mapping",
-      error:
-        counterparty.reason ||
-        "немає мапінгу контрагента (bas_counterparties / BAS_COUNTERPARTY_MAP)",
-    });
-    return {
-      ok: true,
-      dryRun: !isBasDraftPostEnabled(),
-      handoffStatus: "awaiting_bas_mapping",
-      linesInDraft: mapped.length,
-      linesSkippedLocal,
-      error: "очікує мапінгу контрагента",
-    };
-  }
+  // Контрагент опційний: без мапінгу все одно шлемо чернетку з Товары[].
+  // Бухгалтер у BAS обере контрагента сам; у коментарі — назва/ЄДРПОУ.
 
   const live = isBasDraftPipelineEnabled(PIPELINE_ID);
   if (!live) {
@@ -251,6 +235,11 @@ export async function enqueueWarehouseReceiptBasDraft(
     String(rows[0]?.date ?? "").slice(0, 10) ||
     new Date().toISOString().slice(0, 10);
 
+  const edrpou =
+    typeof receipt.supplier_edrpou === "string"
+      ? receipt.supplier_edrpou.trim()
+      : "";
+
   const body: Record<string, unknown> = {
     Date: toIsoDateTime(dateRaw),
     Posted: false,
@@ -258,8 +247,12 @@ export async function enqueueWarehouseReceiptBasDraft(
     Комментарий: [
       "AgroSystem · прихід ТМЦ (чернетка)",
       receipt.supplier_name ? String(receipt.supplier_name) : null,
+      edrpou ? `ЄДРПОУ ${edrpou}` : null,
       receipt.invoice_number ? `№${receipt.invoice_number}` : null,
       receipt.invoice_date ? `від ${receipt.invoice_date}` : null,
+      !counterparty.key
+        ? "контрагент не змаплений — оберіть у BAS"
+        : null,
       linesSkippedLocal > 0
         ? `(локальних без BAS: ${linesSkippedLocal})`
         : null,
@@ -273,11 +266,11 @@ export async function enqueueWarehouseReceiptBasDraft(
       Цена: line.price,
       Сумма: Math.round(line.qty * line.price * 100) / 100,
     })),
-    Контрагент_Key: counterparty.key,
     _meta: { receiptId, pipeline: PIPELINE_ID },
   };
   if (org) body.Организация_Key = org;
   if (warehouse) body.Склад_Key = warehouse;
+  if (counterparty.key) body.Контрагент_Key = counterparty.key;
 
   const result = await postBasDocumentDraft(ENTITY, body);
   const moveIds = mapped.map((m) => m.moveId);

@@ -10,8 +10,9 @@
 
 1. Застосувати міграцію `079_warehouse_receipt_bas_and_codes.sql`.
 2. Синк номенклатури (щоб зʼявився `code` / артикул).
-3. Заповнити `bas_counterparties` (ЄДРПОУ + `bas_ref_key` контрагента) або `BAS_COUNTERPARTY_MAP=edrpou:uuid,...`.
-   **Без контрагента POST у BAS не йде** — статус `awaiting_bas_mapping`.
+3. (Опційно) `bas_counterparties` / `BAS_COUNTERPARTY_MAP` — щоб контрагент
+   підставлявся сам. Без мапінгу чернетка все одно летить; у коментарі назва/ЄДРПОУ,
+   бухгалтер обере контрагента в BAS.
 4. Підтвердити env:
    - `BAS_ORGANIZATION_KEY`
    - `BAS_DEFAULT_WAREHOUSE_KEY`
