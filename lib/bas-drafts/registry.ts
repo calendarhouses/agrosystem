@@ -51,7 +51,7 @@ export const BAS_DRAFT_PIPELINES: BasDraftPipeline[] = [
     readiness: "ready",
     module: "lib/bas-drafts/inventory-inbound.ts",
     notes:
-      "Multi-line Товары[] по receipt_id. LEVADIUS: executeWarehouseReceipt + send/list/verifyWarehouseReceiptBasDraft. Потрібні: BAS_ORGANIZATION_KEY, BAS_DEFAULT_WAREHOUSE_KEY; контрагент опційний; bas_ref_key номенклатури (не is_local). Go-live: BAS_DRAFT_POST_ENABLED + BAS_DRAFT_PIPELINES_ENABLED=inventory_inbound_receipt.",
+      "Multi-line Товары[]. Контрагент: live-пошук у Catalog_Контрагенты за ЄДРПОУ/назвою. Склад: поле «Склад» + BAS_DEFAULT_WAREHOUSE_KEY. LEVADIUS send/list/verify.",
   },
   {
     id: "inventory_sale",

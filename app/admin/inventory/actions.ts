@@ -767,6 +767,170 @@ export async function retryWarehouseReceiptBasDraftAction(
   }
 }
 
+export type WarehouseReceiptDetailLine = {
+  moveId: string;
+  name: string;
+  qty: number;
+  unit: string | null;
+  unitPrice: number | null;
+  amount: number | null;
+  basRefKey: string | null;
+  isLocal: boolean;
+};
+
+/** Рядки накладної в LEVADA (що пішло / піде в чернетку BAS). */
+export async function getWarehouseReceiptDetailAction(
+  receiptId: string
+): Promise<
+  | {
+      ok: true;
+      receipt: WarehouseReceiptBasRow;
+      lines: WarehouseReceiptDetailLine[];
+      linesMappedForBas: number;
+      linesLocalOnly: number;
+    }
+  | { ok: false; error: string }
+> {
+  try {
+    const id = receiptId.trim();
+    if (!id) return { ok: false, error: "Немає id накладної" };
+    const supabase = createServiceSupabase();
+    const { data: receipt, error: receiptError } = await supabase
+      .from("warehouse_receipts")
+      .select(
+        "id, supplier_name, supplier_edrpou, invoice_number, invoice_date, total_amount, status, bas_handoff_status, bas_draft_ref_key, bas_draft_error, bas_draft_sent_at, created_at"
+      )
+      .eq("id", id)
+      .maybeSingle();
+    if (receiptError || !receipt) {
+      return { ok: false, error: receiptError?.message || "Накладну не знайдено" };
+    }
+
+    const { data: moves, error: movesError } = await supabase
+      .from("inventory_local_moves")
+      .select(
+        `
+        id, qty, unit_price_uah, item_ref_key,
+        inventory_items_cache ( name, custom_name, unit, bas_ref_key, is_local )
+      `
+      )
+      .eq("receipt_id", id)
+      .eq("type", "inbound")
+      .order("created_at", { ascending: true });
+
+    if (movesError) {
+      return { ok: false, error: movesError.message };
+    }
+
+    const lines: WarehouseReceiptDetailLine[] = (moves ?? []).map((row) => {
+      const cache = Array.isArray(row.inventory_items_cache)
+        ? row.inventory_items_cache[0]
+        : row.inventory_items_cache;
+      const qty = Number(row.qty) || 0;
+      const price =
+        row.unit_price_uah != null && Number.isFinite(Number(row.unit_price_uah))
+          ? Number(row.unit_price_uah)
+          : null;
+      const isLocal = cache?.is_local === true;
+      const basRef =
+        cache?.bas_ref_key != null ? String(cache.bas_ref_key) : null;
+      return {
+        moveId: String(row.id),
+        name:
+          (typeof cache?.custom_name === "string" && cache.custom_name.trim()) ||
+          (typeof cache?.name === "string" && cache.name.trim()) ||
+          "ТМЦ",
+        qty,
+        unit: typeof cache?.unit === "string" ? cache.unit : null,
+        unitPrice: price,
+        amount: price != null ? Math.round(qty * price * 100) / 100 : null,
+        basRefKey: basRef,
+        isLocal,
+      };
+    });
+
+    const linesLocalOnly = lines.filter(
+      (l) => l.isLocal || !l.basRefKey || l.basRefKey.startsWith("local:")
+    ).length;
+    const linesMappedForBas = lines.length - linesLocalOnly;
+
+    const receiptRow: WarehouseReceiptBasRow = {
+      id: String(receipt.id),
+      supplierName: String(receipt.supplier_name ?? ""),
+      supplierEdrpou:
+        typeof receipt.supplier_edrpou === "string"
+          ? receipt.supplier_edrpou
+          : null,
+      invoiceNumber:
+        typeof receipt.invoice_number === "string"
+          ? receipt.invoice_number
+          : null,
+      invoiceDate:
+        typeof receipt.invoice_date === "string"
+          ? String(receipt.invoice_date).slice(0, 10)
+          : null,
+      totalAmount:
+        receipt.total_amount != null &&
+        Number.isFinite(Number(receipt.total_amount))
+          ? Number(receipt.total_amount)
+          : null,
+      status: String(receipt.status ?? "posted"),
+      basHandoffStatus: String(receipt.bas_handoff_status ?? "local_saved"),
+      basDraftRefKey:
+        receipt.bas_draft_ref_key != null
+          ? String(receipt.bas_draft_ref_key)
+          : null,
+      basDraftError:
+        typeof receipt.bas_draft_error === "string"
+          ? receipt.bas_draft_error
+          : null,
+      basDraftSentAt:
+        typeof receipt.bas_draft_sent_at === "string"
+          ? receipt.bas_draft_sent_at
+          : null,
+      createdAt:
+        typeof receipt.created_at === "string" ? receipt.created_at : null,
+    };
+
+    return {
+      ok: true,
+      receipt: receiptRow,
+      lines,
+      linesMappedForBas,
+      linesLocalOnly,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error:
+        err instanceof Error ? err.message : "Не вдалося відкрити накладну",
+    };
+  }
+}
+
+/**
+ * Дописує в УЖЕ створену непроведену чернетку BAS контрагента (по назві/ЄДРПОУ)
+ * і склад з BAS_DEFAULT_WAREHOUSE_KEY. Не створює другий документ.
+ */
+export async function updateWarehouseReceiptBasDraftHeaderAction(
+  receiptId: string
+): Promise<{ ok: true; message: string } | { ok: false; error: string }> {
+  try {
+    const { patchWarehouseReceiptBasDraftHeader } = await import(
+      "@/lib/bas-drafts/patch-receipt-header"
+    );
+    return await patchWarehouseReceiptBasDraftHeader(receiptId.trim());
+  } catch (err) {
+    return {
+      ok: false,
+      error:
+        err instanceof Error
+          ? err.message
+          : "Не вдалося оновити шапку чернетки в BAS",
+    };
+  }
+}
+
 export async function createLocalHarvestSale(input: {
   itemRefKey: string;
   qty: number;

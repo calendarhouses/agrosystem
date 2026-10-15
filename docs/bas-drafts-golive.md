@@ -31,7 +31,12 @@ BAS_DRAFT_PIPELINES_ENABLED=inventory_inbound_receipt,inventory_sale,inventory_o
 - `BAS_ORGANIZATION_KEY`, `BAS_DEFAULT_WAREHOUSE_KEY`
 - `BAS_DIESEL_NOMENCLATURE_KEY` (паливо)
 - `bas_ref_key` на складах палива / техніці / номенклатурі
-- опційно `bas_counterparties` / `BAS_COUNTERPARTY_MAP`
+
+Контрагент у чернетці: система **сама шукає** в BAS `Catalog_Контрагенты`
+за ЄДРПОУ або назвою (ТОВ «АГРОМАШСЕРВІС» → знайдений Ref_Key).
+Знайдені звʼязки кешуються в `bas_counterparties`. Catalog_* не створюємо.
+
+Склад у Поступленні: OData-поле **`Склад`** (не `Склад_Key`) + Type Catalog_Склады.
 
 ## Ідеальний сценарій накладної
 

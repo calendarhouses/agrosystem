@@ -217,7 +217,11 @@ export async function enqueueWarehouseReceiptBasDraft(
     _meta: { receiptId, pipeline: PIPELINE_ID },
   };
   if (org) body.Организация_Key = org;
-  if (warehouse) body.Склад_Key = warehouse;
+  // У Document_ПоступлениеТоваровУслуг поле складу — «Склад», не Склад_Key
+  if (warehouse) {
+    body.Склад = warehouse;
+    body.Склад_Type = "StandardODATA.Catalog_Склады";
+  }
   if (counterparty.key) body.Контрагент_Key = counterparty.key;
 
   const result = await postBasDocumentDraft(ENTITY, body);
@@ -366,6 +370,11 @@ export async function enqueueInventoryInboundBasDraft(
   const price = Number(data.unit_price_uah) || 0;
   const org = basOrganizationKey();
   const warehouse = basDefaultWarehouseKey();
+  const supplier =
+    typeof data.buyer_name === "string" ? data.buyer_name.trim() : "";
+  const counterparty = await resolveBasCounterpartyKey({
+    name: supplier || null,
+  });
 
   const body: Record<string, unknown> = {
     Date: toIsoDateTime(String(data.date)),
@@ -374,7 +383,8 @@ export async function enqueueInventoryInboundBasDraft(
     Комментарий: [
       "AgroSystem · прихід ТМЦ (чернетка, 1 рядок)",
       cache?.name ? String(cache.name) : null,
-      data.buyer_name ? `постачальник: ${data.buyer_name}` : null,
+      supplier ? `постачальник: ${supplier}` : null,
+      !counterparty.key ? "контрагент не змаплений — оберіть у BAS" : null,
       data.note ? String(data.note) : null,
     ]
       .filter(Boolean)
@@ -391,7 +401,11 @@ export async function enqueueInventoryInboundBasDraft(
     _meta: { moveId, pipeline: PIPELINE_ID },
   };
   if (org) body.Организация_Key = org;
-  if (warehouse) body.Склад_Key = warehouse;
+  if (warehouse) {
+    body.Склад = warehouse;
+    body.Склад_Type = "StandardODATA.Catalog_Склады";
+  }
+  if (counterparty.key) body.Контрагент_Key = counterparty.key;
 
   const result = await postBasDocumentDraft(ENTITY, body);
   if (!result.ok) {

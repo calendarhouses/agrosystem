@@ -41,10 +41,13 @@ import {
 } from "@/app/export/actions";
 import {
   deleteLocalMove,
+  getWarehouseReceiptDetailAction,
   listWarehouseReceiptsBasHandoff,
   retryWarehouseReceiptBasDraftAction,
+  updateWarehouseReceiptBasDraftHeaderAction,
   type LocalMoveRow,
   type WarehouseReceiptBasRow,
+  type WarehouseReceiptDetailLine,
 } from "@/app/admin/inventory/actions";
 import {
   basHandoffLabel,
@@ -585,6 +588,16 @@ export function AccountantHubView({
   const [basReceipts, setBasReceipts] = useState<WarehouseReceiptBasRow[]>([]);
   const [basReceiptsLoading, setBasReceiptsLoading] = useState(false);
   const [basRetryId, setBasRetryId] = useState<string | null>(null);
+  const [basOpenId, setBasOpenId] = useState<string | null>(null);
+  const [basDetailLoading, setBasDetailLoading] = useState(false);
+  const [basDetailLines, setBasDetailLines] = useState<
+    WarehouseReceiptDetailLine[]
+  >([]);
+  const [basDetailMeta, setBasDetailMeta] = useState<{
+    mapped: number;
+    localOnly: number;
+  } | null>(null);
+  const [basPatchId, setBasPatchId] = useState<string | null>(null);
 
   const loadBasReceipts = useCallback(async () => {
     setBasReceiptsLoading(true);
@@ -1136,9 +1149,9 @@ export function AccountantHubView({
                 Чернетки BAS · надходження
               </p>
               <p className="mt-0.5 text-[11px] text-zinc-500">
-                Зелений «Чернетка в BAS» = документ уже в 1С (непроведені
-                Надходження). Кнопка «Передати» нижче в черзі — лише Excel, не
-                BAS. LEVADIUS також може повторити відправку.
+                Натисни на рядок — побачиш товари всередині. Зелений = уже в
+                1С (непроведені Надходження). «Дописати шапку» підставить
+                контрагента й склад у вже створену чернетку.
               </p>
             </div>
             <Button
@@ -1171,6 +1184,10 @@ export function AccountantHubView({
                   row.basHandoffStatus === "bas_draft_failed" ||
                   row.basHandoffStatus === "bas_draft_dry_run" ||
                   row.basHandoffStatus === "local_saved";
+                const canPatchHeader =
+                  row.basHandoffStatus === "bas_draft_posted" &&
+                  Boolean(row.basDraftRefKey);
+                const isOpen = basOpenId === row.id;
                 const statusTone =
                   row.basHandoffStatus === "bas_draft_posted"
                     ? "bg-emerald-100 text-emerald-800"
@@ -1182,77 +1199,201 @@ export function AccountantHubView({
                 return (
                   <li
                     key={row.id}
-                    className="flex flex-wrap items-start justify-between gap-2 rounded-xl border border-[#E5DFD3]/80 bg-white/70 px-3 py-2.5"
+                    className="rounded-xl border border-[#E5DFD3]/80 bg-white/70 px-3 py-2.5"
                   >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span
-                          className={cn(
-                            "rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase",
-                            statusTone
-                          )}
-                        >
-                          {basHandoffLabel(
-                            row.basHandoffStatus as BasHandoffStatus
-                          )}
-                        </span>
-                        {row.invoiceNumber ? (
-                          <span className="text-[11px] text-zinc-500">
-                            № {row.invoiceNumber}
-                          </span>
-                        ) : null}
-                      </div>
-                      <p className="mt-1 truncate text-sm font-semibold text-zinc-900">
-                        {row.supplierName || "Постачальник"}
-                      </p>
-                      <p className="mt-0.5 text-[11px] text-zinc-500">
-                        {[
-                          row.invoiceDate,
-                          row.totalAmount != null
-                            ? `${row.totalAmount.toLocaleString("uk-UA")} ₴`
-                            : null,
-                          row.basDraftRefKey
-                            ? `BAS ${row.basDraftRefKey.slice(0, 8)}…`
-                            : null,
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </p>
-                      {row.basDraftError ? (
-                        <p className="mt-1 text-[11px] text-amber-800">
-                          {row.basDraftError}
-                        </p>
-                      ) : null}
-                    </div>
-                    {canRetry ? (
-                      <Button
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <button
                         type="button"
-                        size="sm"
-                        variant="outline"
-                        className="h-8 shrink-0 rounded-full text-xs"
-                        disabled={basRetryId === row.id}
+                        className="min-w-0 flex-1 text-left"
                         onClick={() => {
-                          setBasRetryId(row.id);
-                          void retryWarehouseReceiptBasDraftAction(row.id).then(
+                          if (isOpen) {
+                            setBasOpenId(null);
+                            setBasDetailLines([]);
+                            setBasDetailMeta(null);
+                            return;
+                          }
+                          setBasOpenId(row.id);
+                          setBasDetailLoading(true);
+                          setBasDetailLines([]);
+                          setBasDetailMeta(null);
+                          void getWarehouseReceiptDetailAction(row.id).then(
                             (res) => {
-                              setBasRetryId(null);
+                              setBasDetailLoading(false);
                               if (!res.ok) {
                                 toast.error(res.error);
                                 return;
                               }
-                              toast.success(res.message);
-                              void loadBasReceipts();
+                              setBasDetailLines(res.lines);
+                              setBasDetailMeta({
+                                mapped: res.linesMappedForBas,
+                                localOnly: res.linesLocalOnly,
+                              });
                             }
                           );
                         }}
                       >
-                        {basRetryId === row.id ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span
+                            className={cn(
+                              "rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase",
+                              statusTone
+                            )}
+                          >
+                            {basHandoffLabel(
+                              row.basHandoffStatus as BasHandoffStatus
+                            )}
+                          </span>
+                          {row.invoiceNumber ? (
+                            <span className="text-[11px] text-zinc-500">
+                              № {row.invoiceNumber}
+                            </span>
+                          ) : null}
+                          <ChevronDown
+                            className={cn(
+                              "h-3.5 w-3.5 text-zinc-400 transition",
+                              isOpen && "rotate-180"
+                            )}
+                          />
+                        </div>
+                        <p className="mt-1 truncate text-sm font-semibold text-zinc-900">
+                          {row.supplierName || "Постачальник"}
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-zinc-500">
+                          {[
+                            row.invoiceDate,
+                            row.totalAmount != null
+                              ? `${row.totalAmount.toLocaleString("uk-UA")} ₴`
+                              : null,
+                            row.basDraftRefKey
+                              ? `BAS ${row.basDraftRefKey.slice(0, 8)}…`
+                              : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </p>
+                        {row.basDraftError ? (
+                          <p className="mt-1 text-[11px] text-amber-800">
+                            {row.basDraftError}
+                          </p>
+                        ) : null}
+                      </button>
+                      <div className="flex shrink-0 flex-wrap gap-1.5">
+                        {canPatchHeader ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-8 rounded-full text-xs"
+                            disabled={basPatchId === row.id}
+                            onClick={() => {
+                              setBasPatchId(row.id);
+                              void updateWarehouseReceiptBasDraftHeaderAction(
+                                row.id
+                              ).then((res) => {
+                                setBasPatchId(null);
+                                if (!res.ok) {
+                                  toast.error(res.error);
+                                  return;
+                                }
+                                toast.success(res.message);
+                              });
+                            }}
+                          >
+                            {basPatchId === row.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Pencil className="h-3.5 w-3.5" />
+                            )}
+                            Дописати шапку
+                          </Button>
+                        ) : null}
+                        {canRetry ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-8 rounded-full text-xs"
+                            disabled={basRetryId === row.id}
+                            onClick={() => {
+                              setBasRetryId(row.id);
+                              void retryWarehouseReceiptBasDraftAction(
+                                row.id
+                              ).then((res) => {
+                                setBasRetryId(null);
+                                if (!res.ok) {
+                                  toast.error(res.error);
+                                  return;
+                                }
+                                toast.success(res.message);
+                                void loadBasReceipts();
+                              });
+                            }}
+                          >
+                            {basRetryId === row.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <RefreshCw className="h-3.5 w-3.5" />
+                            )}
+                            Повторити BAS
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
+                    {isOpen ? (
+                      <div className="mt-2 border-t border-[#E5DFD3]/80 pt-2">
+                        {basDetailLoading ? (
+                          <p className="text-[11px] text-zinc-500">
+                            Завантаження рядків…
+                          </p>
+                        ) : basDetailLines.length === 0 ? (
+                          <p className="text-[11px] text-zinc-500">
+                            Рядків не знайдено.
+                          </p>
                         ) : (
-                          <RefreshCw className="h-3.5 w-3.5" />
+                          <>
+                            <p className="mb-1.5 text-[10px] text-zinc-500">
+                              {basDetailLines.length} поз.
+                              {basDetailMeta
+                                ? ` · у BAS ${basDetailMeta.mapped}, лише LEVADA ${basDetailMeta.localOnly}`
+                                : null}
+                              {row.basDraftRefKey
+                                ? ` · Ref ${row.basDraftRefKey}`
+                                : null}
+                            </p>
+                            <ul className="max-h-40 space-y-1 overflow-y-auto text-[11px]">
+                              {basDetailLines.map((line) => (
+                                <li
+                                  key={line.moveId}
+                                  className="flex justify-between gap-2 text-zinc-700"
+                                >
+                                  <span className="min-w-0 truncate">
+                                    {line.name}
+                                    {line.isLocal ||
+                                    !line.basRefKey ||
+                                    line.basRefKey.startsWith("local:") ? (
+                                      <span className="ml-1 text-amber-700">
+                                        · локальна
+                                      </span>
+                                    ) : null}
+                                  </span>
+                                  <span className="shrink-0 tabular-nums text-zinc-500">
+                                    {line.qty}
+                                    {line.unit ? ` ${line.unit}` : ""}
+                                    {line.amount != null
+                                      ? ` · ${line.amount.toLocaleString("uk-UA")} ₴`
+                                      : ""}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                            <p className="mt-2 text-[10px] text-zinc-400">
+                              У BAS: Купівлі → Надходження товарів і послуг →
+                              непроведені. Шукай коментар AgroSystem / №
+                              накладної.
+                            </p>
+                          </>
                         )}
-                        Повторити BAS
-                      </Button>
+                      </div>
                     ) : null}
                   </li>
                 );

@@ -252,7 +252,9 @@ function buildODataBody(
     Posted: false,
     DeletionMark: false,
     Комментарий: `AgroSystem · ${draft.comment}`,
-    Склад_Key: keys.toStorageBas,
+    // Поступление: поле «Склад», не Склад_Key
+    Склад: keys.toStorageBas,
+    Склад_Type: "StandardODATA.Catalog_Склады",
     Товары: [
       {
         LineNumber: 1,
