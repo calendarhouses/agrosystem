@@ -43,6 +43,11 @@ import {
   INVOICE_CATEGORIES,
 } from "@/lib/agent-warehouse-receipt";
 import {
+  listWarehouseReceiptBasStatus,
+  sendWarehouseReceiptBasDraft,
+  verifyWarehouseReceiptBasDraft,
+} from "@/lib/agent-bas-receipts";
+import {
   buildServiceActPreview,
   deleteServiceActs,
   executeServiceActSave,
@@ -369,6 +374,7 @@ listServiceActs,
 getReconciliationGaps, saveBasMapping, exportBasChangeRequest,
 registerWarehouseItem,
 previewInvoiceReceipt, executeWarehouseReceipt, rollbackWarehouseReceipt,
+listWarehouseReceiptBasStatus, sendWarehouseReceiptBasDraft, verifyWarehouseReceiptBasDraft,
 previewServiceAct, executeServiceActSave, deleteServiceActs,
 prepareWorkOrder, confirmWorkOrder, startWorkOrder, updateWorkOrder,
 deleteWorkOrder, closeWorkOrder,
@@ -465,18 +471,27 @@ wialon_field_fuel_logs, field_ndvi_alerts, equipment_maintenance_logs.
 • Скаутинг фото → analyzeAndSaveScoutingReport | правка → updateScoutingReport | видалити → deleteScoutingReport (confirm)
 • GPS-наряд → createWorkOrderFromGpsVisit
 • Накладна (фото) → previewInvoiceReceipt → людина перевіряє картку →
-  executeWarehouseReceipt / rollback. 1 накладна = 1 документ BAS (Товары[]).
+  executeWarehouseReceipt (склад LEVADA + авто-чернетка BAS) / rollback.
+  1 накладна = 1 Document_ПоступлениеТоваровУслуг з Товары[] (не 44 окремі).
   Великі (25+ рядків): збери всі сторінки в items або itemChunks, expectedMinLines.
-  Після execute: складай статуси чесно — local_saved / awaiting_bas_mapping /
-  bas_draft_posted / bas_draft_dry_run. НЕ кажи «передано в BAS», якщо немає
-  bas_draft_posted. Excel sent_to_1c ≠ чернетка в BAS.
-  needsReview у превʼю — коротко перелічи сумнівні й чекай правки/підтвердження.
+  Після execute: чесно кажи basHandoffStatus. НЕ кажи «передано в BAS», якщо
+  немає bas_draft_posted. Excel sent_to_1c / «Позначено для 1С» ≠ чернетка BAS.
+  needsReview — перелічи сумнівні (од.вим, артикул, слабкий збіг) і чекай правки.
+• Чернетки BAS по накладних:
+  список/статус → listWarehouseReceiptBasStatus
+  відправити/повторити чернетку → sendWarehouseReceiptBasDraft (confirmed)
+  перевірити в BAS по Ref_Key (без веб-логіну) → verifyWarehouseReceiptBasDraft
+  Де в 1С: Надходження товарів і послуг → НЕПРОВЕДЕНІ / чернетки.
+  Якщо користувач каже «передано, але в BAS немає» — спочатку list/verify,
+  поясни Excel vs BAS, за потреби sendWarehouseReceiptBasDraft.
 • Акт послуг → previewServiceAct → executeServiceActSave / deleteServiceActs
 • Довільний документ / «розпізнай рахунок» / талон / чек ДП → analyzeUnknownDocument
   → routeDraftToSection(inventory|accounting|equipment|fuel)
-  Чернетка йде в bas_sync_queue (dry_run_ready), без OData POST.
+  Чернетка йде в bas_sync_queue (dry_run_ready), без OData POST
+  (це НЕ шлях накладної ТМЦ — для накладної дивись execute/sendWarehouseReceiptBasDraft).
 • Після closeWorkOrder / writeOff / logFuelRefueling / createInventorySale
-  агент також ставить OData-чернетку в чергу через enqueueBasDraft (Queue-Only).
+  агент також ставить OData-чернетку в чергу через enqueueBasDraft (Queue-Only;
+  live POST лише якщо відповідний pipeline у BAS_DRAFT_PIPELINES_ENABLED).
 • Наряд: слоти → getWarehouseStock/getFleetAndImplements/getDriversList → prepareWorkOrder → confirmWorkOrder
 • Старт наряду («почни роботу», «запусти наряд») → startWorkOrder
 • Редагувати наряд / дати з–по → updateWorkOrder
@@ -536,8 +551,10 @@ prepareWorkOrder лише коли всі слоти зібрані. Не виг
   «вже є», і ІНШИЙ +1 крок (не дубль).
 • «Що вмієш» / огляд: здібності, без підняття старих чернеток з історії.
 
-Документи: фото накладної → previewInvoiceReceipt; акт послуг → previewServiceAct;
+Документи: фото накладної → previewInvoiceReceipt → executeWarehouseReceipt
+(+ send/list/verifyWarehouseReceiptBasDraft); акт → previewServiceAct;
 фото посіву → analyzeAndSaveScoutingReport. Не стверджуй збереження без execute*/success.
+Не кажи «в BAS», поки basHandoffStatus !== bas_draft_posted.
 
 Скасування чернетки наряду в чаті: [[ACTION:DISMISS_DRAFT]] (без deleteWorkOrder).
 Видалення збереженого — deleteWorkOrder з workOrderId з історії
@@ -2508,12 +2525,18 @@ function repairUiMessagesForGemini(messages: UIMessage[]): UIMessage[] {
 const DOCUMENT_VISION_PROMPT = `
 ВКЛАДЕННЯ (фото/PDF):
 A) Накладна/чек ТМЦ (відомий шаблон) → previewInvoiceReceipt
+   → людина підтверджує картку → executeWarehouseReceipt
+   (= склад LEVADA + 1 multi-line чернетка Поступление в BAS, якщо pipeline live).
+   Після цього: чесно кажи basHandoffStatus. Якщо не bas_draft_posted —
+   запропонуй sendWarehouseReceiptBasDraft / listWarehouseReceiptBasStatus /
+   verifyWarehouseReceiptBasDraft. Де в 1С: непроведені Надходження.
 B) Акт послуг (відомий шаблон) → previewServiceAct
 C) Фото посіву/поля → analyzeAndSaveScoutingReport
 D) Довільний/невідомий документ (рахунок, талон, чек ДП, змішаний скан)
    → analyzeUnknownDocument → UI-картка маршрутизації → routeDraftToSection
 Не вигадуй рядків. Не стверджуй збереження без execute*/success / routeDraftToSection.
-Чернетки BAS лише через чергу (Dry-Run), без прямого POST в 1С.
+Не плутай Excel «Передати» з чернеткою BAS. Для приходу ТМЦ живий POST
+чернетки (Posted:false) — нормальний шлях через inventory_inbound_receipt.
 `.trim();
 
 function buildSystemPrompt(
@@ -5497,7 +5520,7 @@ function createAgentTools(options?: {
 
     executeWarehouseReceipt: tool({
       description:
-        "Оприбутковує накладну на склад LEVADA після підтвердження. Потім ставить 1 multi-line чернетку BAS (якщо pipeline увімкнено). Не кажи «вже в BAS», поки basHandoffStatus !== bas_draft_posted.",
+        "Оприбутковує накладну на склад LEVADA і одразу ставить 1 multi-line чернетку BAS (Поступление, Posted:false), якщо pipeline увімкнено. Якщо bas_draft_failed/dry_run/local — запропонуй sendWarehouseReceiptBasDraft. Не кажи «вже в BAS», поки basHandoffStatus !== bas_draft_posted.",
       inputSchema: z.object({
         receiptId: z.string().trim().uuid().optional(),
         supplierName: z.string().trim().min(1),
@@ -5577,6 +5600,88 @@ function createAgentTools(options?: {
               error instanceof Error
                 ? error.message
                 : "Помилка скасування накладної",
+          };
+        }
+      },
+    }),
+
+    listWarehouseReceiptBasStatus: tool({
+      description:
+        "Статуси чернеток BAS по накладних LEVADIUS (bas_handoff_status / Ref_Key). Використовуй, коли питають «чи полетіло в BAS», «чому Передано але в 1С немає».",
+      inputSchema: z.object({
+        limit: z.number().int().positive().max(50).optional().default(15),
+        receiptId: z.string().trim().uuid().optional(),
+        invoiceNumber: z.string().trim().optional(),
+      }),
+      execute: async (input) => {
+        console.log("[TOOL: listWarehouseReceiptBasStatus]", input);
+        try {
+          return await listWarehouseReceiptBasStatus(input);
+        } catch (error) {
+          return {
+            ok: false as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Помилка статусів чернеток BAS",
+          };
+        }
+      },
+    }),
+
+    sendWarehouseReceiptBasDraft: tool({
+      description:
+        "Відправляє або повторює multi-line чернетку Document_ПоступлениеТоваровУслуг у BAS (Posted:false) по накладній. Не Excel. Потрібне confirmed.",
+      inputSchema: z.object({
+        receiptId: z.string().trim().uuid().optional(),
+        invoiceNumber: z.string().trim().optional(),
+        confirmed: z
+          .boolean()
+          .default(false)
+          .describe("true — підтвердити відправку чернетки в BAS"),
+      }),
+      execute: async (input) => {
+        console.log("[TOOL: sendWarehouseReceiptBasDraft]", {
+          receiptId: input.receiptId,
+          invoiceNumber: input.invoiceNumber,
+          confirmed: input.confirmed === true,
+        });
+        try {
+          return await sendWarehouseReceiptBasDraft({
+            receiptId: input.receiptId,
+            invoiceNumber: input.invoiceNumber,
+            confirmed: input.confirmed === true,
+          });
+        } catch (error) {
+          return {
+            ok: false as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Помилка відправки чернетки BAS",
+          };
+        }
+      },
+    }),
+
+    verifyWarehouseReceiptBasDraft: tool({
+      description:
+        "GET-перевірка документа в BAS по bas_draft_ref_key (без веб-логіну 1С). Підтверджує, що чернетка реально є.",
+      inputSchema: z.object({
+        receiptId: z.string().trim().uuid().optional(),
+        refKey: z.string().trim().uuid().optional(),
+      }),
+      execute: async (input) => {
+        console.log("[TOOL: verifyWarehouseReceiptBasDraft]", input);
+        try {
+          return await verifyWarehouseReceiptBasDraft(input);
+        } catch (error) {
+          return {
+            ok: false as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Помилка перевірки чернетки в BAS",
           };
         }
       },

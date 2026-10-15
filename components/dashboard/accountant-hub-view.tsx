@@ -1136,8 +1136,9 @@ export function AccountantHubView({
                 Чернетки BAS · надходження
               </p>
               <p className="mt-0.5 text-[11px] text-zinc-500">
-                Статус накладних LEVADIUS → непроведена Поступление. Excel
-                «Позначено для 1С» — окремий контур.
+                Зелений «Чернетка в BAS» = документ уже в 1С (непроведені
+                Надходження). Кнопка «Передати» нижче в черзі — лише Excel, не
+                BAS. LEVADIUS також може повторити відправку.
               </p>
             </div>
             <Button
@@ -2087,7 +2088,7 @@ export function AccountantHubView({
                                   : "bg-emerald-100 text-emerald-800"
                               )}
                             >
-                              {deleted ? "Видалено" : "Позначено для 1С"}
+                              {deleted ? "Видалено" : "Excel · не BAS"}
                             </span>
                           </div>
                           <p className="mt-1 truncate text-sm font-semibold text-zinc-900">
@@ -2201,8 +2202,10 @@ export function AccountantHubView({
         pending={pending}
         description={
           <>
-            {labelOps(packageSummary.count)} зникнуть з черги. Спочатку
-            завантажте Excel, якщо ще не зробили.
+            {labelOps(packageSummary.count)} зникнуть з черги як «Excel · не
+            BAS». Це не створює документів у BAS АГРО — лише позначка для
+            бухгалтера. Чернетки BAS — блок «Чернетки BAS · надходження» або
+            LEVADIUS.
           </>
         }
         onConfirm={confirmMark}

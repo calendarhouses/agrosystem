@@ -102,6 +102,23 @@ function normalizeArticle(value: string): string {
   return value.trim().toLocaleLowerCase("uk-UA").replace(/[\s\-_/]/g, "");
 }
 
+function nameTokens(value: string): string[] {
+  return normalizeName(value)
+    .split(/[^a-zа-яіїєґ0-9]+/i)
+    .map((t) => t.trim())
+    .filter((t) => t.length >= 2);
+}
+
+/** Jaccard-подібний overlap токенів назви (0…1). */
+function tokenOverlapRatio(a: string, b: string): number {
+  const A = new Set(nameTokens(a));
+  const B = new Set(nameTokens(b));
+  if (A.size === 0 || B.size === 0) return 0;
+  let inter = 0;
+  for (const t of A) if (B.has(t)) inter += 1;
+  return inter / Math.max(A.size, B.size);
+}
+
 /** Нормалізація од. вим. для порівняння (кг ≠ шт тощо). */
 export function normalizeUnitKey(raw: string): string {
   const u = raw.trim().toLocaleLowerCase("uk-UA").replace(/\./g, "");
@@ -146,9 +163,16 @@ function matchCatalogItem(
   rows: CatalogRow[],
   name: string,
   article: string | null
-): { row: CatalogRow; confidence: number; weakFuzzy: boolean } | null {
-  if (article) {
-    const art = normalizeArticle(article);
+): {
+  row: CatalogRow;
+  confidence: number;
+  weakFuzzy: boolean;
+  ambiguous?: boolean;
+  articleMismatch?: boolean;
+} | null {
+  const art = article ? normalizeArticle(article) : "";
+
+  if (art) {
     const byCode = rows.find(
       (row) =>
         typeof row.code === "string" &&
@@ -163,26 +187,94 @@ function matchCatalogItem(
     const display = displayCatalogName(row);
     return normalizeName(display) === needle;
   });
-  if (exact) return { row: exact, confidence: 95, weakFuzzy: false };
+  if (exact) {
+    // Артикул з накладної ≠ code у довіднику → не довіряємо «точній» назві
+    if (
+      art &&
+      typeof exact.code === "string" &&
+      exact.code.trim() &&
+      normalizeArticle(exact.code) !== art
+    ) {
+      return {
+        row: exact,
+        confidence: 40,
+        weakFuzzy: true,
+        articleMismatch: true,
+      };
+    }
+    return { row: exact, confidence: 95, weakFuzzy: false };
+  }
 
-  // Сильний fuzzy: один рядок містить інший і довжина ≥ 4
-  const strong = rows.filter((row) => {
-    const n = normalizeName(displayCatalogName(row));
-    if (n.length < 4 || needle.length < 4) return false;
-    return n.includes(needle) || needle.includes(n);
-  });
-  if (strong.length === 1) {
-    return { row: strong[0]!, confidence: 72, weakFuzzy: true };
+  // Fuzzy лише за достатнім overlap токенів — інакше різні запчастини
+  // злипаються в одну «загальну» назву.
+  type Cand = { row: CatalogRow; overlap: number; contains: boolean };
+  const cands: Cand[] = [];
+  for (const row of rows) {
+    const display = displayCatalogName(row);
+    const n = normalizeName(display);
+    if (n.length < 4 || needle.length < 4) continue;
+    const overlap = tokenOverlapRatio(needle, display);
+    const contains = n.includes(needle) || needle.includes(n);
+    if (overlap < 0.45 && !contains) continue;
+    if (overlap < 0.35) continue;
+    // Якщо в накладній є артикул, а в довіднику інший code — пропускаємо
+    if (
+      art &&
+      typeof row.code === "string" &&
+      row.code.trim() &&
+      normalizeArticle(row.code) !== art
+    ) {
+      continue;
+    }
+    cands.push({ row, overlap, contains });
   }
-  if (strong.length > 1) {
-    // найкоротша різниця довжин
-    const ranked = [...strong].sort(
-      (a, b) =>
-        Math.abs(normalizeName(displayCatalogName(a)).length - needle.length) -
-        Math.abs(normalizeName(displayCatalogName(b)).length - needle.length)
+
+  if (cands.length === 0) return null;
+
+  cands.sort((a, b) => {
+    if (b.overlap !== a.overlap) return b.overlap - a.overlap;
+    const da = Math.abs(
+      normalizeName(displayCatalogName(a.row)).length - needle.length
     );
-    return { row: ranked[0]!, confidence: 55, weakFuzzy: true };
+    const db = Math.abs(
+      normalizeName(displayCatalogName(b.row)).length - needle.length
+    );
+    return da - db;
+  });
+
+  const best = cands[0]!;
+  const second = cands[1];
+  // Кілька близьких кандидатів → не вгадуємо (бухгалтер перевірить як «нову»)
+  if (
+    second &&
+    best.overlap - second.overlap < 0.12 &&
+    second.overlap >= 0.4
+  ) {
+    return {
+      row: best.row,
+      confidence: 35,
+      weakFuzzy: true,
+      ambiguous: true,
+    };
   }
+
+  if (best.overlap >= 0.75 || (best.contains && best.overlap >= 0.5)) {
+    return {
+      row: best.row,
+      confidence: Math.round(60 + best.overlap * 30),
+      weakFuzzy: best.overlap < 0.85,
+    };
+  }
+
+  // Слабкий збіг — лише з needsReview (confidence < 80)
+  if (best.overlap >= 0.45 || best.contains) {
+    return {
+      row: best.row,
+      confidence: Math.round(40 + best.overlap * 30),
+      weakFuzzy: true,
+    };
+  }
+
   return null;
 }
 
@@ -279,6 +371,42 @@ export async function buildInvoicePreview(
     }
 
     const matched = matchCatalogItem(rows, name, article);
+    if (matched?.ambiguous || matched?.articleMismatch) {
+      const display = displayCatalogName(matched.row);
+      if (matched.articleMismatch && article) {
+        reviewReasons.push(
+          `артикул «${article}» не збігається з кодом «${matched.row.code ?? "—"}» у «${display}»`
+        );
+      }
+      if (matched.ambiguous) {
+        reviewReasons.push(
+          `кілька схожих позицій у довіднику (кандидат «${display}») — оберіть вручну`
+        );
+      }
+      // Не привʼязуємо мовчки: нова локальна + обовʼязковий review
+      return {
+        lineId: `line-${index + 1}`,
+        name,
+        category,
+        quantity: qty,
+        unit: unitRaw,
+        unitRaw,
+        article,
+        pricePerUnit: price,
+        totalAmount: total,
+        matchStatus: "new" as const,
+        existingItemId: null,
+        existingItemName: null,
+        matchConfidence: matched.confidence,
+        unitConflict: false,
+        needsReview: true,
+        reviewReasons:
+          reviewReasons.length > 0
+            ? reviewReasons
+            : ["неоднозначний збіг — перевірити номенклатуру"],
+      };
+    }
+
     if (matched) {
       const display = displayCatalogName(matched.row);
       const cacheUnit = String(matched.row.unit ?? "").trim() || unitRaw;
@@ -287,6 +415,11 @@ export async function buildInvoicePreview(
       if (unitConflict) {
         reviewReasons.push(
           `од. вим.: у накладній «${unitRaw}», у довіднику «${cacheUnit}»`
+        );
+      }
+      if (article && !matched.row.code?.trim()) {
+        reviewReasons.push(
+          `артикул накладної «${article}» — у довіднику немає code`
         );
       }
       if (matched.weakFuzzy || matched.confidence < 80) {
@@ -314,6 +447,12 @@ export async function buildInvoicePreview(
       };
     }
 
+    const newReasons = ["нова номенклатура — перевірити назву й од. вим."];
+    if (article) {
+      newReasons.push(
+        `артикул «${article}» не знайдено в довіднику BAS — потрапить як локальна, у чернетку BAS без bas_ref_key не ввійде`
+      );
+    }
     return {
       lineId: `line-${index + 1}`,
       name,
@@ -330,7 +469,7 @@ export async function buildInvoicePreview(
       matchConfidence: 0,
       unitConflict: false,
       needsReview: true,
-      reviewReasons: ["нова номенклатура — перевірити назву й од. вим."],
+      reviewReasons: newReasons,
     };
   });
 
@@ -578,13 +717,20 @@ export async function executeWarehouseReceipt(
         preview.invoiceNumber ? ` (накл. №${preview.invoiceNumber})` : ""
       } на склад LEVADA.`,
       describeBasHandoff(basHandoffStatus),
-      basLinesInDraft > 0
-        ? `У чернетку BAS потрапить ${basLinesInDraft} змаплених рядків.`
+      basHandoffStatus === "bas_draft_posted" && basDraftRefKey
+        ? `Ref_Key ${basDraftRefKey}. У BAS: непроведені «Надходження товарів і послуг» (1 документ на всю накладну).`
         : null,
+      basLinesInDraft > 0 && basHandoffStatus !== "bas_draft_posted"
+        ? `Підготовлено ${basLinesInDraft} змаплених рядків для однієї чернетки BAS.`
+        : basLinesInDraft > 0
+          ? `У чернетці BAS: ${basLinesInDraft} рядків.`
+          : null,
       basLinesSkippedLocal > 0
-        ? `${basLinesSkippedLocal} локальних (без BAS-ключа) лишаються лише в LEVADA.`
+        ? `${basLinesSkippedLocal} локальних (без BAS-ключа) лише в LEVADA.`
         : null,
-      "Excel-статус sent_to_1c ≠ чернетка в BAS.",
+      basHandoffStatus !== "bas_draft_posted"
+        ? "Якщо треба дослати: sendWarehouseReceiptBasDraft. Excel «Передати» ≠ BAS."
+        : "Excel «Передати» / sent_to_1c ≠ ця чернетка.",
     ]
       .filter(Boolean)
       .join(" "),

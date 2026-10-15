@@ -4940,6 +4940,7 @@ function InvoicePreviewCard({
 }) {
   const [posting, setPosting] = useState(false);
   const [posted, setPosted] = useState(false);
+  const [basStatusNote, setBasStatusNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [acceptRisks, setAcceptRisks] = useState(false);
   const [lines, setLines] = useState(invoice.items);
@@ -5012,6 +5013,41 @@ function InvoicePreviewCard({
         return;
       }
       setPosted(true);
+      const handoff =
+        "basHandoffStatus" in result ? String(result.basHandoffStatus) : "";
+      const refKey =
+        "basDraftRefKey" in result && result.basDraftRefKey
+          ? String(result.basDraftRefKey).slice(0, 8)
+          : null;
+      const linesInDraft =
+        "basLinesInDraft" in result && result.basLinesInDraft != null
+          ? Number(result.basLinesInDraft)
+          : null;
+      if (handoff === "bas_draft_posted") {
+        setBasStatusNote(
+          `Чернетка в BAS${refKey ? ` (${refKey}…)` : ""}${
+            linesInDraft != null ? ` · ${linesInDraft} рядків` : ""
+          }. Шукай у непроведених «Надходження товарів і послуг».`
+        );
+      } else if (handoff === "bas_draft_dry_run") {
+        setBasStatusNote(
+          "На складі LEVADA. Чернетка BAS у dry-run — live pipeline ще вимкнено. Попроси LEVADIUS: «відправ чернетку в BAS»."
+        );
+      } else if (handoff === "awaiting_bas_mapping") {
+        setBasStatusNote(
+          "На складі LEVADA. У BAS ще ні — потрібен мапінг номенклатури (bas_ref_key), потім «відправ чернетку в BAS»."
+        );
+      } else if (handoff === "bas_draft_failed") {
+        setBasStatusNote(
+          "На складі LEVADA, але відправка чернетки в BAS не вдалася. Повтори через LEVADIUS або «Повторити BAS» у бухгалтерії."
+        );
+      } else {
+        setBasStatusNote(
+          "На складі LEVADA. Статус BAS: " +
+            (handoff || "local_saved") +
+            ". За потреби: «відправ цю накладну в BAS»."
+        );
+      }
       onActionDone?.(
         `оприбуткування накладної «${invoice.supplierName}»${invoice.invoiceNumber ? ` №${invoice.invoiceNumber}` : ""}`
       );
@@ -5216,7 +5252,7 @@ function InvoicePreviewCard({
               ) : (
                 <CheckCircle2 className="size-3.5" />
               )}
-              Оприбуткувати на склад
+              Оприбуткувати + чернетка BAS
             </button>
           </div>
         )}
@@ -5226,10 +5262,15 @@ function InvoicePreviewCard({
           {error}
         </p>
       ) : null}
+      {posted && basStatusNote ? (
+        <p className="border-t border-emerald-500/20 px-3.5 py-2 text-[11px] text-emerald-200/90">
+          {basStatusNote}
+        </p>
+      ) : null}
       {!posted ? (
         <p className="border-t border-white/5 px-3.5 py-2 text-[10px] text-zinc-500">
-          Після оприбуткування: склад LEVADA + чернетка BAS (якщо увімкнено й є
-          мапінг). «Позначено для 1С» ≠ документ у BAS.
+          1 накладна → склад LEVADA + 1 непроведена Поступление в BAS (усі
+          змаплені рядки). «Excel · не BAS» / «Передати» ≠ чернетка в BAS.
         </p>
       ) : null}
     </div>

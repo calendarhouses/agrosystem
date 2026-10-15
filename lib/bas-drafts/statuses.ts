@@ -48,5 +48,5 @@ export function basHandoffLabel(status: BasHandoffStatus | string): string {
 }
 
 export function excelQueueLabel(): string {
-  return "Позначено для 1С (Excel)";
+  return "Excel · не BAS";
 }
