@@ -68,7 +68,7 @@ export const APP_NAV_ITEMS: AppNavItem[] = [
   {
     href: "/accounting",
     label: "Бухгалтерія",
-    hint: "Експорт · звірка · мапінг BAS AGRO",
+    hint: "Черга · перевірка · звʼязки з 1С",
     icon: FileSpreadsheet,
     moreMenu: true,
   },

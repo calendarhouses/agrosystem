@@ -57,3 +57,18 @@ export function basDieselNomenclatureKey(): string | null {
     process.env.BAS_DIESEL_NOMENCLATURE_KEY?.trim().toLowerCase() || null
   );
 }
+
+/**
+ * Заглушка для НОВИХ товарів, яких ще немає в довіднику BAS.
+ * Рядок усе одно летить у чернетку; справжня назва — у НаименованиеПоставщика.
+ * За замовчуванням — картка «Товари» у вашій базі (можна перевизначити env).
+ */
+const DEFAULT_UNMAPPED_NOMENCLATURE_KEY =
+  "a1f7dba4-426c-11f1-8c9e-9c6b0055d53a";
+
+export function basUnmappedNomenclatureKey(): string {
+  return (
+    process.env.BAS_UNMAPPED_NOMENCLATURE_KEY?.trim().toLowerCase() ||
+    DEFAULT_UNMAPPED_NOMENCLATURE_KEY
+  );
+}

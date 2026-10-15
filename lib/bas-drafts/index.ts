@@ -5,6 +5,7 @@ export {
   basDefaultWarehouseKey,
   basDieselNomenclatureKey,
   basOrganizationKey,
+  basUnmappedNomenclatureKey,
   isBasDraftPipelineEnabled,
   isBasDraftPostEnabled,
 } from "@/lib/bas-drafts/config";

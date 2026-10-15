@@ -65,7 +65,7 @@ const ACTION_META: Record<
     ring: "ring-amber-500/20",
   },
   export: {
-    label: "Експорт",
+    label: "Черга",
     icon: Upload,
     tone: "bg-violet-500/15 text-violet-700",
     ring: "ring-violet-500/20",
@@ -77,7 +77,7 @@ const ACTION_META: Record<
     ring: "ring-zinc-500/20",
   },
   mapping: {
-    label: "Мапінг",
+    label: "Звʼязки",
     icon: Link2,
     tone: "bg-[#C05621]/15 text-[#9c4221]",
     ring: "ring-[#C05621]/20",
@@ -119,7 +119,7 @@ const ENTITY_META: Record<string, { label: string; icon: LucideIcon }> = {
   inventory_item: { label: "Товар", icon: Package },
   equipment: { label: "Техніка", icon: Tractor },
   purchase_request: { label: "Заявка", icon: ShoppingCart },
-  mapping: { label: "Мапінг", icon: Link2 },
+  mapping: { label: "Звʼязки", icon: Link2 },
   bas_request: { label: "Черга 1С", icon: Upload },
   profile: { label: "Профіль", icon: UserRound },
   session: { label: "Сесія", icon: LogIn },

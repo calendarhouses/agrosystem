@@ -450,7 +450,7 @@ export async function buildInvoicePreview(
     const newReasons = ["нова номенклатура — перевірити назву й од. вим."];
     if (article) {
       newReasons.push(
-        `артикул «${article}» не знайдено в довіднику BAS — потрапить як локальна, у чернетку BAS без bas_ref_key не ввійде`
+        `артикул «${article}» не в довіднику — у чернетку 1С піде як нова (назва з накладної)`
       );
     }
     return {
@@ -726,7 +726,7 @@ export async function executeWarehouseReceipt(
           ? `У чернетці BAS: ${basLinesInDraft} рядків.`
           : null,
       basLinesSkippedLocal > 0
-        ? `${basLinesSkippedLocal} локальних (без BAS-ключа) лише в LEVADA.`
+        ? `${basLinesSkippedLocal} нових позицій у чернетці з назвою з накладної (заглушка «Товари»).`
         : null,
       basHandoffStatus !== "bas_draft_posted"
         ? "Якщо треба дослати: sendWarehouseReceiptBasDraft. Excel «Передати» ≠ BAS."

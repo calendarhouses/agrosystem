@@ -43,6 +43,7 @@ import {
   deleteLocalMove,
   getWarehouseReceiptDetailAction,
   listWarehouseReceiptsBasHandoff,
+  recreateWarehouseReceiptBasDraftAction,
   retryWarehouseReceiptBasDraftAction,
   updateWarehouseReceiptBasDraftHeaderAction,
   type LocalMoveRow,
@@ -895,7 +896,7 @@ export function AccountantHubView({
         return;
       }
       toast.success(
-        `Позначено ${res.data.inventory + res.data.fuel + (res.data.acts ?? 0)} операцій`
+        `Знято з черги: ${res.data.inventory + res.data.fuel + (res.data.acts ?? 0)}`
       );
       setConfirmOpen(false);
       await load({ force: true });
@@ -1040,7 +1041,7 @@ export function AccountantHubView({
         )}
       >
         <Download className="h-3.5 w-3.5" />
-        <span className="hidden sm:inline">Скачати</span>
+        <span className="hidden sm:inline">Скачати Excel</span>
         <span className="sm:hidden">{packageSummary.count || "—"}</span>
       </Button>
     </>
@@ -1095,7 +1096,7 @@ export function AccountantHubView({
             <FinancePeriodToolbar
               {...periodFilter}
               variant={isMobile ? "mobile" : "desktop"}
-              seasonHint="Фільтр черги за агросезоном (березень–лютий)."
+              seasonHint="Період черги"
               loading={loading}
               trailing={periodActions}
             />
@@ -1146,12 +1147,11 @@ export function AccountantHubView({
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <p className="text-sm font-semibold text-zinc-900">
-                Чернетки BAS · надходження
+                Накладні → 1С
               </p>
               <p className="mt-0.5 text-[11px] text-zinc-500">
-                Натисни на рядок — побачиш товари всередині. Зелений = уже в
-                1С (непроведені Надходження). «Дописати шапку» підставить
-                контрагента й склад у вже створену чернетку.
+                Відкрий рядок — усі товари. Нові (ще без картки в 1С) теж
+                йдуть у чернетку з назвою з накладної.
               </p>
             </div>
             <Button
@@ -1174,7 +1174,7 @@ export function AccountantHubView({
             <p className="mt-3 text-sm text-zinc-500">Завантаження…</p>
           ) : basReceipts.length === 0 ? (
             <p className="mt-3 text-sm text-zinc-500">
-              Поки немає накладних (або міграція 079 ще не застосована).
+              Поки немає накладних з LEVADIUS.
             </p>
           ) : (
             <ul className="mt-3 max-h-72 space-y-2 overflow-y-auto">
@@ -1279,33 +1279,64 @@ export function AccountantHubView({
                       </button>
                       <div className="flex shrink-0 flex-wrap gap-1.5">
                         {canPatchHeader ? (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="h-8 rounded-full text-xs"
-                            disabled={basPatchId === row.id}
-                            onClick={() => {
-                              setBasPatchId(row.id);
-                              void updateWarehouseReceiptBasDraftHeaderAction(
-                                row.id
-                              ).then((res) => {
-                                setBasPatchId(null);
-                                if (!res.ok) {
-                                  toast.error(res.error);
-                                  return;
-                                }
-                                toast.success(res.message);
-                              });
-                            }}
-                          >
-                            {basPatchId === row.id ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <Pencil className="h-3.5 w-3.5" />
-                            )}
-                            Дописати шапку
-                          </Button>
+                          <>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-8 rounded-full text-xs"
+                              disabled={basPatchId === row.id}
+                              onClick={() => {
+                                setBasPatchId(row.id);
+                                void updateWarehouseReceiptBasDraftHeaderAction(
+                                  row.id
+                                ).then((res) => {
+                                  setBasPatchId(null);
+                                  if (!res.ok) {
+                                    toast.error(res.error);
+                                    return;
+                                  }
+                                  toast.success(res.message);
+                                });
+                              }}
+                            >
+                              {basPatchId === row.id ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Pencil className="h-3.5 w-3.5" />
+                              )}
+                              Постачальник і склад
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-8 rounded-full text-xs"
+                              disabled={basRetryId === row.id}
+                              onClick={() => {
+                                setBasRetryId(row.id);
+                                void recreateWarehouseReceiptBasDraftAction(
+                                  row.id
+                                ).then((res) => {
+                                  setBasRetryId(null);
+                                  if (!res.ok) {
+                                    toast.error(res.error);
+                                    return;
+                                  }
+                                  toast.success(res.message);
+                                  void loadBasReceipts();
+                                  setBasOpenId(null);
+                                });
+                              }}
+                            >
+                              {basRetryId === row.id ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <RefreshCw className="h-3.5 w-3.5" />
+                              )}
+                              Надіслати знову
+                            </Button>
+                          </>
                         ) : null}
                         {canRetry ? (
                           <Button
@@ -1334,7 +1365,7 @@ export function AccountantHubView({
                             ) : (
                               <RefreshCw className="h-3.5 w-3.5" />
                             )}
-                            Повторити BAS
+                            Надіслати в 1С
                           </Button>
                         ) : null}
                       </div>
@@ -1352,12 +1383,9 @@ export function AccountantHubView({
                         ) : (
                           <>
                             <p className="mb-1.5 text-[10px] text-zinc-500">
-                              {basDetailLines.length} поз.
+                              {basDetailLines.length} товарів
                               {basDetailMeta
-                                ? ` · у BAS ${basDetailMeta.mapped}, лише LEVADA ${basDetailMeta.localOnly}`
-                                : null}
-                              {row.basDraftRefKey
-                                ? ` · Ref ${row.basDraftRefKey}`
+                                ? ` · з довідника ${basDetailMeta.mapped}, нові ${basDetailMeta.localOnly}`
                                 : null}
                             </p>
                             <ul className="max-h-40 space-y-1 overflow-y-auto text-[11px]">
@@ -1372,7 +1400,7 @@ export function AccountantHubView({
                                     !line.basRefKey ||
                                     line.basRefKey.startsWith("local:") ? (
                                       <span className="ml-1 text-amber-700">
-                                        · локальна
+                                        · новий
                                       </span>
                                     ) : null}
                                   </span>
@@ -1387,9 +1415,7 @@ export function AccountantHubView({
                               ))}
                             </ul>
                             <p className="mt-2 text-[10px] text-zinc-400">
-                              У BAS: Купівлі → Надходження товарів і послуг →
-                              непроведені. Шукай коментар AgroSystem / №
-                              накладної.
+                              У 1С: Купівлі → Надходження → непроведені.
                             </p>
                           </>
                         )}
@@ -1431,7 +1457,7 @@ export function AccountantHubView({
                       labelFuel(stats.fuel),
                       labelActs(stats.acts),
                     ].join(" · ")
-                  : "Операції до передачі"}
+                  : "Що чекає на роботу"}
               </p>
             </div>
           </button>
@@ -1462,7 +1488,7 @@ export function AccountantHubView({
               <p className="mt-auto hidden pt-3 text-[11px] leading-snug text-teal-900/55 sm:block">
                 {packageSummary.count > 0
                   ? `${labelSelected(packageSummary.count)} · ${formatUah(packageSummary.amount)} ₴`
-                  : "Оберіть рядки в черзі"}
+                  : "Відміть рядки галочками"}
               </p>
             </div>
           </div>
@@ -2134,10 +2160,10 @@ export function AccountantHubView({
               </span>
               <div className="min-w-0">
                 <p className="text-sm font-bold text-zinc-900">
-                  Архів сезону {seasonYear}
+                  Архів {seasonYear}
                 </p>
                 <p className="text-xs text-zinc-500">
-                  Передані та видалені операції
+                  Зняті з черги та видалені
                 </p>
               </div>
             </button>
@@ -2229,7 +2255,7 @@ export function AccountantHubView({
                                   : "bg-emerald-100 text-emerald-800"
                               )}
                             >
-                              {deleted ? "Видалено" : "Excel · не BAS"}
+                              {deleted ? "Видалено" : "Знято з черги"}
                             </span>
                           </div>
                           <p className="mt-1 truncate text-sm font-semibold text-zinc-900">
@@ -2293,7 +2319,7 @@ export function AccountantHubView({
           >
             <div className="min-w-0 pl-0.5 sm:pl-1">
               <p className="text-[9px] font-bold tracking-[0.12em] text-zinc-400 uppercase sm:text-[10px] sm:tracking-[0.14em]">
-                Пакет
+                Обрано
               </p>
               <p className="truncate text-[13px] font-semibold text-zinc-900 sm:whitespace-nowrap sm:text-sm">
                 {labelOps(packageSummary.count)}
@@ -2331,7 +2357,7 @@ export function AccountantHubView({
               ) : (
                 <CheckCircle2 className="h-3.5 w-3.5" />
               )}
-              Передати
+              Зняти з черги
             </Button>
           </div>
         ) : null}
@@ -2343,10 +2369,9 @@ export function AccountantHubView({
         pending={pending}
         description={
           <>
-            {labelOps(packageSummary.count)} зникнуть з черги як «Excel · не
-            BAS». Це не створює документів у BAS АГРО — лише позначка для
-            бухгалтера. Чернетки BAS — блок «Чернетки BAS · надходження» або
-            LEVADIUS.
+            {labelOps(packageSummary.count)} зникнуть із черги. Це лише
+            позначка «готово» — у 1С документи самі не створюються. Накладні в
+            1С — у блоці зверху.
           </>
         }
         onConfirm={confirmMark}

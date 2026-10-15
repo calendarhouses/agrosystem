@@ -931,6 +931,62 @@ export async function updateWarehouseReceiptBasDraftHeaderAction(
   }
 }
 
+/**
+ * Шукає локальні позиції в BAS за назвою/артикулом, позначає стару чернетку
+ * на видалення і створює нову з максимумом рядків.
+ */
+export async function recreateWarehouseReceiptBasDraftAction(
+  receiptId: string
+): Promise<
+  | {
+      ok: true;
+      message: string;
+      linesInDraft?: number;
+      linesSkippedLocal?: number;
+      refKey?: string;
+    }
+  | { ok: false; error: string }
+> {
+  try {
+    const { recreateWarehouseReceiptBasDraft } = await import(
+      "@/lib/bas-drafts/inventory-inbound"
+    );
+    const { describeBasHandoff } = await import("@/lib/bas-drafts/statuses");
+    const result = await recreateWarehouseReceiptBasDraft(receiptId.trim());
+    if (!result.ok && result.handoffStatus === "bas_draft_failed") {
+      return { ok: false, error: result.error || "Помилка перестворення" };
+    }
+    return {
+      ok: true,
+      linesInDraft: result.linesInDraft,
+      linesSkippedLocal: result.linesSkippedLocal,
+      refKey: result.refKey,
+      message: [
+        describeBasHandoff(result.handoffStatus),
+        result.linesInDraft != null
+          ? `У новій чернетці ${result.linesInDraft} рядків.`
+          : null,
+        result.linesSkippedLocal
+          ? `${result.linesSkippedLocal} нових — у чернетці через «Товари» + назва з накладної.`
+          : null,
+        result.oldRefKey
+          ? `Стару чернетку позначено на видалення.`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" "),
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error:
+        err instanceof Error
+          ? err.message
+          : "Не вдалося перестворити чернетку",
+    };
+  }
+}
+
 export async function createLocalHarvestSale(input: {
   itemRefKey: string;
   qty: number;

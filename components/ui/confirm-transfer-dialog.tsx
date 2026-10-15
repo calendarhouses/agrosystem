@@ -25,13 +25,13 @@ type ConfirmTransferDialogProps = {
   className?: string;
 };
 
-/** Підтвердження «Позначити як передані» — компактна картка по центру. */
+/** Підтвердження зняття з черги бухгалтера. */
 export function ConfirmTransferDialog({
   open,
   onOpenChange,
-  title = "Позначити як передані?",
+  title = "Зняти з черги?",
   description,
-  confirmLabel = "Так, позначити",
+  confirmLabel = "Так, зняти",
   cancelLabel = "Скасувати",
   pending = false,
   onConfirm,

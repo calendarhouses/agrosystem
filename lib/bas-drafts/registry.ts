@@ -51,7 +51,7 @@ export const BAS_DRAFT_PIPELINES: BasDraftPipeline[] = [
     readiness: "ready",
     module: "lib/bas-drafts/inventory-inbound.ts",
     notes:
-      "Multi-line Товары[]. Контрагент: live-пошук у Catalog_Контрагенты за ЄДРПОУ/назвою. Склад: поле «Склад» + BAS_DEFAULT_WAREHOUSE_KEY. LEVADIUS send/list/verify.",
+      "Multi-line Товары[] — усі рядки накладної. Відома номенклатура → Ref_Key; нова → заглушка BAS_UNMAPPED_NOMENCLATURE_KEY («Товари») + НаименованиеПоставщика. Контрагент/склад авто.",
   },
   {
     id: "inventory_sale",

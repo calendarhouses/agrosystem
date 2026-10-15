@@ -24,9 +24,9 @@ import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
 
 const HUB_TABS = [
-  { id: "export", label: "Експорт", short: "Експорт", icon: FileSpreadsheet },
-  { id: "reconcile", label: "Звірка", short: "Звірка", icon: Scale },
-  { id: "mapping", label: "Мапінг", short: "Мапінг", icon: Link2 },
+  { id: "export", label: "Черга", short: "Черга", icon: FileSpreadsheet },
+  { id: "reconcile", label: "Перевірка", short: "Перевірка", icon: Scale },
+  { id: "mapping", label: "Звʼязки з 1С", short: "Звʼязки", icon: Link2 },
 ] as const;
 
 export function AccountingHub() {
@@ -141,7 +141,7 @@ export function AccountingHub() {
                   <FinancePeriodToolbar
                     {...periodFilter}
                     variant="desktop"
-                    seasonHint="Фільтр черги за агросезоном (березень–лютий)."
+                    seasonHint="Період черги"
                     trailing={exportPeriodActions}
                     className="w-full max-w-none shrink-0 lg:w-auto"
                   />
@@ -265,12 +265,13 @@ export function AccountingHub() {
               >
                 {!isMobile ? (
                   <div className="mb-5">
-                    <h2 className="text-lg font-bold text-zinc-900">Мапінг</h2>
+                    <h2 className="text-lg font-bold text-zinc-900">
+                      Звʼязки з 1С
+                    </h2>
                     <p className="mt-1 text-sm text-zinc-500">
-                      Зіставте наші поля, техніку, склади ДП і товари з
-                      довідниками BAS AGRO. Нові позиції зʼявляються самі; точні
-                      збіги пропонуються автоматично. У BAS AGRO нічого не
-                      пишемо — лише зберігаємо звʼязок у нас.
+                      Зʼєднай поля, техніку, склади й товари LEVADA з картками в
+                      BAS. У 1С нічого не змінюємо — лише зберігаємо звʼязок у
+                      нас.
                     </p>
                   </div>
                 ) : null}

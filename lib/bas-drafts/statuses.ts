@@ -15,17 +15,17 @@ export type ExcelQueueStatus = "sent_to_1c";
 export function describeBasHandoff(status: BasHandoffStatus | string): string {
   switch (status) {
     case "local_saved":
-      return "Збережено на складі LEVADA (ще не в BAS).";
+      return "На складі LEVADA, у 1С ще не відправлено.";
     case "awaiting_bas_mapping":
-      return "Очікує мапінгу номенклатури/контрагента перед чернеткою BAS.";
+      return "Товари ще не звʼязані з номенклатурою 1С.";
     case "bas_draft_posted":
-      return "Чернетка в BAS (непроведена) — бухгалтер може перевірити й провести.";
+      return "Уже є в 1С як непроведена чернетка.";
     case "bas_draft_dry_run":
-      return "Підготовлено dry-run (жива відправка в BAS ще вимкнена).";
+      return "Підготовлено, але жива відправка в 1С вимкнена.";
     case "bas_draft_failed":
-      return "Помилка відправки чернетки в BAS — див. bas_draft_error.";
+      return "Не вдалося відправити в 1С — спробуй ще раз.";
     default:
-      return "Статус передачі невизначений.";
+      return "Статус невідомий.";
   }
 }
 
@@ -33,20 +33,20 @@ export function describeBasHandoff(status: BasHandoffStatus | string): string {
 export function basHandoffLabel(status: BasHandoffStatus | string): string {
   switch (status) {
     case "local_saved":
-      return "На складі LEVADA";
+      return "Ще не в 1С";
     case "awaiting_bas_mapping":
-      return "Очікує мапінгу BAS";
+      return "Треба звʼязати товари";
     case "bas_draft_posted":
-      return "Чернетка в BAS";
+      return "Вже в 1С";
     case "bas_draft_dry_run":
-      return "Dry-run BAS";
+      return "Тест — не відправлено";
     case "bas_draft_failed":
-      return "Помилка BAS";
+      return "Помилка відправки";
     default:
       return String(status);
   }
 }
 
 export function excelQueueLabel(): string {
-  return "Excel · не BAS";
+  return "Знято з черги";
 }

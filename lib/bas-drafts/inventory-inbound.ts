@@ -9,10 +9,12 @@
 import {
   basDefaultWarehouseKey,
   basOrganizationKey,
+  basUnmappedNomenclatureKey,
   isBasDraftPipelineEnabled,
   isBasDraftPostEnabled,
 } from "@/lib/bas-drafts/config";
 import { resolveBasCounterpartyKey } from "@/lib/bas-drafts/counterparty";
+import { resolveBasNomenclatureKey } from "@/lib/bas-drafts/nomenclature";
 import { postBasDocumentDraft, toIsoDateTime } from "@/lib/bas-drafts/post";
 import type { BasHandoffStatus } from "@/lib/bas-drafts/statuses";
 import {
@@ -102,30 +104,94 @@ export async function enqueueWarehouseReceiptBasDraft(
     name: string;
     qty: number;
     price: number;
+    /** true = нової номенклатури ще немає в BAS — назва в НаименованиеПоставщика */
+    unmapped: boolean;
   };
   const mapped: Line[] = [];
   let linesSkippedLocal = 0;
+  let linesResolvedLive = 0;
+  let linesUnmappedPlaceholder = 0;
+  const unmappedKey = basUnmappedNomenclatureKey();
 
   for (const row of rows) {
     const cache = Array.isArray(row.inventory_items_cache)
       ? row.inventory_items_cache[0]
       : row.inventory_items_cache;
     const isLocal = cache?.is_local === true;
-    const itemKey = cache?.bas_ref_key
+    const rawKey = cache?.bas_ref_key
       ? String(cache.bas_ref_key).toLowerCase()
       : row.item_ref_key
         ? String(row.item_ref_key).toLowerCase()
         : null;
-    if (!itemKey || isLocal) {
-      linesSkippedLocal += 1;
-      continue;
+    const looksLocalKey = !rawKey || rawKey.startsWith("local:");
+    const displayName = cache?.name ? String(cache.name) : "ТМЦ";
+    const code =
+      typeof cache?.code === "string" && cache.code.trim()
+        ? cache.code.trim()
+        : null;
+
+    let itemKey =
+      !isLocal && rawKey && !looksLocalKey ? rawKey : null;
+    let unmapped = false;
+
+    // Локальні / без ключа — спочатку шукаємо в Catalog_Номенклатура
+    if (!itemKey) {
+      const live = await resolveBasNomenclatureKey({
+        name: displayName,
+        code,
+        article: code,
+      });
+      if (live.key) {
+        itemKey = live.key;
+        linesResolvedLive += 1;
+        try {
+          if (rawKey?.startsWith("local:")) {
+            await supabase
+              .from("inventory_items_cache")
+              .update({
+                bas_ref_key: live.key,
+                is_local: false,
+                code: code,
+                name: live.matchedName || displayName,
+              })
+              .eq("bas_ref_key", rawKey);
+          } else if (rawKey) {
+            await supabase
+              .from("inventory_items_cache")
+              .update({ is_local: false, bas_ref_key: live.key })
+              .eq("bas_ref_key", rawKey);
+          }
+          await supabase
+            .from("inventory_local_moves")
+            .update({ item_ref_key: live.key })
+            .eq("id", row.id);
+        } catch (linkErr) {
+          console.warn("[bas-drafts] link nomenclature cache", linkErr);
+        }
+      }
     }
+
+    // Новий товар: усе одно в чернетку — заглушка «Товари» + назва з накладної
+    if (!itemKey) {
+      itemKey = unmappedKey;
+      unmapped = true;
+      linesUnmappedPlaceholder += 1;
+    }
+
     mapped.push({
       moveId: String(row.id),
       itemKey,
-      name: cache?.name ? String(cache.name) : "ТМЦ",
+      name: displayName,
       qty: Number(row.qty) || 0,
       price: Number(row.unit_price_uah) || 0,
+      unmapped,
+    });
+  }
+
+  if (linesResolvedLive > 0 || linesUnmappedPlaceholder > 0) {
+    console.log("[bas-drafts] nomenclature resolve", receiptId, {
+      live: linesResolvedLive,
+      unmappedPlaceholder: linesUnmappedPlaceholder,
     });
   }
 
@@ -133,10 +199,7 @@ export async function enqueueWarehouseReceiptBasDraft(
     await markWarehouseHandoffStatus({
       receiptId,
       status: "awaiting_bas_mapping",
-      error:
-        linesSkippedLocal > 0
-          ? "немає рядків із bas_ref_key BAS (лише локальна номенклатура)"
-          : "немає рядків для чернетки",
+      error: "немає рядків для чернетки",
     });
     return {
       ok: true,
@@ -144,7 +207,7 @@ export async function enqueueWarehouseReceiptBasDraft(
       handoffStatus: "awaiting_bas_mapping",
       linesInDraft: 0,
       linesSkippedLocal,
-      error: "очікує мапінгу номенклатури",
+      error: "немає рядків для чернетки",
     };
   }
 
@@ -188,6 +251,9 @@ export async function enqueueWarehouseReceiptBasDraft(
       ? receipt.supplier_edrpou.trim()
       : "";
 
+  // linesSkippedLocal у результаті = скільки пішло через заглушку «нові товари»
+  linesSkippedLocal = linesUnmappedPlaceholder;
+
   const body: Record<string, unknown> = {
     Date: toIsoDateTime(dateRaw),
     Posted: false,
@@ -201,8 +267,8 @@ export async function enqueueWarehouseReceiptBasDraft(
       !counterparty.key
         ? "контрагент не змаплений — оберіть у BAS"
         : null,
-      linesSkippedLocal > 0
-        ? `(локальних без BAS: ${linesSkippedLocal})`
+      linesUnmappedPlaceholder > 0
+        ? `нових позицій (заглушка «Товари» + назва постачальника): ${linesUnmappedPlaceholder}`
         : null,
     ]
       .filter(Boolean)
@@ -213,6 +279,8 @@ export async function enqueueWarehouseReceiptBasDraft(
       Количество: line.qty,
       Цена: line.price,
       Сумма: Math.round(line.qty * line.price * 100) / 100,
+      // Справжня назва з накладної — бухгалтер бачить і може завести номенклатуру
+      НаименованиеПоставщика: line.name.slice(0, 250),
     })),
     _meta: { receiptId, pipeline: PIPELINE_ID },
   };
@@ -427,4 +495,118 @@ export async function enqueueInventoryInboundBasDraft(
   }
 
   return { ok: true, dryRun: result.dryRun };
+}
+
+function requiredEnv(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value) throw new Error(`${name} не задано в env`);
+  return value;
+}
+
+function basicAuthHeader(): string {
+  const token = Buffer.from(
+    `${requiredEnv("BAS_USER")}:${requiredEnv("BAS_PASS")}`,
+    "utf8"
+  ).toString("base64");
+  return `Basic ${token}`;
+}
+
+function odataBaseUrl(): string {
+  return requiredEnv("BAS_ODATA_URL").replace(/\/+$/, "");
+}
+
+/**
+ * Позначає стару непроведену чернетку на видалення в BAS, скидає Ref_Key у нас
+ * і створює нову з усіма знайденими рядками (включно з live-resolve локальних).
+ */
+export async function recreateWarehouseReceiptBasDraft(
+  receiptId: string
+): Promise<WarehouseReceiptBasDraftResult & { oldRefKey?: string }> {
+  const supabase = createServiceSupabase();
+  const { data: receipt, error } = await supabase
+    .from("warehouse_receipts")
+    .select("id, bas_draft_ref_key")
+    .eq("id", receiptId)
+    .maybeSingle();
+
+  if (error || !receipt) {
+    return {
+      ok: false,
+      dryRun: !isBasDraftPostEnabled(),
+      handoffStatus: "bas_draft_failed",
+      error: "накладну не знайдено",
+    };
+  }
+
+  const oldRef =
+    receipt.bas_draft_ref_key != null
+      ? String(receipt.bas_draft_ref_key).toLowerCase()
+      : null;
+
+  if (oldRef && isBasDraftPipelineEnabled(PIPELINE_ID) && isBasDraftPostEnabled()) {
+    try {
+      const path = `${ENTITY}(guid'${oldRef}')`;
+      const getUrl = `${odataBaseUrl()}/odata/standard.odata/${path}?$format=json&$select=Posted,DeletionMark,Number`;
+      const getRes = await fetch(getUrl, {
+        method: "GET",
+        cache: "no-store",
+        signal: AbortSignal.timeout(45_000),
+        headers: {
+          Authorization: basicAuthHeader(),
+          Accept: "application/json",
+        },
+      });
+      if (getRes.ok) {
+        const doc = (await getRes.json()) as {
+          Posted?: boolean;
+          DeletionMark?: boolean;
+        };
+        if (doc.Posted === true) {
+          return {
+            ok: false,
+            dryRun: false,
+            handoffStatus: "bas_draft_failed",
+            error:
+              "Стара чернетка вже проведена в BAS — не можна перестворити. Звернись до бухгалтера.",
+            oldRefKey: oldRef,
+          };
+        }
+        if (doc.DeletionMark !== true) {
+          await fetch(`${odataBaseUrl()}/odata/standard.odata/${path}?$format=json`, {
+            method: "PATCH",
+            cache: "no-store",
+            signal: AbortSignal.timeout(45_000),
+            headers: {
+              Authorization: basicAuthHeader(),
+              Accept: "application/json",
+              "Content-Type": "application/json",
+              "IF-MATCH": "*",
+            },
+            body: JSON.stringify({ DeletionMark: true }),
+          });
+        }
+      }
+    } catch (markErr) {
+      console.warn("[bas-drafts] mark old draft deleted", markErr);
+    }
+  }
+
+  // Скидаємо Ref_Key, щоб enqueue створив новий повний документ
+  await supabase
+    .from("warehouse_receipts")
+    .update({
+      bas_draft_ref_key: null,
+      bas_draft_error: null,
+      bas_handoff_status: "local_saved",
+    })
+    .eq("id", receiptId);
+
+  await supabase
+    .from("inventory_local_moves")
+    .update({ bas_draft_ref_key: null, bas_draft_error: null })
+    .eq("receipt_id", receiptId)
+    .eq("type", "inbound");
+
+  const result = await enqueueWarehouseReceiptBasDraft(receiptId);
+  return { ...result, oldRefKey: oldRef ?? undefined };
 }
