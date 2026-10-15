@@ -1,54 +1,44 @@
-# Go-live: чернетки BAS (прихід ТМЦ)
+# Go-live: чернетки BAS (усі контури)
 
-## Ідеальний сценарій
+## Відповідь коротко
 
-1. Агроном фотографує накладну в **LEVADIUS**.
-2. OCR → превʼю з підсвіткою сумнівних рядків (од. вим., артикул, слабкий збіг, сума).
-3. Людина перевіряє / править → **Оприбуткувати + чернетка BAS**.
-4. Склад LEVADA оновлюється; одночасно йде **1** непроведена
-   `Document_ПоступлениеТоваровУслуг` з `Товары[]` (усі змаплені рядки).
-5. Бухгалтер у BAS: **Надходження товарів і послуг → непроведені**, проводить сам.
+| Операція в LEVADA | Документ у BAS | Pipeline id | Авто після запису? |
+|-------------------|----------------|-------------|-------------------|
+| Накладна ТМЦ (LEVADIUS / запчастини, насіння, ЗЗР, добрива) | `ПоступлениеТоваровУслуг` (1 накл. = 1 doc) | `inventory_inbound_receipt` | Так |
+| Ручний прихід без накладної | те саме (1 рядок) | `inventory_inbound_receipt` | Так |
+| Продаж урожаю / ТМЦ | `РеализацияТоваровУслуг` | `inventory_sale` | Так |
+| Списання ТМЦ у поле | `ИНАГРО_ЛимитноЗаборнаяКарта` | `inventory_outbound_lzk` | Так (батч) |
+| Надходження палива (ДП) | `ПоступлениеТоваровУслуг` | `fuel_inbound` | Так |
+| Переміщення палива | `ИНАГРО_СливТоплива` | `fuel_transfer` | Так |
+| Заправка техніки | `ИНАГРО_ПередачаТоплива` | `fuel_outbound_refuel` | Так |
+| Закритий наряд | `ИНАГРО_ПутевойЛист…` | `field_operation_waybill` | Так |
+| Excel «Передати» | — | out_of_scope | Ні (не BAS) |
 
-У LEVADA при цьому може бути N локальних рухів (по рядку) — це склад.
-У BAS має бути **один** документ на накладну.
+**Ні** — не «будь-який» скан без маршруту. Довільний PDF/рахунок іде в `bas_sync_queue` (черга людині), не в live OData, поки його не оприбуткували як накладну/паливо/акт.
 
-## Два контури (не плутати)
+Усі документи — **чернетки** (`Posted: false`). Проводить бухгалтер.
 
-| UI / статус | Що це |
-|-------------|--------|
-| **Чернетка в BAS** + `bas_draft_ref_key` | Реальний OData POST, `Posted: false` |
-| **Excel · не BAS** / `sent_to_1c` / кнопка «Передати» | Лише позначка черги + Excel-файл |
-
-## Env
+## Увімкнути ВСЕ live
 
 ```env
 BAS_DRAFT_POST_ENABLED=true
-BAS_DRAFT_PIPELINES_ENABLED=inventory_inbound_receipt
-BAS_ORGANIZATION_KEY=...
-BAS_DEFAULT_WAREHOUSE_KEY=...
-BAS_ODATA_URL=...
-BAS_USER=...
-BAS_PASS=...
+BAS_DRAFT_PIPELINES_ENABLED=inventory_inbound_receipt,inventory_sale,inventory_outbound_lzk,fuel_inbound,fuel_transfer,fuel_outbound_refuel,field_operation_waybill
 ```
 
-Опційно: `bas_counterparties` / `BAS_COUNTERPARTY_MAP` — контрагент у шапці.
-Без мапінгу чернетка все одно летить; у коментарі назва/ЄДРПОУ.
+Або коротко: `BAS_DRAFT_PIPELINES_ENABLED=*`
 
-## LEVADIUS tools
+Додатково:
+- `BAS_ORGANIZATION_KEY`, `BAS_DEFAULT_WAREHOUSE_KEY`
+- `BAS_DIESEL_NOMENCLATURE_KEY` (паливо)
+- `bas_ref_key` на складах палива / техніці / номенклатурі
+- опційно `bas_counterparties` / `BAS_COUNTERPARTY_MAP`
 
-- `previewInvoiceReceipt` → превʼю
-- `executeWarehouseReceipt` → склад + авто-чернетка
-- `listWarehouseReceiptBasStatus` → статуси накладних
-- `sendWarehouseReceiptBasDraft` (confirmed) → повторити/дослати чернетку
-- `verifyWarehouseReceiptBasDraft` → GET по Ref_Key без веб-логіну 1С
+## Ідеальний сценарій накладної
 
-## Retry в UI
+Фото → LEVADIUS превʼю → оприбуткувати → склад + 1 Поступление → бухгалтер проводить.
 
-Хаб бухгалтера → «Чернетки BAS · надходження» → **Повторити BAS**.
+LEVADIUS: `getBasDraftPipelinesStatus`, `list/send/verifyWarehouseReceiptBasDraft`.
 
-## Пілот
+## Де шукати в 1С
 
-1. Накладна 5–40+ позицій з відомим постачальником і змапленою номенклатурою.
-2. Оприбуткувати через LEVADIUS.
-3. У BAS: один непроведений документ з усіма змапленими рядками.
-4. Fail → `bas_draft_error` + retry / LEVADIUS `sendWarehouseReceiptBasDraft`.
+Завжди **непроведені / чернетки** відповідного журналу, не проведені й не Excel.

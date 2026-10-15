@@ -47,6 +47,7 @@ import {
   sendWarehouseReceiptBasDraft,
   verifyWarehouseReceiptBasDraft,
 } from "@/lib/agent-bas-receipts";
+import { getBasDraftPipelinesStatus } from "@/lib/bas-drafts/status-report";
 import {
   buildServiceActPreview,
   deleteServiceActs,
@@ -375,6 +376,7 @@ getReconciliationGaps, saveBasMapping, exportBasChangeRequest,
 registerWarehouseItem,
 previewInvoiceReceipt, executeWarehouseReceipt, rollbackWarehouseReceipt,
 listWarehouseReceiptBasStatus, sendWarehouseReceiptBasDraft, verifyWarehouseReceiptBasDraft,
+getBasDraftPipelinesStatus,
 previewServiceAct, executeServiceActSave, deleteServiceActs,
 prepareWorkOrder, confirmWorkOrder, startWorkOrder, updateWorkOrder,
 deleteWorkOrder, closeWorkOrder,
@@ -477,13 +479,15 @@ wialon_field_fuel_logs, field_ndvi_alerts, equipment_maintenance_logs.
   Після execute: чесно кажи basHandoffStatus. НЕ кажи «передано в BAS», якщо
   немає bas_draft_posted. Excel sent_to_1c / «Позначено для 1С» ≠ чернетка BAS.
   needsReview — перелічи сумнівні (од.вим, артикул, слабкий збіг) і чекай правки.
-• Чернетки BAS по накладних:
-  список/статус → listWarehouseReceiptBasStatus
-  відправити/повторити чернетку → sendWarehouseReceiptBasDraft (confirmed)
-  перевірити в BAS по Ref_Key (без веб-логіну) → verifyWarehouseReceiptBasDraft
-  Де в 1С: Надходження товарів і послуг → НЕПРОВЕДЕНІ / чернетки.
-  Якщо користувач каже «передано, але в BAS немає» — спочатку list/verify,
-  поясни Excel vs BAS, за потреби sendWarehouseReceiptBasDraft.
+• Чернетки BAS (усі типи операцій):
+  огляд контурів / що live → getBasDraftPipelinesStatus
+  накладні ТМЦ: list/send/verifyWarehouseReceiptBasDraft
+  паливо (закупівля/перелив/заправка) → auto enqueueFuelBasDraft після запису
+  продаж урожаю/ТМЦ → auto enqueueInventorySaleBasDraft
+  списання в поле → ЛЗК (inventory_outbound_lzk)
+  закритий наряд → шляховий лист (field_operation_waybill)
+  Де шукати: відповідний журнал у BAS → НЕПРОВЕДЕНІ.
+  Excel «Передати» ≠ чернетка. Live лише якщо pipeline у BAS_DRAFT_PIPELINES_ENABLED.
 • Акт послуг → previewServiceAct → executeServiceActSave / deleteServiceActs
 • Довільний документ / «розпізнай рахунок» / талон / чек ДП → analyzeUnknownDocument
   → routeDraftToSection(inventory|accounting|equipment|fuel)
@@ -5682,6 +5686,26 @@ function createAgentTools(options?: {
               error instanceof Error
                 ? error.message
                 : "Помилка перевірки чернетки в BAS",
+          };
+        }
+      },
+    }),
+
+    getBasDraftPipelinesStatus: tool({
+      description:
+        "Що система може слати в BAS як непроведені чернетки: накладні, продаж, паливо, ЛЗК, ПЛ. Показує readiness і чи увімкнено live (env).",
+      inputSchema: z.object({}),
+      execute: async () => {
+        console.log("[TOOL: getBasDraftPipelinesStatus]");
+        try {
+          return getBasDraftPipelinesStatus();
+        } catch (error) {
+          return {
+            ok: false as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Помилка звіту контурів BAS",
           };
         }
       },

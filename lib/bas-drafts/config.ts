@@ -3,8 +3,9 @@
  *
  * Потрібні ОБИДВА прапорці:
  *   BAS_DRAFT_POST_ENABLED=true
- *   BAS_DRAFT_PIPELINES_ENABLED=inventory_inbound_receipt
- *     (або comma-list / `*` / `all`)
+ *   BAS_DRAFT_PIPELINES_ENABLED=inventory_inbound_receipt,inventory_sale,...
+ *     (або `*` / `all` — усі document-pipelines)
+ *   Див. docs/bas-drafts-golive.md
  *
  * Див. .cursor/rules/bas-readonly.mdc і lib/bas-drafts/registry.ts.
  */

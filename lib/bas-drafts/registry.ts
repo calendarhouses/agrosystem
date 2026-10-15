@@ -55,21 +55,23 @@ export const BAS_DRAFT_PIPELINES: BasDraftPipeline[] = [
   },
   {
     id: "inventory_sale",
-    section: "Склад / продаж",
-    trigger: "createLocalSaleMove → enqueueInventorySaleBasDraft",
+    section: "Склад / продаж урожаю та ТМЦ",
+    trigger: "createLocalSaleMove / createInventorySale → enqueueInventorySaleBasDraft",
     basDocument: "Document_РеализацияТоваровУслуг",
-    readiness: "partial",
+    readiness: "ready",
     module: "lib/bas-drafts/inventory-sale.ts",
-    notes: "Спрощений payload + buyer_name у коментарі. Контрагент_Key — окремий мапінг.",
+    notes:
+      "1 рядок Товары[]. Контрагент опційний (buyer_name → bas_counterparties). Без мапінгу — у коментарі.",
   },
   {
     id: "fuel_inbound",
-    section: "Паливо / закупівля",
-    trigger: "POST /api/fuel/transactions (inbound) → enqueueFuelBasDraft",
+    section: "Паливо / закупівля (надходження ДП)",
+    trigger: "POST /api/fuel/transactions (inbound) / LEVADIUS → enqueueFuelBasDraft",
     basDocument: "Document_ПоступлениеТоваровУслуг",
-    readiness: "partial",
+    readiness: "ready",
     module: "lib/fuel-bas-sync.ts",
-    notes: "BAS_DIESEL_NOMENCLATURE_KEY + склад bas_ref_key. Контрагент — TBD.",
+    notes:
+      "Потрібні BAS_DIESEL_NOMENCLATURE_KEY + bas_ref_key складу-отримувача. Контрагент опційний у коментарі.",
   },
   {
     id: "fuel_transfer",
@@ -85,20 +87,20 @@ export const BAS_DRAFT_PIPELINES: BasDraftPipeline[] = [
     section: "Паливо / заправка техніки",
     trigger: "POST /api/fuel/refuel → enqueueFuelBasDraft",
     basDocument: "Document_ИНАГРО_ПередачаТоплива",
-    readiness: "partial",
+    readiness: "ready",
     module: "lib/fuel-bas-sync.ts",
     notes:
-      "Потрібен equipment.bas_ref_key (ТранспортноеСредствоПолучатель). Зараз у черзі Excel немає — лише бас-чернетка.",
+      "Потрібен equipment.bas_ref_key. Без мапінгу техніки — fail з помилкою (не блокимо інші контури).",
   },
   {
     id: "field_operation_waybill",
     section: "Поля / закриття наряду",
     trigger: "POST /api/field-operations/close → enqueueFieldOperationBasDraft",
     basDocument: "Document_ИНАГРО_ПутевойЛистТрактористаМашиниста",
-    readiness: "partial",
+    readiness: "ready",
     module: "lib/bas-drafts/field-operation-waybill.ts",
     notes:
-      "Мінімальний header (дата, техніка, паливо, коментар). Повні табличні частини — з бухгалтером.",
+      "Шапка чернетки (дата, техніка, паливо, коментар). Табличні частини бухгалтер доповнить у BAS.",
   },
   {
     id: "bas_catalog_change_request",

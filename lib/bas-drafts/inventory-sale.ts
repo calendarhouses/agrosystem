@@ -1,5 +1,6 @@
 /**
- * Продаж ТМЦ → чернетка Document_РеализацияТоваровУслуг (Posted: false).
+ * Продаж ТМЦ / урожаю → чернетка Document_РеализацияТоваровУслуг (Posted: false).
+ * Контрагент опційний: без мапінгу — покупець у коментарі, бухгалтер обере в BAS.
  */
 
 import {
@@ -8,6 +9,7 @@ import {
   isBasDraftPipelineEnabled,
   isBasDraftPostEnabled,
 } from "@/lib/bas-drafts/config";
+import { resolveBasCounterpartyKey } from "@/lib/bas-drafts/counterparty";
 import { postBasDocumentDraft, toIsoDateTime } from "@/lib/bas-drafts/post";
 import {
   markBasDraftFailure,
@@ -35,7 +37,7 @@ export async function enqueueInventorySaleBasDraft(
     .select(
       `
       id, qty, date, note, buyer_name, unit_price_uah, bas_draft_ref_key,
-      inventory_items_cache ( bas_ref_key, name, unit )
+      inventory_items_cache ( bas_ref_key, name, unit, is_local )
     `
     )
     .eq("id", moveId)
@@ -52,14 +54,17 @@ export async function enqueueInventorySaleBasDraft(
   const cache = Array.isArray(data.inventory_items_cache)
     ? data.inventory_items_cache[0]
     : data.inventory_items_cache;
-  const itemKey = cache?.bas_ref_key
-    ? String(cache.bas_ref_key).toLowerCase()
-    : null;
+  const rawKey =
+    cache?.bas_ref_key != null ? String(cache.bas_ref_key) : "";
+  const isLocal =
+    cache?.is_local === true || rawKey.toLowerCase().startsWith("local:");
+  const itemKey =
+    !isLocal && rawKey.trim() ? rawKey.trim().toLowerCase() : null;
   if (!itemKey) {
     await markBasDraftFailure({
       table: "inventory_local_moves",
       ids: [moveId],
-      error: "немає bas_ref_key номенклатури",
+      error: "немає bas_ref_key номенклатури (локальна / без мапінгу)",
     });
     return {
       ok: false,
@@ -72,6 +77,9 @@ export async function enqueueInventorySaleBasDraft(
   const price = Number(data.unit_price_uah) || 0;
   const org = basOrganizationKey();
   const warehouse = basDefaultWarehouseKey();
+  const buyer =
+    typeof data.buyer_name === "string" ? data.buyer_name.trim() : "";
+  const counterparty = await resolveBasCounterpartyKey({ name: buyer || null });
 
   const body: Record<string, unknown> = {
     Date: toIsoDateTime(String(data.date)),
@@ -80,7 +88,8 @@ export async function enqueueInventorySaleBasDraft(
     Комментарий: [
       "AgroSystem · продаж (чернетка)",
       cache?.name ? String(cache.name) : null,
-      data.buyer_name ? `покупець: ${data.buyer_name}` : null,
+      buyer ? `покупець: ${buyer}` : null,
+      !counterparty.key ? "контрагент не змаплений — оберіть у BAS" : null,
       data.note ? String(data.note) : null,
     ]
       .filter(Boolean)
@@ -98,6 +107,7 @@ export async function enqueueInventorySaleBasDraft(
   };
   if (org) body.Организация_Key = org;
   if (warehouse) body.Склад_Key = warehouse;
+  if (counterparty.key) body.Контрагент_Key = counterparty.key;
 
   const result = await postBasDocumentDraft(ENTITY, body);
   if (!result.ok) {

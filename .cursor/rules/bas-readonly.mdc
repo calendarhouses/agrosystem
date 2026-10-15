@@ -27,15 +27,14 @@ alwaysApply: true
 
 **Перемикачі живої відправки** (обидва потрібні; див. `lib/bas-drafts/config.ts`):
 - `BAS_DRAFT_POST_ENABLED=true`
-- `BAS_DRAFT_PIPELINES_ENABLED=inventory_inbound_receipt` (або comma-list / `*`)
+- `BAS_DRAFT_PIPELINES_ENABLED=…` (comma-list або `*`)
 
 Поки глобальний прапорець `false` або pipeline не в списку — лише dry-run / черга в нашій БД.
 
-Список контурів: `lib/bas-drafts/registry.ts`. Go-live чеклист: `docs/bas-drafts-golive.md`.
-Увімкнення — лише за явним підтвердженням у задачі, не «за замовчуванням».
-
-Приклад документів: `Document_ИНАГРО_ЛимитноЗаборнаяКарта`,
-`Document_ИНАГРО_ПутевойЛистТрактористаМашиниста`, `Document_ИНАГРО_СливТоплива`.
+Контури-документи: `inventory_inbound_receipt`, `inventory_sale`,
+`inventory_outbound_lzk`, `fuel_inbound`, `fuel_transfer`, `fuel_outbound_refuel`,
+`field_operation_waybill`. Реєстр: `lib/bas-drafts/registry.ts`.
+Чеклист: `docs/bas-drafts-golive.md`. Увімкнення — за підтвердженням у задачі.
 
 ## Що робити з розбіжностями
 
