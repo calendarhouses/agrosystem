@@ -43,8 +43,12 @@ import {
   INVOICE_CATEGORIES,
 } from "@/lib/agent-warehouse-receipt";
 import {
+  dismissWarehouseReceiptBasList,
   listWarehouseReceiptBasStatus,
+  patchWarehouseReceiptBasMeta,
+  recreateWarehouseReceiptBasDraftAgent,
   sendWarehouseReceiptBasDraft,
+  syncWarehouseReceiptBasDraftHeader,
   verifyWarehouseReceiptBasDraft,
 } from "@/lib/agent-bas-receipts";
 import { getBasDraftPipelinesStatus } from "@/lib/bas-drafts/status-report";
@@ -375,6 +379,8 @@ getReconciliationGaps, saveBasMapping, exportBasChangeRequest,
 registerWarehouseItem,
 previewInvoiceReceipt, executeWarehouseReceipt, rollbackWarehouseReceipt,
 listWarehouseReceiptBasStatus, sendWarehouseReceiptBasDraft, verifyWarehouseReceiptBasDraft,
+patchWarehouseReceiptBasMeta, dismissWarehouseReceiptBasList,
+syncWarehouseReceiptBasDraftHeader, recreateWarehouseReceiptBasDraft,
 getBasDraftPipelinesStatus,
 previewServiceAct, executeServiceActSave, deleteServiceActs,
 prepareWorkOrder, confirmWorkOrder, startWorkOrder, updateWorkOrder,
@@ -483,12 +489,20 @@ wialon_field_fuel_logs, field_ndvi_alerts, equipment_maintenance_logs.
 • Чернетки BAS (усі типи операцій):
   огляд контурів / що live → getBasDraftPipelinesStatus
   накладні ТМЦ: list/send/verifyWarehouseReceiptBasDraft
-  паливо (закупівля/перелив/заправка) → auto enqueueFuelBasDraft після запису
+  якщо awaiting_bas_mapping / «немає контрагента» → запитай ЄДРПОУ (або код BAS)
+    і sendWarehouseReceiptBasDraft({ supplierEdrpou / basCounterpartyCode, confirmed })
+    або patchWarehouseReceiptBasMeta (ПДВ по рядках + ЄДРПОУ + sendToBas)
+  прибрати зі списку «Накладні → 1С» → dismissWarehouseReceiptBasList (confirm; склад/BAS не чіпає)
+  оновити шапку чернетки (контрагент/склад) → syncWarehouseReceiptBasDraftHeader
+  перестворити чернетку → recreateWarehouseReceiptBasDraft (confirm)
+  паливо (закупівля/перелив/заправка) → auto enqueueFuelBasDraft після запису;
+    статуси чесні (pending_1c / error); заправка = ПередачаТоплива (ТЗ→ТЗ), не витрати
   продаж урожаю/ТМЦ → auto enqueueInventorySaleBasDraft
   списання насіння/добрив/ЗЗР → ЛЗК (inventory_outbound_lzk); запчастини → Вимога-накладна (inventory_outbound_requirement)
   закритий наряд → шляховий лист (field_operation_waybill)
   Де шукати: відповідний журнал у BAS → НЕПРОВЕДЕНІ.
   Excel «Передати» ≠ чернетка. Live лише якщо pipeline у BAS_DRAFT_PIPELINES_ENABLED.
+  Рахунки рядків: 207 запчастини / 208 агрохімія / 203 паливо / 271 урожай (BAS_ACCOUNT_MAP).
 • Акт послуг → previewServiceAct → executeServiceActSave / deleteServiceActs
 • Довільний документ / «розпізнай рахунок» / талон / чек ДП → analyzeUnknownDocument
   → routeDraftToSection(inventory|accounting|equipment|fuel)
@@ -557,9 +571,9 @@ prepareWorkOrder лише коли всі слоти зібрані. Не виг
 • «Що вмієш» / огляд: здібності, без підняття старих чернеток з історії.
 
 Документи: фото накладної → previewInvoiceReceipt → executeWarehouseReceipt
-(+ send/list/verifyWarehouseReceiptBasDraft); акт → previewServiceAct;
+(+ send/list/verify/patch/dismiss/recreate WarehouseReceiptBas*); акт → previewServiceAct;
 фото посіву → analyzeAndSaveScoutingReport. Не стверджуй збереження без execute*/success.
-Не кажи «в BAS», поки basHandoffStatus !== bas_draft_posted.
+Якщо awaiting_bas_mapping — спитай ЄДРПОУ → send/patch. Не кажи «в BAS», поки bas_draft_posted.
 
 Скасування чернетки наряду в чаті: [[ACTION:DISMISS_DRAFT]] (без deleteWorkOrder).
 Видалення збереженого — deleteWorkOrder з workOrderId з історії
@@ -5688,10 +5702,28 @@ function createAgentTools(options?: {
 
     sendWarehouseReceiptBasDraft: tool({
       description:
-        "Відправляє або повторює multi-line чернетку Document_ПоступлениеТоваровУслуг у BAS (Posted:false) по накладній. Не Excel. Потрібне confirmed.",
+        "Відправляє або повторює multi-line чернетку Document_ПоступлениеТоваровУслуг у BAS (Posted:false) по накладній. Не Excel. При awaiting_bas_mapping передай supplierEdrpou або basCounterpartyCode. Можна одразу lineVatRates. Потрібне confirmed.",
       inputSchema: z.object({
         receiptId: z.string().trim().uuid().optional(),
         invoiceNumber: z.string().trim().optional(),
+        supplierEdrpou: z
+          .string()
+          .trim()
+          .optional()
+          .describe("ЄДРПОУ постачальника, якщо контрагент не знайдений у BAS"),
+        basCounterpartyCode: z
+          .string()
+          .trim()
+          .optional()
+          .describe("Код контрагента в Catalog_Контрагенты (не ЄДРПОУ)"),
+        lineVatRates: z
+          .array(
+            z.object({
+              moveId: z.string().trim().uuid(),
+              vatRate: z.enum(["20", "14", "7", "0", "none"]),
+            })
+          )
+          .optional(),
         confirmed: z
           .boolean()
           .default(false)
@@ -5702,11 +5734,15 @@ function createAgentTools(options?: {
           receiptId: input.receiptId,
           invoiceNumber: input.invoiceNumber,
           confirmed: input.confirmed === true,
+          hasEdrpou: Boolean(input.supplierEdrpou),
         });
         try {
           return await sendWarehouseReceiptBasDraft({
             receiptId: input.receiptId,
             invoiceNumber: input.invoiceNumber,
+            supplierEdrpou: input.supplierEdrpou,
+            basCounterpartyCode: input.basCounterpartyCode,
+            lineVatRates: input.lineVatRates,
             confirmed: input.confirmed === true,
           });
         } catch (error) {
@@ -5739,6 +5775,130 @@ function createAgentTools(options?: {
               error instanceof Error
                 ? error.message
                 : "Помилка перевірки чернетки в BAS",
+          };
+        }
+      },
+    }),
+
+    patchWarehouseReceiptBasMeta: tool({
+      description:
+        "Як «ПДВ / ЄДРПОУ» у бухгалтерії: допиши ЄДРПОУ / код контрагента / ставки ПДВ по рядках. sendToBas=true + confirmed — одразу чернетка в BAS.",
+      inputSchema: z.object({
+        receiptId: z.string().trim().uuid(),
+        supplierEdrpou: z.string().trim().optional(),
+        basCounterpartyCode: z.string().trim().optional(),
+        lineVatRates: z
+          .array(
+            z.object({
+              moveId: z.string().trim().uuid(),
+              vatRate: z.enum(["20", "14", "7", "0", "none"]),
+            })
+          )
+          .optional(),
+        sendToBas: z.boolean().optional().default(false),
+        confirmed: z.boolean().default(false),
+      }),
+      execute: async (input) => {
+        console.log("[TOOL: patchWarehouseReceiptBasMeta]", {
+          receiptId: input.receiptId,
+          sendToBas: input.sendToBas === true,
+        });
+        try {
+          return await patchWarehouseReceiptBasMeta({
+            receiptId: input.receiptId,
+            supplierEdrpou: input.supplierEdrpou,
+            basCounterpartyCode: input.basCounterpartyCode,
+            lineVatRates: input.lineVatRates,
+            sendToBas: input.sendToBas === true,
+            confirmed: input.confirmed === true,
+          });
+        } catch (error) {
+          return {
+            ok: false as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Помилка оновлення ПДВ/ЄДРПОУ",
+          };
+        }
+      },
+    }),
+
+    dismissWarehouseReceiptBasList: tool({
+      description:
+        "Прибрати накладну зі списку «Накладні → 1С» (як кнопка Прибрати). Склад і чернетка BAS не чіпаються. Потрібне confirmed.",
+      inputSchema: z.object({
+        receiptId: z.string().trim().uuid().optional(),
+        invoiceNumber: z.string().trim().optional(),
+        confirmed: z.boolean().default(false),
+      }),
+      execute: async (input) => {
+        console.log("[TOOL: dismissWarehouseReceiptBasList]", input);
+        try {
+          return await dismissWarehouseReceiptBasList({
+            receiptId: input.receiptId,
+            invoiceNumber: input.invoiceNumber,
+            confirmed: input.confirmed === true,
+          });
+        } catch (error) {
+          return {
+            ok: false as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Не вдалося прибрати зі списку",
+          };
+        }
+      },
+    }),
+
+    syncWarehouseReceiptBasDraftHeader: tool({
+      description:
+        "Оновити шапку вже існуючої непроведеної чернетки BAS (контрагент/склад) — як «Постачальник і склад». Потрібне confirmed.",
+      inputSchema: z.object({
+        receiptId: z.string().trim().uuid(),
+        confirmed: z.boolean().default(false),
+      }),
+      execute: async (input) => {
+        console.log("[TOOL: syncWarehouseReceiptBasDraftHeader]", input);
+        try {
+          return await syncWarehouseReceiptBasDraftHeader({
+            receiptId: input.receiptId,
+            confirmed: input.confirmed === true,
+          });
+        } catch (error) {
+          return {
+            ok: false as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Не вдалося оновити шапку чернетки",
+          };
+        }
+      },
+    }),
+
+    recreateWarehouseReceiptBasDraft: tool({
+      description:
+        "Перестворити чернетку BAS по накладній (стара → DeletionMark, нова POST). Як «Оновити чернетку…». Потрібне confirmed.",
+      inputSchema: z.object({
+        receiptId: z.string().trim().uuid(),
+        confirmed: z.boolean().default(false),
+      }),
+      execute: async (input) => {
+        console.log("[TOOL: recreateWarehouseReceiptBasDraft]", input);
+        try {
+          return await recreateWarehouseReceiptBasDraftAgent({
+            receiptId: input.receiptId,
+            confirmed: input.confirmed === true,
+          });
+        } catch (error) {
+          return {
+            ok: false as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Не вдалося перестворити чернетку",
           };
         }
       },

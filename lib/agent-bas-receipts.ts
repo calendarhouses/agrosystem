@@ -12,7 +12,15 @@ import {
   type BasHandoffStatus,
 } from "@/lib/bas-drafts/statuses";
 import { isBasDraftPipelineEnabled } from "@/lib/bas-drafts/config";
+import {
+  isInventoryVatRateId,
+  type InventoryVatRateId,
+} from "@/lib/inventory-vat";
 import { createServiceSupabase } from "@/lib/supabase/server";
+
+async function inventoryActions() {
+  return import("@/app/admin/inventory/actions");
+}
 
 const ENTITY = "Document_ПоступлениеТоваровУслуг";
 const PIPELINE_ID = "inventory_inbound_receipt";
@@ -67,8 +75,9 @@ export async function listWarehouseReceiptBasStatus(input?: {
     let q = supabase
       .from("warehouse_receipts")
       .select(
-        "id, supplier_name, invoice_number, invoice_date, total_amount, bas_handoff_status, bas_draft_ref_key, bas_draft_error, created_at"
+        "id, supplier_name, invoice_number, invoice_date, total_amount, status, bas_handoff_status, bas_draft_ref_key, bas_draft_error, created_at"
       )
+      .neq("status", "cancelled")
       .order("created_at", { ascending: false })
       .limit(Math.min(50, Math.max(1, input?.limit ?? 15)));
 
@@ -96,7 +105,14 @@ export async function listWarehouseReceiptBasStatus(input?: {
       return { ok: false, error: error.message };
     }
 
-    const rows: WarehouseReceiptBasStatusRow[] = (data ?? []).map((row) => {
+    const rows: WarehouseReceiptBasStatusRow[] = (data ?? [])
+      .filter((row) => {
+        const status = String(row.bas_handoff_status ?? "local_saved");
+        const err =
+          typeof row.bas_draft_error === "string" ? row.bas_draft_error : "";
+        return status !== "dismissed" && err !== "__dismissed__";
+      })
+      .map((row) => {
       const status = String(row.bas_handoff_status ?? "local_saved");
       return {
         receiptId: String(row.id),
@@ -116,7 +132,10 @@ export async function listWarehouseReceiptBasStatus(input?: {
         basDraftRefKey:
           row.bas_draft_ref_key != null ? String(row.bas_draft_ref_key) : null,
         basDraftError:
-          typeof row.bas_draft_error === "string" ? row.bas_draft_error : null,
+          typeof row.bas_draft_error === "string" &&
+          row.bas_draft_error !== "__dismissed__"
+            ? row.bas_draft_error
+            : null,
         pipelineLive,
       };
     });
@@ -141,6 +160,12 @@ export async function sendWarehouseReceiptBasDraft(input: {
   receiptId?: string | null;
   invoiceNumber?: string | null;
   confirmed?: boolean;
+  /** ЄДРПОУ — якщо awaiting_bas_mapping / контрагент не знайдений */
+  supplierEdrpou?: string | null;
+  /** Код контрагента в BAS (не ЄДРПОУ), якщо бухгалтер дав вручну */
+  basCounterpartyCode?: string | null;
+  /** Ставки ПДВ по рядках moveId (як у «ПДВ / ЄДРПОУ») */
+  lineVatRates?: Array<{ moveId: string; vatRate: string }> | null;
 }): Promise<
   | {
       ok: true;
@@ -153,8 +178,9 @@ export async function sendWarehouseReceiptBasDraft(input: {
       linesSkippedLocal?: number;
       message: string;
       whereInBas: string;
+      nextStep?: string;
     }
-  | { ok: false; error: string; needsConfirm?: boolean }
+  | { ok: false; error: string; needsConfirm?: boolean; handoffStatus?: string }
 > {
   if (input.confirmed !== true) {
     return {
@@ -173,6 +199,7 @@ export async function sendWarehouseReceiptBasDraft(input: {
       .from("warehouse_receipts")
       .select("id")
       .ilike("invoice_number", input.invoiceNumber.trim())
+      .neq("status", "cancelled")
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -186,13 +213,64 @@ export async function sendWarehouseReceiptBasDraft(input: {
     };
   }
 
+  const lineVatRates = (input.lineVatRates ?? [])
+    .map((l) => ({
+      moveId: String(l.moveId || "").trim(),
+      vatRate: l.vatRate,
+    }))
+    .filter(
+      (l): l is { moveId: string; vatRate: InventoryVatRateId } =>
+        Boolean(l.moveId) && isInventoryVatRateId(l.vatRate)
+    );
+
+  const needMetaPatch =
+    input.supplierEdrpou != null ||
+    Boolean(input.basCounterpartyCode?.trim()) ||
+    lineVatRates.length > 0;
+
+  if (needMetaPatch) {
+    const { patchWarehouseReceiptAccountantMetaAction } =
+      await inventoryActions();
+    const patched = await patchWarehouseReceiptAccountantMetaAction({
+      receiptId,
+      supplierEdrpou: input.supplierEdrpou,
+      basCounterpartyCode: input.basCounterpartyCode,
+      lineVatRates,
+      sendToBas: true,
+    });
+    if (!patched.ok) {
+      return { ok: false, error: patched.error };
+    }
+    const handoff = (patched.handoffStatus ||
+      "local_saved") as BasHandoffStatus;
+    return {
+      ok: true,
+      receiptId,
+      handoffStatus: handoff,
+      handoffLabel: basHandoffLabel(handoff),
+      dryRun: Boolean(patched.dryRun),
+      message: patched.message || describeBasHandoff(handoff),
+      whereInBas:
+        handoff === "bas_draft_posted"
+          ? "BAS АГРО → Надходження товарів і послуг → непроведені (чернетки)."
+          : "Документ у BAS ще не створено — див. handoffStatus.",
+      nextStep:
+        handoff === "awaiting_bas_mapping"
+          ? "Контрагента все ще немає в BAS. Попроси ЄДРПОУ або код контрагента й повтори sendWarehouseReceiptBasDraft."
+          : undefined,
+    };
+  }
+
   const result: WarehouseReceiptBasDraftResult =
-    await enqueueWarehouseReceiptBasDraft(receiptId);
+    await enqueueWarehouseReceiptBasDraft(receiptId, {
+      basCounterpartyCode: input.basCounterpartyCode ?? null,
+    });
 
   if (!result.ok && result.handoffStatus === "bas_draft_failed") {
     return {
       ok: false,
       error: result.error || "Помилка відправки чернетки в BAS",
+      handoffStatus: result.handoffStatus,
     };
   }
 
@@ -210,7 +288,145 @@ export async function sendWarehouseReceiptBasDraft(input: {
       result.handoffStatus === "bas_draft_posted"
         ? "BAS АГРО → Надходження товарів і послуг → непроведені (чернетки). Не шукай у проведених."
         : "Документ у BAS ще не створено — див. handoffStatus / pipeline.",
+    nextStep:
+      result.handoffStatus === "awaiting_bas_mapping"
+        ? "Немає контрагента в BAS. Запитай ЄДРПОУ (або код) і виклич sendWarehouseReceiptBasDraft з supplierEdrpou / basCounterpartyCode."
+        : undefined,
   };
+}
+
+/** Як кнопка «ПДВ / ЄДРПОУ» (+ опційно одразу send). */
+export async function patchWarehouseReceiptBasMeta(input: {
+  receiptId: string;
+  supplierEdrpou?: string | null;
+  basCounterpartyCode?: string | null;
+  lineVatRates?: Array<{ moveId: string; vatRate: string }> | null;
+  sendToBas?: boolean;
+  confirmed?: boolean;
+}): Promise<
+  | {
+      ok: true;
+      message: string;
+      handoffStatus?: string;
+      dryRun?: boolean;
+    }
+  | { ok: false; error: string; needsConfirm?: boolean }
+> {
+  if (input.sendToBas === true && input.confirmed !== true) {
+    return {
+      ok: false,
+      needsConfirm: true,
+      error:
+        "Для sendToBas потрібне confirmed: true (створення/оновлення чернетки в BAS).",
+    };
+  }
+  const lineVatRates = (input.lineVatRates ?? [])
+    .map((l) => ({
+      moveId: String(l.moveId || "").trim(),
+      vatRate: l.vatRate,
+    }))
+    .filter(
+      (l): l is { moveId: string; vatRate: InventoryVatRateId } =>
+        Boolean(l.moveId) && isInventoryVatRateId(l.vatRate)
+    );
+  const { patchWarehouseReceiptAccountantMetaAction } =
+    await inventoryActions();
+  return patchWarehouseReceiptAccountantMetaAction({
+    receiptId: input.receiptId,
+    supplierEdrpou: input.supplierEdrpou,
+    basCounterpartyCode: input.basCounterpartyCode,
+    lineVatRates,
+    sendToBas: input.sendToBas === true,
+  });
+}
+
+/** Як кнопка «Прибрати» в «Накладні → 1С». */
+export async function dismissWarehouseReceiptBasList(input: {
+  receiptId?: string | null;
+  invoiceNumber?: string | null;
+  confirmed?: boolean;
+}): Promise<
+  | { ok: true; receiptId: string; message: string }
+  | { ok: false; error: string; needsConfirm?: boolean }
+> {
+  if (input.confirmed !== true) {
+    return {
+      ok: false,
+      needsConfirm: true,
+      error:
+        "Потрібне confirmed: true. Прибере накладну зі списку «Накладні → 1С» (склад/BAS не чіпає).",
+    };
+  }
+  const supabase = createServiceSupabase();
+  let receiptId = input.receiptId?.trim() || "";
+  if (!receiptId && input.invoiceNumber?.trim()) {
+    const { data } = await supabase
+      .from("warehouse_receipts")
+      .select("id")
+      .ilike("invoice_number", input.invoiceNumber.trim())
+      .neq("status", "cancelled")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    receiptId = data?.id ? String(data.id) : "";
+  }
+  if (!receiptId) {
+    return { ok: false, error: "Вкажи receiptId або invoiceNumber." };
+  }
+  const { dismissWarehouseReceiptFromBasListAction } = await inventoryActions();
+  const res = await dismissWarehouseReceiptFromBasListAction(receiptId);
+  if (!res.ok) return res;
+  return {
+    ok: true,
+    receiptId,
+    message: "Прибрано зі списку «Накладні → 1С».",
+  };
+}
+
+/** Оновити шапку існуючої чернетки (контрагент/склад) у BAS. */
+export async function syncWarehouseReceiptBasDraftHeader(input: {
+  receiptId: string;
+  confirmed?: boolean;
+}): Promise<
+  | { ok: true; message: string }
+  | { ok: false; error: string; needsConfirm?: boolean }
+> {
+  if (input.confirmed !== true) {
+    return {
+      ok: false,
+      needsConfirm: true,
+      error: "Потрібне confirmed: true (PATCH шапки чернетки в BAS).",
+    };
+  }
+  const { updateWarehouseReceiptBasDraftHeaderAction } =
+    await inventoryActions();
+  return updateWarehouseReceiptBasDraftHeaderAction(input.receiptId.trim());
+}
+
+/** Перестворити чернетку (стара → DeletionMark, нова POST). */
+export async function recreateWarehouseReceiptBasDraftAgent(input: {
+  receiptId: string;
+  confirmed?: boolean;
+}): Promise<
+  | {
+      ok: true;
+      message: string;
+      handoffStatus?: string;
+      dryRun?: boolean;
+      refKey?: string;
+    }
+  | { ok: false; error: string; needsConfirm?: boolean }
+> {
+  if (input.confirmed !== true) {
+    return {
+      ok: false,
+      needsConfirm: true,
+      error:
+        "Потрібне confirmed: true. Стара чернетка буде позначена на видалення, створиться нова.",
+    };
+  }
+  const { recreateWarehouseReceiptBasDraftAction } = await inventoryActions();
+  return recreateWarehouseReceiptBasDraftAction(input.receiptId.trim());
 }
 
 export async function verifyWarehouseReceiptBasDraft(input: {
