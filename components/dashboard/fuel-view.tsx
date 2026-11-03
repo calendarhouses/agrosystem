@@ -266,33 +266,132 @@ function formatRoute(tx: FuelTransaction): string {
   return tx.fromName ? `${tx.fromName} → техніка` : "→ техніка";
 }
 
+function basJournalShortLabel(entity: string | null | undefined): string | null {
+  if (!entity) return null;
+  if (entity.includes("ПередачаТоплива")) return "Передача палива";
+  if (entity.includes("СливТоплива")) return "Злив палива";
+  if (entity.includes("Поступление")) return "Надходження";
+  if (entity.includes("Путевой")) return "Подорожній лист";
+  return entity.replace(/^Document_/, "");
+}
+
 function BasSyncBadge({
   status,
   onSend,
   sending,
-  canQueue1c = true,
+  basDraftRefKey,
+  basDraftEntity,
+  basDraftNumber,
+  basDraftError,
 }: {
   status: FuelSyncStatus;
   onSend?: () => void;
   sending?: boolean;
-  /** Заправка (outbound) не йде в чергу BAS AGRO — лише закупівля/переміщення */
-  canQueue1c?: boolean;
+  basDraftRefKey?: string | null;
+  basDraftEntity?: string | null;
+  basDraftNumber?: string | null;
+  basDraftError?: string | null;
 }) {
-  if (status === "synced") {
+  const journal = basJournalShortLabel(basDraftEntity);
+  const hasBasDoc = Boolean(basDraftRefKey || basDraftNumber);
+  const basLabel = basDraftNumber
+    ? `В BAS · №${basDraftNumber}`
+    : basDraftRefKey
+      ? `В BAS · ${basDraftRefKey.slice(0, 8)}…`
+      : null;
+  const draftHint = [
+    basDraftNumber ? `№${basDraftNumber}` : null,
+    journal,
+    basDraftRefKey ? `Ref ${basDraftRefKey.slice(0, 8)}…` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  // Реальний документ у BAS — лише за ref/number.
+  // sync_status=synced без Posted у BAS ≠ «проведено» (може бути Excel-мітка).
+  if (hasBasDoc) {
     return (
       <span
         className={cn(
-          "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1",
-          "bg-emerald-50 text-[11px] font-semibold tracking-wide text-emerald-800",
-          "ring-1 ring-emerald-600/15"
+          "inline-flex flex-col items-start gap-0.5 rounded-full px-2.5 py-1",
+          "bg-sky-50 text-[11px] font-semibold tracking-wide text-sky-900",
+          "ring-1 ring-sky-600/15"
         )}
+        title={draftHint || "Чернетка в BAS (Posted: false)"}
       >
-        <CheckCircle2 className="h-3 w-3 shrink-0" strokeWidth={2.2} />
-        Проведено в BAS AGRO
+        <span className="inline-flex items-center gap-1.5">
+          <CheckCircle2
+            className="h-3 w-3 shrink-0 text-sky-600"
+            strokeWidth={2.2}
+          />
+          {basLabel}
+        </span>
+        {journal ? (
+          <span className="pl-4 text-[10px] font-medium text-sky-800/80">
+            {journal} · чернетка
+          </span>
+        ) : null}
       </span>
     );
   }
-  if (!canQueue1c) {
+
+  if (status === "error" || basDraftError) {
+    return (
+      <button
+        type="button"
+        disabled={sending || !onSend}
+        onClick={onSend}
+        title={basDraftError || "Помилка BAS — повторити відправку"}
+        className={cn(
+          "inline-flex max-w-[220px] flex-col items-start gap-0.5 rounded-full px-2.5 py-1 text-left",
+          "bg-rose-50 text-[11px] font-semibold tracking-wide text-rose-800",
+          "ring-1 ring-rose-600/15 transition hover:bg-rose-100",
+          "disabled:cursor-not-allowed disabled:opacity-60"
+        )}
+      >
+        <span className="inline-flex items-center gap-1.5">
+          {sending ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <AlertTriangle className="h-3 w-3 shrink-0" strokeWidth={2.2} />
+          )}
+          Помилка BAS
+        </span>
+        {basDraftError ? (
+          <span className="max-w-full truncate pl-4 text-[10px] font-medium text-rose-700/90">
+            {basDraftError}
+          </span>
+        ) : null}
+      </button>
+    );
+  }
+
+  if (status === "pending_1c") {
+    return (
+      <button
+        type="button"
+        disabled={sending || !onSend}
+        onClick={onSend}
+        title="У черзі на відправку в BAS — натисніть, щоб надіслати"
+        className={cn(
+          "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1",
+          "bg-amber-50 text-[11px] font-semibold tracking-wide text-amber-900",
+          "ring-1 ring-amber-500/20 transition hover:bg-amber-100",
+          "disabled:cursor-not-allowed disabled:opacity-60"
+        )}
+      >
+        {sending ? (
+          <Loader2 className="h-3 w-3 animate-spin" />
+        ) : (
+          <Clock3 className="h-3 w-3 shrink-0 text-amber-700" strokeWidth={2.2} />
+        )}
+        У черзі
+      </button>
+    );
+  }
+
+  // Локально в БД, без документа BAS — ніколи не показуємо «Збережено» як BAS-статус.
+  if (status === "synced") {
     return (
       <span
         className={cn(
@@ -300,54 +399,33 @@ function BasSyncBadge({
           "bg-zinc-100 text-[11px] font-semibold tracking-wide text-zinc-600",
           "ring-1 ring-zinc-500/10"
         )}
-        title="Заправка"
+        title="Позначено для бухгалтера, але документа BAS ще немає"
       >
         <CheckCircle2 className="h-3 w-3 shrink-0 text-zinc-400" strokeWidth={2.2} />
-        Збережено
+        Локально
       </span>
     );
   }
-  if (status === "error") {
-    return (
-      <button
-        type="button"
-        disabled={sending || !onSend}
-        onClick={onSend}
-        className={cn(
-          "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1",
-          "bg-rose-50 text-[11px] font-semibold tracking-wide text-rose-800",
-          "ring-1 ring-rose-600/15 transition hover:bg-rose-100",
-          "disabled:cursor-not-allowed disabled:opacity-60"
-        )}
-      >
-        {sending ? (
-          <Loader2 className="h-3 w-3 animate-spin" />
-        ) : (
-          <AlertTriangle className="h-3 w-3 shrink-0" strokeWidth={2.2} />
-        )}
-        Повторити
-      </button>
-    );
-  }
+
   return (
     <button
       type="button"
       disabled={sending || !onSend}
       onClick={onSend}
-      title="Підготувати для бухгалтера"
+      title="Збережено лише локально — надіслати чернетку в BAS"
       className={cn(
         "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1",
-        "bg-amber-50 text-[11px] font-semibold tracking-wide text-amber-900",
-        "ring-1 ring-amber-500/20 transition hover:bg-amber-100",
+        "bg-zinc-100 text-[11px] font-semibold tracking-wide text-zinc-700",
+        "ring-1 ring-zinc-500/15 transition hover:bg-zinc-200/80",
         "disabled:cursor-not-allowed disabled:opacity-60"
       )}
     >
       {sending ? (
         <Loader2 className="h-3 w-3 animate-spin" />
       ) : (
-        <Clock3 className="h-3 w-3 shrink-0 text-amber-700" strokeWidth={2.2} />
+        <Clock3 className="h-3 w-3 shrink-0 text-zinc-500" strokeWidth={2.2} />
       )}
-      Для бухгалтера
+      Локально
     </button>
   );
 }
@@ -363,10 +441,17 @@ type WialonCheckState =
       claimed: number;
       sensor: number;
     }
+  | {
+      kind: "surplus";
+      variance: number;
+      claimed: number;
+      sensor: number;
+    }
   | { kind: "confirmed"; claimed: number };
 
 /**
- * 3 стани: без ДУТ (null) | нестача (>2л) | підтверджено (≤2л)
+ * 4 стани: без ДУТ | нестача (заявлено > ДУТ) | надлишок (ДУТ > заявлено) | OK
+ * variance = claimed − sensor; лише додатна різниця = «Нестача».
  */
 function resolveWialonCheck(tx: FuelTransaction): WialonCheckState {
   if (tx.wialonVariance == null || !Number.isFinite(tx.wialonVariance)) {
@@ -374,18 +459,23 @@ function resolveWialonCheck(tx: FuelTransaction): WialonCheckState {
   }
 
   const claimed = tx.amountLiters;
-  const variance = Math.abs(tx.wialonVariance);
+  const variance = tx.wialonVariance;
+  const sensor = Math.max(0, Math.round((claimed - variance) * 100) / 100);
 
-  if (variance > WIALON_MATCH_TOLERANCE_L) {
-    return {
-      kind: "shortage",
-      variance,
-      claimed,
-      sensor: Math.max(0, Math.round((claimed - variance) * 100) / 100),
-    };
+  if (Math.abs(variance) <= WIALON_MATCH_TOLERANCE_L) {
+    return { kind: "confirmed", claimed };
   }
 
-  return { kind: "confirmed", claimed };
+  if (variance > WIALON_MATCH_TOLERANCE_L) {
+    return { kind: "shortage", variance, claimed, sensor };
+  }
+
+  return {
+    kind: "surplus",
+    variance: Math.abs(variance),
+    claimed,
+    sensor,
+  };
 }
 
 function WialonControlCell({
@@ -460,6 +550,23 @@ function WialonControlCell({
       <div className="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium whitespace-nowrap text-emerald-700">
         <CheckCircle2 className="h-3 w-3 text-emerald-600" />
         GPS OK
+      </div>
+    );
+  }
+
+  if (check.kind === "surplus") {
+    return (
+      <div className="flex flex-col items-start gap-1">
+        <div className="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium whitespace-nowrap text-amber-800">
+          <AlertTriangle className="h-3 w-3 text-amber-600" />
+          Надлишок {formatLiters(check.variance)} л
+        </div>
+        {!compact ? (
+          <span className="text-[11px] leading-snug text-zinc-500">
+            Заявлено: {formatLiters(check.claimed)} л | Датчик:{" "}
+            {formatLiters(check.sensor)} л
+          </span>
+        ) : null}
       </div>
     );
   }
@@ -1759,9 +1866,12 @@ export function FuelView({
                         </span>
                         <BasSyncBadge
                           status={tx.syncStatus}
-                          canQueue1c={tx.type === "inbound" || tx.type === "transfer"}
                           sending={send1cTxId === tx.id}
                           onSend={() => void sendTransactionTo1c(tx)}
+                          basDraftRefKey={tx.basDraftRefKey}
+                          basDraftEntity={tx.basDraftEntity}
+                          basDraftNumber={tx.basDraftNumber}
+                          basDraftError={tx.basDraftError}
                         />
                         {tx.type === "outbound" ? (
                           <WialonControlCell
@@ -2056,10 +2166,11 @@ export function FuelView({
                             <BasSyncBadge
                               status={tx.syncStatus}
                               sending={send1cTxId === tx.id}
-                              canQueue1c={
-                                tx.type === "inbound" || tx.type === "transfer"
-                              }
                               onSend={() => void sendTransactionTo1c(tx)}
+                              basDraftRefKey={tx.basDraftRefKey}
+                              basDraftEntity={tx.basDraftEntity}
+                              basDraftNumber={tx.basDraftNumber}
+                              basDraftError={tx.basDraftError}
                             />
                             {(tx.attachmentCount ?? 0) > 0 ? (
                               <AttachmentViewerButton

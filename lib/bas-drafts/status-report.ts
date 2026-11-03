@@ -32,7 +32,7 @@ export function getBasDraftPipelinesStatus() {
     recommendedEnv: {
       BAS_DRAFT_POST_ENABLED: "true",
       BAS_DRAFT_PIPELINES_ENABLED:
-        "inventory_inbound_receipt,inventory_sale,inventory_outbound_lzk,fuel_inbound,fuel_transfer,fuel_outbound_refuel,field_operation_waybill",
+        "inventory_inbound_receipt,inventory_sale,inventory_outbound_lzk,inventory_outbound_requirement,fuel_inbound,fuel_transfer,fuel_outbound_refuel,field_operation_waybill",
       // або коротко: "*"
     },
     rows,

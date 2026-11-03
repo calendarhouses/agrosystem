@@ -4775,6 +4775,15 @@ function ScoutingDiagnosisCard({ item }: { item: ScoutingDiagnosisResult }) {
   );
 }
 
+type InvoiceMatchCandidate = {
+  basRefKey: string;
+  name: string;
+  code: string | null;
+  unit: string | null;
+  score: number;
+  reason: string;
+};
+
 type InvoicePreviewLine = {
   lineId: string;
   name: string;
@@ -4783,13 +4792,24 @@ type InvoicePreviewLine = {
   unit: string;
   pricePerUnit: number;
   totalAmount: number;
+  computedAmount: number;
+  lineMathOk: boolean;
   matchStatus: "existing" | "new" | "skipped_fuel";
   article: string | null;
+  size: string | null;
   unitRaw: string;
   matchConfidence: number;
   unitConflict: boolean;
   needsReview: boolean;
   reviewReasons: string[];
+  candidates: InvoiceMatchCandidate[];
+  selectedExistingItemId: string | null;
+  confirmCreateNew: boolean;
+  existingItemId: string | null;
+  existingItemName: string | null;
+  vatRate: string | null;
+  vatAmount: number | null;
+  amountInclVat: number | null;
 };
 
 type InvoicePreview = {
@@ -4803,9 +4823,14 @@ type InvoicePreview = {
   totalAmount: number;
   linesSum: number;
   totalMismatch: boolean;
+  vatRate: string | null;
+  vatAmount: number | null;
+  totalInclVat: number | null;
+  vatMismatch: boolean;
   needsReviewCount: number;
   newItemsCount: number;
   existingItemsCount: number;
+  lineMathMismatchCount: number;
 };
 
 function normalizeInvoicePreview(value: unknown): InvoicePreview | null {
@@ -4831,17 +4856,47 @@ function normalizeInvoicePreview(value: unknown): InvoicePreview | null {
     const reviewReasons = Array.isArray(line.reviewReasons)
       ? line.reviewReasons.filter((r): r is string => typeof r === "string")
       : [];
+    const candidates: InvoiceMatchCandidate[] = [];
+    if (Array.isArray(line.candidates)) {
+      for (const c of line.candidates) {
+        if (!c || typeof c !== "object") continue;
+        const cand = c as Record<string, unknown>;
+        if (typeof cand.basRefKey !== "string" || typeof cand.name !== "string") {
+          continue;
+        }
+        candidates.push({
+          basRefKey: cand.basRefKey,
+          name: cand.name,
+          code: typeof cand.code === "string" ? cand.code : null,
+          unit: typeof cand.unit === "string" ? cand.unit : null,
+          score: Number(cand.score) || 0,
+          reason: typeof cand.reason === "string" ? cand.reason : "",
+        });
+      }
+    }
+    const qty = Number(line.quantity) || 0;
+    const price = Number(line.pricePerUnit) || 0;
+    const totalAmount = Number(line.totalAmount) || 0;
+    const computedAmount =
+      Number(line.computedAmount) ||
+      Math.round(qty * price * 100) / 100;
+    const lineMathOk =
+      line.lineMathOk !== false &&
+      Math.abs(computedAmount - (totalAmount || computedAmount)) <= 0.02;
     items.push({
       lineId:
         typeof line.lineId === "string" ? line.lineId : `line-${items.length + 1}`,
       name: line.name,
       category: typeof line.category === "string" ? line.category : "ТМЦ",
-      quantity: Number(line.quantity) || 0,
+      quantity: qty,
       unit: typeof line.unit === "string" ? line.unit : "шт",
-      pricePerUnit: Number(line.pricePerUnit) || 0,
-      totalAmount: Number(line.totalAmount) || 0,
+      pricePerUnit: price,
+      totalAmount: totalAmount || computedAmount,
+      computedAmount,
+      lineMathOk,
       matchStatus,
       article: typeof line.article === "string" ? line.article : null,
+      size: typeof line.size === "string" ? line.size : null,
       unitRaw:
         typeof line.unitRaw === "string"
           ? line.unitRaw
@@ -4850,8 +4905,36 @@ function normalizeInvoicePreview(value: unknown): InvoicePreview | null {
             : "шт",
       matchConfidence: Number(line.matchConfidence) || 0,
       unitConflict: line.unitConflict === true,
-      needsReview: line.needsReview === true || reviewReasons.length > 0,
+      needsReview:
+        line.needsReview === true ||
+        reviewReasons.length > 0 ||
+        !lineMathOk ||
+        (matchStatus === "new" && candidates.length > 0),
       reviewReasons,
+      candidates,
+      selectedExistingItemId:
+        typeof line.selectedExistingItemId === "string"
+          ? line.selectedExistingItemId
+          : typeof line.existingItemId === "string"
+            ? line.existingItemId
+            : null,
+      confirmCreateNew: line.confirmCreateNew === true,
+      existingItemId:
+        typeof line.existingItemId === "string" ? line.existingItemId : null,
+      existingItemName:
+        typeof line.existingItemName === "string"
+          ? line.existingItemName
+          : null,
+      vatRate: typeof line.vatRate === "string" ? line.vatRate : null,
+      vatAmount:
+        line.vatAmount != null && Number.isFinite(Number(line.vatAmount))
+          ? Number(line.vatAmount)
+          : null,
+      amountInclVat:
+        line.amountInclVat != null &&
+        Number.isFinite(Number(line.amountInclVat))
+          ? Number(line.amountInclVat)
+          : null,
     });
   }
   if (items.length === 0) return null;
@@ -4880,9 +4963,22 @@ function normalizeInvoicePreview(value: unknown): InvoicePreview | null {
     linesSum,
     totalMismatch:
       raw.totalMismatch === true || Math.abs(totalAmount - linesSum) > 0.05,
+    vatRate: typeof raw.vatRate === "string" ? raw.vatRate : null,
+    vatAmount:
+      raw.vatAmount != null && Number.isFinite(Number(raw.vatAmount))
+        ? Number(raw.vatAmount)
+        : null,
+    totalInclVat:
+      raw.totalInclVat != null && Number.isFinite(Number(raw.totalInclVat))
+        ? Number(raw.totalInclVat)
+        : null,
+    vatMismatch: raw.vatMismatch === true,
     needsReviewCount,
     newItemsCount: Number(raw.newItemsCount) || 0,
     existingItemsCount: Number(raw.existingItemsCount) || 0,
+    lineMathMismatchCount:
+      Number(raw.lineMathMismatchCount) ||
+      items.filter((i) => !i.lineMathOk).length,
   };
 }
 
@@ -4945,32 +5041,116 @@ function InvoicePreviewCard({
   const [acceptRisks, setAcceptRisks] = useState(false);
   const [lines, setLines] = useState(invoice.items);
   const files = invoiceFiles?.length ? invoiceFiles : [];
+  const unresolvedMatch = lines.filter(
+    (l) =>
+      l.matchStatus === "new" &&
+      l.candidates.length > 0 &&
+      !l.selectedExistingItemId &&
+      !l.confirmCreateNew
+  ).length;
   const needsReviewLeft = lines.filter(
-    (l) => l.needsReview && l.matchStatus !== "skipped_fuel"
+    (l) =>
+      l.matchStatus !== "skipped_fuel" &&
+      (l.needsReview ||
+        !l.lineMathOk ||
+        (l.matchStatus === "new" &&
+          l.candidates.length > 0 &&
+          !l.selectedExistingItemId &&
+          !l.confirmCreateNew))
   ).length;
   const linesSum = lines
     .filter((l) => l.matchStatus !== "skipped_fuel")
     .reduce((s, l) => s + l.totalAmount, 0);
+  // Без вибору кандидата / confirmCreateNew — не постимо (навіть з acceptRisks)
   const canPost =
-    needsReviewLeft === 0 || acceptRisks;
+    unresolvedMatch === 0 && (needsReviewLeft === 0 || acceptRisks);
 
   function patchLine(
     lineId: string,
-    patch: Partial<Pick<InvoicePreviewLine, "name" | "unit" | "article" | "quantity" | "pricePerUnit">>
+    patch: Partial<
+      Pick<
+        InvoicePreviewLine,
+        | "name"
+        | "unit"
+        | "article"
+        | "quantity"
+        | "pricePerUnit"
+        | "totalAmount"
+        | "selectedExistingItemId"
+        | "confirmCreateNew"
+        | "matchStatus"
+        | "existingItemId"
+        | "existingItemName"
+        | "needsReview"
+        | "reviewReasons"
+      >
+    >
   ) {
     setLines((prev) =>
       prev.map((line) => {
         if (line.lineId !== lineId) return line;
         const next = { ...line, ...patch };
-        next.totalAmount =
+        next.computedAmount =
           Math.round(next.quantity * next.pricePerUnit * 100) / 100;
-        // Після ручної правки знімаємо needsReview
-        next.needsReview = false;
-        next.reviewReasons = [];
-        next.unitConflict = false;
+        if (patch.totalAmount == null && patch.quantity != null) {
+          next.totalAmount = next.computedAmount;
+        } else if (patch.totalAmount == null && patch.pricePerUnit != null) {
+          next.totalAmount = next.computedAmount;
+        }
+        next.lineMathOk =
+          Math.abs(next.totalAmount - next.computedAmount) <= 0.02;
+        if (
+          patch.selectedExistingItemId ||
+          patch.confirmCreateNew ||
+          patch.quantity != null ||
+          patch.pricePerUnit != null ||
+          patch.totalAmount != null
+        ) {
+          // Ручний вибір / правка сум — лишаємо підсвітку лише якщо math ще злий
+          if (next.selectedExistingItemId || next.confirmCreateNew) {
+            next.needsReview = !next.lineMathOk;
+            next.reviewReasons = next.lineMathOk
+              ? []
+              : [
+                  `к-сть×ціна ${next.computedAmount.toFixed(2)} ≠ сума ${next.totalAmount.toFixed(2)}`,
+                ];
+          }
+        }
+        if (
+          patch.name != null ||
+          patch.unit != null ||
+          patch.article != null
+        ) {
+          next.unitConflict = false;
+        }
         return next;
       })
     );
+  }
+
+  function selectCandidate(lineId: string, cand: InvoiceMatchCandidate) {
+    patchLine(lineId, {
+      selectedExistingItemId: cand.basRefKey,
+      existingItemId: cand.basRefKey,
+      existingItemName: cand.name,
+      confirmCreateNew: false,
+      matchStatus: "existing",
+      ...(cand.unit ? { unit: cand.unit } : {}),
+      needsReview: false,
+      reviewReasons: [],
+    });
+  }
+
+  function confirmNewItem(lineId: string) {
+    patchLine(lineId, {
+      selectedExistingItemId: null,
+      existingItemId: null,
+      existingItemName: null,
+      confirmCreateNew: true,
+      matchStatus: "new",
+      needsReview: false,
+      reviewReasons: [],
+    });
   }
 
   async function postReceipt() {
@@ -4989,6 +5169,15 @@ function InvoicePreviewCard({
         invoiceNumber: invoice.invoiceNumber,
         invoiceDate: invoice.invoiceDate,
         totalAmount: invoice.totalAmount,
+        vatRate: (invoice.vatRate as
+          | "20"
+          | "14"
+          | "7"
+          | "0"
+          | "none"
+          | null) ?? null,
+        vatAmount: invoice.vatAmount,
+        totalInclVat: invoice.totalInclVat,
         items: lines
           .filter((line) => line.matchStatus !== "skipped_fuel")
           .map((line) => ({
@@ -5004,6 +5193,18 @@ function InvoicePreviewCard({
             pricePerUnit: line.pricePerUnit,
             totalAmount: line.totalAmount,
             article: line.article,
+            size: line.size,
+            selectedExistingItemId: line.selectedExistingItemId,
+            confirmCreateNew: line.confirmCreateNew,
+            vatRate: (line.vatRate as
+              | "20"
+              | "14"
+              | "7"
+              | "0"
+              | "none"
+              | null) ?? null,
+            vatAmount: line.vatAmount,
+            amountInclVat: line.amountInclVat,
           })),
         attachment: attachments[0] ?? null,
         attachments,
@@ -5104,6 +5305,29 @@ function InvoicePreviewCard({
             {formatMoneyUa(invoice.totalAmount)} ₴ — перевір перед оприбуткуванням.
           </p>
         ) : null}
+        {invoice.vatRate || invoice.vatAmount != null || invoice.totalInclVat != null ? (
+          <p
+            className={cn(
+              "mt-1 text-[11px]",
+              invoice.vatMismatch ? "text-amber-300" : "text-zinc-400"
+            )}
+          >
+            ПДВ{invoice.vatRate ? ` ${invoice.vatRate === "none" ? "без" : `${invoice.vatRate}%`}` : ""}
+            {invoice.vatAmount != null
+              ? ` · ${formatMoneyUa(invoice.vatAmount)} ₴`
+              : ""}
+            {invoice.totalInclVat != null
+              ? ` · з ПДВ ${formatMoneyUa(invoice.totalInclVat)} ₴`
+              : ""}
+            {invoice.vatMismatch ? " — розбіжність" : ""}
+          </p>
+        ) : null}
+        {invoice.lineMathMismatchCount > 0 ? (
+          <p className="mt-1 text-[11px] text-rose-300">
+            {invoice.lineMathMismatchCount} рядк.
+            {invoice.lineMathMismatchCount === 1 ? "" : "ів"} з к-сть×ціна ≠ сума
+          </p>
+        ) : null}
       </div>
 
       <div className="overflow-x-auto">
@@ -5122,7 +5346,8 @@ function InvoicePreviewCard({
                 key={line.lineId}
                 className={cn(
                   "border-b border-white/[0.06] text-zinc-200",
-                  line.needsReview && "bg-amber-500/10"
+                  (line.needsReview || !line.lineMathOk) && "bg-amber-500/10",
+                  !line.lineMathOk && "bg-rose-500/10"
                 )}
               >
                 <td className="px-3.5 py-2">
@@ -5140,11 +5365,20 @@ function InvoicePreviewCard({
                   <div className="mt-0.5 flex flex-wrap gap-1">
                     <span className="inline-flex rounded-md bg-white/5 px-1.5 py-0.5 text-[10px] text-zinc-400">
                       {line.category}
-                      {line.matchStatus === "new" ? " · нова" : ""}
+                      {line.matchStatus === "existing" && line.existingItemName
+                        ? ` · ${line.existingItemName.slice(0, 24)}`
+                        : ""}
+                      {line.matchStatus === "new" && line.confirmCreateNew
+                        ? " · нова (підтв.)"
+                        : ""}
+                      {line.matchStatus === "new" && !line.confirmCreateNew
+                        ? " · обрати"
+                        : ""}
                       {line.matchStatus === "skipped_fuel" ? " · паливо" : ""}
                       {line.unitConflict ? " · од.вим.?" : ""}
+                      {!line.lineMathOk ? " · сума?" : ""}
                     </span>
-                    {line.needsReview ? (
+                    {line.needsReview || !line.lineMathOk ? (
                       <span className="inline-flex rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-200">
                         перевірити
                       </span>
@@ -5170,6 +5404,39 @@ function InvoicePreviewCard({
                         placeholder="артикул"
                         className="min-w-0 flex-1 rounded-lg border border-white/10 bg-zinc-900/80 px-1.5 py-0.5 text-[10px] text-zinc-200"
                       />
+                    </div>
+                  ) : null}
+                  {!posted &&
+                  line.candidates.length > 0 &&
+                  !line.selectedExistingItemId &&
+                  !line.confirmCreateNew ? (
+                    <div className="mt-1.5 space-y-1 rounded-lg border border-sky-500/25 bg-sky-500/5 p-1.5">
+                      <p className="text-[10px] font-medium text-sky-200">
+                        Схожі в довіднику — оберіть або створіть нову
+                      </p>
+                      {line.candidates.map((cand) => (
+                        <button
+                          key={cand.basRefKey}
+                          type="button"
+                          onClick={() => selectCandidate(line.lineId, cand)}
+                          className="flex w-full flex-col rounded-md border border-white/10 bg-zinc-900/70 px-2 py-1 text-left transition hover:border-sky-400/40 hover:bg-zinc-900"
+                        >
+                          <span className="text-[11px] font-medium text-white">
+                            {cand.name}
+                          </span>
+                          <span className="text-[10px] text-zinc-400">
+                            {cand.code ? `код ${cand.code} · ` : ""}
+                            {cand.unit ?? "—"} · {cand.score}% · {cand.reason}
+                          </span>
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => confirmNewItem(line.lineId)}
+                        className="w-full rounded-md border border-amber-400/30 bg-amber-500/10 px-2 py-1 text-[10px] font-semibold text-amber-100 transition hover:bg-amber-500/20"
+                      >
+                        Створити нову позицію
+                      </button>
                     </div>
                   ) : null}
                   {line.reviewReasons.length > 0 ? (
@@ -5198,10 +5465,34 @@ function InvoicePreviewCard({
                   )}
                 </td>
                 <td className="px-2 py-2 whitespace-nowrap tabular-nums">
-                  {formatMoneyUa(line.pricePerUnit)}
+                  {line.needsReview && !posted ? (
+                    <input
+                      type="number"
+                      step="any"
+                      value={line.pricePerUnit}
+                      onChange={(e) =>
+                        patchLine(line.lineId, {
+                          pricePerUnit: Number(e.target.value) || 0,
+                        })
+                      }
+                      className="w-20 rounded-lg border border-white/10 bg-zinc-900/80 px-1.5 py-0.5 text-xs"
+                    />
+                  ) : (
+                    formatMoneyUa(line.pricePerUnit)
+                  )}
                 </td>
-                <td className="px-3.5 py-2 text-right font-semibold tabular-nums text-emerald-300">
+                <td
+                  className={cn(
+                    "px-3.5 py-2 text-right font-semibold tabular-nums",
+                    line.lineMathOk ? "text-emerald-300" : "text-rose-300"
+                  )}
+                >
                   {formatMoneyUa(line.totalAmount)}
+                  {!line.lineMathOk ? (
+                    <p className="text-[10px] font-normal text-rose-200/90">
+                      ≠ {formatMoneyUa(line.computedAmount)}
+                    </p>
+                  ) : null}
                 </td>
               </tr>
             ))}
@@ -5212,11 +5503,16 @@ function InvoicePreviewCard({
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 px-3.5 py-3">
         <div>
           <p className="text-[10px] tracking-wide text-zinc-500 uppercase">
-            Разом
+            Разом без ПДВ
           </p>
           <p className="text-sm font-semibold tabular-nums text-white">
             {formatMoneyUa(invoice.totalAmount)} ₴
           </p>
+          {invoice.totalInclVat != null ? (
+            <p className="text-[10px] text-zinc-400">
+              з ПДВ: {formatMoneyUa(invoice.totalInclVat)} ₴
+            </p>
+          ) : null}
           {Math.abs(linesSum - invoice.totalAmount) > 0.05 ? (
             <p className="text-[10px] text-amber-300">
               рядки: {formatMoneyUa(linesSum)} ₴
@@ -5230,7 +5526,13 @@ function InvoicePreviewCard({
           </span>
         ) : (
           <div className="flex flex-col items-end gap-1.5">
-            {needsReviewLeft > 0 ? (
+            {unresolvedMatch > 0 ? (
+              <p className="max-w-[220px] text-right text-[10px] leading-snug text-sky-200/90">
+                Оберіть номенклатуру для {unresolvedMatch} рядк.
+                {unresolvedMatch === 1 ? "а" : "ів"} або підтвердіть нову
+              </p>
+            ) : null}
+            {needsReviewLeft > 0 && unresolvedMatch === 0 ? (
               <label className="flex max-w-[220px] items-start gap-1.5 text-[10px] leading-snug text-amber-200/90">
                 <input
                   type="checkbox"

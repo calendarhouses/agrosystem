@@ -27,6 +27,7 @@ export type EnqueueBasSyncResult =
 
 const PIPELINE_BY_TYPE: Record<BasSyncDocumentType, string> = {
   work_order: "field_operation_waybill",
+  // Фактичний документ обирається в sync за категорією (ЛЗК vs Вимога-накладна)
   inventory_write_off: "inventory_outbound_lzk",
   fuel_dispense: "fuel_outbound_refuel",
   fuel_purchase: "fuel_inbound",

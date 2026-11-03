@@ -61,6 +61,7 @@ export function LocalMovesHistorySheet({
   onChanged,
   refreshToken = 0,
   season = null,
+  onEditInboundReceipt,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -69,6 +70,8 @@ export function LocalMovesHistorySheet({
   refreshToken?: number;
   /** Фільтр по агросезону; null — усі */
   season?: string | null;
+  /** Відкрити мультитоварний прихід на редагування */
+  onEditInboundReceipt?: (receiptId: string) => void;
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -164,6 +167,11 @@ export function LocalMovesHistorySheet({
                     void load();
                     onChanged?.();
                   }}
+                  onEditReceipt={
+                    move.receiptId && onEditInboundReceipt
+                      ? () => onEditInboundReceipt(move.receiptId!)
+                      : undefined
+                  }
                 />
               ))}
             </ul>
@@ -180,6 +188,7 @@ function LocalMoveListItem({
   onCancelEdit,
   onSaved,
   onDeleted,
+  onEditReceipt,
 }: {
   move: LocalMoveRow;
   editing: boolean;
@@ -187,6 +196,7 @@ function LocalMoveListItem({
   onCancelEdit: () => void;
   onSaved: () => void;
   onDeleted: () => void;
+  onEditReceipt?: () => void;
 }) {
   const [pending, startTransition] = useTransition();
   const isDraft = move.status === "draft";
@@ -285,7 +295,11 @@ function LocalMoveListItem({
               move.buyerName
                 ? ` · ${move.buyerName}`
                 : ""}
-              {move.fieldName ? ` · ${move.fieldName}` : ""}
+              {move.equipmentName
+                ? ` · ${move.equipmentName}`
+                : move.fieldName
+                  ? ` · ${move.fieldName}`
+                  : ""}
               {move.note ? ` · ${move.note}` : ""}
               {move.unitPriceUah != null
                 ? ` · ${(move.qty * move.unitPriceUah).toLocaleString("uk-UA", { maximumFractionDigits: 2 })} ₴`
@@ -332,30 +346,45 @@ function LocalMoveListItem({
             </p>
           ) : null}
         </div>
-        {isDraft ? (
+        {isDraft || onEditReceipt ? (
           <div className="flex items-center">
-            <button
-              type="button"
-              onClick={onEdit}
-              disabled={pending}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground"
-              title="Редагувати"
-            >
-              <Pencil className="h-3.5 w-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={handleDelete}
-              disabled={pending}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition hover:bg-red-50 hover:text-red-600"
-              title="Видалити"
-            >
-              {pending ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Trash2 className="h-3.5 w-3.5" />
-              )}
-            </button>
+            {onEditReceipt ? (
+              <button
+                type="button"
+                onClick={onEditReceipt}
+                disabled={pending}
+                className="inline-flex h-8 items-center gap-1 rounded-full px-2 text-[11px] font-semibold text-sky-800 transition hover:bg-sky-50"
+                title="Редагувати всю накладну"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                Накладна
+              </button>
+            ) : isDraft ? (
+              <button
+                type="button"
+                onClick={onEdit}
+                disabled={pending}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                title="Редагувати"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
+            {isDraft ? (
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={pending}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition hover:bg-red-50 hover:text-red-600"
+                title="Видалити"
+              >
+                {pending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="h-3.5 w-3.5" />
+                )}
+              </button>
+            ) : null}
           </div>
         ) : null}
       </div>

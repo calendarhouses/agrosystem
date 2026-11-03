@@ -436,12 +436,38 @@ export function buildFuelDispenseOdataPayload(input: {
   liters: number;
   storageName?: string | null;
   storageBasRefKey?: string | null;
+  /** ТЗ який здає (цистерна/бензовоз) — шапка ТранспортноеСредство_Key */
+  donorEquipmentBasRefKey?: string | null;
   equipmentName?: string | null;
   equipmentBasRefKey?: string | null;
+  literUnitKey?: string | null;
   operatorName?: string | null;
   date?: string | null;
 }): Record<string, unknown> {
   const date = (input.date || new Date().toISOString()).slice(0, 10);
+  // Не підставляємо storageBasRefKey як ТЗ — це Catalog_Склады і дає OData 400.
+  const donorKey = input.donorEquipmentBasRefKey?.trim().toLowerCase() || null;
+  if (!donorKey) {
+    throw new Error(
+      "ПередачаТоплива: потрібен donorEquipmentBasRefKey (ТЗ який здає)"
+    );
+  }
+  if (!input.equipmentBasRefKey) {
+    throw new Error(
+      "ПередачаТоплива: потрібен equipmentBasRefKey (ТЗ отримувач)"
+    );
+  }
+  const line: Record<string, unknown> = {
+    LineNumber: 1,
+    Количество: input.liters,
+    КоличествоВОсновномТопливе: input.liters,
+    КоэффициентВОсновноеТопливо: 1,
+    КоличествоВОсновномТопливеПолучатель: input.liters,
+    КоэффициентВОсновноеТопливоПолучатель: 1,
+  };
+  if (input.literUnitKey) {
+    line.ЕдиницаИзмерения_Key = input.literUnitKey;
+  }
   return {
     Date: `${date}T00:00:00`,
     Posted: false,
@@ -455,21 +481,17 @@ export function buildFuelDispenseOdataPayload(input: {
     ]
       .filter(Boolean)
       .join(" · "),
-    Склад_Key: input.storageBasRefKey || null,
-    ТранспортноеСредствоПолучатель_Key: input.equipmentBasRefKey || null,
-    Товары: [
-      {
-        LineNumber: 1,
-        Количество: input.liters,
-        КоличествоВОсновномТопливеПолучатель: input.liters,
-        КоэффициентВОсновноеТопливоПолучатель: 1,
-      },
-    ],
+    ТранспортноеСредство_Key: donorKey,
+    ТранспортноеСредствоПолучатель_Key: String(
+      input.equipmentBasRefKey
+    ).toLowerCase(),
+    Товары: [line],
     _meta: {
-      basDocument: "Document_ТребованиеНакладная",
-      basDocumentAlt: "Document_ИНАГРО_ПередачаТоплива",
+      basDocument: "Document_ИНАГРО_ПередачаТоплива",
       pipeline: "fuel_outbound_refuel",
       transactionId: input.transactionId,
+      stage: 2,
+      expense: false,
     },
   };
 }

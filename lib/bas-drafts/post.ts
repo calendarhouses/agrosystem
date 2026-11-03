@@ -4,6 +4,7 @@
  */
 
 import { isBasDraftPostEnabled } from "@/lib/bas-drafts/config";
+import { sanitizeBasDocumentBody } from "@/lib/bas-drafts/odata-fields";
 
 export type BasDraftPostResult =
   | {
@@ -11,6 +12,8 @@ export type BasDraftPostResult =
       dryRun: boolean;
       refKey: string;
       entitySet: string;
+      /** Номер документа BAS (Number), якщо повернула OData */
+      number?: string | null;
     }
   | {
       ok: false;
@@ -37,21 +40,16 @@ function odataBaseUrl(): string {
   return requiredEnv("BAS_ODATA_URL").replace(/\/+$/, "");
 }
 
-function stripMeta(body: Record<string, unknown>): Record<string, unknown> {
-  const next = { ...body };
-  delete next._meta;
-  return next;
-}
-
 /**
  * POST Document_* з Posted: false.
  * Тіло може містити `_meta` — воно ніколи не йде в OData.
+ * Рядки табличних частин санітизуються за $metadata allowlist.
  */
 export async function postBasDocumentDraft(
   entitySet: string,
   body: Record<string, unknown>
 ): Promise<BasDraftPostResult> {
-  const odataBody = stripMeta(body);
+  const odataBody = sanitizeBasDocumentBody(entitySet, body);
   const posted = odataBody.Posted;
   if (posted !== false && posted !== undefined) {
     return {
@@ -100,6 +98,7 @@ export async function postBasDocumentDraft(
     const raw = await response.text();
     let parsed: {
       Ref_Key?: string;
+      Number?: string | number | null;
       "odata.error"?: { message?: { value?: string } | string };
     };
     try {
@@ -138,10 +137,119 @@ export async function postBasDocumentDraft(
       };
     }
 
+    const numberRaw = parsed.Number;
+    const number =
+      numberRaw != null && String(numberRaw).trim()
+        ? String(numberRaw).trim()
+        : null;
+
     return {
       ok: true,
       dryRun: false,
       refKey: String(parsed.Ref_Key).toLowerCase(),
+      entitySet,
+      number,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      dryRun: false,
+      entitySet,
+      error: err instanceof Error ? err.message : "мережева помилка",
+    };
+  }
+}
+
+/**
+ * PATCH існуючої непроведеної Document_* (оновлення рядків / шапки).
+ * Не створює новий Ref_Key — захист від дублів у BAS.
+ */
+export async function patchBasDocumentDraft(
+  entitySet: string,
+  refKey: string,
+  body: Record<string, unknown>
+): Promise<BasDraftPostResult> {
+  const guid = refKey.trim().toLowerCase();
+  if (!guid) {
+    return {
+      ok: false,
+      dryRun: !isBasDraftPostEnabled(),
+      entitySet,
+      error: "Немає Ref_Key для PATCH",
+    };
+  }
+
+  const odataBody = sanitizeBasDocumentBody(entitySet, body);
+  odataBody.Posted = false;
+  if (odataBody.DeletionMark === undefined) {
+    odataBody.DeletionMark = false;
+  }
+  // Ref_Key у тілі PATCH не передаємо
+  delete odataBody.Ref_Key;
+
+  const enabled = isBasDraftPostEnabled();
+  if (!enabled) {
+    console.log(
+      "[bas-drafts] DRY RUN PATCH",
+      entitySet,
+      guid,
+      JSON.stringify(odataBody, null, 2)
+    );
+    return {
+      ok: true,
+      dryRun: true,
+      refKey: guid,
+      entitySet,
+    };
+  }
+
+  const url = `${odataBaseUrl()}/odata/standard.odata/${encodeURIComponent(
+    entitySet
+  )}(guid'${guid}')?$format=json`;
+
+  try {
+    const response = await fetch(url, {
+      method: "PATCH",
+      cache: "no-store",
+      signal: AbortSignal.timeout(60_000),
+      headers: {
+        Authorization: basicAuthHeader(),
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "IF-MATCH": "*",
+      },
+      body: JSON.stringify(odataBody),
+    });
+
+    const raw = await response.text();
+    if (!response.ok) {
+      let msg = raw.slice(0, 300);
+      try {
+        const parsed = JSON.parse(raw) as {
+          "odata.error"?: { message?: { value?: string } | string };
+        };
+        const err = parsed["odata.error"]?.message;
+        msg =
+          typeof err === "string"
+            ? err
+            : err && typeof err === "object"
+              ? String(err.value ?? msg)
+              : msg;
+      } catch {
+        /* keep raw */
+      }
+      return {
+        ok: false,
+        dryRun: false,
+        entitySet,
+        error: `PATCH HTTP ${response.status}${msg ? ` — ${msg}` : ""}`,
+      };
+    }
+
+    return {
+      ok: true,
+      dryRun: false,
+      refKey: guid,
       entitySet,
     };
   } catch (err) {

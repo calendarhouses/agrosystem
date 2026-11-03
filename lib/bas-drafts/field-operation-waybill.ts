@@ -75,6 +75,27 @@ export async function enqueueFieldOperationBasDraft(
     String(data.occurred_at || data.closed_at || new Date().toISOString())
   );
 
+  // Етап 3: зв'язок із заправками (етап 2) за field_operation_id — без повторного списання обсягу
+  const { data: linkedFuel } = await supabase
+    .from("fuel_transactions")
+    .select("id, amount_liters, bas_draft_ref_key, bas_draft_number")
+    .eq("field_operation_id", operationId)
+    .eq("transaction_type", "outbound")
+    .limit(20);
+  const fuelLinks = (linkedFuel ?? [])
+    .map((row) => {
+      const num =
+        row.bas_draft_number != null
+          ? `№${row.bas_draft_number}`
+          : row.bas_draft_ref_key
+            ? String(row.bas_draft_ref_key).slice(0, 8)
+            : null;
+      return num
+        ? `заправка ${num}`
+        : `fuel:${String(row.id).slice(0, 8)}`;
+    })
+    .slice(0, 5);
+
   const body: Record<string, unknown> = {
     Date: dateIso,
     Posted: false,
@@ -82,7 +103,7 @@ export async function enqueueFieldOperationBasDraft(
     ЗатратыТопливаПоФакту:
       data.fuel_fact != null ? Number(data.fuel_fact) : undefined,
     Комментарий: [
-      "AgroSystem · шляховий лист (чернетка)",
+      "AgroSystem · шляховий лист (чернетка, етап 3 · витрати)",
       data.work_type ? String(data.work_type) : null,
       data.crop ? `культура: ${data.crop}` : null,
       field?.name ? `поле: ${field.name}` : null,
@@ -90,12 +111,15 @@ export async function enqueueFieldOperationBasDraft(
       data.machinery ? String(data.machinery) : null,
       data.implement ? `агрегат: ${data.implement}` : null,
       data.agronomist_comment ? String(data.agronomist_comment) : null,
+      fuelLinks.length > 0 ? `звʼязок: ${fuelLinks.join(", ")}` : null,
     ]
       .filter(Boolean)
       .join(" · "),
     _meta: {
       operationId,
       pipeline: "field_operation_waybill",
+      stage: 3,
+      linkedFuelTxIds: (linkedFuel ?? []).map((r) => String(r.id)),
       fieldBasKey: field?.bas_ref_key
         ? String(field.bas_ref_key).toLowerCase()
         : null,
@@ -120,6 +144,7 @@ export async function enqueueFieldOperationBasDraft(
       ids: [operationId],
       refKey: result.refKey,
       entitySet: ENTITY,
+      number: result.number ?? null,
     });
     await supabase
       .from("field_operations")

@@ -7,21 +7,37 @@
  */
 
 import {
+  resolveBasInventoryAccountKey,
+  resolveBasTaxPurposeVatKey,
+} from "@/lib/bas-drafts/accounts";
+import {
   basDefaultWarehouseKey,
   basOrganizationKey,
   basUnmappedNomenclatureKey,
   isBasDraftPipelineEnabled,
   isBasDraftPostEnabled,
 } from "@/lib/bas-drafts/config";
+import { resolveBasMainContractKey } from "@/lib/bas-drafts/contract";
 import { resolveBasCounterpartyKey } from "@/lib/bas-drafts/counterparty";
 import { resolveBasNomenclatureKey } from "@/lib/bas-drafts/nomenclature";
-import { postBasDocumentDraft, toIsoDateTime } from "@/lib/bas-drafts/post";
+import {
+  patchBasDocumentDraft,
+  postBasDocumentDraft,
+  toIsoDateTime,
+} from "@/lib/bas-drafts/post";
 import type { BasHandoffStatus } from "@/lib/bas-drafts/statuses";
 import {
   markBasDraftFailure,
   markBasDraftSuccess,
   markWarehouseHandoffStatus,
 } from "@/lib/bas-drafts/track";
+import { resolveBasUnitKey } from "@/lib/bas-drafts/units";
+import {
+  basVatRateLabel,
+  computeInventoryVat,
+  isInventoryVatRateId,
+  type InventoryVatRateId,
+} from "@/lib/inventory-vat";
 import { createServiceSupabase } from "@/lib/supabase/server";
 
 const ENTITY = "Document_ПоступлениеТоваровУслуг";
@@ -39,11 +55,21 @@ export type WarehouseReceiptBasDraftResult = {
 
 /**
  * 1 накладна → 1 непроведена Поступление з усіма змапленими рядками.
+ * `forceUpdateRefKey` — оновити існуючу чернетку PATCH (без нового документа).
  */
 export async function enqueueWarehouseReceiptBasDraft(
-  receiptId: string
+  receiptId: string,
+  options?: {
+    forceUpdateRefKey?: string | null;
+    /** Код Catalog_Контрагенты (не ЄДРПОУ) — якщо бухгалтер ввів вручну */
+    basCounterpartyCode?: string | null;
+  }
 ): Promise<WarehouseReceiptBasDraftResult> {
   const supabase = createServiceSupabase();
+  let forceUpdateRefKey =
+    options?.forceUpdateRefKey?.trim().toLowerCase() || null;
+  const basCounterpartyCode =
+    options?.basCounterpartyCode?.trim() || null;
 
   const { data: receipt, error: receiptError } = await supabase
     .from("warehouse_receipts")
@@ -62,26 +88,87 @@ export async function enqueueWarehouseReceiptBasDraft(
     };
   }
 
-  if (receipt.bas_draft_ref_key) {
-    return {
-      ok: true,
-      dryRun: false,
-      handoffStatus: "bas_draft_posted",
-      refKey: String(receipt.bas_draft_ref_key),
-    };
+  // Якщо чернетка вже є — завжди PATCH (не silent success). Інакше
+  // «Зберегти й надіслати» / retry після правки ПДВ·ЄДРПОУ нічого не оновлювали.
+  if (receipt.bas_draft_ref_key && !forceUpdateRefKey) {
+    forceUpdateRefKey = String(receipt.bas_draft_ref_key).toLowerCase();
   }
 
-  const { data: moves, error: movesError } = await supabase
-    .from("inventory_local_moves")
-    .select(
+  type MoveRow = {
+    id: string;
+    qty: number | string | null;
+    date: string | null;
+    note: string | null;
+    buyer_name: string | null;
+    unit_price_uah: number | string | null;
+    bas_draft_ref_key: string | null;
+    item_ref_key: string | null;
+    amount_ex_vat?: number | string | null;
+    vat_rate?: string | null;
+    vat_amount?: number | string | null;
+    amount_incl_vat?: number | string | null;
+    inventory_items_cache:
+      | {
+          bas_ref_key: string | null;
+          name: string | null;
+          unit: string | null;
+          is_local: boolean | null;
+          code: string | null;
+          category?: string | null;
+        }
+      | Array<{
+          bas_ref_key: string | null;
+          name: string | null;
+          unit: string | null;
+          is_local: boolean | null;
+          code: string | null;
+          category?: string | null;
+        }>
+      | null;
+  };
+
+  let moves: MoveRow[] | null = null;
+  let movesError: { message: string } | null = null;
+
+  {
+    const first = await supabase
+      .from("inventory_local_moves")
+      .select(
+        `
+        id, qty, date, note, buyer_name, unit_price_uah, bas_draft_ref_key, item_ref_key,
+        amount_ex_vat, vat_rate, vat_amount, amount_incl_vat,
+        inventory_items_cache ( bas_ref_key, name, unit, is_local, code, category )
       `
-      id, qty, date, note, buyer_name, unit_price_uah, bas_draft_ref_key, item_ref_key,
-      inventory_items_cache ( bas_ref_key, name, unit, is_local, code )
-    `
-    )
-    .eq("receipt_id", receiptId)
-    .eq("type", "inbound")
-    .neq("status", "cancelled");
+      )
+      .eq("receipt_id", receiptId)
+      .eq("type", "inbound")
+      .neq("status", "cancelled");
+    moves = (first.data as MoveRow[] | null) ?? null;
+    movesError = first.error;
+  }
+
+  if (
+    movesError &&
+    (movesError.message?.includes("amount_ex_vat") ||
+      movesError.message?.includes("vat_rate") ||
+      movesError.message?.includes("vat_amount") ||
+      movesError.message?.includes("amount_incl_vat") ||
+      movesError.message?.includes("category"))
+  ) {
+    const retry = await supabase
+      .from("inventory_local_moves")
+      .select(
+        `
+        id, qty, date, note, buyer_name, unit_price_uah, bas_draft_ref_key, item_ref_key,
+        inventory_items_cache ( bas_ref_key, name, unit, is_local, code, category )
+      `
+      )
+      .eq("receipt_id", receiptId)
+      .eq("type", "inbound")
+      .neq("status", "cancelled");
+    moves = (retry.data as MoveRow[] | null) ?? null;
+    movesError = retry.error;
+  }
 
   if (movesError) {
     await markWarehouseHandoffStatus({
@@ -104,6 +191,12 @@ export async function enqueueWarehouseReceiptBasDraft(
     name: string;
     qty: number;
     price: number;
+    amountExVat: number;
+    vatAmount: number;
+    amountInclVat: number;
+    vatRate: InventoryVatRateId | null;
+    unitLabel: string;
+    category: string | null;
     /** true = нової номенклатури ще немає в BAS — назва в НаименованиеПоставщика */
     unmapped: boolean;
   };
@@ -125,6 +218,14 @@ export async function enqueueWarehouseReceiptBasDraft(
         : null;
     const looksLocalKey = !rawKey || rawKey.startsWith("local:");
     const displayName = cache?.name ? String(cache.name) : "ТМЦ";
+    const unitLabel =
+      typeof cache?.unit === "string" && cache.unit.trim()
+        ? cache.unit.trim()
+        : "шт";
+    const category =
+      typeof cache?.category === "string" && cache.category.trim()
+        ? cache.category.trim()
+        : null;
     const code =
       typeof cache?.code === "string" && cache.code.trim()
         ? cache.code.trim()
@@ -178,12 +279,38 @@ export async function enqueueWarehouseReceiptBasDraft(
       linesUnmappedPlaceholder += 1;
     }
 
+    const qty = Number(row.qty) || 0;
+    const price = Number(row.unit_price_uah) || 0;
+    const vatRateRaw =
+      "vat_rate" in row && isInventoryVatRateId(row.vat_rate)
+        ? row.vat_rate
+        : ("20" as InventoryVatRateId);
+    const amountExVatHint =
+      "amount_ex_vat" in row &&
+      row.amount_ex_vat != null &&
+      Number.isFinite(Number(row.amount_ex_vat))
+        ? Number(row.amount_ex_vat)
+        : null;
+    // Завжди серверна трійка — не довіряємо старим vat_amount / amount_incl_vat у БД.
+    const vat = computeInventoryVat({
+      qty,
+      unitPriceExVat: price,
+      vatRate: vatRateRaw,
+      amountExVat: amountExVatHint,
+    });
+
     mapped.push({
       moveId: String(row.id),
       itemKey,
       name: displayName,
-      qty: Number(row.qty) || 0,
-      price: Number(row.unit_price_uah) || 0,
+      qty,
+      price: vat.unitPriceExVat,
+      amountExVat: vat.amountExVat,
+      vatAmount: vat.vatAmount,
+      amountInclVat: vat.amountInclVat,
+      vatRate: vatRateRaw,
+      unitLabel,
+      category,
       unmapped,
     });
   }
@@ -211,13 +338,10 @@ export async function enqueueWarehouseReceiptBasDraft(
     };
   }
 
-  const counterparty = await resolveBasCounterpartyKey({
-    edrpou: receipt.supplier_edrpou,
-    name: receipt.supplier_name,
-  });
-
-  // Контрагент опційний: без мапінгу все одно шлемо чернетку з Товары[].
-  // Бухгалтер у BAS обере контрагента сам; у коментарі — назва/ЄДРПОУ.
+  const edrpou =
+    typeof receipt.supplier_edrpou === "string"
+      ? receipt.supplier_edrpou.trim()
+      : "";
 
   const live = isBasDraftPipelineEnabled(PIPELINE_ID);
   if (!live) {
@@ -239,6 +363,53 @@ export async function enqueueWarehouseReceiptBasDraft(
     };
   }
 
+  const counterparty = await resolveBasCounterpartyKey({
+    edrpou: receipt.supplier_edrpou,
+    name: receipt.supplier_name,
+    basCode: basCounterpartyCode,
+  });
+
+  // Без контрагента документ у BAS не створюємо — попередження бухгалтеру.
+  if (!counterparty.key) {
+    const warn =
+      counterparty.reason ||
+      (edrpou
+        ? `контрагента з ЄДРПОУ ${edrpou} не знайдено в BAS`
+        : `контрагента «${String(receipt.supplier_name || "").trim() || "—"}» не знайдено в BAS`);
+    await markWarehouseHandoffStatus({
+      receiptId,
+      status: "awaiting_bas_mapping",
+      error: warn,
+    });
+    return {
+      ok: false,
+      dryRun: false,
+      handoffStatus: "awaiting_bas_mapping",
+      linesInDraft: mapped.length,
+      linesSkippedLocal,
+      error: warn,
+    };
+  }
+
+  // Ідемпотентність: якщо в BAS уже є чернетка з цим receiptId — PATCH, не POST.
+  let reuseRefKey = forceUpdateRefKey;
+  if (!reuseRefKey) {
+    const existing = await findExistingReceiptDraftRefKey(receiptId);
+    if (existing) {
+      reuseRefKey = existing;
+      console.log(
+        "[bas-drafts] idempotent reuse existing draft",
+        receiptId,
+        existing
+      );
+    }
+  }
+
+  const [contract, taxPurposeKey] = await Promise.all([
+    resolveBasMainContractKey(counterparty.key),
+    resolveBasTaxPurposeVatKey(),
+  ]);
+
   const org = basOrganizationKey();
   const warehouse = basDefaultWarehouseKey();
   const dateRaw =
@@ -246,42 +417,80 @@ export async function enqueueWarehouseReceiptBasDraft(
     String(rows[0]?.date ?? "").slice(0, 10) ||
     new Date().toISOString().slice(0, 10);
 
-  const edrpou =
-    typeof receipt.supplier_edrpou === "string"
-      ? receipt.supplier_edrpou.trim()
-      : "";
-
   // linesSkippedLocal у результаті = скільки пішло через заглушку «нові товари»
   linesSkippedLocal = linesUnmappedPlaceholder;
+
+  const totalEx = mapped.reduce((s, l) => s + l.amountExVat, 0);
+  const totalVat = mapped.reduce((s, l) => s + l.vatAmount, 0);
+  const totalIncl = mapped.reduce((s, l) => s + l.amountInclVat, 0);
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+
+  const goodsLines: Record<string, unknown>[] = [];
+  for (let index = 0; index < mapped.length; index += 1) {
+    const line = mapped[index]!;
+    const unit = await resolveBasUnitKey(line.unitLabel);
+    const accountKey = await resolveBasInventoryAccountKey(line.category);
+    const vatRate = isInventoryVatRateId(line.vatRate)
+      ? line.vatRate
+      : ("20" as InventoryVatRateId);
+    // Поля за $metadata Document_ПоступлениеТоваровУслуг_Товары
+    // (СчетУчетаБУ_Key; немає Всего / НалоговоеНазначениеНДС_Key / текст ЕдиницаИзмерения).
+    const row: Record<string, unknown> = {
+      LineNumber: index + 1,
+      Номенклатура_Key: line.itemKey,
+      Количество: line.qty,
+      Коэффициент: 1,
+      Цена: line.price,
+      Сумма: line.amountExVat,
+      СтавкаНДС: basVatRateLabel(vatRate),
+      СуммаНДС: line.vatAmount,
+      НаименованиеПоставщика: line.name.slice(0, 250),
+    };
+    if (unit.key) {
+      row.ЕдиницаИзмерения_Key = unit.key;
+    }
+    if (accountKey) {
+      row.СчетУчетаБУ_Key = accountKey;
+    } else if (line.category) {
+      console.warn(
+        "[bas-drafts] немає СчетУчетаБУ_Key для категорії",
+        line.category,
+        "— задайте BAS_ACCOUNT_MAP / BAS_ACCOUNT_*_KEY"
+      );
+    }
+    if (taxPurposeKey) {
+      row.НалоговоеНазначение_Key = taxPurposeKey;
+    }
+    goodsLines.push(row);
+  }
 
   const body: Record<string, unknown> = {
     Date: toIsoDateTime(dateRaw),
     Posted: false,
     DeletionMark: false,
+    ВидОперации: "ПокупкаКомиссия",
+    СуммаВключаетНДС: false,
+    СуммаДокумента: round2(totalIncl),
     Комментарий: [
       "AgroSystem · прихід ТМЦ (чернетка)",
+      `receipt:${receiptId}`,
       receipt.supplier_name ? String(receipt.supplier_name) : null,
       edrpou ? `ЄДРПОУ ${edrpou}` : null,
       receipt.invoice_number ? `№${receipt.invoice_number}` : null,
       receipt.invoice_date ? `від ${receipt.invoice_date}` : null,
-      !counterparty.key
-        ? "контрагент не змаплений — оберіть у BAS"
+      counterparty.matchedName
+        ? `контрагент: ${counterparty.matchedName}`
         : null,
+      contract.matchedName ? `договір: ${contract.matchedName}` : null,
+      !contract.key ? "договір не знайдено — оберіть у BAS" : null,
       linesUnmappedPlaceholder > 0
         ? `нових позицій (заглушка «Товари» + назва постачальника): ${linesUnmappedPlaceholder}`
         : null,
+      `без ПДВ ${round2(totalEx)} · ПДВ ${round2(totalVat)} · всього ${round2(totalIncl)}`,
     ]
       .filter(Boolean)
       .join(" · "),
-    Товары: mapped.map((line, index) => ({
-      LineNumber: index + 1,
-      Номенклатура_Key: line.itemKey,
-      Количество: line.qty,
-      Цена: line.price,
-      Сумма: Math.round(line.qty * line.price * 100) / 100,
-      // Справжня назва з накладної — бухгалтер бачить і може завести номенклатуру
-      НаименованиеПоставщика: line.name.slice(0, 250),
-    })),
+    Товары: goodsLines,
     _meta: { receiptId, pipeline: PIPELINE_ID },
   };
   if (org) body.Организация_Key = org;
@@ -290,9 +499,14 @@ export async function enqueueWarehouseReceiptBasDraft(
     body.Склад = warehouse;
     body.Склад_Type = "StandardODATA.Catalog_Склады";
   }
-  if (counterparty.key) body.Контрагент_Key = counterparty.key;
+  body.Контрагент_Key = counterparty.key;
+  if (contract.key) {
+    body.ДоговорКонтрагента_Key = contract.key;
+  }
 
-  const result = await postBasDocumentDraft(ENTITY, body);
+  const result = reuseRefKey
+    ? await patchBasDocumentDraft(ENTITY, reuseRefKey, body)
+    : await postBasDocumentDraft(ENTITY, body);
   const moveIds = mapped.map((m) => m.moveId);
 
   if (!result.ok) {
@@ -367,7 +581,7 @@ export async function enqueueInventoryInboundBasDraft(
     .select(
       `
       id, qty, date, note, buyer_name, unit_price_uah, bas_draft_ref_key, receipt_id,
-      inventory_items_cache ( bas_ref_key, name, unit, is_local )
+      inventory_items_cache ( bas_ref_key, name, unit, is_local, category )
     `
     )
     .eq("id", moveId)
@@ -444,28 +658,75 @@ export async function enqueueInventoryInboundBasDraft(
     name: supplier || null,
   });
 
+  if (!counterparty.key) {
+    const warn =
+      counterparty.reason ||
+      `контрагента «${supplier || "—"}» не знайдено в BAS — документ не створено`;
+    await markBasDraftFailure({
+      table: "inventory_local_moves",
+      ids: [moveId],
+      error: warn,
+    });
+    return { ok: false, dryRun: !isBasDraftPostEnabled(), error: warn };
+  }
+
+  const unitLabel =
+    typeof cache?.unit === "string" && cache.unit.trim()
+      ? cache.unit.trim()
+      : "шт";
+  const category =
+    typeof cache?.category === "string" ? cache.category : null;
+  const [contract, taxPurposeKey, unit, accountKey] = await Promise.all([
+    resolveBasMainContractKey(counterparty.key),
+    resolveBasTaxPurposeVatKey(),
+    resolveBasUnitKey(unitLabel),
+    resolveBasInventoryAccountKey(category),
+  ]);
+  const amountEx = Math.round(qty * price * 100) / 100;
+  const vat = computeInventoryVat({
+    qty,
+    unitPriceExVat: price,
+    vatRate: "20",
+    amountExVat: amountEx,
+  });
+
+  const line: Record<string, unknown> = {
+    LineNumber: 1,
+    Номенклатура_Key: itemKey,
+    Количество: qty,
+    Коэффициент: 1,
+    Цена: price,
+    Сумма: vat.amountExVat,
+    СтавкаНДС: basVatRateLabel("20"),
+    СуммаНДС: vat.vatAmount,
+  };
+  if (unit.key) line.ЕдиницаИзмерения_Key = unit.key;
+  if (accountKey) line.СчетУчетаБУ_Key = accountKey;
+  if (taxPurposeKey) {
+    line.НалоговоеНазначение_Key = taxPurposeKey;
+  }
+
   const body: Record<string, unknown> = {
     Date: toIsoDateTime(String(data.date)),
     Posted: false,
     DeletionMark: false,
+    ВидОперации: "ПокупкаКомиссия",
+    СуммаВключаетНДС: false,
+    СуммаДокумента: vat.amountInclVat,
     Комментарий: [
       "AgroSystem · прихід ТМЦ (чернетка, 1 рядок)",
+      `move:${moveId}`,
       cache?.name ? String(cache.name) : null,
       supplier ? `постачальник: ${supplier}` : null,
-      !counterparty.key ? "контрагент не змаплений — оберіть у BAS" : null,
+      counterparty.matchedName
+        ? `контрагент: ${counterparty.matchedName}`
+        : null,
+      contract.matchedName ? `договір: ${contract.matchedName}` : null,
       data.note ? String(data.note) : null,
     ]
       .filter(Boolean)
       .join(" · "),
-    Товары: [
-      {
-        LineNumber: 1,
-        Номенклатура_Key: itemKey,
-        Количество: qty,
-        Цена: price,
-        Сумма: Math.round(qty * price * 100) / 100,
-      },
-    ],
+    Товары: [line],
     _meta: { moveId, pipeline: PIPELINE_ID },
   };
   if (org) body.Организация_Key = org;
@@ -473,7 +734,8 @@ export async function enqueueInventoryInboundBasDraft(
     body.Склад = warehouse;
     body.Склад_Type = "StandardODATA.Catalog_Склады";
   }
-  if (counterparty.key) body.Контрагент_Key = counterparty.key;
+  body.Контрагент_Key = counterparty.key;
+  if (contract.key) body.ДоговорКонтрагента_Key = contract.key;
 
   const result = await postBasDocumentDraft(ENTITY, body);
   if (!result.ok) {
@@ -515,9 +777,55 @@ function odataBaseUrl(): string {
   return requiredEnv("BAS_ODATA_URL").replace(/\/+$/, "");
 }
 
+function escapeODataString(value: string): string {
+  return value.replace(/'/g, "''");
+}
+
 /**
- * Позначає стару непроведену чернетку на видалення в BAS, скидає Ref_Key у нас
- * і створює нову з усіма знайденими рядками (включно з live-resolve локальних).
+ * Ідемпотентність: шукаємо вже створену чернетку за маркером receipt:UUID у коментарі.
+ */
+async function findExistingReceiptDraftRefKey(
+  receiptId: string
+): Promise<string | null> {
+  const marker = `receipt:${receiptId.trim().toLowerCase()}`;
+  if (!marker.startsWith("receipt:") || marker.length < 16) return null;
+  try {
+    const filter = `DeletionMark eq false and Posted eq false and substringof('${escapeODataString(marker)}', Комментарий)`;
+    const params = [
+      "$format=json",
+      "$top=5",
+      `$select=${encodeURIComponent("Ref_Key,Number,Posted,DeletionMark,Комментарий")}`,
+      `$filter=${encodeURIComponent(filter)}`,
+      `$orderby=${encodeURIComponent("Date desc")}`,
+    ];
+    const url = `${odataBaseUrl()}/odata/standard.odata/${encodeURIComponent(ENTITY)}?${params.join("&")}`;
+    const response = await fetch(url, {
+      method: "GET",
+      cache: "no-store",
+      signal: AbortSignal.timeout(45_000),
+      headers: {
+        Authorization: basicAuthHeader(),
+        Accept: "application/json",
+      },
+    });
+    if (!response.ok) return null;
+    const parsed = (await response.json()) as {
+      value?: Array<{ Ref_Key?: string }>;
+    };
+    const key = parsed.value?.[0]?.Ref_Key
+      ? String(parsed.value[0].Ref_Key).toLowerCase()
+      : null;
+    return key;
+  } catch (err) {
+    console.warn("[bas-drafts] idempotent lookup", err);
+    return null;
+  }
+}
+
+/**
+ * Повторна відправка вже існуючої чернетки: PATCH того самого Ref_Key
+ * (оновлює Товары / шапку). Не створює другий документ у BAS.
+ * Без Ref_Key — звичайний enqueue (POST).
  */
 export async function recreateWarehouseReceiptBasDraft(
   receiptId: string
@@ -543,7 +851,12 @@ export async function recreateWarehouseReceiptBasDraft(
       ? String(receipt.bas_draft_ref_key).toLowerCase()
       : null;
 
-  if (oldRef && isBasDraftPipelineEnabled(PIPELINE_ID) && isBasDraftPostEnabled()) {
+  if (!oldRef) {
+    const result = await enqueueWarehouseReceiptBasDraft(receiptId);
+    return { ...result, oldRefKey: undefined };
+  }
+
+  if (isBasDraftPipelineEnabled(PIPELINE_ID) && isBasDraftPostEnabled()) {
     try {
       const path = `${ENTITY}(guid'${oldRef}')`;
       const getUrl = `${odataBaseUrl()}/odata/standard.odata/${path}?$format=json&$select=Posted,DeletionMark,Number`;
@@ -567,39 +880,25 @@ export async function recreateWarehouseReceiptBasDraft(
             dryRun: false,
             handoffStatus: "bas_draft_failed",
             error:
-              "Стара чернетка вже проведена в BAS — не можна перестворити. Звернись до бухгалтера.",
+              "Чернетка вже проведена в BAS — оновлення заборонено. Звернись до бухгалтера.",
             oldRefKey: oldRef,
           };
         }
-        if (doc.DeletionMark !== true) {
-          await fetch(`${odataBaseUrl()}/odata/standard.odata/${path}?$format=json`, {
-            method: "PATCH",
-            cache: "no-store",
-            signal: AbortSignal.timeout(45_000),
-            headers: {
-              Authorization: basicAuthHeader(),
-              Accept: "application/json",
-              "Content-Type": "application/json",
-              "IF-MATCH": "*",
-            },
-            body: JSON.stringify({ DeletionMark: true }),
-          });
+        if (doc.DeletionMark === true) {
+          return {
+            ok: false,
+            dryRun: false,
+            handoffStatus: "bas_draft_failed",
+            error:
+              "Документ позначено на видалення в BAS — віднови його в 1С або створи нову накладну.",
+            oldRefKey: oldRef,
+          };
         }
       }
-    } catch (markErr) {
-      console.warn("[bas-drafts] mark old draft deleted", markErr);
+    } catch (checkErr) {
+      console.warn("[bas-drafts] check existing draft", checkErr);
     }
   }
-
-  // Скидаємо Ref_Key, щоб enqueue створив новий повний документ
-  await supabase
-    .from("warehouse_receipts")
-    .update({
-      bas_draft_ref_key: null,
-      bas_draft_error: null,
-      bas_handoff_status: "local_saved",
-    })
-    .eq("id", receiptId);
 
   await supabase
     .from("inventory_local_moves")
@@ -607,6 +906,8 @@ export async function recreateWarehouseReceiptBasDraft(
     .eq("receipt_id", receiptId)
     .eq("type", "inbound");
 
-  const result = await enqueueWarehouseReceiptBasDraft(receiptId);
-  return { ...result, oldRefKey: oldRef ?? undefined };
+  const result = await enqueueWarehouseReceiptBasDraft(receiptId, {
+    forceUpdateRefKey: oldRef,
+  });
+  return { ...result, oldRefKey: oldRef };
 }

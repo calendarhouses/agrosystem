@@ -60,6 +60,16 @@ export type FuelTransaction = {
   actorName: string | null;
   /** Кількість накладних (operation_attachments) */
   attachmentCount?: number;
+  /** Ref_Key чернетки BAS (якщо POST відбувся) */
+  basDraftRefKey: string | null;
+  /** OData EntitySet журналу, напр. Document_ИНАГРО_ПередачаТоплива */
+  basDraftEntity: string | null;
+  /** Номер документа BAS (Number) */
+  basDraftNumber: string | null;
+  /** Час POST чернетки */
+  basDraftSentAt: string | null;
+  /** Остання помилка POST */
+  basDraftError: string | null;
 };
 
 function asType(raw: unknown): FuelTransactionType {
@@ -133,6 +143,22 @@ export function mapFuelTransactionRow(
       row.attachmentCount != null && Number.isFinite(Number(row.attachmentCount))
         ? Number(row.attachmentCount)
         : undefined,
+    basDraftRefKey:
+      row.bas_draft_ref_key != null ? String(row.bas_draft_ref_key) : null,
+    basDraftEntity:
+      row.bas_draft_entity != null && String(row.bas_draft_entity).trim()
+        ? String(row.bas_draft_entity).trim()
+        : null,
+    basDraftNumber:
+      row.bas_draft_number != null && String(row.bas_draft_number).trim()
+        ? String(row.bas_draft_number).trim()
+        : null,
+    basDraftSentAt:
+      row.bas_draft_sent_at != null ? String(row.bas_draft_sent_at) : null,
+    basDraftError:
+      row.bas_draft_error != null && String(row.bas_draft_error).trim()
+        ? String(row.bas_draft_error).trim()
+        : null,
   };
 }
 

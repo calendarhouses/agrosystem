@@ -62,10 +62,9 @@ import {
 } from "@/lib/field-operation-wage";
 import { upsertFieldOperationRow } from "@/lib/field-operations-db";
 import { enqueueFieldOperationBasDraft } from "@/lib/bas-drafts/field-operation-waybill";
+import { enqueueInventoryOutboundBasDraft } from "@/lib/inventory-bas-draft-sync";
 import { enqueueBasSyncQueue } from "@/lib/bas-sync-queue";
 import {
-  buildChemicalsActOdataPayload,
-  buildFuelDispenseOdataPayload,
   buildSaleOdataPayload,
   buildWaybillOdataPayload,
   enqueueBasDraft,
@@ -478,13 +477,15 @@ wialon_field_fuel_logs, field_ndvi_alerts, equipment_maintenance_logs.
   Великі (25+ рядків): збери всі сторінки в items або itemChunks, expectedMinLines.
   Після execute: чесно кажи basHandoffStatus. НЕ кажи «передано в BAS», якщо
   немає bas_draft_posted. Excel sent_to_1c / «Позначено для 1С» ≠ чернетка BAS.
-  needsReview — перелічи сумнівні (од.вим, артикул, слабкий збіг) і чекай правки.
+  needsReview — перелічи сумнівні (к-сть×ціна≠сума, ПДВ, од.вим, артикул,
+  кандидати з довідника) і чекай вибору / підтвердження «створити нову».
+  Не оголошуй позицію «новою», якщо в довіднику є схожа — лише candidates.
 • Чернетки BAS (усі типи операцій):
   огляд контурів / що live → getBasDraftPipelinesStatus
   накладні ТМЦ: list/send/verifyWarehouseReceiptBasDraft
   паливо (закупівля/перелив/заправка) → auto enqueueFuelBasDraft після запису
   продаж урожаю/ТМЦ → auto enqueueInventorySaleBasDraft
-  списання в поле → ЛЗК (inventory_outbound_lzk)
+  списання насіння/добрив/ЗЗР → ЛЗК (inventory_outbound_lzk); запчастини → Вимога-накладна (inventory_outbound_requirement)
   закритий наряд → шляховий лист (field_operation_waybill)
   Де шукати: відповідний журнал у BAS → НЕПРОВЕДЕНІ.
   Excel «Передати» ≠ чернетка. Live лише якщо pipeline у BAS_DRAFT_PIPELINES_ENABLED.
@@ -2529,7 +2530,10 @@ function repairUiMessagesForGemini(messages: UIMessage[]): UIMessage[] {
 const DOCUMENT_VISION_PROMPT = `
 ВКЛАДЕННЯ (фото/PDF):
 A) Накладна/чек ТМЦ (відомий шаблон) → previewInvoiceReceipt
-   → людина підтверджує картку → executeWarehouseReceipt
+   Зчитай: артикул, розмір, од.вим., к-сть, ціна без ПДВ, сума рядка,
+   ставка/суму ПДВ, разом з ПДВ. Перевір к-сть×ціна≈сума (копійки).
+   НЕ оголошуй товар «новим» сам — сервер зіставить код/артикул/розмір/од.вим.
+   → людина підтверджує картку (кандидат або «створити нову») → executeWarehouseReceipt
    (= склад LEVADA + 1 multi-line чернетка Поступление в BAS, якщо pipeline live).
    Після цього: чесно кажи basHandoffStatus. Якщо не bas_draft_posted —
    запропонуй sendWarehouseReceiptBasDraft / listWarehouseReceiptBasStatus /
@@ -5420,7 +5424,7 @@ function createAgentTools(options?: {
 
     previewInvoiceReceipt: tool({
       description:
-        "Готує превʼю прибуткової накладної ТМЦ. Великі накладні (25+ рядків): передай УСІ рядки одним викликом (збери з усіх сторінок/чанків). Укажи артикул, якщо є.",
+        "Готує превʼю прибуткової накладної ТМЦ. Зчитай артикул, розмір, од.вим., суму рядка без ПДВ, ставку/суму ПДВ і підсумок з ПДВ. НЕ створюй «нову» номенклатуру сам — матчинг зробить сервер (код/артикул/розмір/од.вим.). Великі накладні: усі рядки одним викликом.",
       inputSchema: z.object({
         supplierName: z.string().trim().min(1).describe("Постачальник"),
         supplierEdrpou: z
@@ -5439,7 +5443,23 @@ function createAgentTools(options?: {
           .finite()
           .nonnegative()
           .optional()
-          .describe("Сума ₴"),
+          .describe("Сума без ПДВ ₴ (підсумок документа)"),
+        vatRate: z
+          .enum(["20", "14", "7", "0", "none"])
+          .optional()
+          .describe("Ставка ПДВ з документа"),
+        vatAmount: z
+          .number()
+          .finite()
+          .nonnegative()
+          .optional()
+          .describe("Сума ПДВ ₴"),
+        totalInclVat: z
+          .number()
+          .finite()
+          .nonnegative()
+          .optional()
+          .describe("Разом з ПДВ ₴"),
         expectedMinLines: z
           .number()
           .int()
@@ -5455,8 +5475,21 @@ function createAgentTools(options?: {
                 quantity: z.number().positive(),
                 unit: z.string().trim().min(1),
                 pricePerUnit: z.number().finite().nonnegative(),
-                totalAmount: z.number().finite().nonnegative().optional(),
+                totalAmount: z
+                  .number()
+                  .finite()
+                  .nonnegative()
+                  .optional()
+                  .describe("Сума рядка без ПДВ"),
                 article: z.string().trim().optional(),
+                size: z
+                  .string()
+                  .trim()
+                  .optional()
+                  .describe("Розмір/типорозмір якщо є"),
+                vatRate: z.enum(["20", "14", "7", "0", "none"]).optional(),
+                vatAmount: z.number().finite().nonnegative().optional(),
+                amountInclVat: z.number().finite().nonnegative().optional(),
               })
             )
           )
@@ -5470,8 +5503,17 @@ function createAgentTools(options?: {
               quantity: z.number().positive(),
               unit: z.string().trim().min(1),
               pricePerUnit: z.number().finite().nonnegative(),
-              totalAmount: z.number().finite().nonnegative().optional(),
+              totalAmount: z
+                .number()
+                .finite()
+                .nonnegative()
+                .optional()
+                .describe("Сума рядка без ПДВ"),
               article: z.string().trim().optional(),
+              size: z.string().trim().optional(),
+              vatRate: z.enum(["20", "14", "7", "0", "none"]).optional(),
+              vatAmount: z.number().finite().nonnegative().optional(),
+              amountInclVat: z.number().finite().nonnegative().optional(),
             })
           )
           .default([])
@@ -5505,6 +5547,8 @@ function createAgentTools(options?: {
             items: merged,
             expectedMinLines: input.expectedMinLines,
             totalAmount: input.totalAmount,
+            vatAmount: input.vatAmount,
+            totalInclVat: input.totalInclVat,
           });
           return {
             ...preview,
@@ -5532,6 +5576,9 @@ function createAgentTools(options?: {
         invoiceNumber: z.string().trim().optional(),
         invoiceDate: z.string().trim().optional(),
         totalAmount: z.number().finite().nonnegative().optional(),
+        vatRate: z.enum(["20", "14", "7", "0", "none"]).optional(),
+        vatAmount: z.number().finite().nonnegative().optional(),
+        totalInclVat: z.number().finite().nonnegative().optional(),
         items: z
           .array(
             z.object({
@@ -5542,6 +5589,12 @@ function createAgentTools(options?: {
               pricePerUnit: z.number().finite().nonnegative(),
               totalAmount: z.number().finite().nonnegative().optional(),
               article: z.string().trim().optional(),
+              size: z.string().trim().optional(),
+              selectedExistingItemId: z.string().trim().uuid().optional(),
+              confirmCreateNew: z.boolean().optional(),
+              vatRate: z.enum(["20", "14", "7", "0", "none"]).optional(),
+              vatAmount: z.number().finite().nonnegative().optional(),
+              amountInclVat: z.number().finite().nonnegative().optional(),
             })
           )
           .min(1),
@@ -6364,23 +6417,10 @@ function createAgentTools(options?: {
           const newStockBalance =
             after?.quantity ?? round2(item.quantity - qty);
 
-          void enqueueBasDraft({
-            documentType: "inventory_write_off",
-            entityId: result.id,
-            payload: buildChemicalsActOdataPayload({
-              moveId: result.id,
-              itemName: item.name,
-              itemBasRefKey: item.ref,
-              qty,
-              unit: item.unit,
-              fieldName: fieldName ?? null,
-              crop: null,
-              date: moveDate,
-            }),
-            summary: `Акт ЗЗР/добрив · ${item.name} · ${qty} ${item.unit}`,
-            actorId: actorUserId,
-            actorName,
-          }).catch((e) => console.error("[BAS_QUEUE] writeOff", e));
+          // Маршрут: ЛЗК (насіння/добрива/ЗЗР) або Вимога-накладна (запчастини)
+          void enqueueInventoryOutboundBasDraft(result.id).catch((e) =>
+            console.error("[BAS_QUEUE] writeOff", e)
+          );
 
           return {
             success: true as const,
@@ -10898,7 +10938,8 @@ function createAgentTools(options?: {
           }
 
           const txId = String(tx.id);
-          void enqueueFuelBasDraft({
+          // Етап 2: лише ПередачаТоплива (без дубля в bas_sync_queue / витрат)
+          const basSyncStatus = await enqueueFuelBasDraft({
             transactionId: txId,
             transactionType: "outbound",
             amountLiters: amount,
@@ -10906,26 +10947,13 @@ function createAgentTools(options?: {
             totalCost,
             fromStorageId: storage.id,
             toStorageId: null,
-          }).catch((e) =>
-            console.error("[bas-drafts] agent fuel outbound", e)
-          );
-          void enqueueBasDraft({
-            documentType: "fuel_dispense",
-            entityId: txId,
-            payload: buildFuelDispenseOdataPayload({
-              transactionId: txId,
-              liters: amount,
-              storageName: storage.name,
-              storageBasRefKey: null,
-              equipmentName: equipment.name,
-              equipmentBasRefKey: null,
-              operatorName: driverName || actorName || null,
-              date: txDateIso.slice(0, 10),
-            }),
-            summary: `Роздача ДП · ${equipment.name} · ${amount} л`,
-            actorId: actorUserId,
-            actorName,
-          }).catch((e) => console.error("[BAS_QUEUE] fuel dispense", e));
+          });
+          if (basSyncStatus !== "pending_1c") {
+            await supabase
+              .from("fuel_transactions")
+              .update({ sync_status: basSyncStatus })
+              .eq("id", txId);
+          }
 
           void logActivity({
             actor,
@@ -10958,6 +10986,7 @@ function createAgentTools(options?: {
             volumeAfter: Math.max(0, volumeAfter),
             pricePerLiter: donorPrice,
             totalCost,
+            basSyncStatus,
             fuelType: "ДП",
             clientEvent: "fuel-updated",
             message: `Заправив ${equipment.name} на ${amount} л з «${storage.name}». Залишок у ємності: ${Math.max(0, volumeAfter)} л.`,
@@ -14208,6 +14237,14 @@ function createAgentTools(options?: {
             const field = Array.isArray(move.farm_fields)
               ? move.farm_fields[0]
               : move.farm_fields;
+            const category = cache
+              ? (cache as { category?: string }).category
+              : null;
+            const isRequirement =
+              category === "parts" ||
+              category === "fuel" ||
+              category === "oil" ||
+              category === "lubricant";
             payload = {
               ...payload,
               sourceTable: "inventory_local_moves",
@@ -14219,7 +14256,7 @@ function createAgentTools(options?: {
                 : null,
               qty: move.qty,
               unit: cache ? (cache as { unit?: string }).unit : null,
-              category: cache ? (cache as { category?: string }).category : null,
+              category,
               date: move.date,
               fieldId: move.field_id,
               fieldBasRefKey: field
@@ -14231,8 +14268,12 @@ function createAgentTools(options?: {
                 : null,
               crop: field ? (field as { crop?: string }).crop : null,
               season: move.season,
-              pipeline: "inventory_outbound_lzk",
-              basDocument: "Document_ИНАГРО_ЛимитноЗаборнаяКарта",
+              pipeline: isRequirement
+                ? "inventory_outbound_requirement"
+                : "inventory_outbound_lzk",
+              basDocument: isRequirement
+                ? "Document_ТребованиеНакладная"
+                : "Document_ИНАГРО_ЛимитноЗаборнаяКарта",
             };
 
             await supabase
@@ -14432,12 +14473,7 @@ function createAgentTools(options?: {
                 null;
             }
 
-            await supabase
-              .from("fuel_transactions")
-              .update({ sync_status: "pending_1c" })
-              .eq("id", sourceDbId);
-
-            void enqueueFuelBasDraft({
+            const fuelBasStatus = await enqueueFuelBasDraft({
               transactionId: sourceDbId,
               transactionType: expectedDbType as
                 | "inbound"
@@ -14448,9 +14484,11 @@ function createAgentTools(options?: {
               totalCost: total,
               fromStorageId: row.from_storage_id,
               toStorageId: row.to_storage_id ?? null,
-            }).catch((e) =>
-              console.error("[queueDocumentToBasSync] fuel draft", e)
-            );
+            });
+            await supabase
+              .from("fuel_transactions")
+              .update({ sync_status: fuelBasStatus })
+              .eq("id", sourceDbId);
           }
 
           if (notes?.trim()) payload.accountantNotes = notes.trim();

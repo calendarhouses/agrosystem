@@ -29,6 +29,8 @@ import {
   type QuickIssueFieldOption,
   type QuickIssueItemOption,
 } from "@/app/admin/inventory/actions";
+import { listEquipmentForOps } from "@/app/admin/equipment/actions";
+import type { EquipmentForOpsRow } from "@/lib/equipment-ops-options";
 import {
   AttachmentDropzone,
   flushPendingAttachments,
@@ -124,6 +126,8 @@ type QuickIssueSuccessPayload = {
   itemRefKey: string;
   fieldId: string;
   fieldName: string;
+  equipmentId?: string;
+  equipmentName?: string;
   itemTitle: string;
   category: QuickIssueItemOption["category"];
   qty: number;
@@ -157,16 +161,20 @@ export function QuickIssueSheet({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [items, setItems] = useState<QuickIssueItemOption[]>([]);
   const [fields, setFields] = useState<QuickIssueFieldOption[]>([]);
+  const [equipment, setEquipment] = useState<EquipmentForOpsRow[]>([]);
 
   const [category, setCategory] = useState<Cat | null>(null);
   const [itemKey, setItemKey] = useState<string | null>(null);
   const [fieldId, setFieldId] = useState<string | null>(null);
+  const [equipmentId, setEquipmentId] = useState<string | null>(null);
   const [qty, setQty] = useState("");
   const [moveDate, setMoveDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
   const [itemOpen, setItemOpen] = useState(false);
   const [itemSearch, setItemSearch] = useState("");
   const [fieldOpen, setFieldOpen] = useState(false);
   const [fieldSearch, setFieldSearch] = useState("");
+  const [equipmentOpen, setEquipmentOpen] = useState(false);
+  const [equipmentSearch, setEquipmentSearch] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [pendingFiles, setPendingFiles] = useState<PendingAttachment[]>([]);
   const [pending, startTransition] = useTransition();
@@ -179,6 +187,10 @@ export function QuickIssueSheet({
   const selectedField = useMemo(
     () => fields.find((f) => f.id === fieldId) ?? null,
     [fields, fieldId]
+  );
+  const selectedEquipment = useMemo(
+    () => equipment.find((e) => e.id === equipmentId) ?? null,
+    [equipment, equipmentId]
   );
 
   const fieldPassportOk = isFieldPassportComplete(selectedField);
@@ -193,6 +205,7 @@ export function QuickIssueSheet({
 
   const fieldRequired =
     CATEGORIES.find((c) => c.id === category)?.fieldRequired ?? true;
+  const equipmentRequired = category === "parts";
   const isDark = theme === "dark";
 
   const isSubmitDisabled =
@@ -203,6 +216,7 @@ export function QuickIssueSheet({
     !category ||
     !itemKey ||
     (fieldRequired && !fieldId) ||
+    (equipmentRequired && !equipmentId) ||
     !Number.isFinite(qtyNum) ||
     qtyNum <= 0 ||
     qtyExceedsBalance ||
@@ -239,6 +253,16 @@ export function QuickIssueSheet({
     );
   }, [fields, fieldSearch]);
 
+  const filteredEquipment = useMemo(() => {
+    const q = equipmentSearch.trim().toLowerCase();
+    if (!q) return equipment;
+    return equipment.filter(
+      (eq) =>
+        eq.name.toLowerCase().includes(q) ||
+        eq.type.toLowerCase().includes(q)
+    );
+  }, [equipment, equipmentSearch]);
+
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -248,7 +272,11 @@ export function QuickIssueSheet({
       setFormError(null);
       setLoading(true);
 
-      let res = await getQuickIssueOptions();
+      const [optsRes, eqRes] = await Promise.all([
+        getQuickIssueOptions(),
+        listEquipmentForOps(),
+      ]);
+      let res = optsRes;
       if (cancelled) return;
 
       if (res.ok && res.items.length === 0) {
@@ -277,6 +305,7 @@ export function QuickIssueSheet({
       }
       setItems(res.items);
       setFields(res.fields);
+      if (eqRes.ok) setEquipment(eqRes.data);
       if (res.items.length === 0) {
         setLoadError(
           "Довідник ТМЦ порожній. Додайте позицію на складі або синхронізуйте номенклатуру."
@@ -312,10 +341,12 @@ export function QuickIssueSheet({
     setCategory(null);
     setItemKey(null);
     setFieldId(null);
+    setEquipmentId(null);
     setQty("");
     setMoveDate(format(new Date(), "yyyy-MM-dd"));
     setItemOpen(false);
     setFieldOpen(false);
+    setEquipmentOpen(false);
     setFormError(null);
     setPendingFiles([]);
   }
@@ -334,8 +365,13 @@ export function QuickIssueSheet({
     }
     const needsField =
       CATEGORIES.find((c) => c.id === category)?.fieldRequired ?? true;
+    const needsEquipment = category === "parts";
     if (needsField && !fieldId) {
       setFormError("Оберіть поле");
+      return;
+    }
+    if (needsEquipment && !equipmentId) {
+      setFormError("Оберіть техніку");
       return;
     }
     if (needsField && !isFieldPassportComplete(selectedField)) {
@@ -358,7 +394,8 @@ export function QuickIssueSheet({
       suppressLocalInventoryMovesRealtimeToast();
       const res = await createLocalOutboundMove({
         itemRefKey: itemKey,
-        fieldId: fieldId,
+        fieldId: needsEquipment ? null : fieldId,
+        equipmentId: needsEquipment ? equipmentId : null,
         qty: parsedQty,
         season: activeSeason,
         date: moveDate,
@@ -376,15 +413,21 @@ export function QuickIssueSheet({
       }
       const unit = selectedItem?.unit ? ` ${selectedItem.unit}` : "";
       toast.success(
-        needsField
-          ? `Списано ${parsedQty}${unit} → ${selectedField?.name ?? "поле"}`
-          : `Списано ${parsedQty}${unit} зі складу`
+        needsEquipment
+          ? `Списано ${parsedQty}${unit} → ${selectedEquipment?.name ?? "техніка"}`
+          : needsField
+            ? `Списано ${parsedQty}${unit} → ${selectedField?.name ?? "поле"}`
+            : `Списано ${parsedQty}${unit} зі складу`
       );
       onSuccess?.({
         moveId: res.id,
         itemRefKey: itemKey,
         fieldId: fieldId ?? "",
-        fieldName: selectedField?.name ?? (needsField ? "поле" : "склад"),
+        fieldName: needsEquipment
+          ? selectedEquipment?.name ?? "техніка"
+          : selectedField?.name ?? (needsField ? "поле" : "склад"),
+        equipmentId: equipmentId ?? undefined,
+        equipmentName: selectedEquipment?.name,
         itemTitle: selectedItem?.name ?? "ТМЦ",
         category: selectedItem?.category ?? "zzr",
         qty: parsedQty,
@@ -535,6 +578,11 @@ export function QuickIssueSheet({
                       onClick={() => {
                         setCategory(cat.id);
                         setItemKey(null);
+                        if (cat.id === "parts") {
+                          setFieldId(null);
+                        } else {
+                          setEquipmentId(null);
+                        }
                         setFormError(null);
                       }}
                       className={cn(
@@ -749,11 +797,90 @@ export function QuickIssueSheet({
               ) : null}
             </section>
 
-            {!lockField ? (
+            {equipmentRequired ? (
               <section className="space-y-2.5">
                 <div>
                   <p className="text-[11px] font-semibold tracking-[0.08em] text-zinc-500 uppercase">
-                    {fieldRequired ? "Поле" : "Поле (опційно)"}
+                    Техніка
+                  </p>
+                  <p className="mt-0.5 text-xs text-zinc-400">
+                    На який трактор / комбайн списується запчастина
+                  </p>
+                </div>
+                <Popover
+                  open={equipmentOpen}
+                  onOpenChange={(open) => {
+                    setEquipmentOpen(open);
+                    if (!open) setEquipmentSearch("");
+                  }}
+                >
+                  <PopoverTrigger
+                    className={cn(
+                      comboboxTriggerClass,
+                      "h-14 rounded-2xl border-transparent bg-white shadow-sm ring-1 ring-[#E5DFD3]/90"
+                    )}
+                  >
+                    <span className="min-w-0 flex-1 truncate text-left text-sm font-semibold text-zinc-900">
+                      {selectedEquipment ? (
+                        selectedEquipment.name
+                      ) : (
+                        <span className="font-medium text-zinc-400">
+                          Оберіть техніку…
+                        </span>
+                      )}
+                    </span>
+                    <ChevronDown className="h-4 w-4 shrink-0 text-zinc-400" />
+                  </PopoverTrigger>
+                  <PopoverContent
+                    sheetOnMobile={false}
+                    align="start"
+                    sideOffset={6}
+                    className="w-[min(calc(100vw-2.5rem),22rem)] rounded-2xl border border-zinc-200 bg-white p-0 text-zinc-900 shadow-xl"
+                  >
+                    <Command className="rounded-2xl bg-white" shouldFilter={false}>
+                      <CommandInput
+                        placeholder="Пошук техніки…"
+                        value={equipmentSearch}
+                        onValueChange={setEquipmentSearch}
+                        className="h-11 text-sm"
+                      />
+                      <CommandList className="max-h-64 bg-white">
+                        <CommandEmpty>Техніку не знайдено</CommandEmpty>
+                        <CommandGroup>
+                          {filteredEquipment.map((eq) => (
+                            <CommandItem
+                              key={eq.id}
+                              value={eq.id}
+                              data-checked={
+                                equipmentId === eq.id || undefined
+                              }
+                              onSelect={() => {
+                                setEquipmentId(eq.id);
+                                setEquipmentOpen(false);
+                                setEquipmentSearch("");
+                                setFormError(null);
+                              }}
+                              className="cursor-pointer gap-3 rounded-xl px-3 py-2.5 data-[selected=true]:bg-zinc-100 data-[selected=true]:text-zinc-900"
+                            >
+                              <span className="min-w-0 flex-1 truncate font-medium">
+                                {eq.name}
+                              </span>
+                              {equipmentId === eq.id ? (
+                                <Check className="h-4 w-4 shrink-0 text-emerald-600" />
+                              ) : null}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </section>
+            ) : !lockField ? (
+              <section className="space-y-2.5">
+                <div>
+                  <p className="text-[11px] font-semibold tracking-[0.08em] text-zinc-500 uppercase">
+                    Поле
                   </p>
                   <p className="mt-0.5 text-xs text-zinc-400">
                     Куди віднести списання

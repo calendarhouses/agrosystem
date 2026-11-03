@@ -439,9 +439,11 @@ export async function POST(request: Request) {
       }
     }
 
-    // Закупівля / переміщення → черга на чернетку BAS AGRO (зараз stub)
+    // Етап 1–2: закупівля / переміщення / заправка → чернетка BAS (ідемпотентно)
     if (
-      (transactionType === "inbound" || transactionType === "transfer") &&
+      (transactionType === "inbound" ||
+        transactionType === "transfer" ||
+        transactionType === "outbound") &&
       savedRow.id
     ) {
       const nextStatus = await enqueueFuelBasDraft({

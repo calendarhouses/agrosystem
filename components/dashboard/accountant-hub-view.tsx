@@ -41,6 +41,7 @@ import {
 } from "@/app/export/actions";
 import {
   deleteLocalMove,
+  dismissWarehouseReceiptFromBasListAction,
   getWarehouseReceiptDetailAction,
   listWarehouseReceiptsBasHandoff,
   recreateWarehouseReceiptBasDraftAction,
@@ -54,9 +55,11 @@ import {
   basHandoffLabel,
   type BasHandoffStatus,
 } from "@/lib/bas-drafts/statuses";
+import { AccountantReceiptBasFillDialog } from "@/components/dashboard/accountant-receipt-bas-fill-dialog";
 import { AttachmentDropzone } from "@/components/dashboard/attachment-dropzone";
 import { AttachmentViewerButton } from "@/components/dashboard/attachment-viewer";
 import { FinancePeriodToolbar } from "@/components/dashboard/finance-period-toolbar";
+import { InventoryInboundSheet } from "@/components/dashboard/inventory-inbound-sheet";
 import { EditLocalMoveInline } from "@/components/dashboard/local-moves-history-sheet";
 import { Button } from "@/components/ui/button";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
@@ -167,6 +170,35 @@ function labelOps(n: number) {
 }
 function labelWithoutInvoice(n: number) {
   return `${n} без ${ukPlural(n, "накладної", "накладних", "накладних")}`;
+}
+
+type QueueDisplayEntry =
+  | { type: "item"; item: AccountantQueueItem }
+  | {
+      type: "receipt";
+      receiptId: string;
+      lines: AccountantQueueItem[];
+    };
+
+/** Згортає inbound з однаковим receipt_id в одну накладну. */
+function groupQueueDisplayEntries(
+  visible: AccountantQueueItem[]
+): QueueDisplayEntry[] {
+  const seen = new Set<string>();
+  const out: QueueDisplayEntry[] = [];
+  for (const item of visible) {
+    if (item.kind === "inbound" && item.receiptId) {
+      if (seen.has(item.receiptId)) continue;
+      seen.add(item.receiptId);
+      const lines = visible.filter(
+        (x) => x.kind === "inbound" && x.receiptId === item.receiptId
+      );
+      out.push({ type: "receipt", receiptId: item.receiptId, lines });
+      continue;
+    }
+    out.push({ type: "item", item });
+  }
+  return out;
 }
 function labelSelected(n: number) {
   return `Обрано ${n}`;
@@ -390,10 +422,12 @@ const kpiValueClass =
 
 function QueueCheck({
   checked,
+  indeterminate,
   onClick,
   label,
 }: {
   checked: boolean;
+  indeterminate?: boolean;
   onClick: () => void;
   label?: string;
 }) {
@@ -403,16 +437,21 @@ function QueueCheck({
       onClick={onClick}
       className="inline-flex shrink-0 items-center gap-2"
       aria-label={label ?? "Обрати"}
+      aria-checked={indeterminate ? "mixed" : checked}
     >
       <span
         className={cn(
           "flex h-5 w-5 items-center justify-center rounded-md border transition",
-          checked
+          checked || indeterminate
             ? "border-[#276749] bg-[#276749] text-white"
             : "border-zinc-300 bg-white"
         )}
       >
-        {checked ? <Check className="h-3 w-3" strokeWidth={3} /> : null}
+        {checked ? (
+          <Check className="h-3 w-3" strokeWidth={3} />
+        ) : indeterminate ? (
+          <span className="h-0.5 w-2.5 rounded-full bg-white" />
+        ) : null}
       </span>
     </button>
   );
@@ -589,6 +628,10 @@ export function AccountantHubView({
   const [basReceipts, setBasReceipts] = useState<WarehouseReceiptBasRow[]>([]);
   const [basReceiptsLoading, setBasReceiptsLoading] = useState(false);
   const [basRetryId, setBasRetryId] = useState<string | null>(null);
+  const [editInboundReceiptId, setEditInboundReceiptId] = useState<
+    string | null
+  >(null);
+  const [editInboundOpen, setEditInboundOpen] = useState(false);
   const [basOpenId, setBasOpenId] = useState<string | null>(null);
   const [basDetailLoading, setBasDetailLoading] = useState(false);
   const [basDetailLines, setBasDetailLines] = useState<
@@ -599,6 +642,52 @@ export function AccountantHubView({
     localOnly: number;
   } | null>(null);
   const [basPatchId, setBasPatchId] = useState<string | null>(null);
+  const [basResendConfirmId, setBasResendConfirmId] = useState<string | null>(
+    null
+  );
+  const [fillBasOpen, setFillBasOpen] = useState(false);
+  const [fillBasReceipt, setFillBasReceipt] =
+    useState<WarehouseReceiptBasRow | null>(null);
+  const [fillBasReceiptId, setFillBasReceiptId] = useState<string | null>(null);
+  const [receiptGroupOpenId, setReceiptGroupOpenId] = useState<string | null>(
+    null
+  );
+
+  function openBasFill(
+    receipt: WarehouseReceiptBasRow | null,
+    receiptId: string
+  ) {
+    setFillBasReceipt(receipt);
+    setFillBasReceiptId(receiptId);
+    setFillBasOpen(true);
+  }
+
+  function requestBasSend(row: WarehouseReceiptBasRow) {
+    if (
+      row.basHandoffStatus === "awaiting_bas_mapping" ||
+      !row.supplierEdrpou
+    ) {
+      openBasFill(row, row.id);
+      return;
+    }
+    setBasRetryId(row.id);
+    void retryWarehouseReceiptBasDraftAction(row.id).then((res) => {
+      setBasRetryId(null);
+      if (!res.ok) {
+        if (
+          res.error.toLowerCase().includes("контрагент") ||
+          res.error.toLowerCase().includes("єдрпоу")
+        ) {
+          openBasFill(row, row.id);
+        }
+        toast.error(res.error);
+        return;
+      }
+      toast.success(res.dryRun ? res.message : "Надіслано в BAS");
+      void loadBasReceipts();
+      void load({ force: true });
+    });
+  }
 
   const loadBasReceipts = useCallback(async () => {
     setBasReceiptsLoading(true);
@@ -747,6 +836,12 @@ export function AccountantHubView({
     actCategoryFilter,
   ]);
 
+  /** Мультитоварні приходи з одним receipt_id — одна картка накладної. */
+  const displayEntries = useMemo(
+    () => groupQueueDisplayEntries(visible),
+    [visible]
+  );
+
   const tabItems = useMemo(
     () => items.filter((i) => matchesTab(i, tab)),
     [items, tab]
@@ -831,6 +926,17 @@ export function AccountantHubView({
     setEditInventory(null);
     setEditFuel(null);
   }
+
+  const selectedBasReceiptIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const item of items) {
+      if (!selected.has(item.id)) continue;
+      if (item.kind !== "inbound") continue;
+      if (item.basDraftSent) continue;
+      if (item.receiptId) ids.add(item.receiptId);
+    }
+    return [...ids];
+  }, [items, selected]);
 
   const packageSummary = useMemo(
     () => summarizeRows(visible.filter((i) => selected.has(i.id))),
@@ -1150,7 +1256,8 @@ export function AccountantHubView({
                 Накладні → 1С
               </p>
               <p className="mt-0.5 text-[11px] text-zinc-500">
-                Відкрий рядок — усі товари. Нові (ще без картки в 1С) теж
+                Робоча черга в 1С. «Прибрати» ховає рядок зі списку (склад і
+                чернетка в BAS не чіпаються). Нові товари без картки теж
                 йдуть у чернетку з назвою з накладної.
               </p>
             </div>
@@ -1179,14 +1286,15 @@ export function AccountantHubView({
           ) : (
             <ul className="mt-3 max-h-72 space-y-2 overflow-y-auto">
               {basReceipts.map((row) => {
-                const canRetry =
+                const canSendBas =
                   row.basHandoffStatus === "awaiting_bas_mapping" ||
                   row.basHandoffStatus === "bas_draft_failed" ||
                   row.basHandoffStatus === "bas_draft_dry_run" ||
                   row.basHandoffStatus === "local_saved";
-                const canPatchHeader =
+                const isInBas =
                   row.basHandoffStatus === "bas_draft_posted" &&
                   Boolean(row.basDraftRefKey);
+                const canPatchHeader = isInBas;
                 const isOpen = basOpenId === row.id;
                 const statusTone =
                   row.basHandoffStatus === "bas_draft_posted"
@@ -1260,6 +1368,9 @@ export function AccountantHubView({
                         </p>
                         <p className="mt-0.5 text-[11px] text-zinc-500">
                           {[
+                            row.supplierEdrpou
+                              ? `ЄДРПОУ ${row.supplierEdrpou}`
+                              : "ЄДРПОУ не вказано",
                             row.invoiceDate,
                             row.totalAmount != null
                               ? `${row.totalAmount.toLocaleString("uk-UA")} ₴`
@@ -1278,96 +1389,120 @@ export function AccountantHubView({
                         ) : null}
                       </button>
                       <div className="flex shrink-0 flex-wrap gap-1.5">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8 rounded-full text-xs"
+                          onClick={() => openBasFill(row, row.id)}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          ПДВ / ЄДРПОУ
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8 rounded-full text-xs"
+                          onClick={() => {
+                            setEditInboundReceiptId(row.id);
+                            setEditInboundOpen(true);
+                          }}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          Редагувати прихід
+                        </Button>
                         {canPatchHeader ? (
-                          <>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              className="h-8 rounded-full text-xs"
-                              disabled={basPatchId === row.id}
-                              onClick={() => {
-                                setBasPatchId(row.id);
-                                void updateWarehouseReceiptBasDraftHeaderAction(
-                                  row.id
-                                ).then((res) => {
-                                  setBasPatchId(null);
-                                  if (!res.ok) {
-                                    toast.error(res.error);
-                                    return;
-                                  }
-                                  toast.success(res.message);
-                                });
-                              }}
-                            >
-                              {basPatchId === row.id ? (
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              ) : (
-                                <Pencil className="h-3.5 w-3.5" />
-                              )}
-                              Постачальник і склад
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              className="h-8 rounded-full text-xs"
-                              disabled={basRetryId === row.id}
-                              onClick={() => {
-                                setBasRetryId(row.id);
-                                void recreateWarehouseReceiptBasDraftAction(
-                                  row.id
-                                ).then((res) => {
-                                  setBasRetryId(null);
-                                  if (!res.ok) {
-                                    toast.error(res.error);
-                                    return;
-                                  }
-                                  toast.success(res.message);
-                                  void loadBasReceipts();
-                                  setBasOpenId(null);
-                                });
-                              }}
-                            >
-                              {basRetryId === row.id ? (
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              ) : (
-                                <RefreshCw className="h-3.5 w-3.5" />
-                              )}
-                              Надіслати знову
-                            </Button>
-                          </>
-                        ) : null}
-                        {canRetry ? (
                           <Button
                             type="button"
                             size="sm"
                             variant="outline"
                             className="h-8 rounded-full text-xs"
-                            disabled={basRetryId === row.id}
+                            disabled={basPatchId === row.id}
                             onClick={() => {
-                              setBasRetryId(row.id);
-                              void retryWarehouseReceiptBasDraftAction(
+                              setBasPatchId(row.id);
+                              void updateWarehouseReceiptBasDraftHeaderAction(
                                 row.id
                               ).then((res) => {
-                                setBasRetryId(null);
+                                setBasPatchId(null);
                                 if (!res.ok) {
                                   toast.error(res.error);
                                   return;
                                 }
                                 toast.success(res.message);
-                                void loadBasReceipts();
                               });
                             }}
+                          >
+                            {basPatchId === row.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Pencil className="h-3.5 w-3.5" />
+                            )}
+                            Постачальник і склад
+                          </Button>
+                        ) : null}
+                        {canSendBas ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="h-8 rounded-full bg-sky-700 px-3 text-xs font-semibold text-white hover:bg-sky-800"
+                            disabled={basRetryId === row.id}
+                            onClick={() => requestBasSend(row)}
                           >
                             {basRetryId === row.id ? (
                               <Loader2 className="h-3.5 w-3.5 animate-spin" />
                             ) : (
                               <RefreshCw className="h-3.5 w-3.5" />
                             )}
-                            Надіслати в 1С
+                            {row.basHandoffStatus === "awaiting_bas_mapping"
+                              ? "Звʼязати й надіслати"
+                              : "Надіслати в BAS"}
                           </Button>
                         ) : null}
+                        {isInBas ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-8 rounded-full text-xs text-zinc-600"
+                            disabled={basRetryId === row.id}
+                            onClick={() => setBasResendConfirmId(row.id)}
+                          >
+                            Оновити чернетку…
+                          </Button>
+                        ) : null}
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 rounded-full px-2 text-xs text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800"
+                          title="Прибрати зі списку"
+                          disabled={basRetryId === row.id}
+                          onClick={() => {
+                            setBasRetryId(row.id);
+                            void dismissWarehouseReceiptFromBasListAction(
+                              row.id
+                            ).then((res) => {
+                              setBasRetryId(null);
+                              if (!res.ok) {
+                                toast.error(res.error);
+                                return;
+                              }
+                              setBasReceipts((prev) =>
+                                prev.filter((r) => r.id !== row.id)
+                              );
+                              if (basOpenId === row.id) {
+                                setBasOpenId(null);
+                                setBasDetailLines([]);
+                                setBasDetailMeta(null);
+                              }
+                              toast.success("Прибрано зі списку");
+                            });
+                          }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Прибрати
+                        </Button>
                       </div>
                     </div>
                     {isOpen ? (
@@ -1396,6 +1531,14 @@ export function AccountantHubView({
                                 >
                                   <span className="min-w-0 truncate">
                                     {line.name}
+                                    {line.vatRate ? (
+                                      <span className="ml-1 text-zinc-400">
+                                        · ПДВ{" "}
+                                        {line.vatRate === "none"
+                                          ? "—"
+                                          : `${line.vatRate}%`}
+                                      </span>
+                                    ) : null}
                                     {line.isLocal ||
                                     !line.basRefKey ||
                                     line.basRefKey.startsWith("local:") ? (
@@ -1833,7 +1976,231 @@ export function AccountantHubView({
             </div>
           ) : (
             <ul className="space-y-2 p-2.5 sm:p-3">
-              {visible.map((item) => {
+              {displayEntries.map((entry) => {
+                if (entry.type === "receipt") {
+                  const lines = entry.lines;
+                  const head = lines[0]!;
+                  const allChecked = lines.every((l) => selected.has(l.id));
+                  const someChecked =
+                    !allChecked && lines.some((l) => selected.has(l.id));
+                  const groupOpen = receiptGroupOpenId === entry.receiptId;
+                  const amountSum = lines.reduce((s, l) => {
+                    const lineAmt =
+                      l.amountInclVat ?? l.amountUah ?? null;
+                    return s + (lineAmt ?? 0);
+                  }, 0);
+                  const hasAmount = lines.some(
+                    (l) => l.amountInclVat != null || l.amountUah != null
+                  );
+                  const basSent = lines.every((l) => l.basDraftSent);
+                  const supplier =
+                    head.receiptSupplierName || head.party || "Накладна";
+                  const needsMapping =
+                    head.receiptBasHandoffStatus === "awaiting_bas_mapping";
+                  return (
+                    <li
+                      key={`receipt-${entry.receiptId}`}
+                      className={cn(
+                        "overflow-hidden rounded-2xl border border-sky-200/80 bg-gradient-to-br from-sky-50/90 to-white shadow-sm",
+                        allChecked && "ring-1 ring-[#276749]/35"
+                      )}
+                    >
+                      <div className="flex gap-2.5 px-3 py-3 sm:gap-3 sm:px-3.5">
+                        <QueueCheck
+                          checked={allChecked}
+                          indeterminate={someChecked}
+                          onClick={() => {
+                            setSelected((prev) => {
+                              const next = new Set(prev);
+                              if (allChecked) {
+                                for (const l of lines) next.delete(l.id);
+                              } else {
+                                for (const l of lines) next.add(l.id);
+                              }
+                              return next;
+                            });
+                          }}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <button
+                            type="button"
+                            className="w-full text-left"
+                            onClick={() =>
+                              setReceiptGroupOpenId((prev) =>
+                                prev === entry.receiptId
+                                  ? null
+                                  : entry.receiptId
+                              )
+                            }
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[9px] font-bold tracking-wider text-sky-700 uppercase">
+                                Накладна · {lines.length} поз.
+                              </span>
+                              {basSent ? (
+                                <span className="text-[9px] font-bold tracking-wider text-emerald-700 uppercase">
+                                  у BAS
+                                </span>
+                              ) : needsMapping ? (
+                                <span className="text-[9px] font-bold tracking-wider text-amber-700 uppercase">
+                                  треба звʼязати
+                                </span>
+                              ) : null}
+                              <ChevronDown
+                                className={cn(
+                                  "ml-auto h-3.5 w-3.5 text-zinc-400 transition",
+                                  groupOpen && "rotate-180"
+                                )}
+                              />
+                            </div>
+                            <p className="mt-0.5 text-[13px] leading-snug font-semibold text-zinc-900 sm:text-sm">
+                              {supplier}
+                            </p>
+                            <p className="mt-0.5 text-[11px] leading-snug text-zinc-500">
+                              {[
+                                head.receiptInvoiceNumber
+                                  ? `№ ${head.receiptInvoiceNumber}`
+                                  : null,
+                                head.receiptSupplierEdrpou
+                                  ? `ЄДРПОУ ${head.receiptSupplierEdrpou}`
+                                  : "ЄДРПОУ —",
+                                formatDate(head.date),
+                                lines
+                                  .map((l) => l.title)
+                                  .slice(0, 3)
+                                  .join(", ") +
+                                  (lines.length > 3 ? "…" : ""),
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </p>
+                          </button>
+                          <div className="mt-2 flex flex-wrap items-end justify-between gap-x-3 gap-y-1.5 border-t border-sky-100/80 pt-2">
+                            <p className="text-sm font-bold tabular-nums text-zinc-900">
+                              {hasAmount
+                                ? `${formatUah(amountSum)} ₴ з ПДВ`
+                                : `${lines.length} поз.`}
+                            </p>
+                            <div className="flex shrink-0 items-center gap-0.5">
+                              <button
+                                type="button"
+                                title="ПДВ / ЄДРПОУ"
+                                onClick={() =>
+                                  openBasFill(null, entry.receiptId)
+                                }
+                                className="inline-flex h-8 items-center gap-1 rounded-full px-2.5 text-[10px] font-bold text-zinc-600 ring-1 ring-zinc-200 hover:bg-white"
+                              >
+                                <Pencil className="h-3 w-3" />
+                                ПДВ
+                              </button>
+                              {!basSent ? (
+                                <button
+                                  type="button"
+                                  title="Надіслати всю накладну в BAS"
+                                  disabled={basRetryId === entry.receiptId}
+                                  onClick={() => {
+                                    const row = basReceipts.find(
+                                      (r) => r.id === entry.receiptId
+                                    );
+                                    if (row) {
+                                      requestBasSend(row);
+                                      return;
+                                    }
+                                    if (
+                                      needsMapping ||
+                                      !head.receiptSupplierEdrpou
+                                    ) {
+                                      openBasFill(null, entry.receiptId);
+                                      return;
+                                    }
+                                    setBasRetryId(entry.receiptId);
+                                    void retryWarehouseReceiptBasDraftAction(
+                                      entry.receiptId
+                                    ).then((res) => {
+                                      setBasRetryId(null);
+                                      if (!res.ok) {
+                                        toast.error(res.error);
+                                        openBasFill(null, entry.receiptId);
+                                        return;
+                                      }
+                                      toast.success(
+                                        res.dryRun
+                                          ? res.message
+                                          : "Надіслано в BAS · усі позиції"
+                                      );
+                                      void loadBasReceipts();
+                                      void load({ force: true });
+                                    });
+                                  }}
+                                  className="inline-flex h-8 items-center gap-1 rounded-full bg-sky-700 px-2.5 text-[10px] font-bold text-white hover:bg-sky-800 disabled:opacity-50"
+                                >
+                                  {basRetryId === entry.receiptId ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <RefreshCw className="h-3 w-3" />
+                                  )}
+                                  BAS
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  title="Оновити чернетку"
+                                  onClick={() =>
+                                    setBasResendConfirmId(entry.receiptId)
+                                  }
+                                  className="inline-flex h-8 items-center gap-1 rounded-full px-2.5 text-[10px] font-bold text-zinc-600 ring-1 ring-zinc-200 hover:bg-white"
+                                >
+                                  Оновити
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                title="Редагувати накладну"
+                                onClick={() => {
+                                  setEditInboundReceiptId(entry.receiptId);
+                                  setEditInboundOpen(true);
+                                }}
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition hover:bg-[#F4F1EA] hover:text-zinc-800"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                          {groupOpen ? (
+                            <ul className="mt-2 space-y-1.5 border-t border-sky-100/80 pt-2">
+                              {lines.map((line) => (
+                                <li
+                                  key={line.id}
+                                  className="flex items-center justify-between gap-2 rounded-xl bg-white/80 px-2.5 py-2 text-[11px] text-zinc-700"
+                                >
+                                  <span className="min-w-0 truncate font-medium">
+                                    {line.title}
+                                    {line.vatRate ? (
+                                      <span className="ml-1 text-zinc-400">
+                                        · ПДВ{" "}
+                                        {line.vatRate === "none"
+                                          ? "—"
+                                          : `${line.vatRate}%`}
+                                      </span>
+                                    ) : null}
+                                  </span>
+                                  <span className="shrink-0 tabular-nums text-zinc-500">
+                                    {formatQty(line.qty, line.unit)}
+                                    {line.amountUah != null
+                                      ? ` · ${formatUah(line.amountUah)} ₴`
+                                      : ""}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : null}
+                        </div>
+                      </div>
+                    </li>
+                  );
+                }
+
+                const item = entry.item;
                 const meta = kindMeta(item.kind);
                 const Icon = meta.icon;
                 const checked = selected.has(item.id);
@@ -2099,6 +2466,59 @@ export function AccountantHubView({
                                   </p>
                                 </div>
                                 <div className="flex shrink-0 items-center gap-0.5">
+                                  {item.kind === "inbound" &&
+                                  !item.basDraftSent &&
+                                  item.receiptId ? (
+                                    <button
+                                      type="button"
+                                      title="Надіслати всю накладну в BAS"
+                                      disabled={basRetryId === item.receiptId}
+                                      onClick={() => {
+                                        const receiptId = item.receiptId!;
+                                        const row = basReceipts.find(
+                                          (r) => r.id === receiptId
+                                        );
+                                        if (row) {
+                                          requestBasSend(row);
+                                          return;
+                                        }
+                                        if (
+                                          item.receiptBasHandoffStatus ===
+                                            "awaiting_bas_mapping" ||
+                                          !item.receiptSupplierEdrpou
+                                        ) {
+                                          openBasFill(null, receiptId);
+                                          return;
+                                        }
+                                        setBasRetryId(receiptId);
+                                        void retryWarehouseReceiptBasDraftAction(
+                                          receiptId
+                                        ).then((res) => {
+                                          setBasRetryId(null);
+                                          if (!res.ok) {
+                                            toast.error(res.error);
+                                            openBasFill(null, receiptId);
+                                            return;
+                                          }
+                                          toast.success(
+                                            res.dryRun
+                                              ? res.message
+                                              : "Надіслано в BAS · усі позиції"
+                                          );
+                                          void loadBasReceipts();
+                                          void load({ force: true });
+                                        });
+                                      }}
+                                      className="inline-flex h-8 items-center gap-1 rounded-full bg-sky-700 px-2.5 text-[10px] font-bold text-white hover:bg-sky-800 disabled:opacity-50"
+                                    >
+                                      {basRetryId === item.receiptId ? (
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                      ) : (
+                                        <RefreshCw className="h-3 w-3" />
+                                      )}
+                                      BAS
+                                    </button>
+                                  ) : null}
                                   <QueueInvoiceTrigger
                                     item={item}
                                     open={invoiceOpenId === item.id}
@@ -2334,6 +2754,51 @@ export function AccountantHubView({
               </p>
             </div>
             <div className="h-8 w-px shrink-0 bg-[#E5DFD3]" />
+            {selectedBasReceiptIds.length > 0 ? (
+              <Button
+                type="button"
+                size="sm"
+                disabled={pending || basRetryId != null}
+                onClick={() => {
+                  const ids = selectedBasReceiptIds;
+                  setBasRetryId(ids[0] ?? "batch");
+                  startTransition(async () => {
+                    let ok = 0;
+                    let fail = 0;
+                    for (const receiptId of ids) {
+                      const res =
+                        await retryWarehouseReceiptBasDraftAction(receiptId);
+                      if (res.ok) ok += 1;
+                      else fail += 1;
+                    }
+                    setBasRetryId(null);
+                    void loadBasReceipts();
+                    if (ok > 0) {
+                      toast.success(
+                        ok === 1
+                          ? "Надіслано в BAS"
+                          : `Надіслано в BAS: ${ok}`
+                      );
+                    }
+                    if (fail > 0) {
+                      toast.error(
+                        fail === 1
+                          ? "Не вдалося надіслати в BAS"
+                          : `Помилок відправки: ${fail}`
+                      );
+                    }
+                  });
+                }}
+                className="h-9 shrink-0 rounded-xl bg-sky-700 px-2.5 text-xs font-bold text-white hover:bg-sky-800 sm:px-3"
+              >
+                {basRetryId != null && selectedBasReceiptIds.includes(basRetryId) ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5" />
+                )}
+                <span className="hidden sm:inline">В BAS</span>
+              </Button>
+            ) : null}
             <Button
               type="button"
               size="sm"
@@ -2377,6 +2842,40 @@ export function AccountantHubView({
         onConfirm={confirmMark}
       />
 
+      <ConfirmTransferDialog
+        open={basResendConfirmId != null}
+        onOpenChange={(open) => {
+          if (!open) setBasResendConfirmId(null);
+        }}
+        pending={basRetryId === basResendConfirmId}
+        title="Оновити чернетку в BAS?"
+        confirmLabel="Оновити існуючу"
+        description={
+          <>
+            Документ уже є в 1С. Підтвердження оновить <strong>ту саму</strong>{" "}
+            непроведену чернетку (рядки й шапку) — новий документ не
+            створюється.
+          </>
+        }
+        onConfirm={() => {
+          const id = basResendConfirmId;
+          if (!id) return;
+          setBasRetryId(id);
+          void recreateWarehouseReceiptBasDraftAction(id).then((res) => {
+            setBasRetryId(null);
+            setBasResendConfirmId(null);
+            if (!res.ok) {
+              toast.error(res.error);
+              return;
+            }
+            toast.success(res.message || "Чернетку в BAS оновлено");
+            void loadBasReceipts();
+            void load({ force: true });
+            setBasOpenId(null);
+          });
+        }}
+      />
+
       <ConfirmDeleteDialog
         open={Boolean(deleteTarget)}
         onOpenChange={(o) => {
@@ -2400,6 +2899,31 @@ export function AccountantHubView({
         }
         pending={pending}
         onConfirm={confirmDelete}
+      />
+
+      <InventoryInboundSheet
+        open={editInboundOpen}
+        onOpenChange={(open) => {
+          setEditInboundOpen(open);
+          if (!open) setEditInboundReceiptId(null);
+        }}
+        editReceiptId={editInboundReceiptId}
+        onSuccess={() => {
+          void loadBasReceipts();
+          invalidateAppCache("accountant-queue");
+          void load({ force: true });
+        }}
+      />
+
+      <AccountantReceiptBasFillDialog
+        open={fillBasOpen}
+        onOpenChange={setFillBasOpen}
+        receipt={fillBasReceipt}
+        receiptId={fillBasReceiptId}
+        onDone={() => {
+          void loadBasReceipts();
+          void load({ force: true });
+        }}
       />
     </div>
   );

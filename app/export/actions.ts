@@ -27,13 +27,24 @@ export type DraftExportMove = {
   fieldId: string | null;
   fieldName: string | null;
   fieldBasRefKey: string | null;
+  equipmentId: string | null;
+  equipmentName: string | null;
   note: string | null;
   buyerName: string | null;
   unitPriceUah: number | null;
+  /** Сума з ПДВ (якщо є колонка amount_incl_vat) */
+  amountInclVat: number | null;
   isLocalItem: boolean;
   hasAttachment: boolean;
   /** Ref_Key чернетки в BAS (окремо від Excel sent_to_1c) */
   basDraftRefKey: string | null;
+  receiptId: string | null;
+  /** З warehouse_receipts (якщо є receipt_id) */
+  receiptSupplierName: string | null;
+  receiptSupplierEdrpou: string | null;
+  receiptInvoiceNumber: string | null;
+  receiptBasHandoffStatus: string | null;
+  vatRate: string | null;
 };
 
 export type AccountantQueueTab =
@@ -71,11 +82,21 @@ export type AccountantQueueItem = {
   /** true якщо вже є непроведена чернетка в BAS */
   basDraftSent: boolean;
   basDraftRefKey: string | null;
+  /** warehouse_receipts.id для мультирядкового приходу */
+  receiptId: string | null;
+  receiptSupplierName: string | null;
+  receiptSupplierEdrpou: string | null;
+  receiptInvoiceNumber: string | null;
+  receiptBasHandoffStatus: string | null;
+  vatRate: string | null;
+  amountInclVat: number | null;
   /** inventory */
   basRefKey: string | null;
   fieldId: string | null;
   fieldName: string | null;
   fieldBasRefKey: string | null;
+  equipmentId: string | null;
+  equipmentName: string | null;
   buyerName: string | null;
   unitPriceUah: number | null;
   /** fuel */
@@ -137,6 +158,12 @@ function mapInventoryRow(row: Record<string, unknown>): DraftExportMove {
       | { id: string; name: string; bas_ref_key?: string | null }[]
       | null
   );
+  const equipment = unwrapJoin(
+    row.equipment as
+      | { id: string; name: string }
+      | { id: string; name: string }[]
+      | null
+  );
   const cache = unwrapJoin(
     row.inventory_items_cache as
       | {
@@ -192,6 +219,16 @@ function mapInventoryRow(row: Record<string, unknown>): DraftExportMove {
       field?.bas_ref_key != null && String(field.bas_ref_key).trim()
         ? String(field.bas_ref_key).toLowerCase()
         : null,
+    equipmentId: equipment?.id
+      ? String(equipment.id)
+      : row.equipment_id
+        ? String(row.equipment_id)
+        : null,
+    equipmentName: equipment?.name ? String(equipment.name) : null,
+    amountInclVat:
+      row.amount_incl_vat != null && Number.isFinite(Number(row.amount_incl_vat))
+        ? Number(row.amount_incl_vat)
+        : null,
     note: typeof row.note === "string" ? String(row.note) : null,
     buyerName:
       typeof row.buyer_name === "string" ? String(row.buyer_name) : null,
@@ -202,20 +239,39 @@ function mapInventoryRow(row: Record<string, unknown>): DraftExportMove {
       row.bas_draft_ref_key != null && String(row.bas_draft_ref_key).trim()
         ? String(row.bas_draft_ref_key).toLowerCase()
         : null,
+    receiptId:
+      row.receipt_id != null && String(row.receipt_id).trim()
+        ? String(row.receipt_id).toLowerCase()
+        : null,
+    receiptSupplierName: null,
+    receiptSupplierEdrpou: null,
+    receiptInvoiceNumber: null,
+    receiptBasHandoffStatus: null,
+    vatRate:
+      typeof row.vat_rate === "string" && row.vat_rate.trim()
+        ? String(row.vat_rate)
+        : null,
   };
 }
 
 function inventoryToQueueItem(m: DraftExportMove): AccountantQueueItem {
-  const amountUah =
+  const amountEx =
     m.unitPriceUah != null
       ? Math.round(m.qty * m.unitPriceUah * 100) / 100
       : null;
+  // Для приходу показуємо суму з ПДВ, якщо вона збережена
+  const amountUah =
+    m.type === "inbound" && m.amountInclVat != null
+      ? m.amountInclVat
+      : amountEx;
   const party =
     m.type === "outbound"
-      ? m.fieldName
-      : m.type === "sale" || m.type === "inbound"
-        ? m.buyerName || m.fieldName
-        : null;
+      ? m.equipmentName || m.fieldName
+      : m.type === "inbound"
+        ? m.receiptSupplierName || m.buyerName || m.fieldName
+        : m.type === "sale"
+          ? m.buyerName || m.fieldName
+          : null;
 
   return {
     id: m.id,
@@ -234,10 +290,19 @@ function inventoryToQueueItem(m: DraftExportMove): AccountantQueueItem {
     note: m.note,
     basDraftSent: Boolean(m.basDraftRefKey),
     basDraftRefKey: m.basDraftRefKey,
+    receiptId: m.receiptId,
+    receiptSupplierName: m.receiptSupplierName,
+    receiptSupplierEdrpou: m.receiptSupplierEdrpou,
+    receiptInvoiceNumber: m.receiptInvoiceNumber,
+    receiptBasHandoffStatus: m.receiptBasHandoffStatus,
+    vatRate: m.vatRate,
+    amountInclVat: m.amountInclVat,
     basRefKey: m.basRefKey,
     fieldId: m.fieldId,
     fieldName: m.fieldName,
     fieldBasRefKey: m.fieldBasRefKey,
+    equipmentId: m.equipmentId,
+    equipmentName: m.equipmentName,
     buyerName: m.buyerName,
     unitPriceUah: m.unitPriceUah,
     fromStorageName: null,
@@ -269,6 +334,62 @@ async function attachInventoryFlags(moves: DraftExportMove[]): Promise<void> {
   }
 }
 
+/** Підтягує шапку накладної, щоб мультирядкові приходи не виглядали «сиротами». */
+async function attachReceiptMeta(moves: DraftExportMove[]): Promise<void> {
+  const receiptIds = [
+    ...new Set(
+      moves
+        .map((m) => m.receiptId)
+        .filter((id): id is string => Boolean(id))
+    ),
+  ];
+  if (receiptIds.length === 0) return;
+  try {
+    const supabase = createServiceSupabase();
+    const { data, error } = await supabase
+      .from("warehouse_receipts")
+      .select(
+        "id, supplier_name, supplier_edrpou, invoice_number, bas_handoff_status"
+      )
+      .in("id", receiptIds);
+    if (error || !data) return;
+    const byId = new Map(
+      data.map((row) => [
+        String(row.id).toLowerCase(),
+        {
+          supplierName:
+            typeof row.supplier_name === "string" && row.supplier_name.trim()
+              ? String(row.supplier_name).trim()
+              : null,
+          edrpou:
+            typeof row.supplier_edrpou === "string" && row.supplier_edrpou.trim()
+              ? String(row.supplier_edrpou).trim()
+              : null,
+          invoiceNumber:
+            typeof row.invoice_number === "string" && row.invoice_number.trim()
+              ? String(row.invoice_number).trim()
+              : null,
+          handoff:
+            typeof row.bas_handoff_status === "string"
+              ? String(row.bas_handoff_status)
+              : null,
+        },
+      ])
+    );
+    for (const m of moves) {
+      if (!m.receiptId) continue;
+      const meta = byId.get(m.receiptId);
+      if (!meta) continue;
+      m.receiptSupplierName = meta.supplierName;
+      m.receiptSupplierEdrpou = meta.edrpou;
+      m.receiptInvoiceNumber = meta.invoiceNumber;
+      m.receiptBasHandoffStatus = meta.handoff;
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 async function fetchInventoryMoves(
   status: "draft" | "sent_to_1c",
   season: string | null
@@ -289,7 +410,12 @@ async function fetchInventoryMoves(
       item_ref_key,
       field_id,
       bas_draft_ref_key,
+      receipt_id,
+      vat_rate,
+      amount_incl_vat,
+      equipment_id,
       farm_fields ( id, name, bas_ref_key ),
+      equipment ( id, name ),
       inventory_items_cache ( name, custom_name, unit, bas_ref_key, is_local, category )
     `
     )
@@ -307,7 +433,10 @@ async function fetchInventoryMoves(
     if (
       error.message?.includes("season") ||
       error.message?.includes("is_local") ||
-      error.message?.includes("inbound")
+      error.message?.includes("inbound") ||
+      error.message?.includes("vat_rate") ||
+      error.message?.includes("amount_incl_vat") ||
+      error.message?.includes("equipment")
     ) {
       let legacy = supabase
         .from("inventory_local_moves")
@@ -332,6 +461,7 @@ async function fetchInventoryMoves(
         mapInventoryRow(row as Record<string, unknown>)
       );
       await attachInventoryFlags(moves);
+      await attachReceiptMeta(moves);
       return moves;
     }
     throw new Error(error.message);
@@ -341,6 +471,7 @@ async function fetchInventoryMoves(
     mapInventoryRow(row as Record<string, unknown>)
   );
   await attachInventoryFlags(moves);
+  await attachReceiptMeta(moves);
   return moves;
 }
 
@@ -470,10 +601,19 @@ async function fetchFuelQueue(
           note: null,
           basDraftSent: false,
           basDraftRefKey: null,
+                    receiptId: null,
+          receiptSupplierName: null,
+          receiptSupplierEdrpou: null,
+          receiptInvoiceNumber: null,
+          receiptBasHandoffStatus: null,
+                    vatRate: null,
+          amountInclVat: null,
           basRefKey: null,
           fieldId: null,
           fieldName: null,
-          fieldBasRefKey: null,
+                    fieldBasRefKey: null,
+          equipmentId: null,
+          equipmentName: null,
           buyerName: null,
           unitPriceUah: price,
           fromStorageName: fromName,
@@ -559,10 +699,19 @@ async function fetchFuelQueue(
       note: null,
       basDraftSent: Boolean(draftRef),
       basDraftRefKey: draftRef,
+            receiptId: null,
+      receiptSupplierName: null,
+      receiptSupplierEdrpou: null,
+      receiptInvoiceNumber: null,
+      receiptBasHandoffStatus: null,
+            vatRate: null,
+      amountInclVat: null,
       basRefKey: null,
       fieldId: null,
       fieldName: null,
-      fieldBasRefKey: null,
+            fieldBasRefKey: null,
+      equipmentId: null,
+      equipmentName: null,
       buyerName: null,
       unitPriceUah: price,
       fromStorageName: fromName,
@@ -727,10 +876,19 @@ async function fetchServiceActs(
         .join(" · ") || null,
       basDraftSent: false,
       basDraftRefKey: null,
+            receiptId: null,
+      receiptSupplierName: null,
+      receiptSupplierEdrpou: null,
+      receiptInvoiceNumber: null,
+      receiptBasHandoffStatus: null,
+            vatRate: null,
+      amountInclVat: null,
       basRefKey: null,
       fieldId: null,
       fieldName: null,
-      fieldBasRefKey: null,
+            fieldBasRefKey: null,
+      equipmentId: null,
+      equipmentName: null,
       buyerName: contractor,
       unitPriceUah: null,
       fromStorageName: null,
@@ -1161,10 +1319,19 @@ export async function listAccountantArchive(input?: {
           note: snap.note ?? null,
           basDraftSent: Boolean(snap.basDraftSent ?? snap.basDraftRefKey),
           basDraftRefKey: snap.basDraftRefKey ?? null,
+          receiptId: snap.receiptId ?? null,
+          receiptSupplierName: snap.receiptSupplierName ?? null,
+          receiptSupplierEdrpou: snap.receiptSupplierEdrpou ?? null,
+          receiptInvoiceNumber: snap.receiptInvoiceNumber ?? null,
+          receiptBasHandoffStatus: snap.receiptBasHandoffStatus ?? null,
+          vatRate: snap.vatRate ?? null,
+          amountInclVat: snap.amountInclVat ?? null,
           basRefKey: snap.basRefKey ?? null,
           fieldId: snap.fieldId ?? null,
           fieldName: snap.fieldName ?? null,
           fieldBasRefKey: snap.fieldBasRefKey ?? null,
+          equipmentId: snap.equipmentId ?? null,
+          equipmentName: snap.equipmentName ?? null,
           buyerName: snap.buyerName ?? null,
           unitPriceUah: snap.unitPriceUah ?? null,
           fromStorageName: snap.fromStorageName ?? null,

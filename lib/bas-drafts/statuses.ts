@@ -8,7 +8,9 @@ export type BasHandoffStatus =
   | "awaiting_bas_mapping"
   | "bas_draft_posted"
   | "bas_draft_dry_run"
-  | "bas_draft_failed";
+  | "bas_draft_failed"
+  /** Сховано з «Накладні → 1С» (без відкату складу / BAS). */
+  | "dismissed";
 
 export type ExcelQueueStatus = "sent_to_1c";
 
@@ -24,6 +26,8 @@ export function describeBasHandoff(status: BasHandoffStatus | string): string {
       return "Підготовлено, але жива відправка в 1С вимкнена.";
     case "bas_draft_failed":
       return "Не вдалося відправити в 1С — спробуй ще раз.";
+    case "dismissed":
+      return "Прибрано зі списку «Накладні → 1С».";
     default:
       return "Статус невідомий.";
   }
@@ -33,15 +37,17 @@ export function describeBasHandoff(status: BasHandoffStatus | string): string {
 export function basHandoffLabel(status: BasHandoffStatus | string): string {
   switch (status) {
     case "local_saved":
-      return "Ще не в 1С";
+      return "Нова";
     case "awaiting_bas_mapping":
-      return "Треба звʼязати товари";
+      return "Треба звʼязати";
     case "bas_draft_posted":
-      return "Вже в 1С";
+      return "В 1С";
     case "bas_draft_dry_run":
-      return "Тест — не відправлено";
+      return "Тест";
     case "bas_draft_failed":
-      return "Помилка відправки";
+      return "Помилка";
+    case "dismissed":
+      return "Прибрано";
     default:
       return String(status);
   }

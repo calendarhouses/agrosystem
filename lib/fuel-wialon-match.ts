@@ -1,5 +1,8 @@
 import {
-  extractFuelLevelsFromMessages,
+  detectFuelFills,
+  extractTimedFuelSamples,
+} from "@/lib/wialon-fuel-decode";
+import {
   getWialonUnitById,
   listUnitSensors,
   loadWialonUnitMessages,
@@ -13,6 +16,8 @@ const MATCH_BEFORE_MS = 6 * 60 * 60 * 1000;
 const MATCH_AFTER_MS = 30 * 60 * 1000;
 /** При повторній звірці («Оновити») дивимось до +24 год після операції */
 const REVERIFY_AFTER_MS = 24 * 60 * 60 * 1000;
+/** Якщо детектор не знайшов fill — fallback у вузьке вікно ±45 хв */
+const FALLBACK_WINDOW_MS = 45 * 60 * 1000;
 
 export type WialonMatchResult = {
   calculatedVariance: number | null;
@@ -21,7 +26,10 @@ export type WialonMatchResult = {
 
 /**
  * Реальна звірка приросту палива з Wialon.
- * Помилки / немає даних → null (транзакцію не ламаємо).
+ *
+ * ВАЖЛИВО: НЕ max−min за 6+ год (то дає хибну «Нестачу 635 л», коли бак
+ * спалюється, а потім заправляється). Беремо подію заправки з detectFuelFills
+ * найближчу до часу операції.
  */
 export async function resolveWialonVariance(
   wialonUnitId: number,
@@ -69,12 +77,10 @@ export async function resolveWialonVariance(
       );
     }
 
-    let levels = extractFuelLevelsFromMessages(
-      messages,
-      listUnitSensors(unit)
-    );
+    const sensors = listUnitSensors(unit);
+    let samples = extractTimedFuelSamples(messages, sensors);
 
-    if (levels.length === 0) {
+    if (samples.length < 2) {
       const telemetry = parseWialonUnitTelemetry(unit);
       if (
         telemetry.fuelLiters != null &&
@@ -84,29 +90,57 @@ export async function resolveWialonVariance(
           `${logPrefix} Немає палива в історії — лише поточний рівень ДУТ`,
           { wialonUnitId, fuelLiters: telemetry.fuelLiters }
         );
-        levels = [telemetry.fuelLiters];
       }
-    }
-
-    if (levels.length < 2) {
       console.error(`${logPrefix} Недостатньо точок палива для приросту`, {
         wialonUnitId,
         messageCount: messages.length,
-        levelCount: levels.length,
+        sampleCount: samples.length,
       });
       return { calculatedVariance: null, realAdded: null };
     }
 
-    const maxFuel = Math.max(...levels);
-    const minFuel = Math.min(...levels);
-    const realAdded = Math.round((maxFuel - minFuel) * 100) / 100;
+    const fills = detectFuelFills(samples);
+    const txUnix = Math.floor(txMs / 1000);
 
-    if (!Number.isFinite(realAdded) || realAdded < 0) {
-      console.error(`${logPrefix} Некоректний приріст`, {
+    let realAdded: number | null = null;
+
+    if (fills.length > 0) {
+      // Найближча заправка до часу операції (за піком / кінцем fill)
+      let best = fills[0]!;
+      let bestDist = Math.abs(best.endT - txUnix);
+      for (const fill of fills.slice(1)) {
+        const dist = Math.abs(fill.endT - txUnix);
+        if (dist < bestDist) {
+          best = fill;
+          bestDist = dist;
+        }
+      }
+      realAdded = Math.round(best.volume * 100) / 100;
+      console.log(`${logPrefix} fill match`, {
         wialonUnitId,
-        maxFuel,
-        minFuel,
+        fills: fills.length,
+        chosenVolume: realAdded,
+        distSec: bestDist,
+        amountLiters,
       });
+    } else {
+      // Fallback: max−min лише у вузькому вікні біля tx (не за 6 год!)
+      const lo = (txMs - FALLBACK_WINDOW_MS) / 1000;
+      const hi = (txMs + FALLBACK_WINDOW_MS) / 1000;
+      const near = samples.filter((s) => s.t >= lo && s.t <= hi);
+      if (near.length >= 2) {
+        const maxFuel = Math.max(...near.map((s) => s.liters));
+        const minFuel = Math.min(...near.map((s) => s.liters));
+        realAdded = Math.round((maxFuel - minFuel) * 100) / 100;
+        console.log(`${logPrefix} fallback narrow max-min`, {
+          wialonUnitId,
+          realAdded,
+          nearCount: near.length,
+        });
+      }
+    }
+
+    if (realAdded == null || !Number.isFinite(realAdded) || realAdded < 0) {
       return { calculatedVariance: null, realAdded: null };
     }
 

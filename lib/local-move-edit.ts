@@ -18,11 +18,14 @@ export function localMoveFromQueueItem(
     itemCategory: item.category,
     fieldId: item.fieldId,
     fieldName: item.fieldName,
+    equipmentId: item.equipmentId ?? null,
+    equipmentName: item.equipmentName ?? null,
     note: item.note,
     buyerName: item.buyerName,
     unitPriceUah: item.unitPriceUah,
     actorName: null,
     attachmentCount: item.hasAttachment ? 1 : 0,
+    receiptId: item.receiptId ?? null,
   };
 }
 
@@ -44,10 +47,13 @@ export function localMoveFromOutboundRow(
     itemCategory: item.category,
     fieldId: null,
     fieldName: row.fieldName,
+    equipmentId: null,
+    equipmentName: row.equipmentName,
     note: row.note,
     buyerName: row.buyerName,
     unitPriceUah: row.unitPriceUah,
     actorName: null,
     attachmentCount: row.attachmentCount,
+    receiptId: null,
   };
 }

@@ -4,6 +4,7 @@
  */
 
 import { basDefaultWarehouseKey } from "@/lib/bas-drafts/config";
+import { resolveBasMainContractKey } from "@/lib/bas-drafts/contract";
 import { resolveBasCounterpartyKey } from "@/lib/bas-drafts/counterparty";
 import { createServiceSupabase } from "@/lib/supabase/server";
 
@@ -60,7 +61,7 @@ export async function patchWarehouseReceiptBasDraftHeader(
   }
 
   const entityPath = `Document_ПоступлениеТоваровУслуг(guid'${refKey}')`;
-  const getUrl = `${odataBaseUrl()}/odata/standard.odata/${entityPath}?$format=json&$select=Ref_Key,Posted,DeletionMark,Контрагент_Key,Склад,Number`;
+  const getUrl = `${odataBaseUrl()}/odata/standard.odata/${entityPath}?$format=json&$select=Ref_Key,Posted,DeletionMark,Контрагент_Key,ДоговорКонтрагента_Key,Склад,Number`;
   const getRes = await fetch(getUrl, {
     method: "GET",
     cache: "no-store",
@@ -81,6 +82,7 @@ export async function patchWarehouseReceiptBasDraftHeader(
     Posted?: boolean;
     DeletionMark?: boolean;
     Контрагент_Key?: string | null;
+    ДоговорКонтрагента_Key?: string | null;
     Склад?: string | null;
     Number?: string | null;
   };
@@ -97,7 +99,12 @@ export async function patchWarehouseReceiptBasDraftHeader(
   const patch: Record<string, unknown> = {};
   const notes: string[] = [];
 
-  if (isEmptyGuid(doc.Контрагент_Key)) {
+  let counterpartyKey =
+    !isEmptyGuid(doc.Контрагент_Key) && doc.Контрагент_Key
+      ? String(doc.Контрагент_Key).toLowerCase()
+      : null;
+
+  if (!counterpartyKey) {
     const cp = await resolveBasCounterpartyKey({
       edrpou:
         typeof receipt.supplier_edrpou === "string"
@@ -110,12 +117,28 @@ export async function patchWarehouseReceiptBasDraftHeader(
     });
     if (cp.key) {
       patch.Контрагент_Key = cp.key;
+      counterpartyKey = cp.key;
       notes.push(`контрагент «${cp.matchedName || receipt.supplier_name}»`);
     } else {
-      notes.push(`контрагент не знайдено (${cp.reason || "—"})`);
+      return {
+        ok: false,
+        error: `Контрагента не знайдено в BAS (${cp.reason || "ЄДРПОУ/назва"}). Документ не оновлено.`,
+      };
     }
   } else {
     notes.push("контрагент уже був");
+  }
+
+  if (isEmptyGuid(doc.ДоговорКонтрагента_Key) && counterpartyKey) {
+    const contract = await resolveBasMainContractKey(counterpartyKey);
+    if (contract.key) {
+      patch.ДоговорКонтрагента_Key = contract.key;
+      notes.push(`договір «${contract.matchedName || contract.key.slice(0, 8)}»`);
+    } else {
+      notes.push(`договір не знайдено (${contract.reason || "—"})`);
+    }
+  } else if (!isEmptyGuid(doc.ДоговорКонтрагента_Key)) {
+    notes.push("договір уже був");
   }
 
   const warehouse = basDefaultWarehouseKey();

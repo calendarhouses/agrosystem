@@ -234,6 +234,9 @@ export function InventoryView({
   const [openItemId, setOpenItemId] = useState<string | null>(null);
   const [quickIssueOpen, setQuickIssueOpen] = useState(false);
   const [inboundOpen, setInboundOpen] = useState(false);
+  const [editInboundReceiptId, setEditInboundReceiptId] = useState<
+    string | null
+  >(null);
   const [saleOpen, setSaleOpen] = useState(false);
   const [presetIssueKey, setPresetIssueKey] = useState<string | null>(null);
   const [presetSaleKey, setPresetSaleKey] = useState<string | null>(null);
@@ -869,8 +872,12 @@ export function InventoryView({
 
         <InventoryInboundSheet
           open={inboundOpen}
-          onOpenChange={setInboundOpen}
-          presetCategory={category}
+          onOpenChange={(open) => {
+            setInboundOpen(open);
+            if (!open) setEditInboundReceiptId(null);
+          }}
+          presetCategory={editInboundReceiptId ? null : category}
+          editReceiptId={editInboundReceiptId}
           onSuccess={(meta) => {
             void handleInventorySuccess(meta);
           }}
@@ -896,6 +903,11 @@ export function InventoryView({
           onChanged={() => {
             void refreshOperational();
             setMovesRefreshToken((token) => token + 1);
+          }}
+          onEditInboundReceipt={(receiptId) => {
+            setEditInboundReceiptId(receiptId);
+            setInboundOpen(true);
+            setHistoryOpen(false);
           }}
         />
 
@@ -2379,7 +2391,10 @@ function ItemDocumentsSheet({
           "Прихід"
         : isSale
           ? r.buyerName?.trim() || "Продаж"
-          : r.fieldName?.trim() || r.note?.trim() || "Списання";
+          : r.equipmentName?.trim() ||
+            r.fieldName?.trim() ||
+            r.note?.trim() ||
+            "Списання";
       const invoiceLabel = r.invoiceNumber
         ? `Накладна №${r.invoiceNumber}`
         : null;
@@ -2396,7 +2411,13 @@ function ItemDocumentsSheet({
           ? `${r.unitPriceUah.toLocaleString("uk-UA", { maximumFractionDigits: 2 })} ₴/${item.unit || "од."}`
           : null,
         isSale && r.note?.trim() ? r.note.trim() : null,
-        !isSale && !isIn && r.note?.trim() && r.fieldName
+        !isSale &&
+        !isIn &&
+        r.equipmentName?.trim() &&
+        r.fieldName?.trim()
+          ? r.fieldName.trim()
+          : null,
+        !isSale && !isIn && r.note?.trim() && (r.fieldName || r.equipmentName)
           ? r.note.trim()
           : null,
       ].filter(Boolean);

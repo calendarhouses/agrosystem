@@ -7,11 +7,12 @@
 | Накладна ТМЦ (LEVADIUS / запчастини, насіння, ЗЗР, добрива) | `ПоступлениеТоваровУслуг` (1 накл. = 1 doc) | `inventory_inbound_receipt` | Так |
 | Ручний прихід без накладної | те саме (1 рядок) | `inventory_inbound_receipt` | Так |
 | Продаж урожаю / ТМЦ | `РеализацияТоваровУслуг` | `inventory_sale` | Так |
-| Списання ТМЦ у поле | `ИНАГРО_ЛимитноЗаборнаяКарта` | `inventory_outbound_lzk` | Так (батч) |
+| Списання насіння / добрив / ЗЗР | `ИНАГРО_ЛимитноЗаборнаяКарта` (Вид: насіння або добрива/ЗЗР) | `inventory_outbound_lzk` | Так (батч) |
+| Списання запчастин | `ТребованиеНакладная` (+ техніка в коментарі) | `inventory_outbound_requirement` | Так (батч; або разом із LZK) |
 | Надходження палива (ДП) | `ПоступлениеТоваровУслуг` | `fuel_inbound` | Так |
 | Переміщення палива | `ИНАГРО_СливТоплива` | `fuel_transfer` | Так |
-| Заправка техніки | `ИНАГРО_ПередачаТоплива` | `fuel_outbound_refuel` | Так |
-| Закритий наряд | `ИНАГРО_ПутевойЛист…` | `field_operation_waybill` | Так |
+| Заправка техніки (етап 2, без витрат) | `ИНАГРО_ПередачаТоплива` (ТЗ здає + ТЗ отримує, без Склад) | `fuel_outbound_refuel` | Так |
+| Закритий наряд / витрати палива (етап 3) | `ИНАГРО_ПутевойЛист…` | `field_operation_waybill` | Так |
 | Excel «Передати» | — | out_of_scope | Ні (не BAS) |
 
 **Ні** — не «будь-який» скан без маршруту. Довільний PDF/рахунок іде в `bas_sync_queue` (черга людині), не в live OData, поки його не оприбуткували як накладну/паливо/акт.
@@ -22,7 +23,7 @@
 
 ```env
 BAS_DRAFT_POST_ENABLED=true
-BAS_DRAFT_PIPELINES_ENABLED=inventory_inbound_receipt,inventory_sale,inventory_outbound_lzk,fuel_inbound,fuel_transfer,fuel_outbound_refuel,field_operation_waybill
+BAS_DRAFT_PIPELINES_ENABLED=inventory_inbound_receipt,inventory_sale,inventory_outbound_lzk,inventory_outbound_requirement,fuel_inbound,fuel_transfer,fuel_outbound_refuel,field_operation_waybill
 ```
 
 Або коротко: `BAS_DRAFT_PIPELINES_ENABLED=*`
@@ -32,7 +33,21 @@ BAS_DRAFT_PIPELINES_ENABLED=inventory_inbound_receipt,inventory_sale,inventory_o
 - `BAS_DIESEL_NOMENCLATURE_KEY` (паливо)
 - `bas_ref_key` на складах палива / техніці / номенклатурі
 
-Контрагент у чернетці: live-пошук у `Catalog_Контрагенты` (ЄДРПОУ / назва).
+Контрагент у чернетці: live-пошук у `Catalog_Контрагенты` (ЄДРПОУ / Code / назва).
+**Без знайденого контрагента документ не створюється** — статус `awaiting_bas_mapping` + текст помилки.
+Договір: основний з `Catalog_ДоговорыКонтрагентов` (Owner = контрагент).
+Рядки: Од. (`ЕдиницаИзмерения_Key`), `Коэффициент=1`, ставка/суми ПДВ з форми,
+рахунок за категорією (`СчетУчетаБУ_Key`: 207 запчастини, 208/2081 насіння·добрива·ЗЗР, 203 паливо, 271 врожай),
+податкове призначення «Опод. ПДВ». План рахунків часто не в OData — задайте `BAS_ACCOUNT_MAP` / `BAS_ACCOUNT_*_KEY`.
+Ідемпотентність: локальний `bas_draft_ref_key` + пошук `receipt:<uuid>` у коментарі.
+
+### Паливо — 3 етапи (не змішувати)
+
+1. **Наявне** — залишки `fuel_storages` (цистерна / бензовоз) у LEVADA.
+2. **Заправка** — `fuel_outbound_refuel` → `ПередачаТоплива` (Posted:false). Зменшує складський залишок, **не** витрати.
+3. **Використання** — `field_operation_waybill` після закриття наряду (`fuel_fact`). Тут витрати.
+
+Захист від подвійного списання: повторний POST блокується `bas_draft_ref_key`; агент більше не ставить дубль у `bas_sync_queue`.
 Catalog_* не створюємо.
 
 **Нові товари** (яких ще немає в довіднику): усе одно в чернетці.

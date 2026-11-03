@@ -2,6 +2,91 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
+/* Boot critical (було inline у layout — винесено через hydration mismatch).
+   Працює з data-* з BOOT_PATH_SCRIPT у <head>. */
+html[data-app-nav="0"],
+html[data-app-nav="0"] body,
+html[data-app-nav="0"] #app-root {
+  background-color: #09090b !important;
+  color-scheme: dark;
+}
+html[data-app-nav="0"][data-auth-light="1"],
+html[data-app-nav="0"][data-auth-light="1"] body,
+html[data-app-nav="0"][data-auth-light="1"] #app-root {
+  background-color: #f4f4f5 !important;
+  color-scheme: light;
+}
+html[data-booting="1"],
+html[data-booting="1"] body,
+html[data-booting="1"] #app-root {
+  background-color: #09090b !important;
+  color-scheme: dark;
+}
+html[data-levadius-booting="1"],
+html[data-levadius-booting="1"] body,
+html[data-levadius-booting="1"] #app-root {
+  background-color: #09090b !important;
+  color-scheme: dark;
+}
+html[data-app-nav="1"][data-app-ready="1"],
+html[data-app-nav="1"][data-app-ready="1"] body,
+html[data-app-nav="1"][data-app-ready="1"] #app-root {
+  background-color: #18181b !important;
+  transition: background-color 0.7s ease-out 0.5s;
+}
+html[data-booting="1"] [data-bottom-nav],
+html[data-booting="1"] [data-fields-mobile-chrome] {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(12px);
+}
+#boot-splash {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9990;
+  background: #09090b;
+  pointer-events: none;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+}
+html[data-booting="1"] #boot-splash {
+  display: flex;
+}
+html[data-boot-ui="1"] #boot-splash {
+  visibility: hidden;
+}
+#boot-splash .boot-title {
+  margin: 0;
+  color: #fff;
+  font-size: 1.65rem;
+  font-weight: 200;
+  letter-spacing: 0.3em;
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+#boot-splash .boot-sub {
+  margin: 0.75rem 0 0;
+  color: #71717a;
+  font-size: 0.75rem;
+  letter-spacing: 0.2em;
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+#levadius-boot-splash {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9991;
+  background: #09090b;
+  pointer-events: none;
+}
+html[data-levadius-booting="1"] #levadius-boot-splash {
+  display: block;
+}
+html[data-levadius-boot-ui="1"] #levadius-boot-splash {
+  visibility: hidden;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {

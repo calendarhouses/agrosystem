@@ -196,7 +196,7 @@ export async function POST(request: Request) {
 
         if (!retry.error && retry.data) {
           const retryTx = retry.data as Record<string, unknown>;
-          void enqueueFuelBasDraft({
+          const nextStatus = await enqueueFuelBasDraft({
             transactionId: String(retryTx.id),
             transactionType: "outbound",
             amountLiters: amount,
@@ -204,7 +204,14 @@ export async function POST(request: Request) {
             totalCost,
             fromStorageId,
             toStorageId: null,
-          }).catch((e) => console.error("[bas-drafts] fuel outbound", e));
+          });
+          if (nextStatus !== "pending_1c") {
+            await supabase
+              .from("fuel_transactions")
+              .update({ sync_status: nextStatus })
+              .eq("id", retryTx.id);
+            retryTx.sync_status = nextStatus;
+          }
 
           return NextResponse.json(
             {
@@ -215,6 +222,7 @@ export async function POST(request: Request) {
               pricePerLiter: donorPrice,
               totalCost,
               transaction: mapFuelTransactionRow(retryTx),
+              basSyncStatus: nextStatus,
             },
             { headers: JSON_UTF8 }
           );
@@ -237,7 +245,7 @@ export async function POST(request: Request) {
     }
 
     const saved = tx as Record<string, unknown>;
-    void enqueueFuelBasDraft({
+    const nextStatus = await enqueueFuelBasDraft({
       transactionId: String(saved.id),
       transactionType: "outbound",
       amountLiters: amount,
@@ -245,7 +253,14 @@ export async function POST(request: Request) {
       totalCost,
       fromStorageId,
       toStorageId: null,
-    }).catch((e) => console.error("[bas-drafts] fuel outbound", e));
+    });
+    if (nextStatus !== "pending_1c") {
+      await supabase
+        .from("fuel_transactions")
+        .update({ sync_status: nextStatus })
+        .eq("id", saved.id);
+      saved.sync_status = nextStatus;
+    }
 
     void logActivity({
       actor,
@@ -264,7 +279,8 @@ export async function POST(request: Request) {
         wialonVerified,
         pricePerLiter: donorPrice,
         totalCost,
-        transaction: mapFuelTransactionRow(tx as Record<string, unknown>),
+        transaction: mapFuelTransactionRow(saved),
+        basSyncStatus: nextStatus,
       },
       { headers: JSON_UTF8 }
     );

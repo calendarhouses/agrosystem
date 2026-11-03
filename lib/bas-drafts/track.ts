@@ -12,6 +12,8 @@ export async function markBasDraftSuccess(input: {
   ids: string[];
   refKey: string;
   entitySet: string;
+  /** Номер документа BAS (Number), якщо є */
+  number?: string | null;
   handoffStatus?: BasHandoffStatus;
 }): Promise<void> {
   if (input.ids.length === 0) return;
@@ -22,13 +24,31 @@ export async function markBasDraftSuccess(input: {
     bas_draft_sent_at: new Date().toISOString(),
     bas_draft_error: null,
   };
+  if (input.number != null && String(input.number).trim()) {
+    // Колонка є на fuel_transactions (082); інші таблиці ігнорують зайве поле
+    // через fallback нижче.
+    patch.bas_draft_number = String(input.number).trim();
+  }
   if (input.table === "warehouse_receipts" && input.handoffStatus) {
     patch.bas_handoff_status = input.handoffStatus;
   }
-  const { error } = await supabase
+  let { error } = await supabase
     .from(input.table)
     .update(patch)
     .in("id", input.ids);
+
+  if (
+    error &&
+    patch.bas_draft_number != null &&
+    (error.message?.includes("bas_draft_number") || error.code === "42703")
+  ) {
+    delete patch.bas_draft_number;
+    const retry = await supabase
+      .from(input.table)
+      .update(patch)
+      .in("id", input.ids);
+    error = retry.error;
+  }
 
   if (error) {
     throw new Error(`${input.table} bas_draft update: ${error.message}`);

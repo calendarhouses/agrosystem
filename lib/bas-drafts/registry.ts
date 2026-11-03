@@ -33,14 +33,25 @@ export type BasDraftPipeline = {
 export const BAS_DRAFT_PIPELINES: BasDraftPipeline[] = [
   {
     id: "inventory_outbound_lzk",
-    section: "Склад / списання ТМЦ",
+    section: "Виробництво / ЛЗК (насіння, добрива, ЗЗР)",
     trigger:
-      "createLocalOutboundMove + batch syncLocalMovesToBas (група поле+день)",
+      "createLocalOutboundMove → syncLocalMovesToBas (група вид+поле+день)",
     basDocument: "Document_ИНАГРО_ЛимитноЗаборнаяКарта",
     readiness: "ready",
     module: "lib/inventory-bas-draft-sync.ts",
     notes:
-      "Потрібні bas_ref_key ТМЦ і (бажано) поля; BAS_ORGANIZATION_KEY, BAS_DEFAULT_WAREHOUSE_KEY.",
+      "Лише seed/fertilizer/zzr. ВидОперации: СписаниеСемян | СписаниеУдобренийИЯдохимикатов (НЕ молоко). Рядки: Од., К=1, рахунок, Опод. ПДВ.",
+  },
+  {
+    id: "inventory_outbound_requirement",
+    section: "Склад / Вимога-накладна (запчастини)",
+    trigger:
+      "createLocalOutboundMove(parts) → syncLocalMovesToBas (група техніка+день)",
+    basDocument: "Document_ТребованиеНакладная",
+    readiness: "ready",
+    module: "lib/inventory-bas-draft-sync.ts",
+    notes:
+      "Таблична частина Материалы (не Товары). Счет_Key за категорією. Коментар: «AgroSystem · Списання запчастин · Техніка: …».",
   },
   {
     id: "inventory_inbound_receipt",
@@ -51,7 +62,7 @@ export const BAS_DRAFT_PIPELINES: BasDraftPipeline[] = [
     readiness: "ready",
     module: "lib/bas-drafts/inventory-inbound.ts",
     notes:
-      "Multi-line Товары[] — усі рядки накладної. Відома номенклатура → Ref_Key; нова → заглушка BAS_UNMAPPED_NOMENCLATURE_KEY («Товари») + НаименованиеПоставщика. Контрагент/склад авто.",
+      "1 накл.=1 doc. Контрагент обовʼязковий. Рахунок: СчетУчетаБУ_Key за категорією (207/208/203/271). Без Всего / НалоговоеНазначениеНДС_Key. Ідемпотентність receipt:UUID.",
   },
   {
     id: "inventory_sale",
@@ -84,23 +95,24 @@ export const BAS_DRAFT_PIPELINES: BasDraftPipeline[] = [
   },
   {
     id: "fuel_outbound_refuel",
-    section: "Паливо / заправка техніки",
-    trigger: "POST /api/fuel/refuel → enqueueFuelBasDraft",
+    section: "Паливо / етап 2 · заправка (без витрат)",
+    trigger:
+      "POST /api/fuel/refuel | /api/fuel/transactions(outbound) → enqueueFuelBasDraft",
     basDocument: "Document_ИНАГРО_ПередачаТоплива",
     readiness: "ready",
     module: "lib/fuel-bas-sync.ts",
     notes:
-      "Потрібен equipment.bas_ref_key. Без мапінгу техніки — fail з помилкою (не блокимо інші контури).",
+      "НЕ списання на витрати. Шапка ($metadata): ТранспортноеСредство_Key + Получатель_Key — без Склад_Key. Рядок: Количество + КоличествоВОсновномТопливе/КоэффициентВОсновноеТопливо (=1) для здавача й отримувача.",
   },
   {
     id: "field_operation_waybill",
-    section: "Поля / закриття наряду",
+    section: "Паливо / етап 3 · використання (після підтвердження)",
     trigger: "POST /api/field-operations/close → enqueueFieldOperationBasDraft",
     basDocument: "Document_ИНАГРО_ПутевойЛистТрактористаМашиниста",
     readiness: "ready",
     module: "lib/bas-drafts/field-operation-waybill.ts",
     notes:
-      "Шапка чернетки (дата, техніка, паливо, коментар). Табличні частини бухгалтер доповнить у BAS.",
+      "Списання на витрати лише тут (fuel_fact). Окремо від ПередачаТоплива — без подвійного списання.",
   },
   {
     id: "bas_catalog_change_request",

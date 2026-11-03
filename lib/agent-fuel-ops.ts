@@ -16,6 +16,7 @@ import {
   dismissRadarRefuelEvent,
 } from "@/lib/fuel-radar-confirm";
 import { resolveDieselPriceUah } from "@/lib/fuel-price";
+import type { FuelSyncStatus } from "@/lib/fuel-transactions";
 import {
   findUnrecordedRefuelings,
   UNRECORDED_LOOKBACK_HOURS,
@@ -222,6 +223,7 @@ export async function executeFuelPurchase(params: {
       pricePerLiter: number;
       totalCost: number;
       overflow: boolean;
+      basSyncStatus: FuelSyncStatus;
     }
   | { ok: false; error: string }
 > {
@@ -296,7 +298,15 @@ export async function executeFuelPurchase(params: {
     return insert;
   }
 
-  void enqueueFuelBasDraft({ transactionId: insert.id }).catch(() => undefined);
+  const basSyncStatus = await enqueueFuelBasDraft({
+    transactionId: insert.id,
+  });
+  if (basSyncStatus !== "pending_1c") {
+    await params.supabase
+      .from("fuel_transactions")
+      .update({ sync_status: basSyncStatus })
+      .eq("id", insert.id);
+  }
   void logActivity({
     actor,
     action: "create",
@@ -315,6 +325,7 @@ export async function executeFuelPurchase(params: {
     pricePerLiter: buyPrice,
     totalCost,
     overflow: false,
+    basSyncStatus,
   };
 }
 
@@ -334,6 +345,7 @@ export async function executeFuelTransfer(params: {
       toVolumeAfter: number;
       pricePerLiter: number;
       totalCost: number;
+      basSyncStatus: FuelSyncStatus;
     }
   | { ok: false; error: string }
 > {
@@ -435,7 +447,15 @@ export async function executeFuelTransfer(params: {
     return insert;
   }
 
-  void enqueueFuelBasDraft({ transactionId: insert.id }).catch(() => undefined);
+  const basSyncStatus = await enqueueFuelBasDraft({
+    transactionId: insert.id,
+  });
+  if (basSyncStatus !== "pending_1c") {
+    await params.supabase
+      .from("fuel_transactions")
+      .update({ sync_status: basSyncStatus })
+      .eq("id", insert.id);
+  }
   void logActivity({
     actor,
     action: "create",
@@ -458,6 +478,7 @@ export async function executeFuelTransfer(params: {
     toVolumeAfter: toAfter,
     pricePerLiter: donorPrice,
     totalCost,
+    basSyncStatus,
   };
 }
 

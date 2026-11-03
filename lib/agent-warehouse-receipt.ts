@@ -28,15 +28,30 @@ export const INVOICE_CATEGORIES = [
 
 export type InvoiceCategoryUk = (typeof INVOICE_CATEGORIES)[number];
 
+export type InvoiceVatRateId = "20" | "14" | "7" | "0" | "none";
+
 export type InvoiceLineInput = {
   name: string;
   category: InvoiceCategoryUk;
   quantity: number;
   unit: string;
   pricePerUnit: number;
+  /** Сума без ПДВ (якщо OCR її зчитав) */
   totalAmount?: number | null;
   /** Артикул / код постачальника або BAS */
   article?: string | null;
+  /** Розмір / типорозмір з накладної (шина, різьба тощо) */
+  size?: string | null;
+  vatRate?: InvoiceVatRateId | null;
+  vatAmount?: number | null;
+  amountInclVat?: number | null;
+  /**
+   * Обраний користувачем bas_ref_key (кандидат).
+   * Якщо задано — execute привʼяже до нього замість створення «нової».
+   */
+  selectedExistingItemId?: string | null;
+  /** Явне підтвердження створення нової позиції (коли є схожі кандидати). */
+  confirmCreateNew?: boolean | null;
 };
 
 export type InvoiceReceiptInput = {
@@ -45,21 +60,42 @@ export type InvoiceReceiptInput = {
   invoiceNumber?: string | null;
   invoiceDate?: string | null;
   items: InvoiceLineInput[];
+  /** Підсумок без ПДВ (або як OCR назвав «разом») */
   totalAmount?: number | null;
+  vatRate?: InvoiceVatRateId | null;
+  vatAmount?: number | null;
+  /** Загальна сума з ПДВ з документа */
+  totalInclVat?: number | null;
+};
+
+export type InvoiceMatchCandidate = {
+  basRefKey: string;
+  name: string;
+  code: string | null;
+  unit: string | null;
+  score: number;
+  reason: string;
 };
 
 export type InvoicePreviewLine = InvoiceLineInput & {
   lineId: string;
   totalAmount: number;
+  computedAmount: number;
+  lineMathOk: boolean;
   matchStatus: "existing" | "new" | "skipped_fuel";
   existingItemId: string | null;
   existingItemName: string | null;
   article: string | null;
+  size: string | null;
   unitRaw: string;
   matchConfidence: number;
   unitConflict: boolean;
   needsReview: boolean;
   reviewReasons: string[];
+  candidates: InvoiceMatchCandidate[];
+  vatRate: InvoiceVatRateId | null;
+  vatAmount: number | null;
+  amountInclVat: number | null;
 };
 
 export type InvoicePreviewResult = {
@@ -73,10 +109,15 @@ export type InvoicePreviewResult = {
   totalAmount: number;
   linesSum: number;
   totalMismatch: boolean;
+  vatRate: InvoiceVatRateId | null;
+  vatAmount: number | null;
+  totalInclVat: number | null;
+  vatMismatch: boolean;
   needsReviewCount: number;
   newItemsCount: number;
   existingItemsCount: number;
   skippedFuelCount: number;
+  lineMathMismatchCount: number;
 };
 
 const CATEGORY_TO_KEY: Record<
@@ -159,65 +200,177 @@ function displayCatalogName(row: CatalogRow): string {
   );
 }
 
-function matchCatalogItem(
-  rows: CatalogRow[],
+function parseInvoiceVatRate(
+  raw: unknown
+): InvoiceVatRateId | null {
+  if (raw === "20" || raw === "14" || raw === "7" || raw === "0" || raw === "none") {
+    return raw;
+  }
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    if (raw === 20) return "20";
+    if (raw === 14) return "14";
+    if (raw === 7) return "7";
+    if (raw === 0) return "0";
+  }
+  if (typeof raw === "string") {
+    const t = raw.trim().toLowerCase();
+    if (t === "без пдв" || t === "безпдв" || t === "none") return "none";
+    const m = t.match(/(\d{1,2})/);
+    if (m?.[1] === "20" || m?.[1] === "14" || m?.[1] === "7" || m?.[1] === "0") {
+      return m[1] as InvoiceVatRateId;
+    }
+  }
+  return null;
+}
+
+/** Типорозмір / розмір з назви (шини, різьби, олива 10W-40). */
+export function extractSizeTokens(
   name: string,
-  article: string | null
-): {
+  explicitSize?: string | null
+): string[] {
+  const out = new Set<string>();
+  const push = (raw: string) => {
+    const t = raw
+      .trim()
+      .toLocaleLowerCase("uk-UA")
+      .replace(/\s+/g, "")
+      .replace(/,/g, ".")
+      .replace(/х/g, "x")
+      .replace(/р/g, "r");
+    if (t.length >= 2) out.add(t);
+  };
+  if (explicitSize?.trim()) push(explicitSize);
+
+  const hay = normalizeName(name);
+  for (const m of hay.matchAll(/\d{2,3}\s*\/\s*\d{2}\s*[rр]\s*\d{2}/gi)) {
+    push(m[0]!);
+  }
+  for (const m of hay.matchAll(/\bm\d{1,3}\s*[xх]\s*[\d.]+/gi)) {
+    push(m[0]!);
+  }
+  for (const m of hay.matchAll(
+    /\b\d+[.,]?\d*\s*[xх]\s*\d+[.,]?\d*(?:\s*[xх]\s*\d+[.,]?\d*)?\b/gi
+  )) {
+    push(m[0]!);
+  }
+  for (const m of hay.matchAll(/\b\d{1,2}\s*w[-\s]?\d{2}\b/gi)) {
+    push(m[0]!);
+  }
+  return [...out];
+}
+
+function sizesCompatible(
+  querySizes: string[],
+  candidateName: string,
+  candidateCode?: string | null
+): boolean {
+  if (querySizes.length === 0) return true;
+  const cand = extractSizeTokens(
+    `${candidateName} ${candidateCode ?? ""}`.trim()
+  );
+  if (cand.length === 0) return true; // у довіднику немає розміру — не блокуємо
+  return querySizes.some((q) => cand.some((c) => c === q || c.includes(q) || q.includes(c)));
+}
+
+function unitsCompatible(a: string, b: string | null | undefined): boolean {
+  if (!b?.trim()) return true;
+  return normalizeUnitKey(a) === normalizeUnitKey(b);
+}
+
+type MatchHit = {
   row: CatalogRow;
-  confidence: number;
-  weakFuzzy: boolean;
-  ambiguous?: boolean;
-  articleMismatch?: boolean;
-} | null {
-  const art = article ? normalizeArticle(article) : "";
+  score: number;
+  reason: string;
+  exact: boolean;
+};
+
+/**
+ * Точний матч лише за кодом/артикулом (+ од.вим./розмір) або
+ * точною назвою + тією ж од.вим. без конфлікту артикула.
+ * Усе інше — кандидати для ручного вибору (без авто-«нова» / авто-злиття).
+ */
+function findCatalogMatches(
+  rows: CatalogRow[],
+  input: {
+    name: string;
+    article: string | null;
+    unit: string;
+    size: string | null;
+  }
+): { exact: MatchHit | null; candidates: MatchHit[] } {
+  const art = input.article ? normalizeArticle(input.article) : "";
+  const needle = normalizeName(input.name);
+  const querySizes = extractSizeTokens(input.name, input.size);
+  const scored: MatchHit[] = [];
+
+  const pushHit = (
+    row: CatalogRow,
+    score: number,
+    reason: string,
+    exact: boolean
+  ) => {
+    if (!sizesCompatible(querySizes, displayCatalogName(row), row.code)) {
+      return;
+    }
+    if (!unitsCompatible(input.unit, row.unit) && exact) {
+      // точний код/назва з іншою од.вим. — у кандидати, не в auto-bind
+      scored.push({
+        row,
+        score: Math.min(score, 70),
+        reason: `${reason}; од.вим. «${row.unit ?? "—"}» ≠ «${input.unit}»`,
+        exact: false,
+      });
+      return;
+    }
+    scored.push({ row, score, reason, exact });
+  };
 
   if (art) {
-    const byCode = rows.find(
-      (row) =>
+    for (const row of rows) {
+      if (
         typeof row.code === "string" &&
         row.code.trim() &&
         normalizeArticle(row.code) === art
-    );
-    if (byCode) return { row: byCode, confidence: 98, weakFuzzy: false };
+      ) {
+        pushHit(row, 98, `код/артикул «${input.article}»`, true);
+      }
+    }
   }
 
-  const needle = normalizeName(name);
-  const exact = rows.find((row) => {
+  for (const row of rows) {
     const display = displayCatalogName(row);
-    return normalizeName(display) === needle;
-  });
-  if (exact) {
-    // Артикул з накладної ≠ code у довіднику → не довіряємо «точній» назві
+    if (normalizeName(display) !== needle) continue;
     if (
       art &&
-      typeof exact.code === "string" &&
-      exact.code.trim() &&
-      normalizeArticle(exact.code) !== art
+      typeof row.code === "string" &&
+      row.code.trim() &&
+      normalizeArticle(row.code) !== art
     ) {
-      return {
-        row: exact,
-        confidence: 40,
-        weakFuzzy: true,
-        articleMismatch: true,
-      };
+      pushHit(
+        row,
+        45,
+        `назва збігається, але артикул ≠ код «${row.code}»`,
+        false
+      );
+      continue;
     }
-    return { row: exact, confidence: 95, weakFuzzy: false };
+    if (!unitsCompatible(input.unit, row.unit)) {
+      pushHit(
+        row,
+        55,
+        `точна назва, інша од.вим. («${row.unit ?? "—"}»)`,
+        false
+      );
+      continue;
+    }
+    pushHit(row, 95, "точна назва + од.вим.", true);
   }
 
-  // Fuzzy лише за достатнім overlap токенів — інакше різні запчастини
-  // злипаються в одну «загальну» назву.
-  type Cand = { row: CatalogRow; overlap: number; contains: boolean };
-  const cands: Cand[] = [];
+  // Fuzzy → лише кандидати (ніколи auto-existing)
   for (const row of rows) {
     const display = displayCatalogName(row);
     const n = normalizeName(display);
     if (n.length < 4 || needle.length < 4) continue;
-    const overlap = tokenOverlapRatio(needle, display);
-    const contains = n.includes(needle) || needle.includes(n);
-    if (overlap < 0.45 && !contains) continue;
-    if (overlap < 0.35) continue;
-    // Якщо в накладній є артикул, а в довіднику інший code — пропускаємо
     if (
       art &&
       typeof row.code === "string" &&
@@ -226,56 +379,58 @@ function matchCatalogItem(
     ) {
       continue;
     }
-    cands.push({ row, overlap, contains });
-  }
-
-  if (cands.length === 0) return null;
-
-  cands.sort((a, b) => {
-    if (b.overlap !== a.overlap) return b.overlap - a.overlap;
-    const da = Math.abs(
-      normalizeName(displayCatalogName(a.row)).length - needle.length
+    if (!sizesCompatible(querySizes, display, row.code)) continue;
+    const overlap = tokenOverlapRatio(needle, display);
+    const contains = n.includes(needle) || needle.includes(n);
+    if (overlap < 0.45 && !contains) continue;
+    if (overlap < 0.35) continue;
+    const unitOk = unitsCompatible(input.unit, row.unit);
+    const score = Math.round(
+      (contains ? 50 : 35) + overlap * 40 + (unitOk ? 8 : 0)
     );
-    const db = Math.abs(
-      normalizeName(displayCatalogName(b.row)).length - needle.length
+    pushHit(
+      row,
+      Math.min(score, 88),
+      unitOk
+        ? `схожа назва (${Math.round(overlap * 100)}%)`
+        : `схожа назва, од.вим. «${row.unit ?? "—"}»`,
+      false
     );
-    return da - db;
-  });
-
-  const best = cands[0]!;
-  const second = cands[1];
-  // Кілька близьких кандидатів → не вгадуємо (бухгалтер перевірить як «нову»)
-  if (
-    second &&
-    best.overlap - second.overlap < 0.12 &&
-    second.overlap >= 0.4
-  ) {
-    return {
-      row: best.row,
-      confidence: 35,
-      weakFuzzy: true,
-      ambiguous: true,
-    };
   }
 
-  if (best.overlap >= 0.75 || (best.contains && best.overlap >= 0.5)) {
+  // Dedup by bas_ref_key — лишаємо найкращий score
+  const byKey = new Map<string, MatchHit>();
+  for (const hit of scored) {
+    const key = String(hit.row.bas_ref_key);
+    const prev = byKey.get(key);
+    if (!prev || hit.score > prev.score || (hit.exact && !prev.exact)) {
+      byKey.set(key, hit);
+    }
+  }
+  const unique = [...byKey.values()].sort((a, b) => b.score - a.score);
+
+  const exactHits = unique.filter((h) => h.exact && h.score >= 90);
+  if (exactHits.length === 1) {
     return {
-      row: best.row,
-      confidence: Math.round(60 + best.overlap * 30),
-      weakFuzzy: best.overlap < 0.85,
+      exact: exactHits[0]!,
+      candidates: unique
+        .filter((h) => h.row.bas_ref_key !== exactHits[0]!.row.bas_ref_key)
+        .slice(0, 5),
     };
   }
+  // Кілька «точних» або лише fuzzy — усе в кандидати
+  return { exact: null, candidates: unique.slice(0, 5) };
+}
 
-  // Слабкий збіг — лише з needsReview (confidence < 80)
-  if (best.overlap >= 0.45 || best.contains) {
-    return {
-      row: best.row,
-      confidence: Math.round(40 + best.overlap * 30),
-      weakFuzzy: true,
-    };
-  }
-
-  return null;
+function toPublicCandidates(hits: MatchHit[]): InvoiceMatchCandidate[] {
+  return hits.map((h) => ({
+    basRefKey: String(h.row.bas_ref_key),
+    name: displayCatalogName(h.row),
+    code: h.row.code?.trim() || null,
+    unit: h.row.unit?.trim() || null,
+    score: h.score,
+    reason: h.reason,
+  }));
 }
 
 export async function buildInvoicePreview(
@@ -326,6 +481,16 @@ export async function buildInvoicePreview(
 
   const rows = catalogRows.filter((row) => row.is_hidden !== true);
 
+  const docVatRate = parseInvoiceVatRate(input.vatRate);
+  const docVatAmount =
+    input.vatAmount != null && Number.isFinite(Number(input.vatAmount))
+      ? round2(Number(input.vatAmount))
+      : null;
+  const docTotalInclVat =
+    input.totalInclVat != null && Number.isFinite(Number(input.totalInclVat))
+      ? round2(Number(input.totalInclVat))
+      : null;
+
   const previewItems: InvoicePreviewLine[] = items.map((raw, index) => {
     const name = String(raw.name ?? "").trim() || `Позиція ${index + 1}`;
     const category = (INVOICE_CATEGORIES.includes(
@@ -338,122 +503,48 @@ export async function buildInvoicePreview(
     const qty = Number.isFinite(quantity) && quantity > 0 ? quantity : 0;
     const price =
       Number.isFinite(pricePerUnit) && pricePerUnit >= 0 ? pricePerUnit : 0;
-    const total =
+    const computedAmount = round2(qty * price);
+    const declaredTotal =
       raw.totalAmount != null && Number.isFinite(Number(raw.totalAmount))
         ? round2(Number(raw.totalAmount))
-        : round2(qty * price);
+        : null;
+    // Допуск 2 коп. на рядок (OCR/округлення)
+    const lineMathOk =
+      declaredTotal == null || Math.abs(declaredTotal - computedAmount) <= 0.02;
+    const total = declaredTotal ?? computedAmount;
     const unitRaw = String(raw.unit ?? "шт").trim() || "шт";
     const article =
       typeof raw.article === "string" && raw.article.trim()
         ? raw.article.trim()
         : null;
+    const size =
+      typeof raw.size === "string" && raw.size.trim()
+        ? raw.size.trim()
+        : null;
+    const lineVatRate = parseInvoiceVatRate(raw.vatRate) ?? docVatRate;
+    const lineVatAmount =
+      raw.vatAmount != null && Number.isFinite(Number(raw.vatAmount))
+        ? round2(Number(raw.vatAmount))
+        : null;
+    const lineInclVat =
+      raw.amountInclVat != null && Number.isFinite(Number(raw.amountInclVat))
+        ? round2(Number(raw.amountInclVat))
+        : null;
     const reviewReasons: string[] = [];
-
-    if (category === "Паливо" || mapInvoiceCategoryToDb(category) == null) {
-      return {
-        lineId: `line-${index + 1}`,
-        name,
-        category,
-        quantity: qty,
-        unit: unitRaw,
-        unitRaw,
-        article,
-        pricePerUnit: price,
-        totalAmount: total,
-        matchStatus: "skipped_fuel" as const,
-        existingItemId: null,
-        existingItemName: null,
-        matchConfidence: 0,
-        unitConflict: false,
-        needsReview: false,
-        reviewReasons: [],
-      };
-    }
-
-    const matched = matchCatalogItem(rows, name, article);
-    if (matched?.ambiguous || matched?.articleMismatch) {
-      const display = displayCatalogName(matched.row);
-      if (matched.articleMismatch && article) {
-        reviewReasons.push(
-          `артикул «${article}» не збігається з кодом «${matched.row.code ?? "—"}» у «${display}»`
-        );
-      }
-      if (matched.ambiguous) {
-        reviewReasons.push(
-          `кілька схожих позицій у довіднику (кандидат «${display}») — оберіть вручну`
-        );
-      }
-      // Не привʼязуємо мовчки: нова локальна + обовʼязковий review
-      return {
-        lineId: `line-${index + 1}`,
-        name,
-        category,
-        quantity: qty,
-        unit: unitRaw,
-        unitRaw,
-        article,
-        pricePerUnit: price,
-        totalAmount: total,
-        matchStatus: "new" as const,
-        existingItemId: null,
-        existingItemName: null,
-        matchConfidence: matched.confidence,
-        unitConflict: false,
-        needsReview: true,
-        reviewReasons:
-          reviewReasons.length > 0
-            ? reviewReasons
-            : ["неоднозначний збіг — перевірити номенклатуру"],
-      };
-    }
-
-    if (matched) {
-      const display = displayCatalogName(matched.row);
-      const cacheUnit = String(matched.row.unit ?? "").trim() || unitRaw;
-      const unitConflict =
-        normalizeUnitKey(unitRaw) !== normalizeUnitKey(cacheUnit);
-      if (unitConflict) {
-        reviewReasons.push(
-          `од. вим.: у накладній «${unitRaw}», у довіднику «${cacheUnit}»`
-        );
-      }
-      if (article && !matched.row.code?.trim()) {
-        reviewReasons.push(
-          `артикул накладної «${article}» — у довіднику немає code`
-        );
-      }
-      if (matched.weakFuzzy || matched.confidence < 80) {
-        reviewReasons.push(`слабкий збіг назви → «${display}»`);
-      }
-      const needsReview = reviewReasons.length > 0;
-      return {
-        lineId: `line-${index + 1}`,
-        name,
-        category,
-        quantity: qty,
-        // Не підміняємо од. вим. мовчки при конфлікті
-        unit: unitConflict ? unitRaw : cacheUnit,
-        unitRaw,
-        article,
-        pricePerUnit: price,
-        totalAmount: total,
-        matchStatus: "existing" as const,
-        existingItemId: String(matched.row.bas_ref_key),
-        existingItemName: display,
-        matchConfidence: matched.confidence,
-        unitConflict,
-        needsReview,
-        reviewReasons,
-      };
-    }
-
-    const newReasons = ["нова номенклатура — перевірити назву й од. вим."];
-    if (article) {
-      newReasons.push(
-        `артикул «${article}» не в довіднику — у чернетку 1С піде як нова (назва з накладної)`
+    if (!lineMathOk && declaredTotal != null) {
+      reviewReasons.push(
+        `к-сть×ціна ${computedAmount.toFixed(2)} ₴ ≠ сума ${declaredTotal.toFixed(2)} ₴`
       );
     }
-    return {
+
+    const selectedId =
+      typeof raw.selectedExistingItemId === "string" &&
+      raw.selectedExistingItemId.trim()
+        ? raw.selectedExistingItemId.trim().toLowerCase()
+        : null;
+    const confirmCreateNew = raw.confirmCreateNew === true;
+
+    const baseLine = {
       lineId: `line-${index + 1}`,
       name,
       category,
@@ -461,8 +552,144 @@ export async function buildInvoicePreview(
       unit: unitRaw,
       unitRaw,
       article,
+      size,
       pricePerUnit: price,
       totalAmount: total,
+      computedAmount,
+      lineMathOk,
+      vatRate: lineVatRate,
+      vatAmount: lineVatAmount,
+      amountInclVat: lineInclVat,
+      selectedExistingItemId: selectedId,
+      confirmCreateNew,
+    };
+
+    if (category === "Паливо" || mapInvoiceCategoryToDb(category) == null) {
+      return {
+        ...baseLine,
+        matchStatus: "skipped_fuel" as const,
+        existingItemId: null,
+        existingItemName: null,
+        matchConfidence: 0,
+        unitConflict: false,
+        needsReview: !lineMathOk,
+        reviewReasons,
+        candidates: [],
+      };
+    }
+
+    // Користувач уже обрав кандидата з превʼю
+    if (selectedId) {
+      const selected = rows.find(
+        (r) => String(r.bas_ref_key).toLowerCase() === selectedId
+      );
+      if (selected) {
+        const display = displayCatalogName(selected);
+        const cacheUnit = String(selected.unit ?? "").trim() || unitRaw;
+        const unitConflict = !unitsCompatible(unitRaw, cacheUnit);
+        if (unitConflict) {
+          reviewReasons.push(
+            `од. вим.: у накладній «${unitRaw}», у довіднику «${cacheUnit}»`
+          );
+        }
+        return {
+          ...baseLine,
+          unit: unitConflict ? unitRaw : cacheUnit,
+          matchStatus: "existing" as const,
+          existingItemId: String(selected.bas_ref_key),
+          existingItemName: display,
+          matchConfidence: 100,
+          unitConflict,
+          needsReview: reviewReasons.length > 0,
+          reviewReasons,
+          candidates: [],
+        };
+      }
+    }
+
+    const { exact, candidates: candHits } = findCatalogMatches(rows, {
+      name,
+      article,
+      unit: unitRaw,
+      size,
+    });
+    const candidates = toPublicCandidates(
+      exact ? [exact, ...candHits].slice(0, 5) : candHits
+    );
+
+    if (exact) {
+      const display = displayCatalogName(exact.row);
+      const cacheUnit = String(exact.row.unit ?? "").trim() || unitRaw;
+      const unitConflict = !unitsCompatible(unitRaw, cacheUnit);
+      if (unitConflict) {
+        reviewReasons.push(
+          `од. вим.: у накладній «${unitRaw}», у довіднику «${cacheUnit}»`
+        );
+      }
+      if (article && !exact.row.code?.trim()) {
+        reviewReasons.push(
+          `артикул накладної «${article}» — у довіднику немає code`
+        );
+      }
+      return {
+        ...baseLine,
+        unit: unitConflict ? unitRaw : cacheUnit,
+        matchStatus: "existing" as const,
+        existingItemId: String(exact.row.bas_ref_key),
+        existingItemName: display,
+        matchConfidence: exact.score,
+        unitConflict,
+        needsReview: reviewReasons.length > 0,
+        reviewReasons,
+        candidates: candidates.filter(
+          (c) => c.basRefKey !== String(exact.row.bas_ref_key)
+        ),
+      };
+    }
+
+    // Є схожі в довіднику — забороняємо мовчки створювати «нову»
+    if (candidates.length > 0) {
+      if (confirmCreateNew) {
+        reviewReasons.push(
+          "підтверджено створення нової попри схожі позиції в довіднику"
+        );
+        return {
+          ...baseLine,
+          matchStatus: "new" as const,
+          existingItemId: null,
+          existingItemName: null,
+          matchConfidence: candidates[0]?.score ?? 0,
+          unitConflict: false,
+          needsReview: true,
+          reviewReasons,
+          candidates,
+        };
+      }
+      reviewReasons.push(
+        `знайдено ${candidates.length} схож.${candidates.length === 1 ? "у" : "их"} у довіднику — оберіть або підтвердіть «створити нову»`
+      );
+      return {
+        ...baseLine,
+        matchStatus: "new" as const,
+        existingItemId: null,
+        existingItemName: null,
+        matchConfidence: candidates[0]?.score ?? 0,
+        unitConflict: false,
+        needsReview: true,
+        reviewReasons,
+        candidates,
+      };
+    }
+
+    const newReasons = [
+      ...reviewReasons,
+      "немає точного збігу — підтвердіть нову номенклатуру",
+    ];
+    if (article) {
+      newReasons.push(`артикул «${article}» відсутній у довіднику`);
+    }
+    return {
+      ...baseLine,
       matchStatus: "new" as const,
       existingItemId: null,
       existingItemName: null,
@@ -470,6 +697,7 @@ export async function buildInvoicePreview(
       unitConflict: false,
       needsReview: true,
       reviewReasons: newReasons,
+      candidates: [],
     };
   });
 
@@ -486,14 +714,54 @@ export async function buildInvoicePreview(
   const totalMismatch =
     hasExplicitTotal && Math.abs(totalAmount - linesSum) > 0.05;
 
-  if (totalMismatch) {
+  // ПДВ: якщо є ставка й сума без ПДВ — звіряємо суму ПДВ / з ПДВ
+  let vatMismatch = false;
+  if (docVatRate && docVatRate !== "none" && hasExplicitTotal) {
+    const pct = Number(docVatRate);
+    if (Number.isFinite(pct) && pct > 0) {
+      const expectedVat = round2((totalAmount * pct) / 100);
+      const expectedIncl = round2(totalAmount + expectedVat);
+      if (docVatAmount != null && Math.abs(docVatAmount - expectedVat) > 0.05) {
+        vatMismatch = true;
+      }
+      if (
+        docTotalInclVat != null &&
+        Math.abs(docTotalInclVat - expectedIncl) > 0.05
+      ) {
+        vatMismatch = true;
+      }
+    }
+  } else if (
+    docTotalInclVat != null &&
+    hasExplicitTotal &&
+    Math.abs(docTotalInclVat - totalAmount) > 0.05 &&
+    docVatRate === "none"
+  ) {
+    vatMismatch = true;
+  } else if (
+    docTotalInclVat != null &&
+    docVatAmount != null &&
+    hasExplicitTotal &&
+    Math.abs(docTotalInclVat - round2(totalAmount + docVatAmount)) > 0.05
+  ) {
+    vatMismatch = true;
+  }
+
+  if (totalMismatch || vatMismatch) {
     for (const line of previewItems) {
       if (line.matchStatus === "skipped_fuel") continue;
-      if (!line.needsReview) {
+      if (totalMismatch && !line.reviewReasons.some((r) => r.includes("підсумок"))) {
         line.needsReview = true;
         line.reviewReasons = [
           ...line.reviewReasons,
           `сума рядків ${linesSum} ₴ ≠ підсумок накладної ${totalAmount} ₴`,
+        ];
+      }
+      if (vatMismatch && !line.reviewReasons.some((r) => r.includes("ПДВ"))) {
+        line.needsReview = true;
+        line.reviewReasons = [
+          ...line.reviewReasons,
+          "розбіжність ПДВ / суми з ПДВ у шапці документа",
         ];
       }
     }
@@ -510,6 +778,10 @@ export async function buildInvoicePreview(
     totalAmount,
     linesSum,
     totalMismatch,
+    vatRate: docVatRate,
+    vatAmount: docVatAmount,
+    totalInclVat: docTotalInclVat,
+    vatMismatch,
     needsReviewCount: previewItems.filter((i) => i.needsReview).length,
     newItemsCount: previewItems.filter((i) => i.matchStatus === "new").length,
     existingItemsCount: previewItems.filter((i) => i.matchStatus === "existing")
@@ -517,6 +789,7 @@ export async function buildInvoicePreview(
     skippedFuelCount: previewItems.filter(
       (i) => i.matchStatus === "skipped_fuel"
     ).length,
+    lineMathMismatchCount: previewItems.filter((i) => !i.lineMathOk).length,
   };
 }
 
@@ -630,11 +903,25 @@ export async function executeWarehouseReceipt(
 
     let itemRef = line.existingItemId;
     if (!itemRef) {
+      // Захист від дублів: є кандидати, але немає явного confirmCreateNew
+      if (
+        line.candidates.length > 0 &&
+        line.confirmCreateNew !== true &&
+        !line.selectedExistingItemId
+      ) {
+        return {
+          success: false,
+          status: "error",
+          error: `«${line.name}»: оберіть позицію з довідника або підтвердіть створення нової (є ${line.candidates.length} схож.).`,
+        };
+      }
       const created = await createLocalInventoryItem({
         name: line.name,
         category: categoryKey,
         unit: line.unit,
         plannedPriceUah: line.pricePerUnit,
+        article: line.article,
+        allowDuplicate: line.confirmCreateNew === true,
       });
       if (!created.ok) {
         return {
@@ -644,7 +931,7 @@ export async function executeWarehouseReceipt(
         };
       }
       itemRef = created.basRefKey;
-      createdItemIds.push(itemRef);
+      if (created.created) createdItemIds.push(itemRef);
     }
 
     const inbound = await createLocalInboundMove({

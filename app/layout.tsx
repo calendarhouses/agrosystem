@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import type { ReactNode } from "react";
 import { Toaster } from "sonner";
 
 import { AppShell } from "@/components/layout/app-shell";
@@ -63,30 +64,11 @@ export const viewport: Viewport = {
 /** Inline: шлях → auth vs app. Має бути ДО CSS, інакше логін на мить/назавжди чорний. */
 const BOOT_PATH_SCRIPT = `(function(){var p=location.pathname;var shellOff=p==='/login'||p==='/install'||p==='/copilot'||p.indexOf('/copilot/')===0;var light=p==='/login'||p==='/install';var levadius=p==='/copilot'||p.indexOf('/copilot/')===0;document.documentElement.dataset.appNav=shellOff?'0':'1';if(light){document.documentElement.dataset.authLight='1';}else{delete document.documentElement.dataset.authLight;}if(levadius){document.documentElement.dataset.levadiusBooting='1';}else{delete document.documentElement.dataset.levadiusBooting;delete document.documentElement.dataset.levadiusBootUi;}if(shellOff){delete document.documentElement.dataset.booting;delete document.documentElement.dataset.appReady;}else{document.documentElement.dataset.booting='1';}})();`;
 
-/**
- * Чорний boot-шар лише при data-booting=1 (після логіну в систему).
- * Логін/install — світлий; /copilot — темний + #levadius-boot-splash до React.
- */
-const BOOT_CRITICAL_CSS = [
-  "html[data-app-nav='0'],html[data-app-nav='0'] body,html[data-app-nav='0'] #app-root{background-color:#09090b!important;color-scheme:dark}",
-  "html[data-app-nav='0'][data-auth-light='1'],html[data-app-nav='0'][data-auth-light='1'] body,html[data-app-nav='0'][data-auth-light='1'] #app-root{background-color:#f4f4f5!important;color-scheme:light}",
-  "html[data-booting='1'],html[data-booting='1'] body,html[data-booting='1'] #app-root{background-color:#09090b!important;color-scheme:dark}",
-  "html[data-levadius-booting='1'],html[data-levadius-booting='1'] body,html[data-levadius-booting='1'] #app-root{background-color:#09090b!important;color-scheme:dark}",
-  "html[data-app-nav='1'][data-app-ready='1'],html[data-app-nav='1'][data-app-ready='1'] body,html[data-app-nav='1'][data-app-ready='1'] #app-root{background-color:#18181b!important;transition:background-color .7s ease-out .5s}",
-  "html[data-booting='1'] [data-bottom-nav],html[data-booting='1'] [data-fields-mobile-chrome]{opacity:0;pointer-events:none;transform:translateY(12px)}",
-  /* Під React Preloader (z-9999). Не .remove() — інакше NotFoundError. */
-  "#boot-splash{display:none;position:fixed;inset:0;z-index:9990;background:#09090b;pointer-events:none;align-items:center;justify-content:center;flex-direction:column}",
-  "html[data-booting='1'] #boot-splash{display:flex}",
-  "html[data-boot-ui='1'] #boot-splash{visibility:hidden}",
-  "#boot-splash .boot-title{margin:0;color:#fff;font-size:1.65rem;font-weight:200;letter-spacing:.3em;font-family:ui-sans-serif,system-ui,-apple-system,sans-serif}",
-  "#boot-splash .boot-sub{margin:.75rem 0 0;color:#71717a;font-size:.75rem;letter-spacing:.2em;font-family:ui-sans-serif,system-ui,-apple-system,sans-serif}",
-  /* LEVADIUS PWA: суцільний zinc-950 до гідрації — без сірого спалаху body. */
-  "#levadius-boot-splash{display:none;position:fixed;inset:0;z-index:9991;background:#09090b;pointer-events:none}",
-  "html[data-levadius-booting='1'] #levadius-boot-splash{display:block}",
-  "html[data-levadius-boot-ui='1'] #levadius-boot-splash{visibility:hidden}",
-].join("");
-
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({
+  children,
+}: {
+  children: ReactNode;
+}) {
   return (
     <html
       lang="uk"
@@ -94,8 +76,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       suppressHydrationWarning
     >
       <head>
+        {/* Inline script лишаємо: data-* до першого paint. CSS — у globals.css
+            (inline <style> у head давав hydration mismatch у Next 16 / Turbopack). */}
         <script dangerouslySetInnerHTML={{ __html: BOOT_PATH_SCRIPT }} />
-        <style dangerouslySetInnerHTML={{ __html: BOOT_CRITICAL_CSS }} />
       </head>
       <body className="overflow-hidden font-sans text-zinc-900">
         {/* Видимий лише при data-booting=1 — ніколи не накриває /login.

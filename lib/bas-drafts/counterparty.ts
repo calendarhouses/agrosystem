@@ -59,13 +59,15 @@ function odataBaseUrl(): string {
   return requiredEnv("BAS_ODATA_URL").replace(/\/+$/, "");
 }
 
+type BasCpRowExt = BasCpRow & { Code?: string | null };
+
 async function fetchBasCounterparties(
   filter: string
-): Promise<BasCpRow[]> {
+): Promise<BasCpRowExt[]> {
   const params = [
     "$format=json",
     "$top=20",
-    `$select=${encodeURIComponent("Ref_Key,Description,КодПоЕДРПОУ,DeletionMark")}`,
+    `$select=${encodeURIComponent("Ref_Key,Description,Code,КодПоЕДРПОУ,DeletionMark")}`,
     `$filter=${encodeURIComponent(filter)}`,
   ];
   const url = `${odataBaseUrl()}/odata/standard.odata/Catalog_Контрагенты?${params.join("&")}`;
@@ -80,9 +82,36 @@ async function fetchBasCounterparties(
   });
   const raw = await response.text();
   if (!response.ok) {
+    // Fallback без Code (старі конфіги)
+    if (raw.includes("Code") || response.status === 400) {
+      const legacyParams = [
+        "$format=json",
+        "$top=20",
+        `$select=${encodeURIComponent("Ref_Key,Description,КодПоЕДРПОУ,DeletionMark")}`,
+        `$filter=${encodeURIComponent(filter)}`,
+      ];
+      const legacyUrl = `${odataBaseUrl()}/odata/standard.odata/Catalog_Контрагенты?${legacyParams.join("&")}`;
+      const legacyRes = await fetch(legacyUrl, {
+        method: "GET",
+        cache: "no-store",
+        signal: AbortSignal.timeout(45_000),
+        headers: {
+          Authorization: basicAuthHeader(),
+          Accept: "application/json",
+        },
+      });
+      const legacyRaw = await legacyRes.text();
+      if (!legacyRes.ok) {
+        throw new Error(
+          `Catalog_Контрагенты HTTP ${legacyRes.status}: ${legacyRaw.slice(0, 200)}`
+        );
+      }
+      const legacyParsed = JSON.parse(legacyRaw) as { value?: BasCpRowExt[] };
+      return (legacyParsed.value ?? []).filter((r) => r.DeletionMark !== true);
+    }
     throw new Error(`Catalog_Контрагенты HTTP ${response.status}: ${raw.slice(0, 200)}`);
   }
-  const parsed = JSON.parse(raw) as { value?: BasCpRow[] };
+  const parsed = JSON.parse(raw) as { value?: BasCpRowExt[] };
   return (parsed.value ?? []).filter((r) => r.DeletionMark !== true);
 }
 
@@ -161,10 +190,13 @@ function pickUniqueByName(
 export async function resolveBasCounterpartyKey(input: {
   edrpou?: string | null;
   name?: string | null;
+  /** Код елемента Catalog_Контрагенты (не ЄДРПОУ) */
+  basCode?: string | null;
 }): Promise<{ key: string | null; reason?: string; matchedName?: string }> {
   const supabase = createServiceSupabase();
   const edrpou = normalizeEdrpou(input.edrpou);
   const name = (input.name ?? "").trim();
+  const basCode = (input.basCode ?? "").trim();
 
   // 1) Наша таблиця за ЄДРПОУ
   if (edrpou) {
@@ -221,15 +253,15 @@ export async function resolveBasCounterpartyKey(input: {
     }
   }
 
-  // 4) Живий BAS: ЄДРПОУ
+  // 4) Живий BAS: ЄДРПОУ або Code
   try {
     if (edrpou) {
-      const byCode = await fetchBasCounterparties(
+      const byEdrpou = await fetchBasCounterparties(
         `DeletionMark eq false and КодПоЕДРПОУ eq '${escapeODataString(edrpou)}'`
       );
-      if (byCode.length === 1 && byCode[0]?.Ref_Key) {
-        const key = String(byCode[0].Ref_Key).toLowerCase();
-        const matchedName = String(byCode[0].Description ?? name);
+      if (byEdrpou.length === 1 && byEdrpou[0]?.Ref_Key) {
+        const key = String(byEdrpou[0].Ref_Key).toLowerCase();
+        const matchedName = String(byEdrpou[0].Description ?? name);
         await rememberCounterparty({
           basRefKey: key,
           name: matchedName,
@@ -237,8 +269,24 @@ export async function resolveBasCounterpartyKey(input: {
         });
         return { key, matchedName };
       }
-      if (byCode.length > 1) {
+      if (byEdrpou.length > 1) {
         return { key: null, reason: "у BAS кілька контрагентів з цим ЄДРПОУ" };
+      }
+    }
+
+    if (basCode) {
+      const byBasCode = await fetchBasCounterparties(
+        `DeletionMark eq false and Code eq '${escapeODataString(basCode)}'`
+      );
+      if (byBasCode.length === 1 && byBasCode[0]?.Ref_Key) {
+        const key = String(byBasCode[0].Ref_Key).toLowerCase();
+        const matchedName = String(byBasCode[0].Description ?? name);
+        await rememberCounterparty({
+          basRefKey: key,
+          name: matchedName,
+          edrpou: edrpou || normalizeEdrpou(byBasCode[0].КодПоЕДРПОУ) || null,
+        });
+        return { key, matchedName };
       }
     }
 

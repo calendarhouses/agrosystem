@@ -874,7 +874,7 @@ export function FuelDashboardHeader({
                 Заправка
               </span>
               <span className="block truncate text-[10px] font-medium text-amber-900/70">
-                На техніку
+                Передача в бак техніки
               </span>
             </span>
           </button>
@@ -969,7 +969,7 @@ export function FuelDashboardHeader({
               Заправка
             </span>
             <span className="pl-9 text-[11px] font-medium text-amber-900/70">
-              Списання на техніку
+              Передача в бак техніки
             </span>
           </Button>
         </div>

@@ -36,6 +36,12 @@ import {
   syncNomenclatureToSupabase,
   type SyncNomenclatureResult,
 } from "@/lib/inventory-sync";
+import {
+  computeInventoryVat,
+  computeInventoryVatFromIncl,
+  isInventoryVatRateId,
+  type InventoryVatRateId,
+} from "@/lib/inventory-vat";
 import { toKyivDayKey } from "@/lib/kyiv-date";
 import { createServiceSupabase } from "@/lib/supabase/server";
 
@@ -334,6 +340,8 @@ export async function getQuickIssueOptions(): Promise<
 export async function createLocalOutboundMove(input: {
   itemRefKey: string;
   fieldId?: string | null;
+  /** Техніка для списання запчастин */
+  equipmentId?: string | null;
   qty: number;
   /** Агросезон ('2026'); якщо не передано — DEFAULT_SEASON */
   season?: string;
@@ -343,6 +351,7 @@ export async function createLocalOutboundMove(input: {
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   const itemRefKey = input.itemRefKey?.trim().toLowerCase();
   const fieldId = input.fieldId?.trim().toLowerCase() || null;
+  const equipmentId = input.equipmentId?.trim().toLowerCase() || null;
   const qty = Number(input.qty);
   const season = String(input.season ?? "2026").trim() || "2026";
   const note = input.note?.trim() || null;
@@ -383,19 +392,24 @@ export async function createLocalOutboundMove(input: {
       category === "zzr" ||
       category === "fertilizer" ||
       category === "seed";
+    const equipmentRequired = category === "parts";
     if (fieldRequired && !fieldId) {
       return { ok: false, error: "Оберіть поле" };
+    }
+    if (equipmentRequired && !equipmentId) {
+      return { ok: false, error: "Оберіть техніку" };
     }
 
     const actor = await getCurrentActor();
     const actorCols = actorCreateColumns(actor);
     const weather_context = await captureWeatherContextForField(
       supabase,
-      fieldId
+      fieldRequired ? fieldId : null
     );
     const payload: Record<string, unknown> = {
       item_ref_key: itemRefKey,
-      field_id: fieldId,
+      field_id: equipmentRequired ? null : fieldId,
+      ...(equipmentId ? { equipment_id: equipmentId } : {}),
       type: "outbound",
       qty,
       date: moveDate,
@@ -412,6 +426,30 @@ export async function createLocalOutboundMove(input: {
       .single();
 
     if (error) {
+      if (error.message?.includes("equipment_id")) {
+        const { equipment_id: _e, ...withoutEq } = payload;
+        const retryEq = await supabase
+          .from("inventory_local_moves")
+          .insert(withoutEq)
+          .select("id")
+          .single();
+        if (retryEq.error) return { ok: false, error: retryEq.error.message };
+        const retryEqId = String(retryEq.data.id);
+        void enqueueInventoryOutboundBasDraft(retryEqId).catch((e) =>
+          console.error("[bas-drafts] outbound", e)
+        );
+        await logActivity({
+          actor,
+          action: "create",
+          entityType: "inventory_move",
+          entityId: retryEqId,
+          summary: `${actor.label} списав ТМЦ зі складу`,
+          meta: { type: "outbound", qty, itemRefKey, fieldId, equipmentId },
+        });
+        revalidatePath("/inventory");
+        revalidatePath("/fields");
+        return { ok: true, id: retryEqId };
+      }
       if (
         error.message?.includes("weather_context") ||
         error.message?.includes("season") ||
@@ -442,7 +480,7 @@ export async function createLocalOutboundMove(input: {
           entityType: "inventory_move",
           entityId: retryId,
           summary: `${actor.label} списав ТМЦ зі складу`,
-          meta: { type: "outbound", qty, itemRefKey, fieldId },
+          meta: { type: "outbound", qty, itemRefKey, fieldId, equipmentId },
         });
         revalidatePath("/inventory");
         revalidatePath("/fields");
@@ -461,7 +499,7 @@ export async function createLocalOutboundMove(input: {
       entityType: "inventory_move",
       entityId: id,
       summary: `${actor.label} списав ТМЦ зі складу`,
-      meta: { type: "outbound", qty, itemRefKey, fieldId },
+      meta: { type: "outbound", qty, itemRefKey, fieldId, equipmentId },
     });
     revalidatePath("/inventory");
     revalidatePath("/fields");
@@ -477,7 +515,7 @@ export async function createLocalOutboundMove(input: {
 export async function createLocalInboundMove(input: {
   itemRefKey: string;
   qty: number;
-  /** Ціна ₴/од. (закупівля або оцінка собівартості врожаю) */
+  /** Ціна ₴/од. без ПДВ (закупівля або оцінка собівартості врожаю) */
   unitPriceUah: number;
   /** Постачальник (закупка) або порожньо для власного врожаю */
   buyerName?: string | null;
@@ -490,6 +528,11 @@ export async function createLocalInboundMove(input: {
   receiptId?: string | null;
   /** Не ставити в чергу BAS одразу — викличе enqueueWarehouseReceiptBasDraft після всіх рядків */
   skipBasDraft?: boolean;
+  /** Ставка ПДВ; за замовчуванням 20% для закупівель, none для врожаю */
+  vatRate?: InventoryVatRateId | null;
+  amountExVat?: number | null;
+  vatAmount?: number | null;
+  amountInclVat?: number | null;
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   const itemRefKey = input.itemRefKey?.trim().toLowerCase();
   const fieldId = input.fieldId?.trim().toLowerCase() || null;
@@ -525,9 +568,34 @@ export async function createLocalInboundMove(input: {
       .eq("bas_ref_key", itemRefKey)
       .maybeSingle();
 
-    if (String(itemRow?.category ?? "") === "harvest" && !fieldId) {
+    const category = String(itemRow?.category ?? "");
+    if (category === "harvest" && !fieldId) {
       return { ok: false, error: "Для врожаю оберіть поле" };
     }
+
+    const defaultVat: InventoryVatRateId =
+      category === "harvest" ? "none" : "20";
+    const vatRate: InventoryVatRateId = isInventoryVatRateId(input.vatRate)
+      ? input.vatRate
+      : defaultVat;
+    const vat = computeInventoryVat({
+      qty,
+      unitPriceExVat: unitPriceUah,
+      vatRate,
+      amountExVat:
+        input.amountExVat != null && Number.isFinite(Number(input.amountExVat))
+          ? Number(input.amountExVat)
+          : null,
+    });
+    const amountExVat = vat.amountExVat;
+    const vatAmount =
+      input.vatAmount != null && Number.isFinite(Number(input.vatAmount))
+        ? Math.round(Number(input.vatAmount) * 100) / 100
+        : vat.vatAmount;
+    const amountInclVat =
+      input.amountInclVat != null && Number.isFinite(Number(input.amountInclVat))
+        ? Math.round(Number(input.amountInclVat) * 100) / 100
+        : vat.amountInclVat;
 
     const actor = await getCurrentActor();
     const payload: Record<string, unknown> = {
@@ -541,6 +609,10 @@ export async function createLocalInboundMove(input: {
       note,
       unit_price_uah: unitPriceUah,
       buyer_name: buyerName,
+      amount_ex_vat: amountExVat,
+      vat_rate: vatRate,
+      vat_amount: vatAmount,
+      amount_incl_vat: amountInclVat,
       ...(receiptId ? { receipt_id: receiptId } : {}),
       ...actorCreateColumns(actor),
     };
@@ -568,6 +640,32 @@ export async function createLocalInboundMove(input: {
           error:
             "Не вдалося зберегти прихід. Перевірте дані і спробуйте ще раз.",
         };
+      }
+      if (
+        error.message?.includes("amount_ex_vat") ||
+        error.message?.includes("vat_rate") ||
+        error.message?.includes("vat_amount") ||
+        error.message?.includes("amount_incl_vat")
+      ) {
+        const {
+          amount_ex_vat: _a,
+          vat_rate: _vr,
+          vat_amount: _va,
+          amount_incl_vat: _ai,
+          ...withoutVat
+        } = payload;
+        const retryVat = await supabase
+          .from("inventory_local_moves")
+          .insert(withoutVat)
+          .select("id")
+          .single();
+        if (retryVat.error) {
+          return { ok: false, error: retryVat.error.message };
+        }
+        const retryVatId = String(retryVat.data.id);
+        scheduleBas(retryVatId);
+        revalidatePath("/inventory");
+        return { ok: true, id: retryVatId };
       }
       if (error.message?.includes("receipt_id")) {
         const { receipt_id: _r, ...withoutReceipt } = payload;
@@ -658,6 +756,754 @@ export async function createLocalInboundMove(input: {
   }
 }
 
+export type ManualInboundLineInput = {
+  /** Існуючий рядок inventory_local_moves (редагування) */
+  moveId?: string | null;
+  itemRefKey: string;
+  qty: number;
+  unitPriceUah: number;
+  vatRate?: InventoryVatRateId | null;
+  amountExVat?: number | null;
+  vatAmount?: number | null;
+  amountInclVat?: number | null;
+};
+
+/**
+ * Ручний мультитоварний прихід: 1 warehouse_receipts + N inventory_local_moves.
+ * Спільні постачальник / № накладної / дата; BAS — один документ через receipt.
+ */
+export async function createManualInboundReceipt(input: {
+  supplierName: string;
+  invoiceNumber?: string | null;
+  invoiceDate?: string | null;
+  note?: string | null;
+  season?: string;
+  lines: ManualInboundLineInput[];
+}): Promise<
+  | { ok: true; receiptId: string; moveIds: string[]; basWarning?: string }
+  | { ok: false; error: string }
+> {
+  const supplierName = input.supplierName?.trim() || "";
+  if (!supplierName) {
+    return { ok: false, error: "Вкажіть постачальника" };
+  }
+  const invoiceNumber = input.invoiceNumber?.trim() || null;
+  const note = input.note?.trim() || null;
+  const season = String(input.season ?? "2026").trim() || "2026";
+  const invoiceDate = (() => {
+    const raw = input.invoiceDate?.trim();
+    if (!raw) return new Date().toISOString().slice(0, 10);
+    return raw.slice(0, 10);
+  })();
+  const lines = Array.isArray(input.lines) ? input.lines : [];
+
+  if (lines.length === 0) {
+    return { ok: false, error: "Додайте хоча б одну позицію" };
+  }
+
+  const normalized: Array<
+    ManualInboundLineInput & {
+      itemRefKey: string;
+      qty: number;
+      unitPriceUah: number;
+      vatRate: InventoryVatRateId;
+      amountExVat: number;
+      vatAmount: number;
+      amountInclVat: number;
+    }
+  > = [];
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const itemRefKey = line.itemRefKey?.trim().toLowerCase();
+    const qty = Number(line.qty);
+    const unitPriceUah = Number(line.unitPriceUah);
+    if (!itemRefKey) {
+      return { ok: false, error: `Рядок ${i + 1}: оберіть товар` };
+    }
+    if (!Number.isFinite(qty) || qty <= 0) {
+      return { ok: false, error: `Рядок ${i + 1}: кількість > 0` };
+    }
+    if (!Number.isFinite(unitPriceUah) || unitPriceUah < 0) {
+      return { ok: false, error: `Рядок ${i + 1}: вкажіть ціну без ПДВ` };
+    }
+    const vatRate: InventoryVatRateId = isInventoryVatRateId(line.vatRate)
+      ? line.vatRate
+      : "20";
+    // Єдине джерело правди: серверний перерахунок (клієнтські vat/incl ігноруємо).
+    // amountExVat з форми — після зворотного перерахунку від «Усього з ПДВ».
+    const vat = computeInventoryVat({
+      qty,
+      unitPriceExVat: unitPriceUah,
+      vatRate,
+      amountExVat:
+        line.amountExVat != null && Number.isFinite(Number(line.amountExVat))
+          ? Number(line.amountExVat)
+          : null,
+    });
+    normalized.push({
+      itemRefKey,
+      qty,
+      unitPriceUah: vat.unitPriceExVat,
+      vatRate,
+      amountExVat: vat.amountExVat,
+      vatAmount: vat.vatAmount,
+      amountInclVat: vat.amountInclVat,
+    });
+  }
+
+  const totalEx = normalized.reduce((s, l) => s + l.amountExVat, 0);
+  const totalVat = normalized.reduce((s, l) => s + l.vatAmount, 0);
+  const totalIncl = normalized.reduce((s, l) => s + l.amountInclVat, 0);
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+
+  try {
+    const supabase = createServiceSupabase();
+    const actor = await getCurrentActor();
+    const receiptId = crypto.randomUUID();
+
+    const noteBase = [
+      supplierName || null,
+      invoiceNumber ? `№${invoiceNumber}` : null,
+      `від ${invoiceDate}`,
+      note,
+      "ручний прихід",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+
+    const receiptPayload: Record<string, unknown> = {
+      id: receiptId,
+      supplier_name: supplierName,
+      invoice_number: invoiceNumber,
+      invoice_date: invoiceDate,
+      total_amount: round2(totalIncl),
+      amount_ex_vat: round2(totalEx),
+      vat_amount: round2(totalVat),
+      amount_incl_vat: round2(totalIncl),
+      status: "posted",
+      source: "manual",
+      bas_handoff_status: "local_saved",
+      actor_name: actor.label,
+    };
+
+    const { error: receiptError } = await supabase
+      .from("warehouse_receipts")
+      .insert(receiptPayload);
+
+    let receiptTableMissing = false;
+    if (receiptError) {
+      const missingTable =
+        receiptError.code === "PGRST205" ||
+        receiptError.code === "42P01" ||
+        receiptError.message?.includes("warehouse_receipts");
+      if (missingTable) {
+        receiptTableMissing = true;
+      } else if (
+        receiptError.message?.includes("amount_ex_vat") ||
+        receiptError.message?.includes("vat_amount") ||
+        receiptError.message?.includes("amount_incl_vat") ||
+        receiptError.message?.includes("bas_handoff_status") ||
+        receiptError.message?.includes("source")
+      ) {
+        const {
+          amount_ex_vat: _a,
+          vat_amount: _v,
+          amount_incl_vat: _i,
+          bas_handoff_status: _h,
+          ...basic
+        } = receiptPayload;
+        const retry = await supabase.from("warehouse_receipts").insert({
+          ...basic,
+          source: "manual",
+        });
+        if (retry.error) {
+          const bare = await supabase.from("warehouse_receipts").insert({
+            id: receiptId,
+            supplier_name: supplierName || "—",
+            invoice_number: invoiceNumber,
+            invoice_date: invoiceDate,
+            total_amount: round2(totalIncl),
+            status: "posted",
+            source: "levadius",
+          });
+          if (bare.error) {
+            return {
+              ok: false,
+              error: `Не вдалося зберегти накладну: ${bare.error.message}`,
+            };
+          }
+        }
+      } else {
+        return {
+          ok: false,
+          error: `Не вдалося зберегти накладну: ${receiptError.message}`,
+        };
+      }
+    }
+
+    const moveIds: string[] = [];
+    for (const line of normalized) {
+      const inbound = await createLocalInboundMove({
+        itemRefKey: line.itemRefKey,
+        qty: line.qty,
+        unitPriceUah: line.unitPriceUah,
+        buyerName: supplierName,
+        note: noteBase,
+        season,
+        date: invoiceDate,
+        receiptId: receiptTableMissing ? null : receiptId,
+        skipBasDraft: !receiptTableMissing,
+        vatRate: line.vatRate,
+        amountExVat: line.amountExVat,
+        vatAmount: line.vatAmount,
+        amountInclVat: line.amountInclVat,
+      });
+      if (!inbound.ok) {
+        // Компенсація: прибираємо частково створені рядки + шапку
+        if (moveIds.length > 0) {
+          await supabase
+            .from("inventory_local_moves")
+            .delete()
+            .in("id", moveIds);
+        }
+        if (!receiptTableMissing) {
+          await supabase.from("warehouse_receipts").delete().eq("id", receiptId);
+        }
+        return {
+          ok: false,
+          error: inbound.error,
+        };
+      }
+      moveIds.push(inbound.id);
+    }
+
+    let basWarning: string | undefined;
+    if (!receiptTableMissing) {
+      const { enqueueWarehouseReceiptBasDraft } = await import(
+        "@/lib/bas-drafts/inventory-inbound"
+      );
+      try {
+        const bas = await enqueueWarehouseReceiptBasDraft(receiptId);
+        if (!bas.ok) {
+          basWarning =
+            bas.error ||
+            (bas.handoffStatus === "awaiting_bas_mapping"
+              ? "Прихід збережено · контрагента не знайдено в BAS — дозаповніть ЄДРПОУ у «Бухгалтерії»"
+              : "Прихід збережено · чернетку BAS не створено");
+        }
+      } catch (e) {
+        console.error("[bas-drafts] manual inbound receipt", e);
+        basWarning = "Прихід збережено · помилка відправки в BAS";
+      }
+    }
+
+    await logActivity({
+      actor,
+      action: "create",
+      entityType: "warehouse_receipt",
+      entityId: receiptId,
+      summary: `${actor.label} оформив ручний прихід (${moveIds.length} поз.)`,
+      meta: {
+        type: "inbound",
+        lines: moveIds.length,
+        supplierName,
+        invoiceNumber,
+      },
+    });
+
+    revalidatePath("/inventory");
+    return { ok: true, receiptId, moveIds, basWarning };
+  } catch (err) {
+    return {
+      ok: false,
+      error:
+        err instanceof Error
+          ? err.message
+          : "Не вдалося зберегти ручний прихід",
+    };
+  }
+}
+
+export type ManualInboundEditLine = {
+  moveId: string;
+  itemRefKey: string;
+  category: QuickIssueItemOption["category"];
+  qty: number;
+  unitPriceExVat: number;
+  amountExVat: number;
+  vatRate: InventoryVatRateId;
+  vatAmount: number;
+  amountInclVat: number;
+};
+
+/** Завантаження накладної для редагування (до/після чернетки BAS). */
+export async function loadManualInboundReceiptForEdit(
+  receiptId: string
+): Promise<
+  | {
+      ok: true;
+      receiptId: string;
+      supplierName: string;
+      invoiceNumber: string | null;
+      invoiceDate: string;
+      note: string | null;
+      basHandoffStatus: string;
+      basDraftRefKey: string | null;
+      lockedReason: string | null;
+      lines: ManualInboundEditLine[];
+    }
+  | { ok: false; error: string }
+> {
+  try {
+    const id = receiptId.trim();
+    if (!id) return { ok: false, error: "Немає id накладної" };
+    const supabase = createServiceSupabase();
+    const { data: receipt, error: receiptError } = await supabase
+      .from("warehouse_receipts")
+      .select(
+        "id, supplier_name, invoice_number, invoice_date, status, bas_handoff_status, bas_draft_ref_key"
+      )
+      .eq("id", id)
+      .maybeSingle();
+
+    if (receiptError || !receipt) {
+      return {
+        ok: false,
+        error: receiptError?.message || "Накладну не знайдено",
+      };
+    }
+
+    return loadManualInboundReceiptForEditCore(
+      supabase,
+      receipt as Record<string, unknown>
+    );
+  } catch (err) {
+    return {
+      ok: false,
+      error:
+        err instanceof Error
+          ? err.message
+          : "Не вдалося відкрити накладну",
+    };
+  }
+}
+
+async function loadManualInboundReceiptForEditCore(
+  supabase: ReturnType<typeof createServiceSupabase>,
+  receipt: Record<string, unknown>
+): Promise<
+  | {
+      ok: true;
+      receiptId: string;
+      supplierName: string;
+      invoiceNumber: string | null;
+      invoiceDate: string;
+      note: string | null;
+      basHandoffStatus: string;
+      basDraftRefKey: string | null;
+      lockedReason: string | null;
+      lines: ManualInboundEditLine[];
+    }
+  | { ok: false; error: string }
+> {
+  const id = String(receipt.id);
+  const handoff = String(receipt.bas_handoff_status ?? "local_saved");
+  const draftRef =
+    receipt.bas_draft_ref_key != null
+      ? String(receipt.bas_draft_ref_key)
+      : null;
+
+  // Блокуємо лише скасовані; чернетку Posted:false можна оновлювати PATCH.
+  const lockedReason =
+    String(receipt.status ?? "") === "cancelled"
+      ? "Накладну скасовано — редагування недоступне"
+      : null;
+
+  let { data: moves, error: movesError } = await supabase
+    .from("inventory_local_moves")
+    .select(
+      `
+      id, qty, unit_price_uah, item_ref_key, note, amount_ex_vat, vat_rate, vat_amount, amount_incl_vat, is_reverted,
+      inventory_items_cache ( bas_ref_key, category, name )
+    `
+    )
+    .eq("receipt_id", id)
+    .eq("type", "inbound")
+    .order("created_at", { ascending: true });
+
+  if (
+    movesError &&
+    (movesError.message?.includes("amount_ex_vat") ||
+      movesError.message?.includes("vat_rate") ||
+      movesError.message?.includes("is_reverted"))
+  ) {
+    const legacy = await supabase
+      .from("inventory_local_moves")
+      .select(
+        `
+        id, qty, unit_price_uah, item_ref_key, note,
+        inventory_items_cache ( bas_ref_key, category, name )
+      `
+      )
+      .eq("receipt_id", id)
+      .eq("type", "inbound")
+      .order("created_at", { ascending: true });
+    moves = legacy.data as typeof moves;
+    movesError = legacy.error;
+  }
+
+  if (movesError) {
+    return { ok: false, error: movesError.message };
+  }
+
+  const noteFromMove = (() => {
+    const first = (moves ?? [])[0] as { note?: unknown } | undefined;
+    if (typeof first?.note === "string" && first.note.trim()) {
+      // Примітка користувача — хвіст після «ручний прихід» або весь рядок без шаблону
+      const raw = first.note.trim();
+      const marker = "ручний прихід";
+      if (raw.includes(marker)) {
+        const parts = raw.split(" · ").filter((p) => p !== marker);
+        // Залишаємо лише хвіст, що не схожий на шапку
+        const tail = parts.filter(
+          (p) =>
+            !p.startsWith("№") &&
+            !p.startsWith("від ") &&
+            p !== String(receipt.supplier_name ?? "")
+        );
+        return tail.join(" · ") || null;
+      }
+      return raw;
+    }
+    return null;
+  })();
+
+  const lines: ManualInboundEditLine[] = [];
+  for (const row of moves ?? []) {
+    if (
+      "is_reverted" in row &&
+      (row as { is_reverted?: boolean }).is_reverted === true
+    ) {
+      continue;
+    }
+    const cache = Array.isArray(row.inventory_items_cache)
+      ? row.inventory_items_cache[0]
+      : row.inventory_items_cache;
+    const qty = Number(row.qty) || 0;
+    const unitPrice = Number(row.unit_price_uah) || 0;
+    const vatRate: InventoryVatRateId = isInventoryVatRateId(
+      (row as { vat_rate?: unknown }).vat_rate
+    )
+      ? ((row as { vat_rate: InventoryVatRateId }).vat_rate)
+      : "20";
+    const vat = computeInventoryVat({
+      qty,
+      unitPriceExVat: unitPrice,
+      vatRate,
+      amountExVat:
+        (row as { amount_ex_vat?: unknown }).amount_ex_vat != null
+          ? Number((row as { amount_ex_vat: number }).amount_ex_vat)
+          : null,
+    });
+    const catRaw = String(cache?.category ?? "parts");
+    const category = (
+      ["zzr", "fertilizer", "seed", "parts", "harvest"].includes(catRaw)
+        ? catRaw
+        : "parts"
+    ) as QuickIssueItemOption["category"];
+
+    lines.push({
+      moveId: String(row.id),
+      itemRefKey: String(row.item_ref_key).toLowerCase(),
+      category,
+      qty,
+      unitPriceExVat: unitPrice,
+      amountExVat:
+        (row as { amount_ex_vat?: number }).amount_ex_vat != null
+          ? Number((row as { amount_ex_vat: number }).amount_ex_vat)
+          : vat.amountExVat,
+      vatRate,
+      vatAmount:
+        (row as { vat_amount?: number }).vat_amount != null
+          ? Number((row as { vat_amount: number }).vat_amount)
+          : vat.vatAmount,
+      amountInclVat:
+        (row as { amount_incl_vat?: number }).amount_incl_vat != null
+          ? Number((row as { amount_incl_vat: number }).amount_incl_vat)
+          : vat.amountInclVat,
+    });
+  }
+
+  if (lines.length === 0) {
+    return { ok: false, error: "У накладній немає рядків для редагування" };
+  }
+
+  return {
+    ok: true,
+    receiptId: id,
+    supplierName: String(receipt.supplier_name ?? ""),
+    invoiceNumber:
+      typeof receipt.invoice_number === "string"
+        ? receipt.invoice_number
+        : null,
+    invoiceDate: String(receipt.invoice_date ?? "").slice(0, 10) ||
+      new Date().toISOString().slice(0, 10),
+    note: noteFromMove,
+    basHandoffStatus: handoff,
+    basDraftRefKey: draftRef,
+    lockedReason,
+    lines,
+  };
+}
+
+/**
+ * Оновлення ручного приходу: шапка + рядки (додати / змінити / прибрати).
+ * Якщо є bas_draft_ref_key — після збереження PATCH чернетки BAS.
+ */
+export async function updateManualInboundReceipt(input: {
+  receiptId: string;
+  supplierName: string;
+  invoiceNumber?: string | null;
+  invoiceDate?: string | null;
+  note?: string | null;
+  season?: string;
+  lines: ManualInboundLineInput[];
+}): Promise<
+  | { ok: true; receiptId: string; moveIds: string[]; basWarning?: string }
+  | { ok: false; error: string }
+> {
+  const receiptId = input.receiptId?.trim();
+  if (!receiptId) return { ok: false, error: "Немає id накладної" };
+
+  const loaded = await loadManualInboundReceiptForEdit(receiptId);
+  if (!loaded.ok) return loaded;
+  if (loaded.lockedReason) {
+    return { ok: false, error: loaded.lockedReason };
+  }
+
+  const supplierName = input.supplierName?.trim() || "";
+  if (!supplierName) {
+    return { ok: false, error: "Вкажіть постачальника" };
+  }
+  const invoiceNumber = input.invoiceNumber?.trim() || null;
+  const note = input.note?.trim() || null;
+  const season = String(input.season ?? "2026").trim() || "2026";
+  const invoiceDate = (input.invoiceDate?.trim() || loaded.invoiceDate).slice(
+    0,
+    10
+  );
+  const lines = Array.isArray(input.lines) ? input.lines : [];
+  if (lines.length === 0) {
+    return { ok: false, error: "Додайте хоча б одну позицію" };
+  }
+
+  const normalized: Array<
+    ManualInboundLineInput & {
+      moveId: string | null;
+      itemRefKey: string;
+      qty: number;
+      unitPriceUah: number;
+      vatRate: InventoryVatRateId;
+      amountExVat: number;
+      vatAmount: number;
+      amountInclVat: number;
+    }
+  > = [];
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i]!;
+    const itemRefKey = line.itemRefKey?.trim().toLowerCase();
+    const qty = Number(line.qty);
+    const unitPriceUah = Number(line.unitPriceUah);
+    if (!itemRefKey) {
+      return { ok: false, error: `Рядок ${i + 1}: оберіть товар` };
+    }
+    if (!Number.isFinite(qty) || qty <= 0) {
+      return { ok: false, error: `Рядок ${i + 1}: кількість > 0` };
+    }
+    if (!Number.isFinite(unitPriceUah) || unitPriceUah < 0) {
+      return { ok: false, error: `Рядок ${i + 1}: вкажіть ціну без ПДВ` };
+    }
+    const vatRate: InventoryVatRateId = isInventoryVatRateId(line.vatRate)
+      ? line.vatRate
+      : "20";
+    const vat = computeInventoryVat({
+      qty,
+      unitPriceExVat: unitPriceUah,
+      vatRate,
+      amountExVat:
+        line.amountExVat != null && Number.isFinite(Number(line.amountExVat))
+          ? Number(line.amountExVat)
+          : null,
+    });
+    normalized.push({
+      moveId: line.moveId?.trim() || null,
+      itemRefKey,
+      qty,
+      unitPriceUah: vat.unitPriceExVat,
+      vatRate,
+      amountExVat: vat.amountExVat,
+      vatAmount: vat.vatAmount,
+      amountInclVat: vat.amountInclVat,
+    });
+  }
+
+  const totalEx = normalized.reduce((s, l) => s + l.amountExVat, 0);
+  const totalVat = normalized.reduce((s, l) => s + l.vatAmount, 0);
+  const totalIncl = normalized.reduce((s, l) => s + l.amountInclVat, 0);
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+
+  try {
+    const supabase = createServiceSupabase();
+    const actor = await getCurrentActor();
+    const noteBase = [
+      supplierName || null,
+      invoiceNumber ? `№${invoiceNumber}` : null,
+      `від ${invoiceDate}`,
+      note,
+      "ручний прихід",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+
+    await supabase
+      .from("warehouse_receipts")
+      .update({
+        supplier_name: supplierName,
+        invoice_number: invoiceNumber,
+        invoice_date: invoiceDate,
+        total_amount: round2(totalIncl),
+        amount_ex_vat: round2(totalEx),
+        vat_amount: round2(totalVat),
+        amount_incl_vat: round2(totalIncl),
+      })
+      .eq("id", receiptId);
+
+    const keepMoveIds = new Set(
+      normalized.map((l) => l.moveId).filter((id): id is string => Boolean(id))
+    );
+    // Видалення рядків у межах редагування непроведеної накладної —
+    // навіть якщо status уже sent_to_1c (Excel), поки lockedReason порожній.
+    for (const existing of loaded.lines) {
+      if (!keepMoveIds.has(existing.moveId)) {
+        const { error: delErr } = await supabase
+          .from("inventory_local_moves")
+          .delete()
+          .eq("id", existing.moveId)
+          .eq("receipt_id", receiptId);
+        if (delErr) {
+          return {
+            ok: false,
+            error: `Не вдалося прибрати рядок: ${delErr.message}`,
+          };
+        }
+      }
+    }
+
+    const moveIds: string[] = [];
+    for (const line of normalized) {
+      if (line.moveId) {
+        const patch: Record<string, unknown> = {
+          item_ref_key: line.itemRefKey,
+          qty: line.qty,
+          unit_price_uah: line.unitPriceUah,
+          buyer_name: supplierName || null,
+          note: noteBase,
+          date: invoiceDate,
+          amount_ex_vat: line.amountExVat,
+          vat_rate: line.vatRate,
+          vat_amount: line.vatAmount,
+          amount_incl_vat: line.amountInclVat,
+          updated_at: new Date().toISOString(),
+          ...actorUpdateColumns(actor),
+        };
+        const { error } = await supabase
+          .from("inventory_local_moves")
+          .update(patch)
+          .eq("id", line.moveId);
+        if (error) {
+          // Fallback без VAT / actor колонок
+          const basic = {
+            item_ref_key: line.itemRefKey,
+            qty: line.qty,
+            unit_price_uah: line.unitPriceUah,
+            buyer_name: supplierName || null,
+            note: noteBase,
+            date: invoiceDate,
+          };
+          const retry = await supabase
+            .from("inventory_local_moves")
+            .update(basic)
+            .eq("id", line.moveId);
+          if (retry.error) {
+            return { ok: false, error: retry.error.message };
+          }
+        }
+        moveIds.push(line.moveId);
+      } else {
+        const inbound = await createLocalInboundMove({
+          itemRefKey: line.itemRefKey,
+          qty: line.qty,
+          unitPriceUah: line.unitPriceUah,
+          buyerName: supplierName || null,
+          note: noteBase,
+          season,
+          date: invoiceDate,
+          receiptId,
+          skipBasDraft: true,
+          vatRate: line.vatRate,
+          amountExVat: line.amountExVat,
+          vatAmount: line.vatAmount,
+          amountInclVat: line.amountInclVat,
+        });
+        if (!inbound.ok) return { ok: false, error: inbound.error };
+        moveIds.push(inbound.id);
+      }
+    }
+
+    let basWarning: string | undefined;
+    const { enqueueWarehouseReceiptBasDraft } = await import(
+      "@/lib/bas-drafts/inventory-inbound"
+    );
+    try {
+      const bas = await enqueueWarehouseReceiptBasDraft(receiptId, {
+        forceUpdateRefKey: loaded.basDraftRefKey,
+      });
+      if (!bas.ok) {
+        basWarning =
+          bas.error ||
+          (bas.handoffStatus === "awaiting_bas_mapping"
+            ? "Зміни збережено · контрагента не знайдено в BAS — дозаповніть ЄДРПОУ"
+            : "Зміни збережено · чернетку BAS не оновлено");
+      }
+    } catch (e) {
+      console.error("[bas-drafts] update manual inbound receipt", e);
+      basWarning = "Зміни збережено · помилка оновлення чернетки BAS";
+    }
+
+    await logActivity({
+      actor,
+      action: "update",
+      entityType: "warehouse_receipt",
+      entityId: receiptId,
+      summary: `${actor.label} оновив ручний прихід (${moveIds.length} поз.)`,
+      meta: { type: "inbound", moveIds },
+    });
+
+    revalidatePath("/inventory");
+    return { ok: true, receiptId, moveIds, basWarning };
+  } catch (err) {
+    return {
+      ok: false,
+      error:
+        err instanceof Error
+          ? err.message
+          : "Не вдалося оновити прихід",
+    };
+  }
+}
+
 export type WarehouseReceiptBasRow = {
   id: string;
   supplierName: string;
@@ -685,6 +1531,7 @@ export async function listWarehouseReceiptsBasHandoff(limit = 40): Promise<
       .select(
         "id, supplier_name, supplier_edrpou, invoice_number, invoice_date, total_amount, status, bas_handoff_status, bas_draft_ref_key, bas_draft_error, bas_draft_sent_at, created_at"
       )
+      .neq("status", "cancelled")
       .order("created_at", { ascending: false })
       .limit(Math.min(100, Math.max(1, limit)));
 
@@ -700,7 +1547,15 @@ export async function listWarehouseReceiptsBasHandoff(limit = 40): Promise<
       return { ok: false, error: error.message };
     }
 
-    const rows: WarehouseReceiptBasRow[] = (data ?? []).map((row) => ({
+    const rows: WarehouseReceiptBasRow[] = (data ?? [])
+      // dismissed (міграція 083) або позначка до міграції
+      .filter((row) => {
+        const handoff = String(row.bas_handoff_status ?? "");
+        const err =
+          typeof row.bas_draft_error === "string" ? row.bas_draft_error : "";
+        return handoff !== "dismissed" && err !== "__dismissed__";
+      })
+      .map((row) => ({
       id: String(row.id),
       supplierName: String(row.supplier_name ?? ""),
       supplierEdrpou:
@@ -737,9 +1592,52 @@ export async function listWarehouseReceiptsBasHandoff(limit = 40): Promise<
   }
 }
 
+/**
+ * Прибрати накладну з блоку «Накладні → 1С».
+ * Не відкатує склад і не видаляє чернетку в BAS — лише ховає з черги.
+ */
+export async function dismissWarehouseReceiptFromBasListAction(
+  receiptId: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const id = receiptId.trim();
+    if (!id) return { ok: false, error: "Немає id накладної" };
+    const supabase = createServiceSupabase();
+    // Після міграції 083 — статус dismissed; до неї — маркер у bas_draft_error.
+    const primary = await supabase
+      .from("warehouse_receipts")
+      .update({
+        bas_handoff_status: "dismissed",
+        bas_draft_error: null,
+      })
+      .eq("id", id);
+    if (!primary.error) return { ok: true };
+    if (
+      primary.error.message?.includes("bas_handoff_status") ||
+      primary.error.message?.includes("check constraint") ||
+      primary.error.code === "23514"
+    ) {
+      const fallback = await supabase
+        .from("warehouse_receipts")
+        .update({ bas_draft_error: "__dismissed__" })
+        .eq("id", id);
+      if (fallback.error) return { ok: false, error: fallback.error.message };
+      return { ok: true };
+    }
+    return { ok: false, error: primary.error.message };
+  } catch (err) {
+    return {
+      ok: false,
+      error:
+        err instanceof Error ? err.message : "Не вдалося прибрати зі списку",
+    };
+  }
+}
+
 /** Повторна відправка multi-line чернетки BAS по накладній. */
 export async function retryWarehouseReceiptBasDraftAction(
-  receiptId: string
+  receiptId: string,
+  options?: { basCounterpartyCode?: string | null }
 ): Promise<
   | { ok: true; handoffStatus: string; dryRun: boolean; message: string }
   | { ok: false; error: string }
@@ -749,9 +1647,18 @@ export async function retryWarehouseReceiptBasDraftAction(
       "@/lib/bas-drafts/inventory-inbound"
     );
     const { describeBasHandoff } = await import("@/lib/bas-drafts/statuses");
-    const result = await enqueueWarehouseReceiptBasDraft(receiptId.trim());
-    if (!result.ok && result.handoffStatus === "bas_draft_failed") {
-      return { ok: false, error: result.error || "Помилка відправки чернетки" };
+    const result = await enqueueWarehouseReceiptBasDraft(receiptId.trim(), {
+      basCounterpartyCode: options?.basCounterpartyCode ?? null,
+    });
+    if (!result.ok) {
+      return {
+        ok: false,
+        error:
+          result.error ||
+          (result.handoffStatus === "awaiting_bas_mapping"
+            ? "Контрагента не знайдено в BAS — документ не створено"
+            : "Помилка відправки чернетки"),
+      };
     }
     return {
       ok: true,
@@ -767,6 +1674,211 @@ export async function retryWarehouseReceiptBasDraftAction(
   }
 }
 
+/**
+ * Дозаповнення ЄДРПОУ / коду BAS / ставок ПДВ по накладній перед відправкою.
+ * При sendToBas=true — одразу enqueueWarehouseReceiptBasDraft (усі рядки одним документом).
+ */
+export async function patchWarehouseReceiptAccountantMetaAction(input: {
+  receiptId: string;
+  supplierEdrpou?: string | null;
+  basCounterpartyCode?: string | null;
+  lineVatRates?: Array<{ moveId: string; vatRate: InventoryVatRateId }>;
+  sendToBas?: boolean;
+}): Promise<
+  | {
+      ok: true;
+      message: string;
+      handoffStatus?: string;
+      dryRun?: boolean;
+    }
+  | { ok: false; error: string }
+> {
+  const receiptId = input.receiptId?.trim();
+  if (!receiptId) return { ok: false, error: "Немає id накладної" };
+
+  const edrpouRaw =
+    input.supplierEdrpou != null
+      ? String(input.supplierEdrpou).replace(/\D/g, "")
+      : undefined;
+  const basCode = input.basCounterpartyCode?.trim() || null;
+  const lineVatRates = Array.isArray(input.lineVatRates)
+    ? input.lineVatRates
+    : [];
+
+  try {
+    const supabase = createServiceSupabase();
+    const { data: receipt, error: receiptError } = await supabase
+      .from("warehouse_receipts")
+      .select("id, supplier_name, supplier_edrpou, status")
+      .eq("id", receiptId)
+      .maybeSingle();
+    if (receiptError || !receipt) {
+      return {
+        ok: false,
+        error: receiptError?.message || "Накладну не знайдено",
+      };
+    }
+    if (String(receipt.status ?? "") === "cancelled") {
+      return { ok: false, error: "Накладну скасовано" };
+    }
+
+    if (edrpouRaw !== undefined) {
+      const { error: updErr } = await supabase
+        .from("warehouse_receipts")
+        .update({
+          supplier_edrpou: edrpouRaw || null,
+        })
+        .eq("id", receiptId);
+      if (updErr) {
+        return { ok: false, error: updErr.message };
+      }
+    }
+
+    for (const line of lineVatRates) {
+      const moveId = line.moveId?.trim();
+      if (!moveId || !isInventoryVatRateId(line.vatRate)) continue;
+      const { data: move, error: moveErr } = await supabase
+        .from("inventory_local_moves")
+        .select("id, qty, unit_price_uah, amount_ex_vat, amount_incl_vat, receipt_id")
+        .eq("id", moveId)
+        .maybeSingle();
+      if (moveErr || !move) continue;
+      if (String(move.receipt_id ?? "") !== receiptId) continue;
+      const qty = Number(move.qty) || 0;
+      const unitPrice = Number(move.unit_price_uah) || 0;
+      // Зміна ставки в «Бухгалтерії»: тримаємо «Усього з ПДВ» з рахунку (якщо є).
+      const inclHint =
+        "amount_incl_vat" in move &&
+        move.amount_incl_vat != null &&
+        Number.isFinite(Number(move.amount_incl_vat))
+          ? Number(move.amount_incl_vat)
+          : null;
+      const amountExHint =
+        move.amount_ex_vat != null && Number.isFinite(Number(move.amount_ex_vat))
+          ? Number(move.amount_ex_vat)
+          : null;
+      const vat =
+        inclHint != null && inclHint > 0
+          ? computeInventoryVatFromIncl({
+              qty,
+              amountInclVat: inclHint,
+              vatRate: line.vatRate,
+            })
+          : computeInventoryVat({
+              qty,
+              unitPriceExVat: unitPrice,
+              vatRate: line.vatRate,
+              amountExVat: amountExHint,
+            });
+      const { error: vatUpdErr } = await supabase
+        .from("inventory_local_moves")
+        .update({
+          vat_rate: line.vatRate,
+          unit_price_uah: vat.unitPriceExVat,
+          amount_ex_vat: vat.amountExVat,
+          vat_amount: vat.vatAmount,
+          amount_incl_vat: vat.amountInclVat,
+        })
+        .eq("id", moveId);
+      if (vatUpdErr && !vatUpdErr.message?.includes("vat_rate")) {
+        return { ok: false, error: vatUpdErr.message };
+      }
+    }
+
+    // Перерахунок підсумків накладної
+    const { data: allMoves } = await supabase
+      .from("inventory_local_moves")
+      .select("amount_ex_vat, vat_amount, amount_incl_vat, unit_price_uah, qty")
+      .eq("receipt_id", receiptId)
+      .eq("type", "inbound");
+    if (allMoves && allMoves.length > 0) {
+      let totalEx = 0;
+      let totalVat = 0;
+      let totalIncl = 0;
+      for (const m of allMoves) {
+        const qty = Number(m.qty) || 0;
+        const price = Number(m.unit_price_uah) || 0;
+        const ex =
+          m.amount_ex_vat != null && Number.isFinite(Number(m.amount_ex_vat))
+            ? Number(m.amount_ex_vat)
+            : Math.round(qty * price * 100) / 100;
+        const vatAmt =
+          m.vat_amount != null && Number.isFinite(Number(m.vat_amount))
+            ? Number(m.vat_amount)
+            : 0;
+        const incl =
+          m.amount_incl_vat != null && Number.isFinite(Number(m.amount_incl_vat))
+            ? Number(m.amount_incl_vat)
+            : Math.round((ex + vatAmt) * 100) / 100;
+        totalEx += ex;
+        totalVat += vatAmt;
+        totalIncl += incl;
+      }
+      const round2 = (n: number) => Math.round(n * 100) / 100;
+      await supabase
+        .from("warehouse_receipts")
+        .update({
+          amount_ex_vat: round2(totalEx),
+          vat_amount: round2(totalVat),
+          amount_incl_vat: round2(totalIncl),
+          total_amount: round2(totalIncl),
+        })
+        .eq("id", receiptId);
+    }
+
+    if (basCode || edrpouRaw) {
+      const { resolveBasCounterpartyKey } = await import(
+        "@/lib/bas-drafts/counterparty"
+      );
+      await resolveBasCounterpartyKey({
+        edrpou: edrpouRaw ?? receipt.supplier_edrpou,
+        name: receipt.supplier_name,
+        basCode,
+      });
+    }
+
+    if (!input.sendToBas) {
+      revalidatePath("/accounting");
+      return { ok: true, message: "Реквізити збережено" };
+    }
+
+    const { enqueueWarehouseReceiptBasDraft } = await import(
+      "@/lib/bas-drafts/inventory-inbound"
+    );
+    const { describeBasHandoff } = await import("@/lib/bas-drafts/statuses");
+    const result = await enqueueWarehouseReceiptBasDraft(receiptId, {
+      basCounterpartyCode: basCode,
+    });
+    revalidatePath("/accounting");
+    if (!result.ok) {
+      return {
+        ok: false,
+        error:
+          result.error ||
+          (result.handoffStatus === "awaiting_bas_mapping"
+            ? "Контрагента все ще не знайдено — перевірте ЄДРПОУ або код BAS"
+            : "Не вдалося надіслати в BAS"),
+      };
+    }
+    return {
+      ok: true,
+      handoffStatus: result.handoffStatus,
+      dryRun: result.dryRun,
+      message: result.dryRun
+        ? describeBasHandoff(result.handoffStatus)
+        : "Надіслано в BAS · усі позиції накладної",
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error:
+        err instanceof Error
+          ? err.message
+          : "Не вдалося оновити реквізити накладної",
+    };
+  }
+}
+
 export type WarehouseReceiptDetailLine = {
   moveId: string;
   name: string;
@@ -776,6 +1888,10 @@ export type WarehouseReceiptDetailLine = {
   amount: number | null;
   basRefKey: string | null;
   isLocal: boolean;
+  vatRate: InventoryVatRateId | null;
+  amountExVat: number | null;
+  vatAmount: number | null;
+  amountInclVat: number | null;
 };
 
 /** Рядки накладної в LEVADA (що пішло / піде в чернетку BAS). */
@@ -806,17 +1922,38 @@ export async function getWarehouseReceiptDetailAction(
       return { ok: false, error: receiptError?.message || "Накладну не знайдено" };
     }
 
-    const { data: moves, error: movesError } = await supabase
+    let { data: moves, error: movesError } = await supabase
       .from("inventory_local_moves")
       .select(
         `
         id, qty, unit_price_uah, item_ref_key,
+        amount_ex_vat, vat_rate, vat_amount, amount_incl_vat,
         inventory_items_cache ( name, custom_name, unit, bas_ref_key, is_local )
       `
       )
       .eq("receipt_id", id)
       .eq("type", "inbound")
       .order("created_at", { ascending: true });
+
+    if (
+      movesError &&
+      (movesError.message?.includes("amount_ex_vat") ||
+        movesError.message?.includes("vat_rate"))
+    ) {
+      const legacy = await supabase
+        .from("inventory_local_moves")
+        .select(
+          `
+          id, qty, unit_price_uah, item_ref_key,
+          inventory_items_cache ( name, custom_name, unit, bas_ref_key, is_local )
+        `
+        )
+        .eq("receipt_id", id)
+        .eq("type", "inbound")
+        .order("created_at", { ascending: true });
+      moves = legacy.data as typeof moves;
+      movesError = legacy.error;
+    }
 
     if (movesError) {
       return { ok: false, error: movesError.message };
@@ -834,6 +1971,32 @@ export async function getWarehouseReceiptDetailAction(
       const isLocal = cache?.is_local === true;
       const basRef =
         cache?.bas_ref_key != null ? String(cache.bas_ref_key) : null;
+      const vatRate =
+        "vat_rate" in row && isInventoryVatRateId(row.vat_rate)
+          ? row.vat_rate
+          : null;
+      const amountExVat =
+        "amount_ex_vat" in row &&
+        row.amount_ex_vat != null &&
+        Number.isFinite(Number(row.amount_ex_vat))
+          ? Number(row.amount_ex_vat)
+          : price != null
+            ? Math.round(qty * price * 100) / 100
+            : null;
+      const vatAmount =
+        "vat_amount" in row &&
+        row.vat_amount != null &&
+        Number.isFinite(Number(row.vat_amount))
+          ? Number(row.vat_amount)
+          : null;
+      const amountInclVat =
+        "amount_incl_vat" in row &&
+        row.amount_incl_vat != null &&
+        Number.isFinite(Number(row.amount_incl_vat))
+          ? Number(row.amount_incl_vat)
+          : amountExVat != null && vatAmount != null
+            ? Math.round((amountExVat + vatAmount) * 100) / 100
+            : amountExVat;
       return {
         moveId: String(row.id),
         name:
@@ -843,9 +2006,15 @@ export async function getWarehouseReceiptDetailAction(
         qty,
         unit: typeof cache?.unit === "string" ? cache.unit : null,
         unitPrice: price,
-        amount: price != null ? Math.round(qty * price * 100) / 100 : null,
+        amount: amountInclVat ?? amountExVat ?? (price != null
+          ? Math.round(qty * price * 100) / 100
+          : null),
         basRefKey: basRef,
         isLocal,
+        vatRate,
+        amountExVat,
+        vatAmount,
+        amountInclVat: amountInclVat ?? null,
       };
     });
 
@@ -932,8 +2101,8 @@ export async function updateWarehouseReceiptBasDraftHeaderAction(
 }
 
 /**
- * Шукає локальні позиції в BAS за назвою/артикулом, позначає стару чернетку
- * на видалення і створює нову з максимумом рядків.
+ * Оновлює існуючу непроведену чернетку BAS (PATCH того самого Ref_Key).
+ * Без Ref_Key — перша відправка (POST). Не плодить дублікати документів.
  */
 export async function recreateWarehouseReceiptBasDraftAction(
   receiptId: string
@@ -953,8 +2122,15 @@ export async function recreateWarehouseReceiptBasDraftAction(
     );
     const { describeBasHandoff } = await import("@/lib/bas-drafts/statuses");
     const result = await recreateWarehouseReceiptBasDraft(receiptId.trim());
-    if (!result.ok && result.handoffStatus === "bas_draft_failed") {
-      return { ok: false, error: result.error || "Помилка перестворення" };
+    if (!result.ok) {
+      return {
+        ok: false,
+        error:
+          result.error ||
+          (result.handoffStatus === "awaiting_bas_mapping"
+            ? "Контрагента не знайдено в BAS — вкажіть ЄДРПОУ або код"
+            : "Помилка оновлення чернетки"),
+      };
     }
     return {
       ok: true,
@@ -962,15 +2138,14 @@ export async function recreateWarehouseReceiptBasDraftAction(
       linesSkippedLocal: result.linesSkippedLocal,
       refKey: result.refKey,
       message: [
-        describeBasHandoff(result.handoffStatus),
+        result.oldRefKey
+          ? "Оновлено існуючу чернетку в BAS (без нового документа)."
+          : describeBasHandoff(result.handoffStatus),
         result.linesInDraft != null
-          ? `У новій чернетці ${result.linesInDraft} рядків.`
+          ? `Рядків: ${result.linesInDraft}.`
           : null,
         result.linesSkippedLocal
-          ? `${result.linesSkippedLocal} нових — у чернетці через «Товари» + назва з накладної.`
-          : null,
-        result.oldRefKey
-          ? `Стару чернетку позначено на видалення.`
+          ? `${result.linesSkippedLocal} нових — через «Товари» + назва з накладної.`
           : null,
       ]
         .filter(Boolean)
@@ -1190,8 +2365,12 @@ export async function createLocalInventoryItem(input: {
   category: QuickIssueItemOption["category"];
   unit: string;
   plannedPriceUah?: number | null;
+  /** Артикул / код — для антидубля */
+  article?: string | null;
+  /** true = дозволити нову навіть якщо знайдено збіг */
+  allowDuplicate?: boolean;
 }): Promise<
-  | { ok: true; basRefKey: string }
+  | { ok: true; basRefKey: string; created: boolean }
   | { ok: false; error: string }
 > {
   const name = input.name?.trim();
@@ -1205,9 +2384,70 @@ export async function createLocalInventoryItem(input: {
   // Колонка NOT NULL DEFAULT 0 — null ламає insert нових локальних позицій
   const plannedPriceUah =
     Number.isFinite(price) && price >= 0 ? price : 0;
+  const article =
+    typeof input.article === "string" && input.article.trim()
+      ? input.article.trim()
+      : null;
 
   try {
     const supabase = createServiceSupabase();
+
+    // Антидубль: код/артикул або точна назва+од.вим. у тій самій категорії
+    if (!input.allowDuplicate) {
+      if (article) {
+        const { data: byCode } = await supabase
+          .from("inventory_items_cache")
+          .select("bas_ref_key, code, name, unit")
+          .ilike("code", article)
+          .limit(5);
+        const hit = (byCode ?? []).find(
+          (row) =>
+            String(row.code ?? "")
+              .trim()
+              .toLocaleLowerCase("uk-UA")
+              .replace(/[\s\-_/]/g, "") ===
+            article
+              .toLocaleLowerCase("uk-UA")
+              .replace(/[\s\-_/]/g, "")
+        );
+        if (hit?.bas_ref_key) {
+          return {
+            ok: true,
+            basRefKey: String(hit.bas_ref_key),
+            created: false,
+          };
+        }
+      }
+      const { data: byName } = await supabase
+        .from("inventory_items_cache")
+        .select("bas_ref_key, name, custom_name, unit, category, is_hidden")
+        .eq("category", category)
+        .limit(500);
+      const nameNorm = name.toLocaleLowerCase("uk-UA").replace(/\s+/g, " ");
+      const unitNorm = unit.toLocaleLowerCase("uk-UA");
+      const nameHit = (byName ?? []).find((row) => {
+        if (row.is_hidden === true) return false;
+        const display = (
+          (typeof row.custom_name === "string" && row.custom_name.trim()) ||
+          String(row.name ?? "")
+        )
+          .trim()
+          .toLocaleLowerCase("uk-UA")
+          .replace(/\s+/g, " ");
+        const u = String(row.unit ?? "")
+          .trim()
+          .toLocaleLowerCase("uk-UA");
+        return display === nameNorm && (!u || u === unitNorm);
+      });
+      if (nameHit?.bas_ref_key) {
+        return {
+          ok: true,
+          basRefKey: String(nameHit.bas_ref_key),
+          created: false,
+        };
+      }
+    }
+
     const basRefKey = crypto.randomUUID();
     const payload: Record<string, unknown> = {
       bas_ref_key: basRefKey,
@@ -1219,6 +2459,7 @@ export async function createLocalInventoryItem(input: {
       is_hidden: false,
       custom_name: null,
     };
+    if (article) payload.code = article;
     const { error } = await supabase.from("inventory_items_cache").insert(payload);
     if (error) {
       if (error.message?.includes("is_local")) {
@@ -1228,12 +2469,21 @@ export async function createLocalInventoryItem(input: {
           .insert(withoutLocal);
         if (retry.error) return { ok: false, error: retry.error.message };
         revalidatePath("/inventory");
-        return { ok: true, basRefKey };
+        return { ok: true, basRefKey, created: true };
+      }
+      if (error.message?.includes("code") && article) {
+        delete payload.code;
+        const retry = await supabase
+          .from("inventory_items_cache")
+          .insert(payload);
+        if (retry.error) return { ok: false, error: retry.error.message };
+        revalidatePath("/inventory");
+        return { ok: true, basRefKey, created: true };
       }
       return { ok: false, error: error.message };
     }
     revalidatePath("/inventory");
-    return { ok: true, basRefKey };
+    return { ok: true, basRefKey, created: true };
   } catch (err) {
     return {
       ok: false,
@@ -1495,6 +2745,7 @@ export type LocalOutboundRow = {
   buyerName: string | null;
   unitPriceUah: number | null;
   fieldName: string | null;
+  equipmentName: string | null;
   attachmentCount: number;
   receiptId: string | null;
   invoiceNumber: string | null;
@@ -1515,7 +2766,7 @@ export async function getLocalMoveQtyByItem(): Promise<
     const { data, error } = await supabase
       .from("inventory_local_moves")
       .select(
-        "id, item_ref_key, qty, date, type, status, note, buyer_name, unit_price_uah, field_id, receipt_id, is_reverted, farm_fields ( name ), warehouse_receipts ( invoice_number, invoice_date, supplier_name )"
+        "id, item_ref_key, qty, date, type, status, note, buyer_name, unit_price_uah, field_id, equipment_id, receipt_id, is_reverted, farm_fields ( name ), equipment ( name ), warehouse_receipts ( invoice_number, invoice_date, supplier_name )"
       );
 
     if (error) {
@@ -1528,9 +2779,10 @@ export async function getLocalMoveQtyByItem(): Promise<
           rows: [],
         };
       }
-      // Fallback без is_reverted (міграція 074)
+      // Fallback без is_reverted / equipment (міграція 074+)
       if (
         error.message?.includes("is_reverted") ||
+        error.message?.includes("equipment") ||
         error.code === "42703"
       ) {
         const midRev = await supabase
@@ -1638,6 +2890,14 @@ async function aggregateLocalMoves(
       | null
       | undefined;
     const field = Array.isArray(fieldRaw) ? fieldRaw[0] ?? null : fieldRaw;
+    const equipmentRaw = row.equipment as
+      | { name?: string }
+      | { name?: string }[]
+      | null
+      | undefined;
+    const equipment = Array.isArray(equipmentRaw)
+      ? equipmentRaw[0] ?? null
+      : equipmentRaw;
     const priceRaw = row.unit_price_uah;
     const unitPriceUah =
       priceRaw != null && Number.isFinite(Number(priceRaw))
@@ -1673,6 +2933,7 @@ async function aggregateLocalMoves(
           : null,
       unitPriceUah,
       fieldName: field?.name ? String(field.name) : null,
+      equipmentName: equipment?.name ? String(equipment.name) : null,
       attachmentCount: 0,
       receiptId:
         typeof row.receipt_id === "string" && row.receipt_id.trim()
@@ -2094,11 +3355,15 @@ export type LocalMoveRow = {
   itemCategory: string | null;
   fieldId: string | null;
   fieldName: string | null;
+  equipmentId: string | null;
+  equipmentName: string | null;
   note: string | null;
   buyerName: string | null;
   unitPriceUah: number | null;
   actorName: string | null;
   attachmentCount: number;
+  /** Мультитоварна накладна (ручний прихід) */
+  receiptId: string | null;
 };
 
 export async function listLocalMoves(input?: {
@@ -2125,8 +3390,11 @@ export async function listLocalMoves(input?: {
         unit_price_uah,
         item_ref_key,
         field_id,
+        equipment_id,
         actor_name,
+        receipt_id,
         farm_fields ( id, name ),
+        equipment ( id, name ),
         inventory_items_cache ( name, custom_name, unit, category )
       `
       )
@@ -2145,11 +3413,13 @@ export async function listLocalMoves(input?: {
       }
       // Fallback без season / note / sale columns
       if (
+        error.message?.includes("equipment") ||
         error.message?.includes("season") ||
         error.message?.includes("note") ||
         error.message?.includes("buyer_name") ||
         error.message?.includes("unit_price") ||
-        error.message?.includes("actor_name")
+        error.message?.includes("actor_name") ||
+        error.message?.includes("receipt_id")
       ) {
         const legacy = await supabase
           .from("inventory_local_moves")
@@ -2218,8 +3488,11 @@ export async function getLocalMoveById(
         unit_price_uah,
         item_ref_key,
         field_id,
+        equipment_id,
         actor_name,
+        receipt_id,
         farm_fields ( id, name ),
+        equipment ( id, name ),
         inventory_items_cache ( name, custom_name, unit, category )
       `
       )
@@ -2281,6 +3554,13 @@ function mapLocalMoveRows(data: Record<string, unknown>[]): LocalMoveRow[] {
       | { id: string; name: string }[]
       | null;
     const field = Array.isArray(fieldRaw) ? fieldRaw[0] ?? null : fieldRaw;
+    const equipmentRaw = row.equipment as
+      | { id: string; name: string }
+      | { id: string; name: string }[]
+      | null;
+    const equipment = Array.isArray(equipmentRaw)
+      ? equipmentRaw[0] ?? null
+      : equipmentRaw;
     const cacheRaw = row.inventory_items_cache as
       | {
           name: string;
@@ -2329,6 +3609,12 @@ function mapLocalMoveRows(data: Record<string, unknown>[]): LocalMoveRow[] {
           ? String(row.field_id)
           : null,
       fieldName: field?.name ? String(field.name) : null,
+      equipmentId: equipment?.id
+        ? String(equipment.id)
+        : row.equipment_id
+          ? String(row.equipment_id)
+          : null,
+      equipmentName: equipment?.name ? String(equipment.name) : null,
       note: typeof row.note === "string" ? String(row.note) : null,
       buyerName:
         typeof row.buyer_name === "string" && row.buyer_name.trim()
@@ -2340,6 +3626,10 @@ function mapLocalMoveRows(data: Record<string, unknown>[]): LocalMoveRow[] {
           ? String(row.actor_name).trim()
           : null,
       attachmentCount: 0,
+      receiptId:
+        typeof row.receipt_id === "string" && row.receipt_id.trim()
+          ? String(row.receipt_id)
+          : null,
     };
   });
 }
@@ -2544,6 +3834,9 @@ export async function executeWarehouseReceiptAction(input: {
   invoiceNumber?: string | null;
   invoiceDate?: string | null;
   totalAmount?: number | null;
+  vatRate?: "20" | "14" | "7" | "0" | "none" | null;
+  vatAmount?: number | null;
+  totalInclVat?: number | null;
   receiptId?: string | null;
   items: {
     name: string;
@@ -2553,6 +3846,12 @@ export async function executeWarehouseReceiptAction(input: {
     pricePerUnit: number;
     totalAmount?: number | null;
     article?: string | null;
+    size?: string | null;
+    selectedExistingItemId?: string | null;
+    confirmCreateNew?: boolean | null;
+    vatRate?: "20" | "14" | "7" | "0" | "none" | null;
+    vatAmount?: number | null;
+    amountInclVat?: number | null;
   }[];
   /** Скан/фото накладної (base64 без data: префікса) — прикріплюється до кожного приходу */
   attachment?: {

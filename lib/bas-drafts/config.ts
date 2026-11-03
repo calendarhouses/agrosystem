@@ -72,3 +72,16 @@ export function basUnmappedNomenclatureKey(): string {
     DEFAULT_UNMAPPED_NOMENCLATURE_KEY
   );
 }
+
+/**
+ * Опційні GUID / мапи для повного payload Поступление / ЛЗК / Вимога:
+ *   BAS_ACCOUNT_PARTS_KEY=…          (207 запчастини)
+ *   BAS_ACCOUNT_AGRO_KEY=…           (208/2081 насіння·добрива·ЗЗР)
+ *   BAS_ACCOUNT_FUEL_KEY=…           (203 паливо)
+ *   BAS_ACCOUNT_HARVEST_KEY=…        (271 врожай)
+ *   BAS_ACCOUNT_MAP=parts:uuid,zzr:uuid,fuel:uuid,harvest:uuid,…
+ *   BAS_TAX_PURPOSE_VAT_KEY=…        («Опод. ПДВ»)
+ *   BAS_UNIT_MAP=л:uuid,кг:uuid,…
+ *   BAS_CONTRACT_MAP=counterpartyUuid:contractUuid,…
+ *   BAS_COUNTERPARTY_MAP=edrpou:uuid,…
+ */
