@@ -559,12 +559,12 @@ function WialonControlCell({
       <div className="flex flex-col items-start gap-1">
         <div className="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium whitespace-nowrap text-amber-800">
           <AlertTriangle className="h-3 w-3 text-amber-600" />
-          Надлишок {formatLiters(check.variance)} л
+          GPS надлишок {formatLiters(check.variance)} л
         </div>
         {!compact ? (
           <span className="text-[11px] leading-snug text-zinc-500">
-            Заявлено: {formatLiters(check.claimed)} л | Датчик:{" "}
-            {formatLiters(check.sensor)} л
+            Заявлено: {formatLiters(check.claimed)} л · ДУТ:{" "}
+            {formatLiters(check.sensor)} л (не BAS)
           </span>
         ) : null}
       </div>
@@ -575,12 +575,12 @@ function WialonControlCell({
     <div className="flex flex-col items-start gap-1">
       <div className="inline-flex items-center gap-1.5 rounded-md border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-medium whitespace-nowrap text-rose-700">
         <AlertTriangle className="h-3 w-3 text-rose-600" />
-        Нестача {formatLiters(check.variance)} л
+        GPS нестача {formatLiters(check.variance)} л
       </div>
       {!compact ? (
         <span className="text-[11px] leading-snug text-zinc-500">
-          Заявлено: {formatLiters(check.claimed)} л | Датчик:{" "}
-          {formatLiters(check.sensor)} л
+          Заявлено: {formatLiters(check.claimed)} л · ДУТ:{" "}
+          {formatLiters(check.sensor)} л (не BAS)
         </span>
       ) : null}
     </div>

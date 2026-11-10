@@ -24,12 +24,36 @@ function escapeODataString(value: string): string {
   return value.replace(/'/g, "''");
 }
 
+/** Коди класифікатора (BAS АГРО / UNECE) → короткий ярлик. */
+const UNIT_CODE_ALIASES: Record<string, string> = {
+  "0138": "л",
+  "112": "л",
+  "0301": "кг",
+  "163": "кг",
+  "0306": "т",
+  "166": "т",
+  "2009": "шт",
+  "796": "шт",
+};
+
+/**
+ * Fallback GUID з робочої бази LEVADA (Catalog_КлассификаторЕдиницИзмерения),
+ * якщо OData lookup / env не спрацювали. Перебивається BAS_UNIT_MAP.
+ */
+const DEFAULT_UNIT_KEYS: Record<string, string> = {
+  л: "1c2e03cb-d223-11ed-af80-d85ed32cff61",
+  кг: "59dfae92-dc2b-11ec-b2c4-94de80a45401",
+  т: "fd3089e5-c0dd-11ed-af7f-d85ed32cff61",
+  шт: "59dfae93-dc2b-11ec-b2c4-94de80a45401",
+};
+
 function normalizeUnitLabel(raw: string | null | undefined): string {
   const t = (raw ?? "").trim().toLocaleLowerCase("uk-UA");
   if (!t) return "шт";
+  if (UNIT_CODE_ALIASES[t]) return UNIT_CODE_ALIASES[t];
   if (/^(л|l|літр|литр)/i.test(t)) return "л";
   if (/^(кг|kg|кілограм)/i.test(t)) return "кг";
-  if (/^(т|t|тон)/i.test(t)) return "т";
+  if (/^(т|t|тонн?)/i.test(t)) return "т";
   if (/^(шт|pcs|штук)/i.test(t)) return "шт";
   return t.slice(0, 16);
 }
@@ -71,9 +95,11 @@ async function loadAllUnits(): Promise<void> {
     for (const row of parsed.value ?? []) {
       const key = row.Ref_Key ? String(row.Ref_Key).toLowerCase() : null;
       if (!key) continue;
+      const code = String(row.Code ?? "").trim();
       const labels = [
-        normalizeUnitLabel(row.Code),
+        normalizeUnitLabel(code),
         normalizeUnitLabel(row.Description),
+        UNIT_CODE_ALIASES[code] ?? null,
       ];
       for (const label of labels) {
         if (label && !unitByLabel.has(label)) unitByLabel.set(label, key);
@@ -138,6 +164,18 @@ export async function resolveBasUnitKey(
     }
   }
 
+  if (!key) {
+    const fallback = DEFAULT_UNIT_KEYS[label];
+    if (fallback) key = fallback.toLowerCase();
+  }
+
   unitCache.set(label, key);
+  if (!key) {
+    console.warn(
+      "[bas-drafts] не знайдено ЕдиницаИзмерения_Key для",
+      label,
+      "— задайте BAS_UNIT_MAP"
+    );
+  }
   return { key, label };
 }
