@@ -1126,7 +1126,7 @@ export function AccountantHubView({
     visible.length > 0 && visible.every((v) => selected.has(v.id));
 
   const periodActions = (
-    <>
+    <div className="flex shrink-0 items-center gap-2">
       <button
         type="button"
         onClick={() => void load({ force: true })}
@@ -1142,7 +1142,7 @@ export function AccountantHubView({
         disabled={loading || pending || packageSummary.count === 0}
         onClick={() => handleDownload(packageSummary.rows)}
         className={cn(
-          "h-11 shrink-0 rounded-xl px-3 font-bold text-white md:h-8",
+          "h-11 shrink-0 gap-1.5 rounded-xl px-3 font-bold text-white md:h-8",
           "bg-gradient-to-r from-[#1f5239] via-[#276749] to-[#2f7a52]"
         )}
       >
@@ -1150,7 +1150,7 @@ export function AccountantHubView({
         <span className="hidden sm:inline">Скачати Excel</span>
         <span className="sm:hidden">{packageSummary.count || "—"}</span>
       </Button>
-    </>
+    </div>
   );
 
   useEffect(() => {
@@ -1251,16 +1251,9 @@ export function AccountantHubView({
           )}
         >
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <p className="text-sm font-semibold text-zinc-900">
-                Накладні → 1С
-              </p>
-              <p className="mt-0.5 text-[11px] text-zinc-500">
-                Робоча черга в 1С. «Прибрати» ховає рядок зі списку (склад і
-                чернетка в BAS не чіпаються). Нові товари без картки теж
-                йдуть у чернетку з назвою з накладної.
-              </p>
-            </div>
+            <p className="text-sm font-semibold text-zinc-900">
+              Накладні → 1С
+            </p>
             <Button
               type="button"
               size="sm"
@@ -2834,9 +2827,8 @@ export function AccountantHubView({
         pending={pending}
         description={
           <>
-            {labelOps(packageSummary.count)} зникнуть із черги. Це лише
-            позначка «готово» — у 1С документи самі не створюються. Накладні в
-            1С — у блоці зверху.
+            {labelOps(packageSummary.count)} зникнуть із цієї черги. У BAS /
+            1С нічого не зміниться.
           </>
         }
         onConfirm={confirmMark}

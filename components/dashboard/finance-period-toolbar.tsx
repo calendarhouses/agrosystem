@@ -294,7 +294,12 @@ export function FinancePeriodToolbar({
       </div>
 
       {!seasonOnly || trailing ? (
-        <div className={cn("flex items-center", desktop ? "" : trailing ? "gap-2" : "gap-1.5")}>
+        <div
+          className={cn(
+            "flex items-center",
+            trailing ? "gap-2" : desktop ? "gap-0" : "gap-1.5"
+          )}
+        >
           {!seasonOnly ? (
             <div
               className={cn(
