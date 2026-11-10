@@ -472,7 +472,38 @@ async function fetchInventoryMoves(
   );
   await attachInventoryFlags(moves);
   await attachReceiptMeta(moves);
+  if (status === "draft") {
+    return healInventoryQueueAlreadyInBas(moves);
+  }
   return moves;
+}
+
+/**
+ * Якщо чернетка вже в BAS, а status ще draft — знімаємо з черги (архів).
+ * Чистить історичний розрив Excel-черги vs live BAS.
+ */
+async function healInventoryQueueAlreadyInBas(
+  moves: DraftExportMove[]
+): Promise<DraftExportMove[]> {
+  const stuck = moves.filter(
+    (m) =>
+      Boolean(m.basDraftRefKey) ||
+      m.receiptBasHandoffStatus === "bas_draft_posted"
+  );
+  if (stuck.length === 0) return moves;
+  const ids = stuck.map((m) => m.id);
+  try {
+    const supabase = createServiceSupabase();
+    await supabase
+      .from("inventory_local_moves")
+      .update({ status: "sent_to_1c" })
+      .in("id", ids)
+      .eq("status", "draft");
+  } catch {
+    /* ignore heal errors — нижче все одно відфільтруємо */
+  }
+  const stuckIds = new Set(ids);
+  return moves.filter((m) => !stuckIds.has(m.id));
 }
 
 async function fetchFuelQueue(
@@ -747,7 +778,31 @@ async function fetchFuelQueue(
     }
   }
 
+  if (syncStatus === "pending_1c") {
+    return healFuelQueueAlreadyInBas(items);
+  }
   return items;
+}
+
+/** Паливо з чернеткою BAS не лишається в pending_1c — у synced / архів. */
+async function healFuelQueueAlreadyInBas(
+  items: AccountantQueueItem[]
+): Promise<AccountantQueueItem[]> {
+  const stuck = items.filter((i) => Boolean(i.basDraftRefKey));
+  if (stuck.length === 0) return items;
+  const ids = stuck.map((i) => i.id);
+  try {
+    const supabase = createServiceSupabase();
+    await supabase
+      .from("fuel_transactions")
+      .update({ sync_status: "synced" })
+      .in("id", ids)
+      .eq("sync_status", "pending_1c");
+  } catch {
+    /* ignore */
+  }
+  const stuckIds = new Set(ids);
+  return items.filter((i) => !stuckIds.has(i.id));
 }
 
 function buildStats(items: AccountantQueueItem[]): AccountantQueueStats {

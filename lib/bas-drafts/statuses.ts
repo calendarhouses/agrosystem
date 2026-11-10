@@ -1,6 +1,7 @@
 /**
- * Статуси передачі в BAS vs Excel-черга бухгалтера.
- * sent_to_1c ≠ чернетка в BAS (див. bas_draft_ref_key).
+ * Статуси передачі в BAS vs черга бухгалтера.
+ * Після живої чернетки (bas_draft_ref_key) склад/паливо автоматично
+ * йдуть у архів черги: inventory → sent_to_1c, fuel → synced.
  */
 
 export type BasHandoffStatus =

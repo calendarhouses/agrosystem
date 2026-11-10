@@ -554,7 +554,7 @@ export async function requestFuelBasDraftSync(
 
   return {
     ok: true,
-    status: "pending_1c",
+    status: result.dryRun ? "pending_1c" : "synced",
     draft,
     sentToBas: !result.dryRun,
     dryRun: result.dryRun,

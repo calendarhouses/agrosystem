@@ -32,6 +32,14 @@ export async function markBasDraftSuccess(input: {
   if (input.table === "warehouse_receipts" && input.handoffStatus) {
     patch.bas_handoff_status = input.handoffStatus;
   }
+  // Уже є чернетка в BAS → знімаємо з робочої черги бухгалтера (архів / synced).
+  if (input.table === "inventory_local_moves") {
+    patch.status = "sent_to_1c";
+  }
+  if (input.table === "fuel_transactions") {
+    patch.sync_status = "synced";
+  }
+
   let { error } = await supabase
     .from(input.table)
     .update(patch)
